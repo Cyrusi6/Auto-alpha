@@ -12,7 +12,7 @@
 
 如果您觉得 AlphaGPT 很有用，可以通过以下渠道捐助作者：
 
-![](helpme.png)
+![](helpme.jpg)
 
 ---
 
