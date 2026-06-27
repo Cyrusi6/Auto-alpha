@@ -60,6 +60,11 @@ class ResearchSuiteConfig:
     walk_forward_train_size: int = 1
     walk_forward_test_size: int = 1
     walk_forward_step_size: int = 1
+    build_matrix_cache: bool = False
+    matrix_cache_dir: str | None = None
+    use_matrix_cache: bool = False
+    benchmark: bool = False
+    benchmark_dir: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

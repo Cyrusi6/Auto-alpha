@@ -1068,3 +1068,74 @@
 - 增强 paper account 对分红、送转、交易日资产重估和持仓漂移的处理。
 - 监控层增加历史趋势、SLO、通知通道和更严格的 production gate。
 - 未来如接入真实券商接口，应保持审批、台账、监控和本地 paper execution 的边界清晰。
+
+## 2026-06-27 - 任务 019
+
+### 本次变更摘要
+- 新增 `matrix_store/`，可将 governed JSONL A 股数据转换为本地 numpy 矩阵缓存。
+- `AShareDataLoader` 支持显式 `use_matrix_cache=True` 时优先读取 matrix cache，默认 JSONL 路径保持不变。
+- 新增 `performance_benchmark/`，输出本地数据加载、StackVM、批量研究、公式搜索和组合回测的轻量性能报告。
+- 新增 `cross_source_checks/`，支持比较两个 data_dir 或 snapshot 的 dataset 一致性。
+- `research_suite` 支持 `--build-matrix-cache`、`--use-matrix-cache`、`--benchmark`，并将矩阵和 benchmark artifacts 写入 catalog。
+- dashboard 新增 Performance tab，展示 matrix cache、benchmark 和 cross-source artifacts。
+
+### 新增文件
+- `matrix_store/__init__.py`
+- `matrix_store/models.py`
+- `matrix_store/builder.py`
+- `matrix_store/reader.py`
+- `matrix_store/validator.py`
+- `matrix_store/run_build_matrix.py`
+- `performance_benchmark/__init__.py`
+- `performance_benchmark/models.py`
+- `performance_benchmark/timer.py`
+- `performance_benchmark/runner.py`
+- `performance_benchmark/report.py`
+- `performance_benchmark/run_benchmark.py`
+- `cross_source_checks/__init__.py`
+- `cross_source_checks/models.py`
+- `cross_source_checks/comparator.py`
+- `cross_source_checks/report.py`
+- `cross_source_checks/run_compare.py`
+- `tests/test_matrix_store.py`
+- `tests/test_data_loader_matrix_cache.py`
+- `tests/test_performance_benchmark.py`
+- `tests/test_cross_source_checks.py`
+- `tests/test_research_suite_matrix_benchmark.py`
+- `tests/test_dashboard_matrix_perf_artifacts.py`
+- `tests/test_matrix_perf_no_old_terms.py`
+
+### 修改文件
+- `model_core/data_loader.py`
+- `research_suite/models.py`
+- `research_suite/run_suite.py`
+- `research_suite/workflow.py`
+- `dashboard/config.py`
+- `dashboard/data_service.py`
+- `dashboard/app.py`
+- `README.md`
+- `CATREADME.md`
+- `FRAMEWORK_UPDATE.md`
+
+### 删除或隔离的旧问题
+- 大规模研究不再只能逐次读取 JSONL，新增矩阵缓存读取骨架。
+- 全市场性能不再只停留在文档待办，新增可重复本地 benchmark artifact。
+- 多数据源一致性检查不再只停留在未来计划，新增 data_dir/snapshot 比较报告骨架。
+- suite artifact catalog 不再缺少矩阵缓存和性能报告索引。
+
+### 新增 A 股平台能力
+- `python -m matrix_store.run_build_matrix` 可写 `metadata.json`、`ts_codes.json`、`trade_dates.json`、`fields.json`、`<field>.npy` 和 `matrix_validation_report.json`。
+- Matrix cache 覆盖价格、成交、日频估值、财务、复权、涨跌停、停牌、行业编码和指数成分矩阵。
+- `python -m performance_benchmark.run_benchmark` 可写 `benchmark_result.json` 与 `benchmark_report.md`。
+- `python -m cross_source_checks.run_compare` 可写 `cross_source_report.json` 与 `cross_source_report.md`，报告 record count、missing keys、numeric diff、date range diff 和 ts_code count diff。
+- `research_suite.run_suite --build-matrix-cache --use-matrix-cache --benchmark` 可在完整研究套件中生成矩阵缓存、校验报告和性能报告。
+- dashboard Performance tab 可读取矩阵、benchmark 和 cross-source artifacts，缺失 artifact 时保持空状态。
+
+### 测试结果
+- `uv run pytest tests/test_matrix_store.py tests/test_data_loader_matrix_cache.py tests/test_performance_benchmark.py tests/test_cross_source_checks.py tests/test_research_suite_matrix_benchmark.py tests/test_dashboard_matrix_perf_artifacts.py tests/test_matrix_perf_no_old_terms.py`：通过，11 passed。
+
+### 后续待办
+- 增加真实全市场规模的 matrix cache 构建和加载压测。
+- 增加矩阵缓存增量刷新、字段版本管理和 cache invalidation 策略。
+- 扩展 benchmark 指标到内存峰值、磁盘读取量和更细粒度阶段耗时。
+- 扩展 cross-source checks 到更多 provider pair、容忍阈值、字段级审计和异常样本导出。

@@ -184,9 +184,26 @@ Filled and partial fills update cash and positions. Rejected fills are recorded 
 
 It writes `monitoring_report.json`, `monitoring_report.md`, and `alerts.jsonl`.
 
+## Matrix Cache And Performance
+
+`matrix_store/` converts governed JSONL datasets into a local numpy matrix cache:
+
+- `matrix_cache/metadata.json`
+- `matrix_cache/ts_codes.json`
+- `matrix_cache/trade_dates.json`
+- `matrix_cache/fields.json`
+- `matrix_cache/<field>.npy`
+- `matrix_cache/matrix_validation_report.json`
+
+`AShareDataLoader` can opt into this path with `use_matrix_cache=True` and still exposes the same `ts_codes`, `trade_dates`, `raw_data_cache`, `feat_tensor`, `target_ret`, `industry_codes`, and security metadata as the JSONL loader.
+
+`performance_benchmark/` writes `benchmark_result.json` and `benchmark_report.md` for local loader, StackVM, batch research, formula search, and portfolio simulation timings. It uses simple wall-clock timing and is intended as a repeatable local skeleton rather than full profiling.
+
+`cross_source_checks/` compares two data directories or snapshots and writes `cross_source_report.json` plus `cross_source_report.md`. It reports record count differences, missing keys, numeric field deltas, date range differences, and stock-code count differences.
+
 ## Dashboard
 
-`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, factor store, factor reports, batch reports, search reports, neural search reports, neural training history, checkpoint lists, suite reports, artifact catalog, promotion decisions, risk reports, optimization results, backtest outputs, target positions, orders, paper fills, production runs, approvals, paper account state, account ledgers, monitoring reports, and alerts. Missing artifacts produce empty states instead of errors.
+`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, matrix cache metadata, matrix validation reports, benchmark reports, data-source comparison reports, factor store, factor reports, batch reports, search reports, neural search reports, neural training history, checkpoint lists, suite reports, artifact catalog, promotion decisions, risk reports, optimization results, backtest outputs, target positions, orders, paper fills, production runs, approvals, paper account state, account ledgers, monitoring reports, and alerts. Missing artifacts produce empty states instead of errors.
 
 ## Research Suite Outputs
 
@@ -199,8 +216,8 @@ It writes `monitoring_report.json`, `monitoring_report.md`, and `alerts.jsonl`.
 - `artifact_catalog.json`
 - `artifact_catalog.md`
 
-The artifact catalog indexes data manifest, quality report, pipeline state, universe summary, search reports, factor store files, selected factor values, backtest outputs, risk reports, optimization results, order outputs, suite report, and promotion decision.
+The artifact catalog indexes data manifest, quality report, pipeline state, universe summary, optional matrix metadata, optional benchmark reports, search reports, factor store files, selected factor values, backtest outputs, risk reports, optimization results, order outputs, suite report, and promotion decision.
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton. Risk model and portfolio optimization now have a basic benchmark-aware local implementation. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Daily production now has local approvals, paper account ledger, and monitoring reports. Real Tushare token and quota validation, full-market performance testing, cross-source data checks, Barra-like multi-factor risk, more robust covariance estimation, a production optimizer, stronger reinforcement learning, offline pretraining, richer walk-forward policies, richer approval policies, human review workflow, broader neural training stability validation, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, and broker connectivity are future work.
+The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton. Matrix cache, local benchmark, and data-source comparison skeletons are available. Risk model and portfolio optimization now have a basic benchmark-aware local implementation. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Daily production now has local approvals, paper account ledger, and monitoring reports. Real Tushare token and quota validation, real full-market stress runs, incremental matrix refresh, richer provider comparisons, Barra-like multi-factor risk, more robust covariance estimation, a production optimizer, stronger reinforcement learning, offline pretraining, richer walk-forward policies, richer approval policies, human review workflow, broader neural training stability validation, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, and broker connectivity are future work.

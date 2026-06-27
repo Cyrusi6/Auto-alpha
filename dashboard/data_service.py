@@ -323,6 +323,46 @@ class AshareDashboardService:
                 return frame
         return pd.DataFrame()
 
+    def load_matrix_metadata(self) -> dict[str, Any]:
+        for path in self._matrix_candidates("metadata.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_matrix_validation_report(self) -> dict[str, Any]:
+        for path in self._matrix_candidates("matrix_validation_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_benchmark_result(self) -> dict[str, Any]:
+        for path in self._benchmark_candidates("benchmark_result.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_benchmark_report_markdown(self) -> str:
+        for path in self._benchmark_candidates("benchmark_report.md"):
+            if path.exists():
+                return path.read_text(encoding="utf-8")
+        return ""
+
+    def load_cross_source_report(self) -> dict[str, Any]:
+        for path in self._cross_source_candidates("cross_source_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_cross_source_report_markdown(self) -> str:
+        for path in self._cross_source_candidates("cross_source_report.md"):
+            if path.exists():
+                return path.read_text(encoding="utf-8")
+        return ""
+
     def _neural_artifact_candidates(self, filename: str) -> list[Path]:
         root = self.config.report_dir.parent
         return [
@@ -364,6 +404,30 @@ class AshareDashboardService:
     def _monitoring_candidates(self, filename: str) -> list[Path]:
         root = self.config.report_dir.parent
         return [self.config.monitoring_dir / filename, root / "monitoring" / filename]
+
+    def _matrix_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.matrix_cache_dir / filename,
+            self.config.data_dir / "matrix_cache" / filename,
+            root / "data" / "matrix_cache" / filename,
+        ]
+
+    def _benchmark_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.benchmark_dir / filename,
+            root / "benchmark" / filename,
+            root / "suite_benchmark" / filename,
+            root / "suite" / "benchmark" / filename,
+        ]
+
+    def _cross_source_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.cross_source_dir / filename,
+            root / "cross_source" / filename,
+        ]
 
     @staticmethod
     def _read_json(path: Path) -> dict[str, Any]:

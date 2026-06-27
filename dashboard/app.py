@@ -51,6 +51,8 @@ def render_app(config: DashboardConfig | None = None) -> None:
                     f"report_dir={service.config.report_dir}",
                     f"backtest_dir={service.config.backtest_dir}",
                     f"orders_dir={service.config.orders_dir}",
+                    f"matrix_cache_dir={service.config.matrix_cache_dir}",
+                    f"benchmark_dir={service.config.benchmark_dir}",
                 ]
             ),
             language="text",
@@ -58,8 +60,8 @@ def render_app(config: DashboardConfig | None = None) -> None:
         if st.button("Refresh"):
             st.rerun()
 
-    data_tab, factor_tab, report_tab, backtest_tab, risk_tab, orders_tab, production_tab = st.tabs(
-        ["Data", "Factors", "Reports", "Backtest", "Risk", "Orders", "Production"]
+    data_tab, factor_tab, report_tab, backtest_tab, risk_tab, orders_tab, production_tab, performance_tab = st.tabs(
+        ["Data", "Factors", "Reports", "Backtest", "Risk", "Orders", "Production", "Performance"]
     )
 
     with data_tab:
@@ -314,6 +316,80 @@ def render_app(config: DashboardConfig | None = None) -> None:
         _show_dataframe_or_empty("Monitoring Alerts", monitoring_alerts)
         if monitoring_markdown:
             st.markdown(monitoring_markdown)
+
+    with performance_tab:
+        matrix_metadata = service.load_matrix_metadata()
+        matrix_validation = service.load_matrix_validation_report()
+        benchmark_result = service.load_benchmark_result()
+        benchmark_markdown = service.load_benchmark_report_markdown()
+        cross_source_report = service.load_cross_source_report()
+        cross_source_markdown = service.load_cross_source_report_markdown()
+
+        st.subheader("Matrix Cache")
+        if matrix_metadata:
+            st.json(
+                {
+                    "n_stocks": matrix_metadata.get("n_stocks"),
+                    "n_dates": matrix_metadata.get("n_dates"),
+                    "fields": len(matrix_metadata.get("fields", [])),
+                    "cache_hash": matrix_metadata.get("cache_hash"),
+                    "universe_name": matrix_metadata.get("universe_name"),
+                }
+            )
+        else:
+            st.info("No matrix cache metadata found.")
+        if matrix_validation:
+            st.subheader("Matrix Validation")
+            st.json(
+                {
+                    "valid": matrix_validation.get("valid"),
+                    "errors": matrix_validation.get("errors", []),
+                    "warnings": matrix_validation.get("warnings", []),
+                }
+            )
+
+        st.subheader("Performance Benchmark")
+        if benchmark_result:
+            st.json(
+                {
+                    "summary": benchmark_result.get("summary", {}),
+                    "items": [
+                        {
+                            "name": item.get("name"),
+                            "seconds": item.get("wall_time_seconds"),
+                            "success": item.get("success"),
+                            "error": item.get("error"),
+                        }
+                        for item in benchmark_result.get("items", [])
+                    ],
+                }
+            )
+        else:
+            st.info("No benchmark_result.json found.")
+        if benchmark_markdown:
+            st.markdown(benchmark_markdown)
+
+        st.subheader("Cross Source Checks")
+        if cross_source_report:
+            st.json(
+                {
+                    "has_differences": cross_source_report.get("has_differences"),
+                    "datasets": [
+                        {
+                            "dataset": item.get("dataset"),
+                            "record_count_diff": item.get("record_count_diff"),
+                            "missing_keys_left": item.get("missing_keys_left"),
+                            "missing_keys_right": item.get("missing_keys_right"),
+                            "numeric_field_max_abs_diff": item.get("numeric_field_max_abs_diff"),
+                        }
+                        for item in cross_source_report.get("datasets", [])
+                    ],
+                }
+            )
+        else:
+            st.info("No cross_source_report.json found.")
+        if cross_source_markdown:
+            st.markdown(cross_source_markdown)
 
 
 def main() -> None:

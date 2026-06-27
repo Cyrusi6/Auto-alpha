@@ -18,6 +18,9 @@ class DashboardConfig:
     paper_account_dir: Path = Path("artifacts/account")
     production_dir: Path = Path("artifacts/production")
     monitoring_dir: Path = Path("artifacts/monitoring")
+    matrix_cache_dir: Path = Path("data/ashare/matrix_cache")
+    benchmark_dir: Path = Path("artifacts/benchmark")
+    cross_source_dir: Path = Path("artifacts/cross_source")
 
     @classmethod
     def from_env(cls) -> "DashboardConfig":
@@ -35,4 +38,7 @@ class DashboardConfig:
             paper_account_dir=Path(os.getenv("ASHARE_DASHBOARD_PAPER_ACCOUNT_DIR") or "artifacts/account"),
             production_dir=Path(os.getenv("ASHARE_DASHBOARD_PRODUCTION_DIR") or "artifacts/production"),
             monitoring_dir=Path(os.getenv("ASHARE_DASHBOARD_MONITORING_DIR") or "artifacts/monitoring"),
+            matrix_cache_dir=Path(os.getenv("ASHARE_DASHBOARD_MATRIX_CACHE_DIR") or "data/ashare/matrix_cache"),
+            benchmark_dir=Path(os.getenv("ASHARE_DASHBOARD_BENCHMARK_DIR") or "artifacts/benchmark"),
+            cross_source_dir=Path(os.getenv("ASHARE_DASHBOARD_CROSS_SOURCE_DIR") or "artifacts/cross_source"),
         )

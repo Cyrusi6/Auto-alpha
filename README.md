@@ -25,6 +25,9 @@ The current implementation is local-first. It uses deterministic sample data and
 - `paper_account/`: Persistent local paper cash, positions, trades, snapshots, and performance ledger.
 - `operations/`: Daily production run orchestration from production factor to proposed orders, approval-gated execution, account update, and production report.
 - `monitoring/`: Local production checks for data freshness, quality, factor drift, fill quality, account performance, and alerts.
+- `matrix_store/`: Governed JSONL to numpy matrix cache builder, reader, and validator for faster local loading.
+- `performance_benchmark/`: Lightweight local benchmark runner for data loading, formula execution, research batches, formula search, and portfolio simulation.
+- `cross_source_checks/`: Local dataset comparison reports across data directories or snapshots.
 - `dashboard/`: Streamlit dashboard for local artifacts.
 
 ## Quickstart
@@ -131,6 +134,38 @@ The same path works with `--provider sample` for offline verification. Planned s
 
 Market constraint datasets include `daily_limits`, `adjustment_factors`, and `index_members`. The research and backtest stack uses `adjusted_close` for returns and raw `close` for local order simulation. The portfolio simulator applies local A-share constraints for suspension, limit up/down, T+1 selling, board lots, volume participation, and trading costs.
 
+Build a matrix cache after governed data and universe are available:
+
+```bash
+uv run python -m matrix_store.run_build_matrix \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --output-dir /tmp/auto-alpha-demo/data/matrix_cache \
+  --universe-name csi300_sample \
+  --validate \
+  --pretty
+```
+
+`AShareDataLoader(..., use_matrix_cache=True, matrix_cache_dir=...)` reads `metadata.json`, `ts_codes.json`, `trade_dates.json`, `fields.json`, and `<field>.npy` matrices before building the same feature tensor and target return outputs as the JSONL path. If the cache is missing, the loader raises a clear file error; the default loader path remains JSONL.
+
+Run local performance and cross-source checks:
+
+```bash
+uv run python -m performance_benchmark.run_benchmark \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --matrix-cache-dir /tmp/auto-alpha-demo/data/matrix_cache \
+  --output-dir /tmp/auto-alpha-demo/benchmark \
+  --pretty
+
+uv run python -m cross_source_checks.run_compare \
+  --left-data-dir /tmp/auto-alpha-demo/data \
+  --right-data-dir /tmp/auto-alpha-demo/data_copy \
+  --output-dir /tmp/auto-alpha-demo/cross_source \
+  --datasets daily_bars,daily_basic,daily_limits \
+  --pretty
+```
+
+The benchmark writes `benchmark_result.json` and `benchmark_report.md`. The comparison writes `cross_source_report.json` and `cross_source_report.md`, including record count differences, missing keys, date range differences, and numeric field deltas.
+
 The factor engine can be constrained to a local universe with `--universe-name` or `--universe-file`. `--factor-transform` supports `raw`, `winsorize`, `zscore`, `winsorize_zscore`, `neutralize_market_cap`, `neutralize_industry`, and `neutralize_industry_size`. Passing `--enable-gate` records coverage, turnover, split metrics, correlation checks, gate status, and transform metadata in the factor store and report.
 
 The formula DSL exposes operator arity, lookback, and complexity metadata. StackVM can explain invalid formulas, estimate formula complexity and lookback, and produce stable canonical formula names. Batch research is available through `python -m research.run_batch`. The default candidate set includes at least 20 reproducible formula factors covering returns, valuation, profitability, growth, rolling time-series operators, cross-sectional operators, and simple combined expressions.
@@ -162,6 +197,28 @@ uv run python -m neural_search.run_neural_search \
 `formula_search.run_search` supports `--search-mode random|neural|hybrid`. Hybrid mode runs a neural branch and the existing random/mutation/crossover branch against the same factor store, then records neural metadata and checkpoint paths in `search_result.json`. `model_core.engine --train-mode neural` provides a lightweight neural training entry while preserving the existing fixed-candidate engine mode.
 
 The suite runner is available through `python -m research_suite.run_suite`. It orchestrates data sync, universe construction, formula search, composite backtest, paper order export, walk-forward robustness evaluation, promotion decision, suite report, and `artifact_catalog.json`. When promotion passes, the selected composite factor is updated to `production_candidate` in the factor store with the promotion decision in metadata.
+
+`research_suite.run_suite` can also build matrix cache and run benchmark artifacts:
+
+```bash
+uv run python -m research_suite.run_suite \
+  --suite-name matrix_perf_suite \
+  --provider sample \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --universe-name csi300_sample \
+  --index-code 000300.SH \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --report-dir /tmp/auto-alpha-demo/reports \
+  --output-dir /tmp/auto-alpha-demo/suite \
+  --backtest-dir /tmp/auto-alpha-demo/backtest \
+  --orders-dir /tmp/auto-alpha-demo/orders \
+  --build-matrix-cache \
+  --matrix-cache-dir /tmp/auto-alpha-demo/data/matrix_cache \
+  --use-matrix-cache \
+  --benchmark \
+  --benchmark-dir /tmp/auto-alpha-demo/suite_benchmark \
+  --pretty
+```
 
 Risk-aware portfolio construction is available in the optimizer, backtest, strategy, and suite CLIs:
 
@@ -207,6 +264,9 @@ Dashboard-specific overrides:
 - `ASHARE_DASHBOARD_PAPER_ACCOUNT_DIR`
 - `ASHARE_DASHBOARD_PRODUCTION_DIR`
 - `ASHARE_DASHBOARD_MONITORING_DIR`
+- `ASHARE_DASHBOARD_MATRIX_CACHE_DIR`
+- `ASHARE_DASHBOARD_BENCHMARK_DIR`
+- `ASHARE_DASHBOARD_CROSS_SOURCE_DIR`
 
 ## Daily Production Operations
 
@@ -275,9 +335,10 @@ Daily production writes `production_run.json/md`; approvals are stored under `ap
 
 ## Current Gaps
 
-- Tushare HTTP provider and production sync scaffolding are available; production use still requires valid token, quota/permission verification, full-market performance tests, and more cross-source data checks.
+- Tushare HTTP provider and production sync scaffolding are available; production use still requires valid token, quota/permission verification, real full-market performance runs, and more data-source comparisons.
 - Risk model and benchmark-aware portfolio optimization now have a basic local implementation; future work should add Barra-like multi-factor risk, more robust covariance estimation, a production optimizer, and large-scale performance tuning.
 - Local daily simulation supports core A-share constraints; future work should add finer real-world matching and minute-level volume modeling.
 - Local formula search and a first neural-guided policy-search path are available; future work should add stronger reinforcement learning, offline pretraining, more operators, GPU performance tuning, and broader stability validation.
+- Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.
 - One-click research suites now provide local walk-forward and promotion gates; daily operations now provide local approval, paper account ledger, and monitoring artifacts. Future work should add richer approval policies and human review workflow.
 - Paper order export and account ledger are local only; no real broker integration is implemented.

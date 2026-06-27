@@ -52,6 +52,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--walk-forward-train-size", type=int, default=1)
     parser.add_argument("--walk-forward-test-size", type=int, default=1)
     parser.add_argument("--walk-forward-step-size", type=int, default=1)
+    parser.add_argument("--build-matrix-cache", action="store_true")
+    parser.add_argument("--matrix-cache-dir")
+    parser.add_argument("--use-matrix-cache", action="store_true")
+    parser.add_argument("--benchmark", action="store_true")
+    parser.add_argument("--benchmark-dir")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -118,6 +123,11 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
         walk_forward_train_size=args.walk_forward_train_size,
         walk_forward_test_size=args.walk_forward_test_size,
         walk_forward_step_size=args.walk_forward_step_size,
+        build_matrix_cache=args.build_matrix_cache,
+        matrix_cache_dir=args.matrix_cache_dir,
+        use_matrix_cache=args.use_matrix_cache,
+        benchmark=args.benchmark,
+        benchmark_dir=args.benchmark_dir,
     )
 
 

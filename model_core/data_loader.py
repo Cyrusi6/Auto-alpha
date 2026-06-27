@@ -19,11 +19,15 @@ class AShareDataLoader:
         device: torch.device | str | None = None,
         universe_file: str | Path | None = None,
         universe_name: str | None = None,
+        matrix_cache_dir: str | Path | None = None,
+        use_matrix_cache: bool = False,
     ):
         self.data_dir = Path(data_dir) if data_dir is not None else Path(ModelConfig.DATA_DIR)
         self.device = torch.device(device) if device is not None else ModelConfig.DEVICE
         self.universe_file = Path(universe_file) if universe_file is not None else None
         self.universe_name = universe_name
+        self.matrix_cache_dir = Path(matrix_cache_dir) if matrix_cache_dir is not None else self.data_dir / "matrix_cache"
+        self.use_matrix_cache = bool(use_matrix_cache)
         self.ts_codes: list[str] = []
         self.trade_dates: list[str] = []
         self.security_metadata: dict[str, dict[str, object]] = {}
@@ -33,6 +37,9 @@ class AShareDataLoader:
         self.target_ret: torch.Tensor | None = None
 
     def load_data(self) -> "AShareDataLoader":
+        if self.use_matrix_cache:
+            return self._load_from_matrix_cache()
+
         securities = self._read_jsonl("securities")
         calendar = self._read_jsonl("trade_calendar")
         bars = self._read_jsonl("daily_bars")
@@ -74,6 +81,7 @@ class AShareDataLoader:
             "volume_ratio": self._pivot_daily_basic(basic_df, "volume_ratio"),
             "pe_ttm": self._pivot_daily_basic(basic_df, "pe_ttm"),
             "pb": self._pivot_daily_basic(basic_df, "pb"),
+            "ps_ttm": self._pivot_daily_basic(basic_df, "ps_ttm"),
             "total_mv": self._pivot_daily_basic(basic_df, "total_mv"),
             "roe": self._align_financial(financial_df, "roe"),
             "revenue_yoy": self._align_financial(financial_df, "revenue_yoy"),
@@ -104,6 +112,59 @@ class AShareDataLoader:
         self.industry_codes = self._build_industry_codes()
         self.raw_data_cache["industry_codes"] = self.industry_codes
         self.raw_data_cache["industry_code_matrix"] = self.industry_codes.unsqueeze(1).expand(-1, len(self.trade_dates))
+        self.feat_tensor = AShareFeatureEngineer.compute_features(self.raw_data_cache)
+        self.target_ret = self._compute_target_ret(self.raw_data_cache["adjusted_close"])
+        return self
+
+    def _load_from_matrix_cache(self) -> "AShareDataLoader":
+        if not (self.matrix_cache_dir / "metadata.json").exists():
+            raise FileNotFoundError(f"matrix cache metadata not found: {self.matrix_cache_dir / 'metadata.json'}")
+
+        from matrix_store import MatrixStoreReader
+
+        reader = MatrixStoreReader(self.matrix_cache_dir)
+        metadata = reader.load_metadata()
+        self.ts_codes = reader.load_ts_codes()
+        self.trade_dates = reader.load_trade_dates()
+        if not self.ts_codes or not self.trade_dates:
+            raise ValueError(f"matrix cache does not contain aligned securities and trade dates: {self.matrix_cache_dir}")
+        raw_metadata = metadata.get("security_metadata")
+        if isinstance(raw_metadata, dict):
+            self.security_metadata = {str(key): dict(value) for key, value in raw_metadata.items() if isinstance(value, dict)}
+        else:
+            self.security_metadata = {ts_code: {"ts_code": ts_code} for ts_code in self.ts_codes}
+
+        self.raw_data_cache = reader.to_raw_data_cache(device=self.device)
+        if "adj_factor" not in self.raw_data_cache:
+            self.raw_data_cache["adj_factor"] = torch.ones_like(self.raw_data_cache["close"])
+        if "adjusted_close" not in self.raw_data_cache:
+            self.raw_data_cache["adjusted_close"] = self.raw_data_cache["close"] * self.raw_data_cache["adj_factor"]
+        if "adjusted_open" not in self.raw_data_cache and "open" in self.raw_data_cache:
+            self.raw_data_cache["adjusted_open"] = self.raw_data_cache["open"] * self.raw_data_cache["adj_factor"]
+        if "limit_up_flag" not in self.raw_data_cache and {"close", "up_limit"} <= set(self.raw_data_cache):
+            self.raw_data_cache["limit_up_flag"] = self._limit_flag(
+                self.raw_data_cache["close"],
+                self.raw_data_cache["up_limit"],
+                direction="up",
+            )
+        if "limit_down_flag" not in self.raw_data_cache and {"close", "down_limit"} <= set(self.raw_data_cache):
+            self.raw_data_cache["limit_down_flag"] = self._limit_flag(
+                self.raw_data_cache["close"],
+                self.raw_data_cache["down_limit"],
+                direction="down",
+            )
+        if "ps_ttm" not in self.raw_data_cache:
+            self.raw_data_cache["ps_ttm"] = torch.zeros_like(self.raw_data_cache["close"])
+        if "log_mkt_cap" not in self.raw_data_cache and "total_mv" in self.raw_data_cache:
+            self.raw_data_cache["log_mkt_cap"] = torch.log1p(torch.clamp(self.raw_data_cache["total_mv"], min=0.0))
+        if "industry_codes" in self.raw_data_cache:
+            self.industry_codes = self.raw_data_cache["industry_codes"].to(dtype=torch.long, device=self.device)
+        else:
+            self.industry_codes = self._build_industry_codes()
+            self.raw_data_cache["industry_codes"] = self.industry_codes
+        if "industry_code_matrix" not in self.raw_data_cache:
+            self.raw_data_cache["industry_code_matrix"] = self.industry_codes.unsqueeze(1).expand(-1, len(self.trade_dates))
+
         self.feat_tensor = AShareFeatureEngineer.compute_features(self.raw_data_cache)
         self.target_ret = self._compute_target_ret(self.raw_data_cache["adjusted_close"])
         return self

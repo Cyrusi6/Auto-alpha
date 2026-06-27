@@ -13,7 +13,9 @@ from backtest import run_backtest
 from data_pipeline import run_pipeline
 from factor_store import LocalFactorStore
 from formula_search import run_search
+from matrix_store.run_build_matrix import main as run_build_matrix_main
 from model_core.data_loader import AShareDataLoader
+from performance_benchmark.run_benchmark import main as run_benchmark_main
 from strategy_manager import runner as strategy_runner
 from universe import run_universe
 
@@ -42,6 +44,10 @@ class ResearchSuiteRunner:
                 self._append_stage("data_sync", self._stage_data_sync)
             if not self.config.skip_universe:
                 self._append_stage("universe", self._stage_universe)
+            if self.config.build_matrix_cache:
+                self._append_stage("matrix_cache", self._stage_matrix_cache)
+            if self.config.benchmark:
+                self._append_stage("benchmark", self._stage_benchmark)
             self._append_stage("formula_search", self._stage_formula_search)
             self._append_stage("backtest", self._stage_backtest)
             if not self.config.skip_orders:
@@ -73,6 +79,7 @@ class ResearchSuiteRunner:
                 "status": status,
                 "selected_factor_id": self.selected_factor_id,
                 "backtest_metrics": self.backtest_summary.get("metrics", {}),
+                "matrix_cache_dir": str(self._matrix_cache_dir()),
             },
         )
         suite_json, suite_md = write_suite_report(result, self.output_dir)
@@ -160,6 +167,51 @@ class ResearchSuiteRunner:
         }
         for name, path in output_paths.items():
             self.catalog = register_artifact(self.catalog, name, path, "jsonl" if name == "universe" else "json", "universe")
+        return payload, output_paths
+
+    def _stage_matrix_cache(self) -> tuple[dict[str, Any], dict[str, str]]:
+        cache_dir = self._matrix_cache_dir()
+        payload = _run_json_main(
+            run_build_matrix_main,
+            [
+                "--data-dir",
+                self.config.data_dir,
+                "--output-dir",
+                str(cache_dir),
+                "--universe-name",
+                self.config.universe_name,
+                "--validate",
+            ],
+        )
+        output_paths = {
+            "matrix_metadata": str(cache_dir / "metadata.json"),
+            "matrix_fields": str(cache_dir / "fields.json"),
+            "matrix_ts_codes": str(cache_dir / "ts_codes.json"),
+            "matrix_trade_dates": str(cache_dir / "trade_dates.json"),
+            "matrix_validation_report": str(cache_dir / "matrix_validation_report.json"),
+        }
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name, path, "json", "matrix_cache")
+        return payload, output_paths
+
+    def _stage_benchmark(self) -> tuple[dict[str, Any], dict[str, str]]:
+        benchmark_dir = self._benchmark_dir()
+        argv = [
+            "--data-dir",
+            self.config.data_dir,
+            "--output-dir",
+            str(benchmark_dir),
+        ]
+        cache_dir = self._matrix_cache_dir()
+        if (cache_dir / "metadata.json").exists():
+            argv.extend(["--matrix-cache-dir", str(cache_dir)])
+        payload = _run_json_main(run_benchmark_main, argv)
+        output_paths = {
+            "benchmark_result": str(benchmark_dir / "benchmark_result.json"),
+            "benchmark_report": str(benchmark_dir / "benchmark_report.md"),
+        }
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "benchmark")
         return payload, output_paths
 
     def _stage_formula_search(self) -> tuple[dict[str, Any], dict[str, str]]:
@@ -361,7 +413,13 @@ class ResearchSuiteRunner:
     def _stage_walk_forward(self) -> tuple[dict[str, Any], dict[str, str]]:
         if not self.selected_factor_id:
             raise ValueError("no selected factor for walk-forward evaluation")
-        loader = AShareDataLoader(data_dir=self.config.data_dir, device="cpu", universe_name=self.config.universe_name).load_data()
+        loader = AShareDataLoader(
+            data_dir=self.config.data_dir,
+            device="cpu",
+            universe_name=self.config.universe_name,
+            matrix_cache_dir=self._matrix_cache_dir(),
+            use_matrix_cache=self.config.use_matrix_cache,
+        ).load_data()
         store = LocalFactorStore(self.config.factor_store_dir)
         windows = build_walk_forward_windows(
             loader.trade_dates,
@@ -399,6 +457,12 @@ class ResearchSuiteRunner:
         path = write_promotion_decision(self.promotion_decision, self.config.output_dir)
         self.catalog = register_artifact(self.catalog, "promotion_decision", path, "json", "promotion")
         return self.promotion_decision.to_dict(), {"promotion_decision": str(path)}
+
+    def _matrix_cache_dir(self) -> Path:
+        return Path(self.config.matrix_cache_dir) if self.config.matrix_cache_dir else Path(self.config.data_dir) / "matrix_cache"
+
+    def _benchmark_dir(self) -> Path:
+        return Path(self.config.benchmark_dir) if self.config.benchmark_dir else Path(self.config.output_dir) / "benchmark"
 
 
 def _run_json_main(main_func: Callable[[list[str] | None], int], argv: list[str]) -> dict[str, Any]:
