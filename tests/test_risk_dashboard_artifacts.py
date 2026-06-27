@@ -58,6 +58,18 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
         '{"factor_id":"factor_x","weights":{"000001.SZ":0.1}}',
         encoding="utf-8",
     )
+    smoke_dir = tmp_path / "data_source_smoke"
+    smoke_dir.mkdir()
+    (smoke_dir / "data_source_smoke_report.json").write_text(
+        '{"provider":"sample","status":"OK","diagnostic_counts":{"OK":1},"datasets":[]}',
+        encoding="utf-8",
+    )
+    (smoke_dir / "provider_probe.json").write_text('{"probes":[{"status":"OK"}]}', encoding="utf-8")
+    (smoke_dir / "field_coverage.json").write_text('{"datasets":[{"dataset":"daily_bars","records":3}]}', encoding="utf-8")
+    (smoke_dir / "audit_summary.json").write_text('{"total_requests":1,"cache_hit_rate":0.0}', encoding="utf-8")
+    (smoke_dir / "incremental_recovery_report.json").write_text('{"ok":true}', encoding="utf-8")
+    (smoke_dir / "baseline_compare_summary.json").write_text('{"compared":true,"difference_count":0}', encoding="utf-8")
+    (smoke_dir / "dataset_contracts.json").write_text('{"datasets":[{"dataset":"daily_bars"}]}', encoding="utf-8")
     service = AshareDashboardService(
         DashboardConfig(
             data_dir=tmp_path / "data",
@@ -65,6 +77,7 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
             report_dir=tmp_path / "reports",
             backtest_dir=tmp_path / "backtest",
             orders_dir=tmp_path / "orders",
+            data_source_smoke_dir=smoke_dir,
         )
     )
 
@@ -85,3 +98,10 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
     assert not service.load_broker_events().empty
     assert not service.load_broker_fills().empty
     assert service.load_broker_instruction_manifest()["orders"] == 1
+    assert service.load_data_source_smoke_report()["status"] == "OK"
+    assert len(service.load_provider_probe()["probes"]) == 1
+    assert service.load_field_coverage_report()["datasets"][0]["dataset"] == "daily_bars"
+    assert service.load_data_source_audit_summary()["total_requests"] == 1
+    assert service.load_incremental_recovery_report()["ok"] is True
+    assert service.load_baseline_compare_summary()["difference_count"] == 0
+    assert service.load_dataset_contracts()["datasets"][0]["dataset"] == "daily_bars"

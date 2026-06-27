@@ -21,6 +21,7 @@ class DashboardConfig:
     matrix_cache_dir: Path = Path("data/ashare/matrix_cache")
     benchmark_dir: Path = Path("artifacts/benchmark")
     cross_source_dir: Path = Path("artifacts/cross_source")
+    data_source_smoke_dir: Path = Path("artifacts/data_source_smoke")
 
     @classmethod
     def from_env(cls) -> "DashboardConfig":
@@ -41,4 +42,5 @@ class DashboardConfig:
             matrix_cache_dir=Path(os.getenv("ASHARE_DASHBOARD_MATRIX_CACHE_DIR") or "data/ashare/matrix_cache"),
             benchmark_dir=Path(os.getenv("ASHARE_DASHBOARD_BENCHMARK_DIR") or "artifacts/benchmark"),
             cross_source_dir=Path(os.getenv("ASHARE_DASHBOARD_CROSS_SOURCE_DIR") or "artifacts/cross_source"),
+            data_source_smoke_dir=Path(os.getenv("ASHARE_DASHBOARD_DATA_SOURCE_SMOKE_DIR") or "artifacts/data_source_smoke"),
         )

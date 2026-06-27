@@ -1382,3 +1382,65 @@
 - 扩展 file adapter 的 schema validation、人工字段映射模板和差异审阅报告。
 - 增加多日 open broker orders 滚动、过期处理和 broker/account 双向对账。
 - 在真实券商接入前完成合规、权限、风控、回滚和人工确认流程设计。
+
+## 2026-06-27 - 任务 023
+
+### 本次变更摘要
+- 新增 `data_source_validation/`，提供 provider readiness、Tushare token/network gating、权限/限流/字段/空数据/异常诊断、字段覆盖、audit summary、baseline compare 和小样本 smoke report。
+- 新增 offline `FakeTushareHttpClient`，覆盖 success、permission denied、rate limited、missing fields、empty response、malformed payload 和 network error 场景；默认测试不访问真实 Tushare。
+- `TushareHttpClient` 增加 `post_with_metadata` 和 response envelope，保留 `post` 兼容；新增 permission/rate/schema/network 专用异常，异常和报告不包含 token。
+- smoke runner 复用现有 AShareDataManager、sync plan、cache、audit、quality、stats、snapshot 和 compaction 能力，不复制同步逻辑。
+- `monitoring.run_monitor` 增加 data source smoke、provider readiness、field coverage、audit summary 和 baseline compare checks。
+- dashboard Data tab 增加 data source smoke、provider probe、field coverage、audit/cache、incremental recovery、baseline diff 和 dataset contracts 摘要读取。
+- README、CATREADME、`.env.example` 更新 Tushare gated smoke、token redaction、offline fake smoke、incremental recovery smoke 和 baseline compare 说明。
+
+### 新增文件
+- `data_source_validation/__init__.py`
+- `data_source_validation/models.py`
+- `data_source_validation/contracts.py`
+- `data_source_validation/fake_tushare.py`
+- `data_source_validation/probe.py`
+- `data_source_validation/field_coverage.py`
+- `data_source_validation/audit_summary.py`
+- `data_source_validation/incremental_recovery.py`
+- `data_source_validation/baseline_compare.py`
+- `data_source_validation/report.py`
+- `data_source_validation/smoke_runner.py`
+- `data_source_validation/run_smoke.py`
+- `tests/test_data_source_validation_fake.py`
+- `tests/test_data_source_validation_smoke.py`
+- `tests/test_data_source_validation_no_old_terms.py`
+
+### 修改文件
+- `data_pipeline/ashare/providers/tushare_client.py`
+- `data_pipeline/ashare/manager.py`
+- `monitoring/checks.py`
+- `monitoring/run_monitor.py`
+- `dashboard/config.py`
+- `dashboard/data_service.py`
+- `dashboard/app.py`
+- `.env.example`
+- `README.md`
+- `CATREADME.md`
+- `FRAMEWORK_UPDATE.md`
+- `tests/test_tushare_client.py`
+- `tests/test_monitoring_reports.py`
+- `tests/test_risk_dashboard_artifacts.py`
+
+### 新增 A 股平台能力
+- `python -m data_source_validation.run_smoke --provider sample`：本地 sample smoke、quality、stats、audit、snapshot、compact 和 incremental recovery 验证。
+- `python -m data_source_validation.run_smoke --provider tushare --fake-tushare-scenario success`：离线验证 Tushare 字段映射、cache/audit 和小样本同步闭环。
+- `python -m data_source_validation.run_smoke --provider tushare --allow-network --require-token`：仅在显式允许网络且提供 token 时执行真实 Tushare 极小请求 smoke。
+- smoke report 输出 `data_source_smoke_report.json/md`、`provider_probe.json`、`field_coverage.json`、`audit_summary.json`、`incremental_recovery_report.json`、`baseline_compare_summary.json` 和 `dataset_contracts.json`。
+- baseline compare 可结构化呈现两个本地 data_dir 的 record count、missing keys、numeric diff 和 date range diff，默认不阻断 smoke。
+
+### 测试结果
+- `uv run pytest tests/test_data_source_validation*.py tests/test_tushare*.py tests/test_cross_source*.py tests/test_monitoring_reports.py tests/test_risk_dashboard_artifacts.py`：通过，30 passed。
+- `uv run pytest`：通过，276 passed。
+- 端到端 data source smoke：sample provider 成功写出 8 类数据、quality、stats、snapshot、audit 和 incremental recovery；fake Tushare success 成功写出 8 类数据且 cache hit 统计为 14/28；fake permission denied 生成结构化 `permission_denied` 诊断且默认退出 0；sample baseline compare 差异为 0；monitoring 成功读取 data source smoke artifacts；`import dashboard.app` 成功。
+
+### 后续待办
+- 用真实 Tushare token 和实际积分权限运行人工 gated smoke，确认不同 API 权限和限流表现。
+- 扩展数据源 contract 到后续新增接口，加入更严格的字段类型和业务范围校验。
+- 增加跨 provider 的真实 baseline 策略和生产阈值配置。
+- 将 online smoke 结果纳入人工上线审批清单和 dashboard 生产状态页。

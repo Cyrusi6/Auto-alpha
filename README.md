@@ -7,6 +7,7 @@ The current implementation is local-first. It uses deterministic sample data and
 ## Modules
 
 - `data_pipeline/`: A-share data configuration, sample and Tushare HTTP providers, market constraint datasets, sync planning, response cache, request audit, local JSONL storage, data quality checks, sync state, and data sync CLI.
+- `data_source_validation/`: Offline and gated-online provider readiness, Tushare permission/rate/field diagnostics, incremental recovery smoke, field coverage, audit summary, and baseline comparison reports.
 - `universe/`: Local A-share universe construction from governed data artifacts.
 - `model_core/`: A-share feature engineering, formula vocabulary, DSL operators, StackVM execution, factor evaluation, and mining engine.
 - `factor_engine/`: Cross-sectional preprocessing, market-cap and industry neutralization, correlation checks, and factor admission gate.
@@ -88,6 +89,7 @@ Common variables:
 - `TUSHARE_API_URL`: optional Tushare Pro HTTP endpoint override.
 - `TUSHARE_TIMEOUT_SECONDS`: optional HTTP timeout.
 - `TUSHARE_RETRY_COUNT`: optional HTTP retry count.
+- `RUN_TUSHARE_ONLINE_SMOKE`: optional local guard for manually running online smoke checks; tests do not require it.
 - `ASHARE_PROVIDER`: data provider, `sample` for local deterministic data or `tushare` for Tushare Pro HTTP sync.
 - `ASHARE_DATA_DIR`: local A-share data directory.
 - `ASHARE_FACTOR_STORE_DIR`: local factor store directory.
@@ -134,6 +136,50 @@ uv run python -m data_pipeline.run_pipeline \
 ```
 
 The same path works with `--provider sample` for offline verification. Planned sync writes `sync_plan.json`; request audit writes `api_audit.jsonl`; statistics write `dataset_stats.json`; snapshots are stored under `snapshots/<snapshot_name>/`. `--validate-only` validates existing artifacts without fetching data, and standalone `--compact`, `--snapshot`, and `--stats` actions operate on existing local datasets.
+
+Before using a real data token in production, run the data source smoke validator. It is offline by default and can use fake Tushare scenarios without network access:
+
+```bash
+uv run python -m data_source_validation.run_smoke \
+  --provider tushare \
+  --fake-tushare-scenario success \
+  --data-dir /tmp/auto-alpha-smoke/fake_tushare_data \
+  --output-dir /tmp/auto-alpha-smoke/fake_tushare_smoke \
+  --start-date 20240102 \
+  --end-date 20240104 \
+  --datasets securities,trade_calendar,daily_bars,daily_basic,financial_features,daily_limits,adjustment_factors,index_members \
+  --index-codes 000300.SH \
+  --cache \
+  --audit \
+  --validate \
+  --stats \
+  --run-incremental-recovery \
+  --pretty
+```
+
+Real Tushare smoke is gated. It sends requests only when `--allow-network` is passed and `TUSHARE_TOKEN` is present. Reports store only token suffix/hash metadata and never the raw token:
+
+```bash
+RUN_TUSHARE_ONLINE_SMOKE=1 TUSHARE_TOKEN=<REAL_TOKEN> \
+uv run python -m data_source_validation.run_smoke \
+  --provider tushare \
+  --allow-network \
+  --require-token \
+  --data-dir /tmp/auto-alpha-smoke/real_tushare_data \
+  --output-dir /tmp/auto-alpha-smoke/real_tushare_smoke \
+  --start-date 20240102 \
+  --end-date 20240104 \
+  --datasets securities,trade_calendar,daily_bars,daily_basic,daily_limits,adjustment_factors,index_members \
+  --index-codes 000300.SH \
+  --max-requests 20 \
+  --cache \
+  --audit \
+  --validate \
+  --stats \
+  --pretty
+```
+
+Smoke reports include `data_source_smoke_report.json/md`, `provider_probe.json`, `field_coverage.json`, `audit_summary.json`, `incremental_recovery_report.json`, `baseline_compare_summary.json`, and `dataset_contracts.json`. Use `--baseline-data-dir --compare-baseline` to compare a smoke run against a local baseline; differences are reported structurally and fail the command only with `--fail-on-baseline-diff`.
 
 Market constraint datasets include `daily_limits`, `adjustment_factors`, and `index_members`. The research and backtest stack uses `adjusted_close` for returns and raw `close` for local order simulation. The portfolio simulator applies local A-share constraints for suspension, limit up/down, T+1 selling, board lots, volume participation, and trading costs.
 
@@ -421,7 +467,7 @@ Without inbox fills, file-adapter runs only export outbox instructions and do no
 
 ## Current Gaps
 
-- Tushare HTTP provider and production sync scaffolding are available; production use still requires valid token, quota/permission verification, real full-market performance runs, and more data-source comparisons.
+- Tushare HTTP provider, production sync scaffolding, offline fake smoke, gated online smoke, permission/rate diagnostics, audit summary, incremental recovery checks, and baseline comparison are available; production use still requires real token/quota operation, real full-market performance runs, and more provider pairs.
 - Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
 - Local daily simulation supports A-share constraints, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, and paper execution quality reports; future work should add finer real-world matching and minute-level volume modeling.
 - Local formula search and a first neural-guided policy-search path are available; future work should add stronger reinforcement learning, offline pretraining, more operators, GPU performance tuning, and broader stability validation.

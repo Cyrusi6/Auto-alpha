@@ -42,7 +42,7 @@ def check_factor_drift(store: LocalFactorStore, factor_id: str | None, recent_wi
         )
         factor_id = record.factor_id if record is not None else None
     if factor_id is None:
-        alert = MonitoringAlert("error", "factor_drift", "no production or approved composite factor found")
+        alert = MonitoringAlert("warning", "factor_drift", "no production or approved composite factor found")
         return {"factor_id": None, "ok": False}, [alert]
     values = [record.value for record in store.load_factor_values(factor_id) if record.value is not None]
     recent = values[-max(recent_window, 1) :]
@@ -275,6 +275,104 @@ def check_broker_file_outbox(outbox_manifest_path: str | Path | None) -> tuple[d
         "exists": bool(payload),
         "broker_file_exported_orders": orders,
         "schema_name": payload.get("schema_name", "") if payload else "",
+    }, alerts
+
+
+def check_data_source_smoke(smoke_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not smoke_report_path:
+        return {"exists": False, "provider_status": ""}, []
+    payload = _read_json(Path(smoke_report_path))
+    status = str(payload.get("status") or "")
+    diagnostics = payload.get("diagnostics") or payload.get("provider_probe") or []
+    error_count = sum(1 for item in diagnostics if item.get("status") == "ERROR")
+    warning_count = sum(1 for item in diagnostics if item.get("status") == "WARNING")
+    alerts = []
+    if status == "ERROR" or error_count:
+        alerts.append(MonitoringAlert("error", "data_source_smoke", "data source smoke report contains errors", {"errors": error_count}))
+    elif status == "WARNING" or warning_count:
+        alerts.append(MonitoringAlert("warning", "data_source_smoke", "data source smoke report contains warnings", {"warnings": warning_count}))
+    return {
+        "exists": bool(payload),
+        "provider": payload.get("provider", ""),
+        "provider_status": status,
+        "provider_error_count": error_count,
+        "provider_warning_count": warning_count,
+        "diagnostic_counts": payload.get("diagnostic_counts", {}),
+    }, alerts
+
+
+def check_provider_readiness(smoke_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(smoke_report_path)) if smoke_report_path else {}
+    probes = payload.get("provider_probe") or payload.get("diagnostics") or []
+    permission_issues = sum(1 for item in probes if item.get("diagnostic_code") in {"permission_denied", "invalid_token"})
+    rate_limit_issues = sum(1 for item in probes if item.get("diagnostic_code") == "rate_limited")
+    network_disabled = sum(1 for item in probes if item.get("diagnostic_code") == "network_disabled")
+    alerts = []
+    if permission_issues:
+        alerts.append(MonitoringAlert("error", "provider_readiness", "provider permission diagnostics need review", {"count": permission_issues}))
+    if rate_limit_issues:
+        alerts.append(MonitoringAlert("warning", "provider_readiness", "provider rate limit diagnostics detected", {"count": rate_limit_issues}))
+    return {
+        "exists": bool(payload),
+        "api_permission_issue_count": permission_issues,
+        "rate_limit_issue_count": rate_limit_issues,
+        "network_disabled_count": network_disabled,
+    }, alerts
+
+
+def check_field_coverage(field_coverage_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not field_coverage_path:
+        return {"exists": False, "missing_field_count": 0, "empty_dataset_count": 0}, []
+    payload = _read_json(Path(field_coverage_path))
+    datasets = payload.get("datasets", []) if payload else []
+    missing = sum(len(item.get("missing_fields", []) or []) for item in datasets)
+    empty = sum(1 for item in datasets if int(item.get("records", 0) or 0) == 0)
+    duplicate = sum(int(item.get("duplicate_key_count", 0) or 0) for item in datasets)
+    alerts = []
+    if missing:
+        alerts.append(MonitoringAlert("warning", "field_coverage", "field coverage report has missing fields", {"missing_fields": missing}))
+    if duplicate:
+        alerts.append(MonitoringAlert("error", "field_coverage", "field coverage report has duplicate keys", {"duplicate_keys": duplicate}))
+    return {
+        "exists": bool(payload),
+        "datasets": len(datasets),
+        "missing_field_count": missing,
+        "empty_dataset_count": empty,
+        "duplicate_key_count": duplicate,
+    }, alerts
+
+
+def check_data_source_audit(audit_summary_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not audit_summary_path:
+        return {"exists": False, "data_source_cache_hit_rate": 0.0}, []
+    payload = _read_json(Path(audit_summary_path))
+    failed = int(payload.get("failed_requests", 0) or 0) if payload else 0
+    cache_hit_rate = float(payload.get("cache_hit_rate", 0.0) or 0.0) if payload else 0.0
+    alerts = []
+    if failed:
+        alerts.append(MonitoringAlert("error", "data_source_audit", "API audit summary contains failed requests", {"failed_requests": failed}))
+    return {
+        "exists": bool(payload),
+        "total_requests": int(payload.get("total_requests", 0) or 0) if payload else 0,
+        "failed_requests": failed,
+        "data_source_cache_hit_rate": cache_hit_rate,
+        "errors_by_category": payload.get("errors_by_category", {}) if payload else {},
+    }, alerts
+
+
+def check_baseline_compare(baseline_compare_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not baseline_compare_path:
+        return {"exists": False, "baseline_diff_count": 0}, []
+    payload = _read_json(Path(baseline_compare_path))
+    diff_count = int(payload.get("difference_count", payload.get("diff_count", 0)) or 0) if payload else 0
+    alerts = []
+    if diff_count:
+        alerts.append(MonitoringAlert("warning", "baseline_compare", "baseline comparison contains differences", {"difference_count": diff_count}))
+    return {
+        "exists": bool(payload),
+        "baseline_diff_count": diff_count,
+        "has_differences": bool(payload.get("has_differences", False)) if payload else False,
+        "metrics": payload.get("metrics", {}) if payload else {},
     }, alerts
 
 

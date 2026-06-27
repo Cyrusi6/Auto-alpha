@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from .audit import ApiRequestAuditor
+from .audit import ApiRequestAuditEntry, ApiRequestAuditor, utc_now
 from .cache import TushareResponseCache
 from .config import AShareDataConfig
 from .pipeline import ASHARE_DATASETS
@@ -314,7 +315,36 @@ class AShareDataManager:
             job_config = replace(self.config, **overrides)
 
         fetcher = getattr(self.provider, f"fetch_{job.dataset}")
-        return list(fetcher(job_config))
+        started_at = utc_now()
+        started = time.perf_counter()
+        records: list[object] = []
+        status = "success"
+        error: str | None = None
+        try:
+            records = list(fetcher(job_config))
+            return records
+        except Exception as exc:
+            status = "error"
+            error = str(exc)
+            raise
+        finally:
+            if auditor is not None:
+                auditor.write(
+                    ApiRequestAuditEntry(
+                        api_name=f"{self.config.provider}:{job.dataset}",
+                        dataset=job.dataset,
+                        start_date=job.start_date,
+                        end_date=job.end_date,
+                        index_code=job.index_code,
+                        cache_hit=False,
+                        records=len(records),
+                        status=status,
+                        error=error,
+                        started_at=started_at,
+                        finished_at=utc_now(),
+                        duration_seconds=max(0.0, time.perf_counter() - started),
+                    )
+                )
 
 
 def sync_ashare_datasets(

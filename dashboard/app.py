@@ -111,6 +111,45 @@ def render_app(config: DashboardConfig | None = None) -> None:
         with col2:
             _show_dataframe_or_empty("Daily Bars", service.load_dataset("daily_bars"))
             _show_dataframe_or_empty("Adjustment Factors", service.load_dataset("adjustment_factors"))
+        smoke_report = service.load_data_source_smoke_report()
+        provider_probe = service.load_provider_probe()
+        field_coverage = service.load_field_coverage_report()
+        smoke_audit = service.load_data_source_audit_summary()
+        incremental_recovery = service.load_incremental_recovery_report()
+        baseline_compare = service.load_baseline_compare_summary()
+        dataset_contracts = service.load_dataset_contracts()
+        st.subheader("Data Source Smoke")
+        if smoke_report:
+            st.json(
+                {
+                    "provider": smoke_report.get("provider"),
+                    "status": smoke_report.get("status"),
+                    "diagnostic_counts": smoke_report.get("diagnostic_counts", {}),
+                    "datasets": [
+                        {
+                            "dataset": item.get("dataset"),
+                            "status": item.get("status"),
+                            "records": item.get("records"),
+                            "quality_errors": item.get("quality_errors"),
+                            "quality_warnings": item.get("quality_warnings"),
+                        }
+                        for item in smoke_report.get("datasets", [])
+                    ],
+                }
+            )
+        else:
+            st.info("No data_source_smoke_report.json found.")
+        st.json(
+            {
+                "provider_probe_count": len(provider_probe.get("probes", [])) if provider_probe else 0,
+                "field_coverage_datasets": len(field_coverage.get("datasets", [])) if field_coverage else 0,
+                "audit_total_requests": smoke_audit.get("total_requests", 0) if smoke_audit else 0,
+                "cache_hit_rate": smoke_audit.get("cache_hit_rate", 0.0) if smoke_audit else 0.0,
+                "incremental_recovery_ok": incremental_recovery.get("ok") if incremental_recovery else None,
+                "baseline_differences": baseline_compare.get("difference_count", baseline_compare.get("diff_count", 0)) if baseline_compare else 0,
+                "dataset_contracts": len(dataset_contracts.get("datasets", [])) if dataset_contracts else 0,
+            }
+        )
 
     with factor_tab:
         factors = service.load_factors()

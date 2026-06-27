@@ -15,15 +15,20 @@ from .checks import (
     check_broker_idempotency,
     check_broker_reconciliation,
     check_broker_rejected_orders,
+    check_baseline_compare,
     check_open_broker_orders,
     check_capacity_warnings,
+    check_data_source_audit,
+    check_data_source_smoke,
     check_data_freshness,
     check_execution_quality,
     check_factor_risk_concentration,
     check_factor_drift,
+    check_field_coverage,
     check_impact_cost_spike,
     check_order_fill_quality,
     check_paper_account,
+    check_provider_readiness,
     check_quality_report,
     check_risk_report,
     check_style_exposure_drift,
@@ -51,6 +56,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--broker-batch-id")
     parser.add_argument("--broker-reconciliation-path")
     parser.add_argument("--broker-outbox-manifest-path")
+    parser.add_argument("--data-source-smoke-report-path")
+    parser.add_argument("--field-coverage-path")
+    parser.add_argument("--audit-summary-path")
+    parser.add_argument("--baseline-compare-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -83,6 +92,11 @@ def main(argv: list[str] | None = None) -> int:
             "broker_file_outbox",
             lambda: check_broker_file_outbox(args.broker_outbox_manifest_path or _default_broker_outbox_manifest(args.orders_dir)),
         ),
+        ("data_source_smoke", lambda: check_data_source_smoke(args.data_source_smoke_report_path)),
+        ("provider_readiness", lambda: check_provider_readiness(args.data_source_smoke_report_path)),
+        ("field_coverage", lambda: check_field_coverage(args.field_coverage_path)),
+        ("data_source_audit", lambda: check_data_source_audit(args.audit_summary_path)),
+        ("baseline_compare", lambda: check_baseline_compare(args.baseline_compare_path)),
         ("fill_quality", lambda: check_order_fill_quality(Path(args.orders_dir) / "paper_fills.jsonl")),
         ("paper_account", lambda: check_paper_account(args.paper_account_dir)),
     ]:

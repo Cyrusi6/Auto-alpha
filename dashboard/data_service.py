@@ -481,6 +481,55 @@ class AshareDashboardService:
                 return path.read_text(encoding="utf-8")
         return ""
 
+    def load_data_source_smoke_report(self) -> dict[str, Any]:
+        for path in self._data_source_smoke_candidates("data_source_smoke_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_provider_probe(self) -> dict[str, Any]:
+        for path in self._data_source_smoke_candidates("provider_probe.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_field_coverage_report(self) -> dict[str, Any]:
+        for path in self._data_source_smoke_candidates("field_coverage.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_data_source_audit_summary(self) -> dict[str, Any]:
+        for path in self._data_source_smoke_candidates("audit_summary.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_incremental_recovery_report(self) -> dict[str, Any]:
+        for path in self._data_source_smoke_candidates("incremental_recovery_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_baseline_compare_summary(self) -> dict[str, Any]:
+        for path in self._data_source_smoke_candidates("baseline_compare_summary.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_dataset_contracts(self) -> dict[str, Any]:
+        for path in self._data_source_smoke_candidates("dataset_contracts.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
     def _neural_artifact_candidates(self, filename: str) -> list[Path]:
         root = self.config.report_dir.parent
         return [
@@ -545,6 +594,16 @@ class AshareDashboardService:
         return [
             self.config.cross_source_dir / filename,
             root / "cross_source" / filename,
+        ]
+
+    def _data_source_smoke_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.data_source_smoke_dir / filename,
+            root / "data_source_smoke" / filename,
+            root / "sample_smoke" / filename,
+            root / "fake_tushare_smoke" / filename,
+            root / "real_tushare_smoke" / filename,
         ]
 
     def _risk_artifact_candidates(self, filename: str) -> list[Path]:

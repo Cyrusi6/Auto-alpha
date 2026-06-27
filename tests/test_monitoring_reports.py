@@ -162,3 +162,68 @@ def test_monitoring_quality_error_produces_error_alert(tmp_path):
 
     assert payload["ok"] is False
     assert alerts[0].severity == "error"
+
+
+def test_monitoring_reads_data_source_smoke_artifacts(tmp_path, capsys):
+    data_dir, store_dir, account_dir, orders_dir, broker_dir = _prepare_monitoring_artifacts(tmp_path)
+    smoke_dir = tmp_path / "smoke"
+    smoke_dir.mkdir()
+    smoke_report = {
+        "provider": "tushare",
+        "status": "WARNING",
+        "diagnostic_counts": {"missing_fields": 1},
+        "provider_probe": [
+            {"status": "WARNING", "diagnostic_code": "missing_fields"},
+            {"status": "OK", "diagnostic_code": None},
+        ],
+    }
+    field_coverage = {
+        "datasets": [
+            {"dataset": "daily_bars", "records": 3, "missing_fields": ["amount"], "duplicate_key_count": 0},
+            {"dataset": "daily_basic", "records": 0, "missing_fields": [], "duplicate_key_count": 0},
+        ]
+    }
+    audit_summary = {"total_requests": 4, "failed_requests": 0, "cache_hit_rate": 0.5, "errors_by_category": {}}
+    baseline = {"compared": True, "has_differences": True, "difference_count": 1, "metrics": {"max_record_count_diff": 1}}
+    (smoke_dir / "data_source_smoke_report.json").write_text(json.dumps(smoke_report), encoding="utf-8")
+    (smoke_dir / "field_coverage.json").write_text(json.dumps(field_coverage), encoding="utf-8")
+    (smoke_dir / "audit_summary.json").write_text(json.dumps(audit_summary), encoding="utf-8")
+    (smoke_dir / "baseline_compare_summary.json").write_text(json.dumps(baseline), encoding="utf-8")
+
+    exit_code = run_monitor.main(
+        [
+            "--data-dir",
+            str(data_dir),
+            "--factor-store-dir",
+            str(store_dir),
+            "--paper-account-dir",
+            str(account_dir),
+            "--orders-dir",
+            str(orders_dir),
+            "--output-dir",
+            str(tmp_path / "monitoring_ds"),
+            "--as-of-date",
+            "20240104",
+            "--broker-store-dir",
+            str(broker_dir),
+            "--broker-batch-id",
+            "batch_monitor",
+            "--data-source-smoke-report-path",
+            str(smoke_dir / "data_source_smoke_report.json"),
+            "--field-coverage-path",
+            str(smoke_dir / "field_coverage.json"),
+            "--audit-summary-path",
+            str(smoke_dir / "audit_summary.json"),
+            "--baseline-compare-path",
+            str(smoke_dir / "baseline_compare_summary.json"),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["checks"]["data_source_smoke"]["provider_status"] == "WARNING"
+    assert payload["checks"]["provider_readiness"]["api_permission_issue_count"] == 0
+    assert payload["checks"]["field_coverage"]["missing_field_count"] == 1
+    assert payload["checks"]["field_coverage"]["empty_dataset_count"] == 1
+    assert payload["checks"]["data_source_audit"]["data_source_cache_hit_rate"] == 0.5
+    assert payload["checks"]["baseline_compare"]["baseline_diff_count"] == 1
