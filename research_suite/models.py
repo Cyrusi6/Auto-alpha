@@ -51,6 +51,13 @@ class ResearchSuiteConfig:
     max_turnover: float = 1.0
     max_industry_active_weight: float = 0.20
     max_tracking_error: float = 1.0
+    use_factor_risk_model: bool = False
+    risk_model_lookback: int | None = None
+    risk_model_shrinkage: float = 0.1
+    attribution: bool = False
+    max_style_exposure: float | None = None
+    max_active_style_exposure: float | None = None
+    max_factor_risk_contribution: float | None = None
     promote_latest_composite: bool = False
     pretty: bool = False
     skip_data_sync: bool = False
@@ -113,6 +120,9 @@ class PromotionConfig:
     max_constraint_reject_rate: float = 1.0
     max_tracking_error: float = 1.0
     max_constraint_violations: float = 999.0
+    max_active_style_exposure_abs: float = 999.0
+    max_factor_risk_share: float = 1.0
+    max_specific_risk_share: float = 1.0
     require_composite: bool = True
 
 

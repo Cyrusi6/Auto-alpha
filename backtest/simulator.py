@@ -8,9 +8,14 @@ import torch
 
 from portfolio_optimizer import OptimizationConfig, PortfolioOptimizer
 from risk_model import (
+    active_risk_decomposition,
+    attribute_active_return,
     benchmark_weights_from_index_members,
+    build_barra_like_risk_model,
     build_risk_report,
     estimate_return_covariance,
+    portfolio_factor_exposure,
+    portfolio_risk_decomposition,
 )
 
 from .cost import AShareCostModel
@@ -33,6 +38,13 @@ class AShareBacktestSimulator:
         max_industry_active_weight: float = 0.20,
         max_tracking_error: float = 1.0,
         factor_id: str | None = None,
+        use_factor_risk_model: bool = False,
+        risk_model_lookback: int | None = None,
+        risk_model_shrinkage: float = 0.1,
+        attribution: bool = False,
+        max_style_exposure: float | None = None,
+        max_active_style_exposure: float | None = None,
+        max_factor_risk_contribution: float | None = None,
         cost_model: AShareCostModel | None = None,
         trading_rules: AShareTradingRules | None = None,
     ):
@@ -50,11 +62,24 @@ class AShareBacktestSimulator:
             max_turnover=max_turnover,
             max_industry_active_weight=max_industry_active_weight,
             max_tracking_error=max_tracking_error,
+            use_factor_risk_model=use_factor_risk_model,
+            risk_model_lookback=risk_model_lookback,
+            risk_model_shrinkage=risk_model_shrinkage,
+            max_style_exposure=max_style_exposure,
+            max_active_style_exposure=max_active_style_exposure,
+            max_factor_risk_contribution=max_factor_risk_contribution,
         )
+        self.use_factor_risk_model = bool(use_factor_risk_model)
+        self.risk_model_lookback = risk_model_lookback
+        self.risk_model_shrinkage = float(risk_model_shrinkage)
+        self.attribution = bool(attribution)
         self.cost_model = cost_model or AShareCostModel()
         self.trading_rules = trading_rules or AShareTradingRules(max_position_weight=max_weight)
         self.risk_reports: list[object] = []
         self.optimization_results: list[object] = []
+        self.risk_exposure_rows: list[dict[str, object]] = []
+        self.risk_decomposition_rows: list[dict[str, object]] = []
+        self.return_attribution_rows: list[dict[str, object]] = []
 
     def simulate(self, factors, loader) -> PortfolioBacktestResult:
         if self.portfolio_method not in {"equal_weight", "risk_aware"}:
@@ -88,6 +113,11 @@ class AShareBacktestSimulator:
         covariance = estimate_return_covariance(loader)
         optimizer = PortfolioOptimizer(self.optimization_config)
         risk_metric_rows: list[dict[str, float]] = []
+        factor_risk_model = (
+            build_barra_like_risk_model(loader, lookback=self.risk_model_lookback, shrinkage=self.risk_model_shrinkage)
+            if self.use_factor_risk_model
+            else None
+        )
 
         for date_idx, trade_date in enumerate(loader.trade_dates):
             if date_idx > 0:
@@ -117,9 +147,48 @@ class AShareBacktestSimulator:
                     factor_id=self.factor_id,
                     covariance=covariance,
                     turnover=opt_result.turnover,
+                    factor_risk_model=factor_risk_model,
                 )
                 self.risk_reports.append(risk_report)
                 risk_metric_rows.append(risk_report.metrics.to_dict())
+                if factor_risk_model is not None:
+                    style_names = set(factor_risk_model.exposure_matrix.style_factor_names)
+                    exposure = portfolio_factor_exposure(desired_weights, factor_risk_model, date_idx)
+                    active_style = portfolio_factor_exposure(desired_weights - benchmark, factor_risk_model, date_idx)
+                    risk_payload = portfolio_risk_decomposition(desired_weights, factor_risk_model, date_idx)
+                    active_payload = active_risk_decomposition(desired_weights, benchmark, factor_risk_model, date_idx)
+                    attribution_payload = (
+                        attribute_active_return(
+                            desired_weights,
+                            benchmark,
+                            target_ret[:, date_idx],
+                            factor_risk_model.exposure_matrix,
+                            factor_risk_model.factor_returns,
+                            date_idx,
+                        )
+                        if self.attribution
+                        else {}
+                    )
+                    self.risk_exposure_rows.append(
+                        {
+                            "trade_date": trade_date,
+                            "factor_id": self.factor_id,
+                            "style_exposures": {name: float(exposure.get(name, 0.0)) for name in sorted(style_names)},
+                            "active_style_exposures": {name: float(active_style.get(name, 0.0)) for name in sorted(style_names)},
+                            "max_style_exposure_abs": max((abs(float(exposure.get(name, 0.0))) for name in style_names), default=0.0),
+                            "max_active_style_exposure_abs": max((abs(float(active_style.get(name, 0.0))) for name in style_names), default=0.0),
+                        }
+                    )
+                    self.risk_decomposition_rows.append(
+                        {
+                            "trade_date": trade_date,
+                            "factor_id": self.factor_id,
+                            "portfolio": risk_payload,
+                            "active": active_payload,
+                        }
+                    )
+                    if attribution_payload:
+                        self.return_attribution_rows.append({"trade_date": trade_date, "factor_id": self.factor_id, **attribution_payload})
             else:
                 desired_weights = target_weights[:, date_idx].clone()
             desired_weights = torch.clamp(desired_weights, 0.0, self.max_weight)
@@ -231,6 +300,8 @@ class AShareBacktestSimulator:
         metrics = self._metrics(snapshots, fills, total_cost)
         if risk_metric_rows:
             metrics.update(_average_risk_metrics(risk_metric_rows))
+        if self.risk_decomposition_rows:
+            metrics.update(_average_factor_risk_metrics(self.risk_decomposition_rows, self.risk_exposure_rows))
         return PortfolioBacktestResult(snapshots=snapshots, fills=fills, metrics=metrics)
 
     def _metrics(self, snapshots: list[PortfolioSnapshot], fills: list[TradeFill], total_cost: float) -> dict[str, float]:
@@ -302,4 +373,26 @@ def _average_risk_metrics(rows: list[dict[str, float]]) -> dict[str, float]:
         "avg_top_weight": avg("top_weight"),
         "avg_industry_active": avg("industry_active_max"),
         "risk_constraint_violations": avg("violations"),
+    }
+
+
+def _average_factor_risk_metrics(
+    decomposition_rows: list[dict[str, object]],
+    exposure_rows: list[dict[str, object]],
+) -> dict[str, float]:
+    portfolio_rows = [row.get("portfolio", {}) for row in decomposition_rows]
+    active_rows = [row.get("active", {}) for row in decomposition_rows]
+
+    def avg(rows, key: str) -> float:
+        values = [float(row.get(key, 0.0) or 0.0) for row in rows if isinstance(row, dict)]
+        return sum(values) / len(values) if values else 0.0
+
+    return {
+        "avg_factor_risk": avg(portfolio_rows, "factor_risk"),
+        "avg_specific_risk": avg(portfolio_rows, "specific_risk"),
+        "avg_active_factor_risk": avg(active_rows, "factor_risk"),
+        "max_style_exposure_abs": max((float(row.get("max_style_exposure_abs", 0.0) or 0.0) for row in exposure_rows), default=0.0),
+        "max_active_style_exposure_abs": max((float(row.get("max_active_style_exposure_abs", 0.0) or 0.0) for row in exposure_rows), default=0.0),
+        "max_factor_risk_share": max((float(row.get("factor_risk_share", 0.0) or 0.0) for row in portfolio_rows if isinstance(row, dict)), default=0.0),
+        "max_specific_risk_share": max((float(row.get("specific_risk_share", 0.0) or 0.0) for row in portfolio_rows if isinstance(row, dict)), default=0.0),
     }

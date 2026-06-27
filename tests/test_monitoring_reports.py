@@ -48,6 +48,32 @@ def _prepare_monitoring_artifacts(tmp_path):
         ],
         orders_dir / "paper_fills.jsonl",
     )
+    (orders_dir / "risk_model_report.json").write_text(
+        json.dumps(
+            {
+                "violations": [],
+                "metrics": {"tracking_error": 0.1},
+                "factor_risk_contribution": {
+                    "factor_risk_share": 0.4,
+                    "specific_risk_share": 0.6,
+                    "factor_contributions": {"size": 0.2, "value": 0.1},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (orders_dir / "risk_exposures.jsonl").write_text(
+        '{"trade_date":"20240104","max_style_exposure_abs":0.5,"max_active_style_exposure_abs":0.4}\n',
+        encoding="utf-8",
+    )
+    (orders_dir / "risk_decomposition.jsonl").write_text(
+        '{"trade_date":"20240104","active":{"total_risk":0.2}}\n',
+        encoding="utf-8",
+    )
+    (orders_dir / "return_attribution.jsonl").write_text(
+        '{"trade_date":"20240104","total_active_return":0.01}\n',
+        encoding="utf-8",
+    )
     return data_dir, tmp_path / "store", tmp_path / "account", orders_dir
 
 
@@ -74,6 +100,10 @@ def test_monitoring_report_cli_writes_alerts(tmp_path, capsys):
 
     assert exit_code == 0
     assert payload["checks"]["data_freshness"]["ok"] is True
+    assert payload["checks"]["style_exposure_drift"]["exists"] is True
+    assert payload["checks"]["active_risk_drift"]["exists"] is True
+    assert payload["checks"]["factor_risk_concentration"]["exists"] is True
+    assert payload["checks"]["attribution_anomaly"]["exists"] is True
     assert any(alert["check"] == "fill_quality" for alert in payload["alerts"])
     assert (tmp_path / "monitoring" / "monitoring_report.json").exists()
     assert (tmp_path / "monitoring" / "monitoring_report.md").exists()

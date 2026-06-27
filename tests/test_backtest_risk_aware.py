@@ -71,3 +71,46 @@ def test_backtest_risk_aware_outputs_risk_metrics(tmp_path, capsys):
     assert "risk_constraint_violations" in payload["metrics"]
     assert (risk_dir / "risk_report.json").exists()
     assert (output_dir / "optimization_result.json").exists()
+
+
+def test_backtest_factor_risk_model_outputs_exposure_and_attribution(tmp_path, capsys):
+    data_dir, store_dir, factor_id = _prepare_factor(tmp_path)
+    output_dir = tmp_path / "backtest_factor_risk"
+    risk_dir = tmp_path / "risk_factor_model"
+
+    result = run_backtest.main(
+        [
+            "--data-dir",
+            str(data_dir),
+            "--factor-store-dir",
+            str(store_dir),
+            "--output-dir",
+            str(output_dir),
+            "--factor-id",
+            factor_id,
+            "--portfolio-method",
+            "risk_aware",
+            "--index-code",
+            "000300.SH",
+            "--top-n",
+            "2",
+            "--max-weight",
+            "0.10",
+            "--use-factor-risk-model",
+            "--risk-model-lookback",
+            "3",
+            "--attribution",
+            "--risk-report-dir",
+            str(risk_dir),
+            "--pretty",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert result == 0
+    assert "avg_factor_risk" in payload["metrics"]
+    assert "max_active_style_exposure_abs" in payload["metrics"]
+    assert (risk_dir / "risk_model_report.json").exists()
+    assert (output_dir / "risk_exposures.jsonl").exists()
+    assert (output_dir / "risk_decomposition.jsonl").exists()
+    assert (output_dir / "return_attribution.jsonl").exists()

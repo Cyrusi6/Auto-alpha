@@ -307,40 +307,51 @@ class ResearchSuiteRunner:
         return payload, output_paths
 
     def _stage_backtest(self) -> tuple[dict[str, Any], dict[str, str]]:
-        payload = _run_json_main(
-            run_backtest.main,
-            [
-                "--data-dir",
-                self.config.data_dir,
-                "--factor-store-dir",
-                self.config.factor_store_dir,
-                "--output-dir",
-                self.config.backtest_dir,
-                "--latest-approved",
-                "--factor-type",
-                "composite",
-                "--top-n",
-                "2",
-                "--max-weight",
-                "0.10",
-                "--portfolio-method",
-                self.config.portfolio_method,
-                "--index-code",
-                self.config.index_code,
-                "--risk-aversion",
-                str(self.config.risk_aversion),
-                "--turnover-penalty",
-                str(self.config.turnover_penalty),
-                "--max-turnover",
-                str(self.config.max_turnover),
-                "--max-industry-active-weight",
-                str(self.config.max_industry_active_weight),
-                "--max-tracking-error",
-                str(self.config.max_tracking_error),
-                "--risk-report-dir",
-                str(Path(self.config.backtest_dir) / "risk"),
-            ],
-        )
+        argv = [
+            "--data-dir",
+            self.config.data_dir,
+            "--factor-store-dir",
+            self.config.factor_store_dir,
+            "--output-dir",
+            self.config.backtest_dir,
+            "--latest-approved",
+            "--factor-type",
+            "composite",
+            "--top-n",
+            "2",
+            "--max-weight",
+            "0.10",
+            "--portfolio-method",
+            self.config.portfolio_method,
+            "--index-code",
+            self.config.index_code,
+            "--risk-aversion",
+            str(self.config.risk_aversion),
+            "--turnover-penalty",
+            str(self.config.turnover_penalty),
+            "--max-turnover",
+            str(self.config.max_turnover),
+            "--max-industry-active-weight",
+            str(self.config.max_industry_active_weight),
+            "--max-tracking-error",
+            str(self.config.max_tracking_error),
+            "--risk-report-dir",
+            str(Path(self.config.backtest_dir) / "risk"),
+        ]
+        if self.config.use_factor_risk_model:
+            argv.extend(["--use-factor-risk-model", "--risk-model-shrinkage", str(self.config.risk_model_shrinkage)])
+        if self.config.risk_model_lookback is not None:
+            argv.extend(["--risk-model-lookback", str(self.config.risk_model_lookback)])
+        if self.config.attribution:
+            argv.append("--attribution")
+        if self.config.max_style_exposure is not None:
+            argv.extend(["--max-style-exposure", str(self.config.max_style_exposure)])
+        if self.config.max_active_style_exposure is not None:
+            argv.extend(["--max-active-style-exposure", str(self.config.max_active_style_exposure)])
+        if self.config.max_factor_risk_contribution is not None:
+            argv.extend(["--max-factor-risk-contribution", str(self.config.max_factor_risk_contribution)])
+
+        payload = _run_json_main(run_backtest.main, argv)
         self.backtest_summary = payload
         self.selected_factor_id = str(payload.get("factor_id") or self.selected_factor_id)
         output_paths = {
@@ -354,6 +365,12 @@ class ResearchSuiteRunner:
             output_paths["risk_report_markdown"] = str(payload["risk_report_md_path"])
         if payload.get("optimization_result_path"):
             output_paths["optimization_result"] = str(payload["optimization_result_path"])
+        if payload.get("risk_exposures_path"):
+            output_paths["risk_exposures"] = str(payload["risk_exposures_path"])
+        if payload.get("risk_decomposition_path"):
+            output_paths["risk_decomposition"] = str(payload["risk_decomposition_path"])
+        if payload.get("return_attribution_path"):
+            output_paths["return_attribution"] = str(payload["return_attribution_path"])
         if self.selected_factor_id:
             output_paths["selected_factor_values"] = str(
                 Path(self.config.factor_store_dir) / "factor_values" / f"{self.selected_factor_id}.jsonl"
@@ -363,40 +380,47 @@ class ResearchSuiteRunner:
         return payload, output_paths
 
     def _stage_orders(self) -> tuple[dict[str, Any], dict[str, str]]:
-        payload = _run_json_main(
-            strategy_runner.main,
-            [
-                "--data-dir",
-                self.config.data_dir,
-                "--factor-store-dir",
-                self.config.factor_store_dir,
-                "--output-dir",
-                self.config.orders_dir,
-                "--latest-approved",
-                "--factor-type",
-                "composite",
-                "--top-n",
-                "2",
-                "--max-weight",
-                "0.10",
-                "--portfolio-value",
-                "1000000",
-                "--portfolio-method",
-                self.config.portfolio_method,
-                "--index-code",
-                self.config.index_code,
-                "--risk-aversion",
-                str(self.config.risk_aversion),
-                "--turnover-penalty",
-                str(self.config.turnover_penalty),
-                "--max-turnover",
-                str(self.config.max_turnover),
-                "--max-industry-active-weight",
-                str(self.config.max_industry_active_weight),
-                "--max-tracking-error",
-                str(self.config.max_tracking_error),
-            ],
-        )
+        argv = [
+            "--data-dir",
+            self.config.data_dir,
+            "--factor-store-dir",
+            self.config.factor_store_dir,
+            "--output-dir",
+            self.config.orders_dir,
+            "--latest-approved",
+            "--factor-type",
+            "composite",
+            "--top-n",
+            "2",
+            "--max-weight",
+            "0.10",
+            "--portfolio-value",
+            "1000000",
+            "--portfolio-method",
+            self.config.portfolio_method,
+            "--index-code",
+            self.config.index_code,
+            "--risk-aversion",
+            str(self.config.risk_aversion),
+            "--turnover-penalty",
+            str(self.config.turnover_penalty),
+            "--max-turnover",
+            str(self.config.max_turnover),
+            "--max-industry-active-weight",
+            str(self.config.max_industry_active_weight),
+            "--max-tracking-error",
+            str(self.config.max_tracking_error),
+        ]
+        if self.config.use_factor_risk_model:
+            argv.extend(["--use-factor-risk-model", "--risk-model-shrinkage", str(self.config.risk_model_shrinkage)])
+        if self.config.risk_model_lookback is not None:
+            argv.extend(["--risk-model-lookback", str(self.config.risk_model_lookback)])
+        if self.config.max_style_exposure is not None:
+            argv.extend(["--max-style-exposure", str(self.config.max_style_exposure)])
+        if self.config.max_active_style_exposure is not None:
+            argv.extend(["--max-active-style-exposure", str(self.config.max_active_style_exposure)])
+
+        payload = _run_json_main(strategy_runner.main, argv)
         output_paths = {
             "target_positions": str(Path(self.config.orders_dir) / "target_positions.jsonl"),
             "orders": str(Path(self.config.orders_dir) / "orders.jsonl"),
@@ -452,7 +476,14 @@ class ResearchSuiteRunner:
             self.selected_factor_id,
             walk_result,
             self.backtest_summary.get("metrics", {}),
-            PromotionConfig(),
+            PromotionConfig(
+                max_active_style_exposure_abs=self.config.max_active_style_exposure
+                if self.config.max_active_style_exposure is not None
+                else 999.0,
+                max_factor_risk_share=self.config.max_factor_risk_contribution
+                if self.config.max_factor_risk_contribution is not None
+                else 1.0,
+            ),
         )
         path = write_promotion_decision(self.promotion_decision, self.config.output_dir)
         self.catalog = register_artifact(self.catalog, "promotion_decision", path, "json", "promotion")

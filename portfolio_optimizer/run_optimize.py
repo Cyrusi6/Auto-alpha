@@ -10,7 +10,14 @@ from backtest.io import describe_factor, select_factor_id
 from execution.exporter import export_orders_jsonl
 from factor_store import LocalFactorStore
 from model_core.data_loader import AShareDataLoader
-from risk_model import benchmark_weights_from_index_members, build_risk_report, estimate_return_covariance, write_risk_report
+from risk_model import (
+    benchmark_weights_from_index_members,
+    build_barra_like_risk_model,
+    build_risk_report,
+    estimate_return_covariance,
+    write_risk_model_report,
+    write_risk_report,
+)
 
 from .models import OptimizationConfig
 from .optimizer import PortfolioOptimizer
@@ -33,6 +40,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-turnover", type=float, default=1.0)
     parser.add_argument("--max-industry-active-weight", type=float, default=0.20)
     parser.add_argument("--max-tracking-error", type=float, default=1.0)
+    parser.add_argument("--use-factor-risk-model", action="store_true")
+    parser.add_argument("--risk-model-lookback", type=int)
+    parser.add_argument("--risk-model-shrinkage", type=float, default=0.1)
+    parser.add_argument("--max-style-exposure", type=float)
+    parser.add_argument("--max-active-style-exposure", type=float)
+    parser.add_argument("--max-factor-risk-contribution", type=float)
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -57,6 +70,12 @@ def main(argv: list[str] | None = None) -> int:
         max_turnover=args.max_turnover,
         max_industry_active_weight=args.max_industry_active_weight,
         max_tracking_error=args.max_tracking_error,
+        use_factor_risk_model=args.use_factor_risk_model,
+        risk_model_lookback=args.risk_model_lookback,
+        risk_model_shrinkage=args.risk_model_shrinkage,
+        max_style_exposure=args.max_style_exposure,
+        max_active_style_exposure=args.max_active_style_exposure,
+        max_factor_risk_contribution=args.max_factor_risk_contribution,
     )
     result = PortfolioOptimizer(config).optimize(
         factor_matrix[:, date_idx],
@@ -94,6 +113,11 @@ def main(argv: list[str] | None = None) -> int:
         encoding="utf-8",
     )
     weight_vector = _weights_to_vector(result.weights, loader.ts_codes)
+    factor_risk_model = (
+        build_barra_like_risk_model(loader, lookback=args.risk_model_lookback, shrinkage=args.risk_model_shrinkage)
+        if args.use_factor_risk_model
+        else None
+    )
     risk_report = build_risk_report(
         weight_vector,
         benchmark,
@@ -103,8 +127,13 @@ def main(argv: list[str] | None = None) -> int:
         factor_id=factor_id,
         covariance=covariance,
         turnover=result.turnover,
+        factor_risk_model=factor_risk_model,
     )
     risk_json, risk_md = write_risk_report(risk_report, output_dir)
+    risk_model_json = None
+    risk_model_md = None
+    if args.use_factor_risk_model:
+        risk_model_json, risk_model_md = write_risk_model_report(risk_report, output_dir)
     summary = {
         "factor_id": factor_id,
         "factor_type": factor_meta["factor_type"],
@@ -114,6 +143,8 @@ def main(argv: list[str] | None = None) -> int:
         "optimization_result_path": str(output_dir / "optimization_result.json"),
         "risk_report_path": str(risk_json),
         "risk_report_md_path": str(risk_md),
+        "risk_model_report_path": str(risk_model_json) if risk_model_json else None,
+        "risk_model_report_md_path": str(risk_model_md) if risk_model_md else None,
         "metrics": risk_report.metrics.to_dict(),
         "violations": result.violations,
     }

@@ -52,14 +52,21 @@ def test_daily_run_requires_approval_then_executes_approved_batch(tmp_path):
         orders_dir=tmp_path / "orders",
         latest_production=True,
         rebalance_date="20240104",
+        portfolio_method="risk_aware",
+        index_code="000300.SH",
         top_n=2,
         max_weight=0.10,
+        use_factor_risk_model=True,
+        max_active_style_exposure=1.0,
     )
     proposed = runner.run(require_approval=True)
 
     assert proposed.status == "pending_approval"
     assert proposed.factor_id == factor_id
     assert proposed.approval_id
+    assert proposed.summary["style_exposures"]
+    assert proposed.summary["active_style_exposures"]
+    assert proposed.summary["risk_decomposition"]
     assert not (tmp_path / "orders" / "paper_fills.jsonl").exists()
     assert LocalApprovalStore(tmp_path / "approvals").load_batch(proposed.approval_id).status == "pending"
 
@@ -89,6 +96,8 @@ def test_daily_run_requires_approval_then_executes_approved_batch(tmp_path):
 
     assert executed.status == "executed"
     assert executed.executed is True
+    assert executed.summary["style_exposures"]
+    assert executed.summary["active_style_exposures"]
     assert (tmp_path / "orders" / "paper_fills.jsonl").exists()
     assert (tmp_path / "account" / "account_state.json").exists()
     assert (tmp_path / "account" / "account_snapshots.jsonl").exists()

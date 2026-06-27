@@ -16,7 +16,7 @@ The current implementation is local-first. It uses deterministic sample data and
 - `formula_search/`: Formula metadata, random generation, mutation, crossover, multi-generation search, and search reports.
 - `neural_search/`: AlphaGPT warm-start training, action-mask constrained formula sampling, lightweight policy search, checkpointing, and neural search reports.
 - `research_suite/`: One-click orchestration, walk-forward robustness, production-candidate promotion, and artifact catalog.
-- `risk_model/`: Security exposures, portfolio/benchmark active exposures, covariance, risk constraints, and risk reports.
+- `risk_model/`: Security exposures, Barra-like style and industry factors, factor returns, risk decomposition, attribution, covariance, risk constraints, and risk reports.
 - `portfolio_optimizer/`: Deterministic long-only benchmark-aware portfolio optimizer.
 - `backtest/`: Long-only A-share portfolio simulation, market constraints, and benchmark-aware risk mode.
 - `execution/`: Paper broker and order/fill export utilities.
@@ -235,6 +235,8 @@ uv run python -m portfolio_optimizer.run_optimize \
   --max-names 2 \
   --risk-aversion 1.0 \
   --turnover-penalty 0.1 \
+  --use-factor-risk-model \
+  --max-active-style-exposure 1.0 \
   --pretty
 
 uv run python -m backtest.run_backtest \
@@ -248,10 +250,14 @@ uv run python -m backtest.run_backtest \
   --top-n 2 \
   --max-weight 0.10 \
   --risk-report-dir /tmp/auto-alpha-demo/risk_reports \
+  --use-factor-risk-model \
+  --attribution \
   --pretty
 ```
 
-`strategy_manager.runner` and `research_suite.run_suite` accept the same `--portfolio-method risk_aware`, `--index-code`, `--risk-aversion`, `--turnover-penalty`, `--max-turnover`, `--max-industry-active-weight`, and `--max-tracking-error` controls. Risk-aware artifacts include `optimization_result.json`, `risk_report.json`, and `risk_report.md`; target positions include optimized, benchmark, and active weights.
+Barra-like risk model v1 adds style factors (`size`, `value`, `momentum`, `volatility`, `liquidity`, `quality`, `growth`), industry one-hot exposures, cross-sectional factor return estimates, factor covariance, specific risk, portfolio/active risk decomposition, and return attribution. Enable it with `--use-factor-risk-model`; backtests can also use `--attribution` and write `risk_exposures.jsonl`, `risk_decomposition.jsonl`, `return_attribution.jsonl`, and `risk_model_report.json/md`.
+
+`strategy_manager.runner` and `research_suite.run_suite` accept the same `--portfolio-method risk_aware`, `--index-code`, `--risk-aversion`, `--turnover-penalty`, `--max-turnover`, `--max-industry-active-weight`, `--max-tracking-error`, `--use-factor-risk-model`, `--max-style-exposure`, and `--max-active-style-exposure` controls. Risk-aware artifacts include `optimization_result.json`, `risk_report.json` or `risk_model_report.json`, and Markdown reports; target positions include optimized, benchmark, and active weights.
 
 Dashboard-specific overrides:
 
@@ -290,6 +296,8 @@ uv run python -m operations.run_daily \
   --rebalance-date 20240104 \
   --portfolio-method risk_aware \
   --index-code 000300.SH \
+  --use-factor-risk-model \
+  --max-active-style-exposure 1.0 \
   --top-n 2 \
   --max-weight 0.10 \
   --portfolio-value 1000000 \
@@ -316,6 +324,8 @@ uv run python -m operations.run_daily \
   --rebalance-date 20240104 \
   --portfolio-method risk_aware \
   --index-code 000300.SH \
+  --use-factor-risk-model \
+  --max-active-style-exposure 1.0 \
   --top-n 2 \
   --max-weight 0.10 \
   --portfolio-value 1000000 \
@@ -336,7 +346,7 @@ Daily production writes `production_run.json/md`; approvals are stored under `ap
 ## Current Gaps
 
 - Tushare HTTP provider and production sync scaffolding are available; production use still requires valid token, quota/permission verification, real full-market performance runs, and more data-source comparisons.
-- Risk model and benchmark-aware portfolio optimization now have a basic local implementation; future work should add Barra-like multi-factor risk, more robust covariance estimation, a production optimizer, and large-scale performance tuning.
+- Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
 - Local daily simulation supports core A-share constraints; future work should add finer real-world matching and minute-level volume modeling.
 - Local formula search and a first neural-guided policy-search path are available; future work should add stronger reinforcement learning, offline pretraining, more operators, GPU performance tuning, and broader stability validation.
 - Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.

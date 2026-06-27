@@ -20,6 +20,13 @@ class OptimizationConfig:
     max_tracking_error: float = 1.00
     long_only: bool = True
     cash_weight: float = 0.0
+    use_factor_risk_model: bool = False
+    max_style_exposure: float | None = None
+    max_active_style_exposure: float | None = None
+    max_factor_risk_contribution: float | None = None
+    style_exposure_targets: dict[str, float] | None = None
+    risk_model_lookback: int | None = None
+    risk_model_shrinkage: float = 0.1
 
 
 @dataclass(frozen=True)

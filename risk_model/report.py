@@ -10,7 +10,9 @@ import torch
 
 from .constraints import check_risk_constraints
 from .covariance import portfolio_volatility, tracking_error
+from .decomposition import active_risk_decomposition, portfolio_factor_exposure, portfolio_risk_decomposition
 from .exposures import active_exposure, benchmark_exposure, portfolio_exposure
+from .factor_model import build_barra_like_risk_model
 from .models import RiskConstraintConfig, RiskMetrics, RiskReport
 
 
@@ -24,6 +26,8 @@ def build_risk_report(
     config: RiskConstraintConfig | None = None,
     covariance=None,
     turnover: float = 0.0,
+    factor_risk_model=None,
+    attribution_summary: dict[str, Any] | None = None,
 ) -> RiskReport:
     config = config or RiskConstraintConfig()
     cov = covariance if covariance is not None else None
@@ -50,6 +54,40 @@ def build_risk_report(
         turnover=float(turnover),
         violations=float(len(violations)),
     )
+    style_exposures = None
+    active_style_exposures = None
+    factor_risk_contribution = None
+    active_risk_contribution = None
+    factor_covariance_summary = None
+    specific_risk_summary = None
+    if factor_risk_model is not None:
+        date_idx = loader.trade_dates.index(as_of_date) if as_of_date in loader.trade_dates else len(loader.trade_dates) - 1
+        exposure = portfolio_factor_exposure(weight_tensor, factor_risk_model, date_idx)
+        active_factor_exposure = portfolio_factor_exposure(weight_tensor - benchmark, factor_risk_model, date_idx)
+        style_names = set(factor_risk_model.exposure_matrix.style_factor_names)
+        industry_names = set(factor_risk_model.exposure_matrix.industry_factor_names)
+        style_exposures = {name: float(exposure.get(name, 0.0)) for name in sorted(style_names)}
+        active_style_exposures = {name: float(active_factor_exposure.get(name, 0.0)) for name in sorted(style_names)}
+        factor_risk_contribution = portfolio_risk_decomposition(weight_tensor, factor_risk_model, date_idx)
+        active_risk_contribution = active_risk_decomposition(weight_tensor, benchmark, factor_risk_model, date_idx)
+        factor_cov = _to_tensor(factor_risk_model.factor_covariance)
+        specific = _to_tensor(factor_risk_model.specific_risk)
+        factor_covariance_summary = {
+            "factor_count": float(factor_cov.shape[0]),
+            "trace": float(torch.trace(factor_cov).item()),
+            "max_diag": float(torch.diag(factor_cov).max().item()) if factor_cov.numel() else 0.0,
+        }
+        specific_risk_summary = {
+            "mean": float(specific.mean().item()) if specific.numel() else 0.0,
+            "max": float(specific.max().item()) if specific.numel() else 0.0,
+        }
+        checks = {
+            **checks,
+            "max_style_exposure_abs": max((abs(value) for value in style_exposures.values()), default=0.0),
+            "max_active_style_exposure_abs": max((abs(value) for value in active_style_exposures.values()), default=0.0),
+            "factor_risk_share": float(factor_risk_contribution.get("factor_risk_share", 0.0)),
+            "specific_risk_share": float(factor_risk_contribution.get("specific_risk_share", 0.0)),
+        }
     return RiskReport(
         factor_id=factor_id,
         index_code=index_code,
@@ -60,6 +98,14 @@ def build_risk_report(
         metrics=metrics,
         violations=violations,
         checks={**checks, "passed": passed},
+        style_exposures=style_exposures,
+        active_style_exposures=active_style_exposures,
+        industry_exposures={name: float(active.industry_weights.get(name, 0.0)) for name in active.industry_weights},
+        factor_covariance_summary=factor_covariance_summary,
+        specific_risk_summary=specific_risk_summary,
+        factor_risk_contribution=factor_risk_contribution,
+        active_risk_contribution=active_risk_contribution,
+        attribution_summary=attribution_summary,
     )
 
 
@@ -68,6 +114,41 @@ def write_risk_report(report: RiskReport, output_dir: str | Path) -> tuple[Path,
     root.mkdir(parents=True, exist_ok=True)
     json_path = root / "risk_report.json"
     md_path = root / "risk_report.md"
+    payload = report.to_dict()
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    md_path.write_text(_render_markdown(payload), encoding="utf-8")
+    return json_path, md_path
+
+
+def build_risk_model_report(
+    weights,
+    benchmark_weights,
+    loader,
+    index_code: str,
+    as_of_date: str,
+    factor_id: str | None = None,
+    lookback: int | None = None,
+    shrinkage: float = 0.1,
+    attribution_summary: dict[str, Any] | None = None,
+) -> RiskReport:
+    risk_model = build_barra_like_risk_model(loader, lookback=lookback, shrinkage=shrinkage)
+    return build_risk_report(
+        weights,
+        benchmark_weights,
+        loader,
+        index_code,
+        as_of_date,
+        factor_id=factor_id,
+        factor_risk_model=risk_model,
+        attribution_summary=attribution_summary,
+    )
+
+
+def write_risk_model_report(report: RiskReport, output_dir: str | Path) -> tuple[Path, Path]:
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    json_path = root / "risk_model_report.json"
+    md_path = root / "risk_model_report.md"
     payload = report.to_dict()
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
     md_path.write_text(_render_markdown(payload), encoding="utf-8")
@@ -103,6 +184,27 @@ def _render_markdown(payload: dict[str, Any]) -> str:
             f"| {industry} | {float(portfolio.get(industry, 0.0)):.6f} | "
             f"{float(benchmark.get(industry, 0.0)):.6f} | {float(active.get(industry, 0.0)):.6f} |"
         )
+    style = payload.get("style_exposures", {})
+    active_style = payload.get("active_style_exposures", {})
+    if style or active_style:
+        lines.extend(["", "## Style Exposures", "", "| Style | Portfolio | Active |", "| --- | ---: | ---: |"])
+        for name in sorted(set(style) | set(active_style)):
+            lines.append(f"| {name} | {float(style.get(name, 0.0)):.6f} | {float(active_style.get(name, 0.0)):.6f} |")
+    risk = payload.get("factor_risk_contribution", {})
+    if risk:
+        lines.extend(
+            [
+                "",
+                "## Risk Decomposition",
+                "",
+                f"- total_risk: `{float(risk.get('total_risk', 0.0)):.6f}`",
+                f"- factor_risk: `{float(risk.get('factor_risk', 0.0)):.6f}`",
+                f"- specific_risk: `{float(risk.get('specific_risk', 0.0)):.6f}`",
+            ]
+        )
+    attribution = payload.get("attribution_summary", {})
+    if attribution:
+        lines.extend(["", "## Attribution", "", "```json", json.dumps(attribution, ensure_ascii=False, indent=2), "```"])
     return "\n".join(lines) + "\n"
 
 

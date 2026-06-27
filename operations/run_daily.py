@@ -24,6 +24,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--top-n", type=int, default=20)
     parser.add_argument("--max-weight", type=float, default=0.10)
     parser.add_argument("--portfolio-value", type=float, default=1_000_000.0)
+    parser.add_argument("--use-factor-risk-model", action="store_true")
+    parser.add_argument("--risk-model-lookback", type=int)
+    parser.add_argument("--risk-model-shrinkage", type=float, default=0.1)
+    parser.add_argument("--max-style-exposure", type=float)
+    parser.add_argument("--max-active-style-exposure", type=float)
     parser.add_argument("--require-approval", action="store_true")
     parser.add_argument("--approval-id")
     parser.add_argument("--execute-approved", action="store_true")
@@ -48,6 +53,11 @@ def main(argv: list[str] | None = None) -> int:
         top_n=args.top_n,
         max_weight=args.max_weight,
         portfolio_value=args.portfolio_value,
+        use_factor_risk_model=args.use_factor_risk_model,
+        risk_model_lookback=args.risk_model_lookback,
+        risk_model_shrinkage=args.risk_model_shrinkage,
+        max_style_exposure=args.max_style_exposure,
+        max_active_style_exposure=args.max_active_style_exposure,
     )
     result = runner.run(
         require_approval=args.require_approval,

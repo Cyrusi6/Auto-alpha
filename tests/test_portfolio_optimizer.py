@@ -89,3 +89,42 @@ def test_run_optimize_cli_writes_artifacts(tmp_path, capsys):
     assert (output_dir / "optimized_weights.jsonl").exists()
     assert (output_dir / "optimization_result.json").exists()
     assert (output_dir / "risk_report.json").exists()
+
+
+def test_portfolio_optimizer_factor_risk_model_cli_writes_model_report(tmp_path, capsys):
+    data_dir, store_dir, _, factor_id = _prepare_data_and_factor(tmp_path)
+    output_dir = tmp_path / "optimize_factor_risk"
+
+    result = run_optimize.main(
+        [
+            "--data-dir",
+            str(data_dir),
+            "--factor-store-dir",
+            str(store_dir),
+            "--output-dir",
+            str(output_dir),
+            "--factor-id",
+            factor_id,
+            "--index-code",
+            "000300.SH",
+            "--as-of-date",
+            "20240104",
+            "--max-weight",
+            "0.10",
+            "--max-names",
+            "2",
+            "--use-factor-risk-model",
+            "--max-active-style-exposure",
+            "1.0",
+            "--pretty",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+    optimization_payload = json.loads((output_dir / "optimization_result.json").read_text(encoding="utf-8"))
+
+    assert result == 0
+    assert payload["risk_model_report_path"].endswith("risk_model_report.json")
+    assert (output_dir / "risk_model_report.json").exists()
+    assert (output_dir / "risk_model_report.md").exists()
+    assert optimization_payload["diagnostics"]["use_factor_risk_model"] is True
+    assert "style_exposure" in optimization_payload["diagnostics"]

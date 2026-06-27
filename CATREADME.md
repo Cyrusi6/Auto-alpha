@@ -71,11 +71,16 @@ Planned sync splits large daily datasets by date windows and splits index consti
 `risk_model/` builds local A-share risk views from the loaded data artifacts:
 
 - stock-level industry, size, volatility, and beta exposures
+- Barra-like style factors: size, value, momentum, volatility, liquidity, quality, and growth
+- industry one-hot factor exposures
+- cross-sectional factor return estimates, factor covariance, and specific risk
 - portfolio and benchmark industry weights
 - active exposure versus an index benchmark from `index_members`
 - return covariance, portfolio volatility, and tracking error
+- portfolio and active risk decomposition
+- return attribution and simplified active allocation/selection effects
 - constraint checks for max weight, industry active weight, total active weight, tracking error, names, and HHI
-- `risk_report.json` and `risk_report.md`
+- `risk_report.json/md` and, when enabled, `risk_model_report.json/md`
 
 `portfolio_optimizer/` provides a deterministic long-only benchmark-aware optimizer. It ranks alpha scores, tilts from benchmark weights, clamps max names and max weight, shrinks turnover and tracking error, and outputs:
 
@@ -131,7 +136,7 @@ Promotion can update a passing composite factor to `status=production_candidate`
 
 Returns are based on `adjusted_close`; simulated fills use raw `close`. The simulator applies suspension, limit up/down, T+1 selling, board-lot rounding, volume participation, and cost rules, with rejected and partial fills recorded in `trades.jsonl`.
 
-Backtest supports `--portfolio-method equal_weight` and `--portfolio-method risk_aware`. Risk-aware mode calls the optimizer on each rebalance date, records tracking error, active share, HHI, top weight, industry active exposure, and risk constraint violations, and can write a risk report directory.
+Backtest supports `--portfolio-method equal_weight` and `--portfolio-method risk_aware`. Risk-aware mode calls the optimizer on each rebalance date, records tracking error, active share, HHI, top weight, industry active exposure, and risk constraint violations, and can write a risk report directory. With `--use-factor-risk-model --attribution`, it also writes `risk_exposures.jsonl`, `risk_decomposition.jsonl`, `return_attribution.jsonl`, and `risk_model_report.json/md`.
 
 ## Paper Execution And Order Export
 
@@ -145,7 +150,7 @@ Backtest supports `--portfolio-method equal_weight` and `--portfolio-method risk
 - `orders.jsonl`
 - `paper_fills.jsonl`
 
-With `--portfolio-method risk_aware`, target positions include optimized weight, benchmark weight, and active weight. The summary includes risk metrics and constraint violations.
+With `--portfolio-method risk_aware`, target positions include optimized weight, benchmark weight, and active weight. The summary includes risk metrics and constraint violations. With `--use-factor-risk-model`, strategy and daily operations summaries include style exposure, active style exposure, and risk decomposition.
 
 ## Production Operations
 
@@ -179,6 +184,10 @@ Filled and partial fills update cash and positions. Rejected fills are recorded 
 - quality report errors
 - production factor availability and recent factor drift
 - risk report violations
+- style exposure drift
+- active risk drift
+- factor risk concentration
+- return attribution anomalies
 - rejected and partial fill ratios
 - paper account equity, cash ratio, drawdown, and exposure
 
@@ -203,7 +212,7 @@ It writes `monitoring_report.json`, `monitoring_report.md`, and `alerts.jsonl`.
 
 ## Dashboard
 
-`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, matrix cache metadata, matrix validation reports, benchmark reports, data-source comparison reports, factor store, factor reports, batch reports, search reports, neural search reports, neural training history, checkpoint lists, suite reports, artifact catalog, promotion decisions, risk reports, optimization results, backtest outputs, target positions, orders, paper fills, production runs, approvals, paper account state, account ledgers, monitoring reports, and alerts. Missing artifacts produce empty states instead of errors.
+`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, matrix cache metadata, matrix validation reports, benchmark reports, data-source comparison reports, factor store, factor reports, batch reports, search reports, neural search reports, neural training history, checkpoint lists, suite reports, artifact catalog, promotion decisions, risk reports, risk model reports, risk exposures, risk decomposition, return attribution, optimization results, backtest outputs, target positions, orders, paper fills, production runs, approvals, paper account state, account ledgers, monitoring reports, and alerts. Missing artifacts produce empty states instead of errors.
 
 ## Research Suite Outputs
 
@@ -220,4 +229,4 @@ The artifact catalog indexes data manifest, quality report, pipeline state, univ
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton. Matrix cache, local benchmark, and data-source comparison skeletons are available. Risk model and portfolio optimization now have a basic benchmark-aware local implementation. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Daily production now has local approvals, paper account ledger, and monitoring reports. Real Tushare token and quota validation, real full-market stress runs, incremental matrix refresh, richer provider comparisons, Barra-like multi-factor risk, more robust covariance estimation, a production optimizer, stronger reinforcement learning, offline pretraining, richer walk-forward policies, richer approval policies, human review workflow, broader neural training stability validation, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, and broker connectivity are future work.
+The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton. Matrix cache, local benchmark, and data-source comparison skeletons are available. Barra-like risk model v1 and benchmark-aware portfolio optimization now have a local implementation. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Daily production now has local approvals, paper account ledger, and monitoring reports. Real Tushare token and quota validation, real full-market stress runs, incremental matrix refresh, richer provider comparisons, production Barra definitions, robust full-market covariance calibration, a professional optimizer, stronger reinforcement learning, offline pretraining, richer walk-forward policies, richer approval policies, human review workflow, broader neural training stability validation, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, and broker connectivity are future work.

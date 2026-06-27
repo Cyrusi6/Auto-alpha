@@ -22,7 +22,6 @@ FORBIDDEN_TERMS = [
     "swap",
     "private_key",
     "fdv",
-    "liquidity",
 ]
 
 

@@ -1139,3 +1139,83 @@
 - 增加矩阵缓存增量刷新、字段版本管理和 cache invalidation 策略。
 - 扩展 benchmark 指标到内存峰值、磁盘读取量和更细粒度阶段耗时。
 - 扩展 cross-source checks 到更多 provider pair、容忍阈值、字段级审计和异常样本导出。
+
+## 2026-06-27 - 任务 020
+
+### 本次变更摘要
+- 将 `risk_model/` 扩展为 Barra-like 多因子风险模型 v1，新增 style factor、industry factor、factor returns、factor covariance、specific risk、风险分解和收益归因。
+- `portfolio_optimizer` 支持 `--use-factor-risk-model`，可在优化诊断中输出 style exposure、active style exposure、factor/specific risk 和风险贡献。
+- `backtest.run_backtest` 支持 factor risk model 和 attribution，写出逐日 `risk_exposures.jsonl`、`risk_decomposition.jsonl`、`return_attribution.jsonl` 和 `risk_model_report.json/md`。
+- `strategy_manager.runner` 与 `operations.run_daily` 透传 factor risk model 参数，并在订单/生产摘要中记录风格暴露、主动风格暴露和风险分解。
+- `monitoring` 增加 style exposure drift、active risk drift、factor risk concentration 和 attribution anomaly 检查。
+- dashboard Risk tab 可读取 risk model report、逐日风格暴露、风险分解和收益归因 artifacts。
+
+### 新增文件
+- `risk_model/style.py`
+- `risk_model/industry.py`
+- `risk_model/factor_model.py`
+- `risk_model/decomposition.py`
+- `risk_model/attribution.py`
+- `tests/test_risk_model_barra.py`
+
+### 修改文件
+- `risk_model/__init__.py`
+- `risk_model/models.py`
+- `risk_model/report.py`
+- `portfolio_optimizer/models.py`
+- `portfolio_optimizer/optimizer.py`
+- `portfolio_optimizer/run_optimize.py`
+- `backtest/simulator.py`
+- `backtest/run_backtest.py`
+- `strategy_manager/runner.py`
+- `research_suite/models.py`
+- `research_suite/run_suite.py`
+- `research_suite/workflow.py`
+- `research_suite/promotion.py`
+- `operations/daily_runner.py`
+- `operations/run_daily.py`
+- `monitoring/checks.py`
+- `monitoring/run_monitor.py`
+- `dashboard/data_service.py`
+- `dashboard/app.py`
+- `README.md`
+- `CATREADME.md`
+- `tests/test_portfolio_optimizer.py`
+- `tests/test_backtest_risk_aware.py`
+- `tests/test_strategy_runner_risk_aware.py`
+- `tests/test_risk_suite_integration.py`
+- `tests/test_operations_daily_runner.py`
+- `tests/test_monitoring_reports.py`
+- `tests/test_risk_dashboard_artifacts.py`
+- `tests/test_risk_optimizer_no_old_terms.py`
+
+### 删除或隔离的旧问题
+- 风险层不再只停留在简单 covariance/tracking error，新增 Barra-like factor exposure 和 factor/specific risk 拆解。
+- 组合优化不再只能用行业 active/tracking error 近似约束，新增 style exposure 和 active style exposure 门槛。
+- 回测不再只输出组合层指标，新增逐日风险暴露、风险贡献和收益归因 artifacts。
+- 运营监控不再只检查基础 risk report 和成交质量，新增风格漂移、主动风险漂移、风险集中度和归因异常检查。
+
+### 新增 A 股平台能力
+- `build_style_exposures()` 输出 size、value、momentum、volatility、liquidity、quality、growth 七类风格因子暴露。
+- `build_industry_exposures()` 输出稳定行业 one-hot 暴露。
+- `build_barra_like_risk_model()` 估计横截面 factor returns、factor covariance 和 specific risk。
+- `portfolio_risk_decomposition()` 与 `active_risk_decomposition()` 输出 factor risk、specific risk、style/industry contribution 和 active factor exposure。
+- `attribute_active_return()` 输出 factor/specific active return 与简化 allocation/selection 归因。
+- `portfolio_optimizer.run_optimize --use-factor-risk-model` 写出 `risk_model_report.json/md`。
+- `backtest.run_backtest --use-factor-risk-model --attribution` 写出风险暴露、风险分解和收益归因逐日文件。
+- `strategy_manager.runner --use-factor-risk-model` 在 summary 中输出 style exposure、active style exposure 和 risk decomposition。
+- `research_suite.run_suite --use-factor-risk-model --attribution` 将 risk model artifacts 纳入 artifact catalog 和 promotion checks。
+
+### 测试结果
+- `uv run pytest tests/test_risk_model.py tests/test_risk_model_barra.py tests/test_portfolio_optimizer.py tests/test_backtest_risk_aware.py tests/test_strategy_runner_risk_aware.py tests/test_risk_suite_integration.py tests/test_operations_daily_runner.py tests/test_monitoring_reports.py tests/test_risk_dashboard_artifacts.py tests/test_risk_optimizer_no_old_terms.py`：通过，18 passed。
+- `uv run pytest`：通过，244 passed。
+- `uv run python -m research_suite.run_suite --suite-name barra_risk_suite --provider sample --data-dir /tmp/auto-alpha-barra-risk/data --universe-name csi300_sample --index-code 000300.SH --factor-store-dir /tmp/auto-alpha-barra-risk/store --report-dir /tmp/auto-alpha-barra-risk/reports --output-dir /tmp/auto-alpha-barra-risk/suite --backtest-dir /tmp/auto-alpha-barra-risk/backtest --orders-dir /tmp/auto-alpha-barra-risk/orders --as-of-date 20240104 --factor-transform winsorize_zscore --search-mode hybrid --search-seed 42 --search-population-size 12 --search-generations 2 --search-max-candidates 8 --neural-warmup-steps 1 --neural-policy-steps 1 --top-k 5 --composite-method rank_average --portfolio-method risk_aware --use-factor-risk-model --risk-model-lookback 3 --risk-model-shrinkage 0.1 --attribution --max-active-style-exposure 1.0 --promote-latest-composite --walk-forward-train-size 1 --walk-forward-test-size 1 --walk-forward-step-size 1 --pretty`：通过，suite status success，selected factor `factor_c8cb3814b84e9c10` 晋级为 `production_candidate`。
+- `uv run python -m portfolio_optimizer.run_optimize --data-dir /tmp/auto-alpha-barra-risk/data --factor-store-dir /tmp/auto-alpha-barra-risk/store --output-dir /tmp/auto-alpha-barra-risk/optimize --latest-approved --factor-type composite --index-code 000300.SH --as-of-date 20240104 --max-weight 0.10 --max-names 2 --risk-aversion 1.0 --use-factor-risk-model --max-active-style-exposure 1.0 --pretty`：通过，生成 optimized weights、optimization result、risk report 和 risk model report。
+- `uv run python -m backtest.run_backtest --data-dir /tmp/auto-alpha-barra-risk/data --factor-store-dir /tmp/auto-alpha-barra-risk/store --output-dir /tmp/auto-alpha-barra-risk/backtest_direct --latest-approved --factor-type composite --portfolio-method risk_aware --index-code 000300.SH --top-n 2 --max-weight 0.10 --use-factor-risk-model --attribution --risk-report-dir /tmp/auto-alpha-barra-risk/risk_reports --pretty`：通过，生成 risk exposures、risk decomposition、return attribution 和 risk model report。
+- `uv run python -m strategy_manager.runner --data-dir /tmp/auto-alpha-barra-risk/data --factor-store-dir /tmp/auto-alpha-barra-risk/store --output-dir /tmp/auto-alpha-barra-risk/orders_direct --latest-approved --factor-type composite --portfolio-method risk_aware --index-code 000300.SH --top-n 2 --max-weight 0.10 --portfolio-value 1000000 --use-factor-risk-model --max-active-style-exposure 1.0 --pretty`：通过，summary 输出 style exposures、active style exposures 和 risk decomposition，写出 paper fills。
+
+### 后续待办
+- 用真实全市场数据校准 Barra-like style definitions、行业层级和协方差稳健估计。
+- 增加 benchmark-aware optimizer 的严格约束求解器与更细 risk budget。
+- 将收益归因扩展为多期 Brinson、行业/风格分层和交易成本归因。
+- 增加 dashboard 风格暴露趋势图、风险贡献趋势图和 production drift 历史看板。

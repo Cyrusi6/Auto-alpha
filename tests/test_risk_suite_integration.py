@@ -42,6 +42,12 @@ def test_research_suite_risk_aware_flow(tmp_path, capsys):
             "0.50",
             "--max-tracking-error",
             "1.00",
+            "--use-factor-risk-model",
+            "--risk-model-lookback",
+            "3",
+            "--attribution",
+            "--max-active-style-exposure",
+            "1.0",
             "--promote-latest-composite",
             "--pretty",
         ]
@@ -54,4 +60,8 @@ def test_research_suite_risk_aware_flow(tmp_path, capsys):
     assert payload["status"] == "success"
     assert "risk_report" in names
     assert "optimization_result" in names
+    assert "risk_exposures" in names
+    assert "risk_decomposition" in names
+    assert "return_attribution" in names
     assert payload["promotion_decision"]["checks"]["tracking_error"] >= 0
+    assert "max_active_style_exposure_abs" in payload["promotion_decision"]["checks"]

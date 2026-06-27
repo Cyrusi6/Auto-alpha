@@ -13,7 +13,14 @@ from execution import PaperBroker, export_orders_csv, export_orders_jsonl
 from factor_store import LocalFactorStore
 from model_core.data_loader import AShareDataLoader
 from portfolio_optimizer import OptimizationConfig, PortfolioOptimizer
-from risk_model import benchmark_weights_from_index_members, build_risk_report, estimate_return_covariance, write_risk_report
+from risk_model import (
+    build_barra_like_risk_model,
+    benchmark_weights_from_index_members,
+    build_risk_report,
+    estimate_return_covariance,
+    write_risk_model_report,
+    write_risk_report,
+)
 
 from .config import AShareStrategyConfig
 from .portfolio import StrategyTargetBook
@@ -40,6 +47,11 @@ class AShareStrategyRunner:
         max_turnover: float = 1.0,
         max_industry_active_weight: float = 0.20,
         max_tracking_error: float = 1.0,
+        use_factor_risk_model: bool = False,
+        risk_model_lookback: int | None = None,
+        risk_model_shrinkage: float = 0.1,
+        max_style_exposure: float | None = None,
+        max_active_style_exposure: float | None = None,
         propose_only: bool = False,
         require_approval: bool = False,
         approval_store_dir: str | Path | None = None,
@@ -61,6 +73,11 @@ class AShareStrategyRunner:
         self.max_turnover = float(max_turnover)
         self.max_industry_active_weight = float(max_industry_active_weight)
         self.max_tracking_error = float(max_tracking_error)
+        self.use_factor_risk_model = bool(use_factor_risk_model)
+        self.risk_model_lookback = risk_model_lookback
+        self.risk_model_shrinkage = float(risk_model_shrinkage)
+        self.max_style_exposure = max_style_exposure
+        self.max_active_style_exposure = max_active_style_exposure
         self.propose_only = bool(propose_only)
         self.require_approval = bool(require_approval)
         self.approval_store_dir = Path(approval_store_dir) if approval_store_dir is not None else None
@@ -99,6 +116,11 @@ class AShareStrategyRunner:
                 max_turnover=self.max_turnover,
                 max_industry_active_weight=self.max_industry_active_weight,
                 max_tracking_error=self.max_tracking_error,
+                use_factor_risk_model=self.use_factor_risk_model,
+                risk_model_lookback=self.risk_model_lookback,
+                risk_model_shrinkage=self.risk_model_shrinkage,
+                max_style_exposure=self.max_style_exposure,
+                max_active_style_exposure=self.max_active_style_exposure,
             )
             opt_result = PortfolioOptimizer(config).optimize(
                 factor_matrix[:, date_idx],
@@ -111,6 +133,11 @@ class AShareStrategyRunner:
             weight_vector = factor_matrix[:, date_idx].clone() * 0.0
             for idx, ts_code in enumerate(self.loader.ts_codes):
                 weight_vector[idx] = float(opt_result.weights.get(ts_code, 0.0))
+            factor_risk_model = (
+                build_barra_like_risk_model(self.loader, lookback=self.risk_model_lookback, shrinkage=self.risk_model_shrinkage)
+                if self.use_factor_risk_model
+                else None
+            )
             self.risk_report = build_risk_report(
                 weight_vector,
                 benchmark,
@@ -120,6 +147,7 @@ class AShareStrategyRunner:
                 factor_id=self.selected_factor_id,
                 covariance=covariance,
                 turnover=opt_result.turnover,
+                factor_risk_model=factor_risk_model,
             )
             targets = []
             for idx, ts_code in enumerate(self.loader.ts_codes):
@@ -167,6 +195,8 @@ class AShareStrategyRunner:
         if self.portfolio_method == "risk_aware":
             if self.risk_report is not None:
                 risk_json, risk_md = write_risk_report(self.risk_report, self.output_dir)
+                if self.use_factor_risk_model:
+                    risk_json, risk_md = write_risk_model_report(self.risk_report, self.output_dir)
                 risk_report_path = str(risk_json)
                 risk_report_md_path = str(risk_md)
             if self.optimization_summary is not None:
@@ -216,6 +246,9 @@ class AShareStrategyRunner:
                 risk_summary={
                     "risk_metrics": self.risk_report.metrics.to_dict() if self.risk_report is not None else {},
                     "risk_constraint_violations": self.risk_report.violations if self.risk_report is not None else [],
+                    "style_exposures": self.risk_report.style_exposures if self.risk_report is not None else {},
+                    "active_style_exposures": self.risk_report.active_style_exposures if self.risk_report is not None else {},
+                    "risk_decomposition": self.risk_report.factor_risk_contribution if self.risk_report is not None else {},
                     "n_orders": len(orders),
                     "gross_order_value": float(sum(order.order_value for order in orders)),
                 },
@@ -267,6 +300,9 @@ class AShareStrategyRunner:
             "propose_only": bool(self.propose_only or self.require_approval),
             "risk_metrics": self.risk_report.metrics.to_dict() if self.risk_report is not None else {},
             "risk_constraint_violations": self.risk_report.violations if self.risk_report is not None else [],
+            "style_exposures": self.risk_report.style_exposures if self.risk_report is not None else {},
+            "active_style_exposures": self.risk_report.active_style_exposures if self.risk_report is not None else {},
+            "risk_decomposition": self.risk_report.factor_risk_contribution if self.risk_report is not None else {},
             "risk_report_path": risk_report_path,
             "risk_report_md_path": risk_report_md_path,
             "optimization_result_path": str(optimization_result_path) if optimization_result_path else None,
@@ -293,6 +329,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-turnover", type=float, default=1.0)
     parser.add_argument("--max-industry-active-weight", type=float, default=0.20)
     parser.add_argument("--max-tracking-error", type=float, default=1.0)
+    parser.add_argument("--use-factor-risk-model", action="store_true")
+    parser.add_argument("--risk-model-lookback", type=int)
+    parser.add_argument("--risk-model-shrinkage", type=float, default=0.1)
+    parser.add_argument("--max-style-exposure", type=float)
+    parser.add_argument("--max-active-style-exposure", type=float)
     parser.add_argument("--propose-only", action="store_true")
     parser.add_argument("--require-approval", action="store_true")
     parser.add_argument("--approval-store-dir")
@@ -320,6 +361,11 @@ def main(argv: list[str] | None = None) -> int:
         max_turnover=args.max_turnover,
         max_industry_active_weight=args.max_industry_active_weight,
         max_tracking_error=args.max_tracking_error,
+        use_factor_risk_model=args.use_factor_risk_model,
+        risk_model_lookback=args.risk_model_lookback,
+        risk_model_shrinkage=args.risk_model_shrinkage,
+        max_style_exposure=args.max_style_exposure,
+        max_active_style_exposure=args.max_active_style_exposure,
         propose_only=args.propose_only,
         require_approval=args.require_approval,
         approval_store_dir=args.approval_store_dir,

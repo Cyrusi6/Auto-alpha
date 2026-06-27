@@ -69,3 +69,41 @@ def test_strategy_runner_risk_aware_exports_optimized_targets(tmp_path, capsys):
     assert "active_weight" in target_payload
     assert (output_dir / "risk_report.json").exists()
     assert (output_dir / "optimization_result.json").exists()
+
+
+def test_strategy_runner_factor_risk_model_outputs_style_summary(tmp_path, capsys):
+    data_dir, store_dir, factor_id = _prepare_factor(tmp_path)
+    output_dir = tmp_path / "orders_factor_risk"
+
+    result = runner.main(
+        [
+            "--data-dir",
+            str(data_dir),
+            "--factor-store-dir",
+            str(store_dir),
+            "--output-dir",
+            str(output_dir),
+            "--factor-id",
+            factor_id,
+            "--portfolio-method",
+            "risk_aware",
+            "--index-code",
+            "000300.SH",
+            "--top-n",
+            "2",
+            "--max-weight",
+            "0.10",
+            "--use-factor-risk-model",
+            "--max-active-style-exposure",
+            "1.0",
+            "--pretty",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert result == 0
+    assert payload["style_exposures"]
+    assert payload["active_style_exposures"]
+    assert payload["risk_decomposition"]
+    assert (output_dir / "risk_model_report.json").exists()
+    assert (output_dir / "optimization_result.json").exists()

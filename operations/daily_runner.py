@@ -35,6 +35,11 @@ class ProductionDailyRunner:
         top_n: int = 20,
         max_weight: float = 0.10,
         portfolio_value: float = 1_000_000.0,
+        use_factor_risk_model: bool = False,
+        risk_model_lookback: int | None = None,
+        risk_model_shrinkage: float = 0.1,
+        max_style_exposure: float | None = None,
+        max_active_style_exposure: float | None = None,
     ):
         self.data_dir = Path(data_dir)
         self.factor_store_dir = Path(factor_store_dir)
@@ -50,6 +55,11 @@ class ProductionDailyRunner:
         self.top_n = int(top_n)
         self.max_weight = float(max_weight)
         self.portfolio_value = float(portfolio_value)
+        self.use_factor_risk_model = bool(use_factor_risk_model)
+        self.risk_model_lookback = risk_model_lookback
+        self.risk_model_shrinkage = float(risk_model_shrinkage)
+        self.max_style_exposure = max_style_exposure
+        self.max_active_style_exposure = max_active_style_exposure
 
     def run(
         self,
@@ -98,6 +108,11 @@ class ProductionDailyRunner:
             factor_type="any",
             portfolio_method=self.portfolio_method,
             index_code=self.index_code,
+            use_factor_risk_model=self.use_factor_risk_model,
+            risk_model_lookback=self.risk_model_lookback,
+            risk_model_shrinkage=self.risk_model_shrinkage,
+            max_style_exposure=self.max_style_exposure,
+            max_active_style_exposure=self.max_active_style_exposure,
             propose_only=require_approval,
             require_approval=require_approval,
             approval_store_dir=self.approval_store_dir if require_approval else None,
@@ -177,6 +192,10 @@ class ProductionDailyRunner:
             "n_rejected": rejected,
             "n_partial": partial,
             "fill_rate": completed / len(fills) if fills else 0.0,
+            "risk_summary": batch.risk_summary,
+            "style_exposures": batch.risk_summary.get("style_exposures", {}),
+            "active_style_exposures": batch.risk_summary.get("active_style_exposures", {}),
+            "risk_decomposition": batch.risk_summary.get("risk_decomposition", {}),
             "orders_path": str(orders_jsonl),
             "orders_csv_path": str(orders_csv),
             "fills_path": str(fills_path),

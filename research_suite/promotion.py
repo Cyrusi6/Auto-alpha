@@ -26,6 +26,9 @@ def promote_factor_if_eligible(
         "constraint_reject_rate": float(backtest_metrics.get("constraint_reject_rate", 0.0)),
         "tracking_error": float(backtest_metrics.get("tracking_error", 0.0)),
         "risk_constraint_violations": float(backtest_metrics.get("risk_constraint_violations", 0.0)),
+        "max_active_style_exposure_abs": float(backtest_metrics.get("max_active_style_exposure_abs", 0.0)),
+        "max_factor_risk_share": float(backtest_metrics.get("max_factor_risk_share", 0.0)),
+        "max_specific_risk_share": float(backtest_metrics.get("max_specific_risk_share", 0.0)),
         "factor_type": factor_type,
         "require_composite": bool(config.require_composite),
     }
@@ -42,6 +45,12 @@ def promote_factor_if_eligible(
         reasons.append("tracking_error_above_threshold")
     if checks["risk_constraint_violations"] > config.max_constraint_violations:
         reasons.append("risk_constraint_violations_above_threshold")
+    if checks["max_active_style_exposure_abs"] > config.max_active_style_exposure_abs:
+        reasons.append("active_style_exposure_above_threshold")
+    if checks["max_factor_risk_share"] > config.max_factor_risk_share:
+        reasons.append("factor_risk_share_above_threshold")
+    if checks["max_specific_risk_share"] > config.max_specific_risk_share:
+        reasons.append("specific_risk_share_above_threshold")
     if config.require_composite and factor_type != "composite":
         reasons.append("factor_is_not_composite")
 

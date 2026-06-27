@@ -44,6 +44,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-turnover", type=float, default=1.0)
     parser.add_argument("--max-industry-active-weight", type=float, default=0.20)
     parser.add_argument("--max-tracking-error", type=float, default=1.0)
+    parser.add_argument("--use-factor-risk-model", action="store_true")
+    parser.add_argument("--risk-model-lookback", type=int)
+    parser.add_argument("--risk-model-shrinkage", type=float, default=0.1)
+    parser.add_argument("--attribution", action="store_true")
+    parser.add_argument("--max-style-exposure", type=float)
+    parser.add_argument("--max-active-style-exposure", type=float)
+    parser.add_argument("--max-factor-risk-contribution", type=float)
     parser.add_argument("--promote-latest-composite", action="store_true")
     parser.add_argument("--skip-data-sync", action="store_true")
     parser.add_argument("--skip-universe", action="store_true")
@@ -114,6 +121,13 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
         max_turnover=args.max_turnover,
         max_industry_active_weight=args.max_industry_active_weight,
         max_tracking_error=args.max_tracking_error,
+        use_factor_risk_model=args.use_factor_risk_model,
+        risk_model_lookback=args.risk_model_lookback,
+        risk_model_shrinkage=args.risk_model_shrinkage,
+        attribution=args.attribution,
+        max_style_exposure=args.max_style_exposure,
+        max_active_style_exposure=args.max_active_style_exposure,
+        max_factor_risk_contribution=args.max_factor_risk_contribution,
         promote_latest_composite=args.promote_latest_composite,
         pretty=args.pretty,
         skip_data_sync=args.skip_data_sync,

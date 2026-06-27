@@ -196,8 +196,11 @@ class AshareDashboardService:
 
     def load_risk_report_json(self) -> dict[str, Any]:
         for path in [
+            self.config.backtest_dir / "risk" / "risk_model_report.json",
             self.config.backtest_dir / "risk" / "risk_report.json",
+            self.config.backtest_dir / "risk_model_report.json",
             self.config.backtest_dir / "risk_report.json",
+            self.config.orders_dir / "risk_model_report.json",
             self.config.orders_dir / "risk_report.json",
         ]:
             payload = self._read_json(path)
@@ -207,13 +210,37 @@ class AshareDashboardService:
 
     def load_risk_report_markdown(self) -> str:
         for path in [
+            self.config.backtest_dir / "risk" / "risk_model_report.md",
             self.config.backtest_dir / "risk" / "risk_report.md",
+            self.config.backtest_dir / "risk_model_report.md",
             self.config.backtest_dir / "risk_report.md",
+            self.config.orders_dir / "risk_model_report.md",
             self.config.orders_dir / "risk_report.md",
         ]:
             if path.exists():
                 return path.read_text(encoding="utf-8")
         return ""
+
+    def load_risk_exposures(self) -> pd.DataFrame:
+        for path in self._risk_artifact_candidates("risk_exposures.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_risk_decomposition(self) -> pd.DataFrame:
+        for path in self._risk_artifact_candidates("risk_decomposition.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_return_attribution(self) -> pd.DataFrame:
+        for path in self._risk_artifact_candidates("return_attribution.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
 
     def load_optimization_result(self) -> dict[str, Any]:
         for path in [
@@ -427,6 +454,16 @@ class AshareDashboardService:
         return [
             self.config.cross_source_dir / filename,
             root / "cross_source" / filename,
+        ]
+
+    def _risk_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.backtest_dir / filename,
+            self.config.backtest_dir / "risk" / filename,
+            self.config.orders_dir / filename,
+            root / "backtest" / filename,
+            root / "backtest_direct" / filename,
         ]
 
     @staticmethod

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from factor_store import LocalFactorStore
 from model_core.data_loader import AShareDataLoader
-from risk_model import write_risk_report
+from risk_model import write_risk_model_report, write_risk_report
 
 from .io import describe_factor, factor_values_to_matrix, select_factor_id
 from .simulator import AShareBacktestSimulator
@@ -20,6 +20,14 @@ def _write_jsonl(path: Path, records: list[object]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for record in records:
             handle.write(json.dumps(asdict(record), ensure_ascii=False, sort_keys=True))
+            handle.write("\n")
+
+
+def _write_dict_jsonl(path: Path, records: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True))
             handle.write("\n")
 
 
@@ -42,6 +50,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-industry-active-weight", type=float, default=0.20)
     parser.add_argument("--max-tracking-error", type=float, default=1.0)
     parser.add_argument("--risk-report-dir")
+    parser.add_argument("--use-factor-risk-model", action="store_true")
+    parser.add_argument("--risk-model-lookback", type=int)
+    parser.add_argument("--risk-model-shrinkage", type=float, default=0.1)
+    parser.add_argument("--attribution", action="store_true")
+    parser.add_argument("--max-style-exposure", type=float)
+    parser.add_argument("--max-active-style-exposure", type=float)
+    parser.add_argument("--max-factor-risk-contribution", type=float)
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -73,6 +88,13 @@ def main(argv: list[str] | None = None) -> int:
         max_industry_active_weight=args.max_industry_active_weight,
         max_tracking_error=args.max_tracking_error,
         factor_id=factor_id,
+        use_factor_risk_model=args.use_factor_risk_model,
+        risk_model_lookback=args.risk_model_lookback,
+        risk_model_shrinkage=args.risk_model_shrinkage,
+        attribution=args.attribution,
+        max_style_exposure=args.max_style_exposure,
+        max_active_style_exposure=args.max_active_style_exposure,
+        max_factor_risk_contribution=args.max_factor_risk_contribution,
     )
     result = simulator.simulate(factors, loader)
 
@@ -83,6 +105,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     _write_jsonl(output_dir / "equity_curve.jsonl", result.snapshots)
     _write_jsonl(output_dir / "trades.jsonl", result.fills)
+    risk_exposures_path = None
+    risk_decomposition_path = None
+    return_attribution_path = None
+    if simulator.risk_exposure_rows:
+        risk_exposures_path = output_dir / "risk_exposures.jsonl"
+        _write_dict_jsonl(risk_exposures_path, simulator.risk_exposure_rows)
+    if simulator.risk_decomposition_rows:
+        risk_decomposition_path = output_dir / "risk_decomposition.jsonl"
+        _write_dict_jsonl(risk_decomposition_path, simulator.risk_decomposition_rows)
+    if simulator.return_attribution_rows:
+        return_attribution_path = output_dir / "return_attribution.jsonl"
+        _write_dict_jsonl(return_attribution_path, simulator.return_attribution_rows)
     risk_report_path = None
     risk_report_md_path = None
     optimization_result_path = None
@@ -92,6 +126,10 @@ def main(argv: list[str] | None = None) -> int:
             risk_json, risk_md = write_risk_report(simulator.risk_reports[-1], risk_dir)
             risk_report_path = str(risk_json)
             risk_report_md_path = str(risk_md)
+            if args.use_factor_risk_model:
+                risk_model_json, risk_model_md = write_risk_model_report(simulator.risk_reports[-1], risk_dir)
+                risk_report_path = str(risk_model_json)
+                risk_report_md_path = str(risk_model_md)
         if simulator.optimization_results:
             optimization_result_path = output_dir / "optimization_result.json"
             optimization_result_path.write_text(
@@ -123,6 +161,9 @@ def main(argv: list[str] | None = None) -> int:
         "risk_report_path": risk_report_path,
         "risk_report_md_path": risk_report_md_path,
         "optimization_result_path": str(optimization_result_path) if optimization_result_path else None,
+        "risk_exposures_path": str(risk_exposures_path) if risk_exposures_path else None,
+        "risk_decomposition_path": str(risk_decomposition_path) if risk_decomposition_path else None,
+        "return_attribution_path": str(return_attribution_path) if return_attribution_path else None,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0

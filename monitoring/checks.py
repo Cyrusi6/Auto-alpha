@@ -66,6 +66,99 @@ def check_risk_report(risk_report_path: str | Path | None) -> tuple[dict[str, An
     return {"exists": bool(payload), "violations": len(violations), "metrics": payload.get("metrics", {}) if payload else {}}, alerts
 
 
+def check_style_exposure_drift(risk_exposures_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not risk_exposures_path:
+        return {"exists": False, "rows": 0}, []
+    rows = _read_jsonl(Path(risk_exposures_path))
+    max_style = max((abs(float(row.get("max_style_exposure_abs", 0.0) or 0.0)) for row in rows), default=0.0)
+    max_active_style = max((abs(float(row.get("max_active_style_exposure_abs", 0.0) or 0.0)) for row in rows), default=0.0)
+    alerts = []
+    if max_active_style > 2.0:
+        alerts.append(
+            MonitoringAlert(
+                "warning",
+                "style_exposure_drift",
+                "active style exposure is elevated",
+                {"max_active_style_exposure_abs": max_active_style},
+            )
+        )
+    return {
+        "exists": bool(rows),
+        "rows": len(rows),
+        "max_style_exposure_abs": max_style,
+        "max_active_style_exposure_abs": max_active_style,
+    }, alerts
+
+
+def check_active_risk_drift(risk_decomposition_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not risk_decomposition_path:
+        return {"exists": False, "rows": 0}, []
+    rows = _read_jsonl(Path(risk_decomposition_path))
+    active_risks = [
+        float((row.get("active") or {}).get("total_risk", 0.0) or 0.0)
+        for row in rows
+        if isinstance(row.get("active"), dict)
+    ]
+    max_active_risk = max(active_risks, default=0.0)
+    alerts = []
+    if max_active_risk > 1.0:
+        alerts.append(
+            MonitoringAlert(
+                "warning",
+                "active_risk_drift",
+                "active factor risk is elevated",
+                {"max_active_risk": max_active_risk},
+            )
+        )
+    return {"exists": bool(rows), "rows": len(rows), "max_active_risk": max_active_risk}, alerts
+
+
+def check_factor_risk_concentration(risk_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not risk_report_path:
+        return {"exists": False}, []
+    payload = _read_json(Path(risk_report_path))
+    contribution = payload.get("factor_risk_contribution", {}) if payload else {}
+    factor_values = contribution.get("factor_contributions", {}) if isinstance(contribution, dict) else {}
+    max_contribution = max((abs(float(value or 0.0)) for value in factor_values.values()), default=0.0)
+    factor_share = float(contribution.get("factor_risk_share", 0.0) or 0.0) if isinstance(contribution, dict) else 0.0
+    specific_share = float(contribution.get("specific_risk_share", 0.0) or 0.0) if isinstance(contribution, dict) else 0.0
+    alerts = []
+    if max_contribution > 0.90:
+        alerts.append(
+            MonitoringAlert(
+                "warning",
+                "factor_risk_concentration",
+                "risk contribution is concentrated in one factor",
+                {"max_factor_contribution": max_contribution},
+            )
+        )
+    return {
+        "exists": bool(payload),
+        "max_factor_contribution": max_contribution,
+        "factor_risk_share": factor_share,
+        "specific_risk_share": specific_share,
+    }, alerts
+
+
+def check_attribution_anomaly(return_attribution_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not return_attribution_path:
+        return {"exists": False, "rows": 0}, []
+    rows = _read_jsonl(Path(return_attribution_path))
+    active_returns = [abs(float(row.get("total_active_return", 0.0) or 0.0)) for row in rows]
+    max_active_return = max(active_returns, default=0.0)
+    alerts = []
+    if max_active_return > 0.20:
+        alerts.append(
+            MonitoringAlert(
+                "warning",
+                "attribution_anomaly",
+                "active return attribution has a large single-period move",
+                {"max_abs_active_return": max_active_return},
+            )
+        )
+    return {"exists": bool(rows), "rows": len(rows), "max_abs_active_return": max_active_return}, alerts
+
+
 def check_order_fill_quality(fills_path: str | Path) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     fills = _read_jsonl(Path(fills_path))
     total = len(fills)

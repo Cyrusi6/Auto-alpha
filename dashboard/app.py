@@ -239,6 +239,9 @@ def render_app(config: DashboardConfig | None = None) -> None:
         risk_report = service.load_risk_report_json()
         risk_markdown = service.load_risk_report_markdown()
         optimization = service.load_optimization_result()
+        risk_exposures = service.load_risk_exposures()
+        risk_decomposition = service.load_risk_decomposition()
+        return_attribution = service.load_return_attribution()
         st.subheader("Risk Metrics")
         if risk_report:
             st.json(
@@ -246,14 +249,21 @@ def render_app(config: DashboardConfig | None = None) -> None:
                     "metrics": risk_report.get("metrics", {}),
                     "violations": risk_report.get("violations", []),
                     "checks": risk_report.get("checks", {}),
+                    "style_exposures": risk_report.get("style_exposures", {}),
+                    "active_style_exposures": risk_report.get("active_style_exposures", {}),
                     "portfolio_industry": risk_report.get("portfolio", {}).get("industry_weights", {}),
                     "active_industry": risk_report.get("active", {}).get("industry_weights", {}),
+                    "factor_risk_share": (risk_report.get("factor_risk_contribution") or {}).get("factor_risk_share"),
+                    "specific_risk_share": (risk_report.get("factor_risk_contribution") or {}).get("specific_risk_share"),
                 }
             )
         else:
             st.info("No risk_report.json found.")
         st.subheader("Optimization Result")
         st.json(optimization if optimization else {"status": "No optimization_result.json found"})
+        _show_dataframe_or_empty("Daily Style And Active Exposures", risk_exposures)
+        _show_dataframe_or_empty("Risk Decomposition", risk_decomposition)
+        _show_dataframe_or_empty("Return Attribution", return_attribution)
         if risk_markdown:
             st.markdown(risk_markdown)
 
