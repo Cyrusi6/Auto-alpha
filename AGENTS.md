@@ -28,6 +28,6 @@ python lord/experiment.py --mode mechanism
 ```
 
 ## Commit 
-不使用Pull Request, 通过 Git commit 管理变更
+不使用Pull Request, 通过 Git commit 管理变更, 使用 git commit -m "提交信息"; git push origin main去提交 
 每次改进更新到`FRAMEWORK_UPDATE.md`
 
