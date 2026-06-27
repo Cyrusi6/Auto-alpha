@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+import json
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from .audit import ApiRequestAuditor
+from .cache import TushareResponseCache
 from .config import AShareDataConfig
 from .pipeline import ASHARE_DATASETS
 from .providers import AShareDataProvider, create_ashare_provider
 from .quality import validate_all_datasets, write_quality_report
+from .stats import compute_all_dataset_stats, write_dataset_stats
 from .state import default_pipeline_state_path, load_pipeline_state, save_pipeline_state
 from .storage import LocalAshareStorage, StorageWriteResult
+from .sync_plan import SyncJob, build_sync_plan
 
 
 @dataclass(frozen=True)
@@ -35,6 +40,11 @@ class SyncResult:
     quality_report_path: str | None = None
     has_errors: bool = False
     quality_summary: dict[str, Any] | None = None
+    plan_path: str | None = None
+    audit_path: str | None = None
+    stats_path: str | None = None
+    snapshot_path: str | None = None
+    compaction_summary: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -50,6 +60,11 @@ class SyncResult:
             "quality_report_path": self.quality_report_path,
             "has_errors": self.has_errors,
             "quality_summary": self.quality_summary,
+            "plan_path": self.plan_path,
+            "audit_path": self.audit_path,
+            "stats_path": self.stats_path,
+            "snapshot_path": self.snapshot_path,
+            "compaction_summary": self.compaction_summary,
         }
 
 
@@ -71,6 +86,16 @@ class AShareDataManager:
         validate: bool = False,
         write_state: bool = True,
         state_file: str | Path | None = None,
+        use_plan: bool = False,
+        chunk_days: int = 30,
+        cache_enabled: bool = False,
+        audit_enabled: bool = False,
+        resume: bool = False,
+        fail_on_quality_error: bool = False,
+        compact_after_sync: bool = False,
+        snapshot_after_sync: bool = False,
+        snapshot_name: str | None = None,
+        write_stats: bool = False,
     ) -> SyncResult:
         if mode not in {"overwrite", "append"}:
             raise ValueError("mode must be one of: overwrite, append")
@@ -80,15 +105,29 @@ class AShareDataManager:
         if unsupported:
             raise ValueError(f"Unsupported A-share datasets: {', '.join(unsupported)}")
 
-        write_results: list[StorageWriteResult] = []
-        for dataset in selected:
-            fetcher = getattr(self.provider, f"fetch_{dataset}")
-            records = fetcher(self.config)
-            write_results.append(self.storage.write_dataset(dataset, records, mode=mode))
+        plan_path: str | None = None
+        audit_path: str | None = None
+        if use_plan:
+            write_results, plan_path, audit_path = self._sync_with_plan(
+                selected=selected,
+                mode=mode,
+                chunk_days=chunk_days,
+                write_state=write_state,
+                state_file=state_file,
+                cache_enabled=cache_enabled,
+                audit_enabled=audit_enabled,
+                resume=resume,
+            )
+        else:
+            write_results = []
+            for dataset in selected:
+                fetcher = getattr(self.provider, f"fetch_{dataset}")
+                records = fetcher(self.config)
+                write_results.append(self.storage.write_dataset(dataset, records, mode=mode))
 
         manifest = self.storage.write_manifest(self.config, write_results)
         state_path: str | None = None
-        if write_state:
+        if write_state and not use_plan:
             target_state_path = Path(state_file) if state_file is not None else default_pipeline_state_path(self.config.data_dir)
             state = load_pipeline_state(target_state_path)
             for result in write_results:
@@ -99,6 +138,33 @@ class AShareDataManager:
                     end_date=self.config.end_date,
                 )
             state_path = str(save_pipeline_state(state, target_state_path))
+        elif write_state:
+            target_state_path = Path(state_file) if state_file is not None else default_pipeline_state_path(self.config.data_dir)
+            state_path = str(target_state_path)
+
+        compaction_summary: list[dict[str, Any]] | None = None
+        if compact_after_sync:
+            compacted = [self.storage.compact_dataset(dataset) for dataset in selected if self.storage.dataset_exists(dataset)]
+            compaction_summary = [asdict(result) for result in compacted]
+            write_results = [
+                StorageWriteResult(dataset=dataset, path=str(self.storage.dataset_path(dataset)), records=len(self.storage.read_dataset(dataset)))
+                for dataset in selected
+                if self.storage.dataset_exists(dataset)
+            ]
+
+        snapshot_path: str | None = None
+        if snapshot_after_sync:
+            snapshot_paths = [
+                self.storage.snapshot_dataset(dataset, snapshot_name=snapshot_name)
+                for dataset in selected
+                if self.storage.dataset_exists(dataset)
+            ]
+            if snapshot_paths:
+                snapshot_path = str(snapshot_paths[0].parents[1])
+
+        stats_path: str | None = None
+        if write_stats:
+            stats_path = str(write_dataset_stats(compute_all_dataset_stats(self.storage), self.storage.data_dir / "dataset_stats.json"))
 
         quality_report_path: str | None = None
         quality_summary: dict[str, Any] | None = None
@@ -122,6 +188,8 @@ class AShareDataManager:
                     for dataset in report_payload["datasets"]
                 ],
             }
+            if fail_on_quality_error and has_errors:
+                quality_summary["quality_gate"] = "failed"
 
         return SyncResult(
             provider=self.config.provider,
@@ -143,7 +211,110 @@ class AShareDataManager:
             quality_report_path=quality_report_path,
             has_errors=has_errors,
             quality_summary=quality_summary,
+            plan_path=plan_path,
+            audit_path=audit_path,
+            stats_path=stats_path,
+            snapshot_path=snapshot_path,
+            compaction_summary=compaction_summary,
         )
+
+    def _sync_with_plan(
+        self,
+        selected: list[str],
+        mode: str,
+        chunk_days: int,
+        write_state: bool,
+        state_file: str | Path | None,
+        cache_enabled: bool,
+        audit_enabled: bool,
+        resume: bool,
+    ) -> tuple[list[StorageWriteResult], str, str | None]:
+        plan = build_sync_plan(self.config, datasets=selected, chunk_days=chunk_days)
+        plan_path = self.storage.data_dir / "sync_plan.json"
+        plan_path.parent.mkdir(parents=True, exist_ok=True)
+        plan_path.write_text(json.dumps(plan.to_dict(), ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+
+        state_path = Path(state_file) if state_file is not None else default_pipeline_state_path(self.config.data_dir)
+        state = load_pipeline_state(state_path)
+        cache = TushareResponseCache(self.config.data_dir, enabled=cache_enabled) if cache_enabled else None
+        audit_path = self.storage.data_dir / "api_audit.jsonl"
+        auditor = ApiRequestAuditor(audit_path) if audit_enabled else None
+        if audit_enabled:
+            audit_path.parent.mkdir(parents=True, exist_ok=True)
+            audit_path.touch(exist_ok=True)
+
+        if mode == "overwrite" and not resume:
+            for dataset in selected:
+                self.storage.write_dataset(dataset, [], mode="overwrite")
+
+        for job in plan.jobs:
+            dataset_state = state.datasets.get(job.dataset)
+            if resume and dataset_state is not None and job.job_id in dataset_state.successful_job_ids:
+                continue
+
+            try:
+                records = self._fetch_job(job, cache=cache, auditor=auditor)
+                self.storage.write_dataset(job.dataset, records, mode="append")
+                if write_state:
+                    state.mark_job_success(
+                        dataset=job.dataset,
+                        job_id=job.job_id,
+                        records=len(self.storage.read_dataset(job.dataset)),
+                        start_date=job.start_date or self.config.start_date,
+                        end_date=job.end_date or self.config.end_date,
+                    )
+                    save_pipeline_state(state, state_path)
+            except Exception as exc:
+                if write_state:
+                    state.mark_job_failed(
+                        dataset=job.dataset,
+                        job_id=job.job_id,
+                        error=str(exc),
+                        start_date=job.start_date or self.config.start_date,
+                        end_date=job.end_date or self.config.end_date,
+                    )
+                    save_pipeline_state(state, state_path)
+                raise
+
+        results = [
+            StorageWriteResult(
+                dataset=dataset,
+                path=str(self.storage.dataset_path(dataset)),
+                records=len(self.storage.read_dataset(dataset)),
+            )
+            for dataset in selected
+        ]
+        return results, str(plan_path), str(audit_path) if audit_enabled else None
+
+    def _fetch_job(
+        self,
+        job: SyncJob,
+        cache: TushareResponseCache | None,
+        auditor: ApiRequestAuditor | None,
+    ) -> list[object]:
+        if hasattr(self.provider, "fetch_dataset_job"):
+            return list(
+                self.provider.fetch_dataset_job(  # type: ignore[attr-defined]
+                    job,
+                    self.config,
+                    cache=cache,
+                    auditor=auditor,
+                )
+            )
+
+        job_config = self.config
+        overrides: dict[str, Any] = {}
+        if job.start_date is not None:
+            overrides["start_date"] = job.start_date
+        if job.end_date is not None:
+            overrides["end_date"] = job.end_date
+        if job.index_code is not None:
+            overrides["index_codes"] = (job.index_code,)
+        if overrides:
+            job_config = replace(self.config, **overrides)
+
+        fetcher = getattr(self.provider, f"fetch_{job.dataset}")
+        return list(fetcher(job_config))
 
 
 def sync_ashare_datasets(
@@ -153,6 +324,16 @@ def sync_ashare_datasets(
     validate: bool = False,
     write_state: bool = True,
     state_file: str | Path | None = None,
+    use_plan: bool = False,
+    chunk_days: int = 30,
+    cache_enabled: bool = False,
+    audit_enabled: bool = False,
+    resume: bool = False,
+    fail_on_quality_error: bool = False,
+    compact_after_sync: bool = False,
+    snapshot_after_sync: bool = False,
+    snapshot_name: str | None = None,
+    write_stats: bool = False,
 ) -> SyncResult:
     return AShareDataManager(config).sync(
         datasets=datasets,
@@ -160,4 +341,14 @@ def sync_ashare_datasets(
         validate=validate,
         write_state=write_state,
         state_file=state_file,
+        use_plan=use_plan,
+        chunk_days=chunk_days,
+        cache_enabled=cache_enabled,
+        audit_enabled=audit_enabled,
+        resume=resume,
+        fail_on_quality_error=fail_on_quality_error,
+        compact_after_sync=compact_after_sync,
+        snapshot_after_sync=snapshot_after_sync,
+        snapshot_name=snapshot_name,
+        write_stats=write_stats,
     )

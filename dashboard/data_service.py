@@ -21,6 +21,38 @@ class AshareDashboardService:
     def load_quality_report(self) -> dict[str, Any]:
         return self._read_json(self.config.data_dir / "quality_report.json")
 
+    def load_sync_plan(self) -> dict[str, Any]:
+        return self._read_json(self.config.data_dir / "sync_plan.json")
+
+    def load_pipeline_state(self) -> dict[str, Any]:
+        return self._read_json(self.config.data_dir / "pipeline_state.json")
+
+    def load_api_audit(self) -> pd.DataFrame:
+        return self._read_jsonl(self.config.data_dir / "api_audit.jsonl")
+
+    def load_dataset_stats(self) -> dict[str, Any]:
+        return self._read_json(self.config.data_dir / "dataset_stats.json")
+
+    def load_snapshot_summary(self) -> pd.DataFrame:
+        snapshots_dir = self.config.data_dir / "snapshots"
+        records: list[dict[str, Any]] = []
+        if not snapshots_dir.exists():
+            return pd.DataFrame()
+        for snapshot_dir in sorted(path for path in snapshots_dir.iterdir() if path.is_dir()):
+            datasets = sorted(
+                dataset_dir.name
+                for dataset_dir in snapshot_dir.iterdir()
+                if (dataset_dir / "records.jsonl").exists()
+            )
+            records.append(
+                {
+                    "snapshot": snapshot_dir.name,
+                    "datasets": len(datasets),
+                    "dataset_names": ", ".join(datasets),
+                }
+            )
+        return pd.DataFrame(records)
+
     def load_dataset(self, name: str, limit: int | None = 200) -> pd.DataFrame:
         frame = self._read_jsonl(self.config.data_dir / name / "records.jsonl")
         if limit is not None and len(frame) > limit:

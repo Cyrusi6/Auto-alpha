@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import time
+from dataclasses import replace
 from typing import Any
 
+from ..audit import ApiRequestAuditEntry, ApiRequestAuditor, utc_now
+from ..cache import TushareResponseCache
 from ..config import AShareDataConfig
 from ..schema import (
     AdjustmentFactor,
@@ -15,6 +19,7 @@ from ..schema import (
     Security,
     TradeCalendarRecord,
 )
+from ..sync_plan import SyncJob
 from ..validators import is_valid_ts_code, is_valid_yyyymmdd
 from .tushare_client import TushareHttpClient
 
@@ -22,6 +27,25 @@ from .tushare_client import TushareHttpClient
 class TushareAShareDataProvider:
     def __init__(self, client: Any | None = None):
         self.client = client
+
+    def fetch_dataset_job(
+        self,
+        job: SyncJob,
+        config: AShareDataConfig,
+        cache: TushareResponseCache | None = None,
+        auditor: ApiRequestAuditor | None = None,
+    ) -> list[object]:
+        job_config = _config_for_job(config, job)
+        base_client = self.client if self.client is not None else TushareHttpClient(job_config)
+        client = _CachedAuditedClient(
+            client=base_client,
+            job=job,
+            cache=cache,
+            auditor=auditor,
+        )
+        provider = TushareAShareDataProvider(client=client)
+        fetcher = getattr(provider, f"fetch_{job.dataset}")
+        return fetcher(job_config)
 
     def fetch_securities(self, config: AShareDataConfig) -> list[Security]:
         rows = self._post(
@@ -264,6 +288,73 @@ def _date_params(config: AShareDataConfig, **extra: str) -> dict[str, str]:
     if config.end_date:
         params["end_date"] = config.end_date
     return params
+
+
+def _config_for_job(config: AShareDataConfig, job: SyncJob) -> AShareDataConfig:
+    overrides: dict[str, Any] = {}
+    if job.start_date is not None:
+        overrides["start_date"] = job.start_date
+    if job.end_date is not None:
+        overrides["end_date"] = job.end_date
+    if job.index_code is not None:
+        overrides["index_codes"] = (job.index_code,)
+    return replace(config, **overrides)
+
+
+class _CachedAuditedClient:
+    def __init__(
+        self,
+        client: Any,
+        job: SyncJob,
+        cache: TushareResponseCache | None,
+        auditor: ApiRequestAuditor | None,
+    ):
+        self.client = client
+        self.job = job
+        self.cache = cache
+        self.auditor = auditor
+
+    def post(self, api_name: str, params: dict[str, Any] | None = None, fields: Any = None) -> list[dict[str, Any]]:
+        started_at = utc_now()
+        started = time.perf_counter()
+        cache_hit = False
+        records: list[dict[str, Any]] = []
+        status = "success"
+        error: str | None = None
+        try:
+            cached = self.cache.read(api_name, params=params, fields=fields) if self.cache is not None else None
+            if cached is not None and cached.hit:
+                cache_hit = True
+                records = cached.records
+                return records
+
+            records = self.client.post(api_name, params=params, fields=fields)
+            if self.cache is not None:
+                self.cache.write(api_name, params=params, fields=fields, records=records)
+            return records
+        except Exception as exc:
+            status = "error"
+            error = str(exc)
+            raise
+        finally:
+            if self.auditor is not None:
+                finished_at = utc_now()
+                self.auditor.write(
+                    ApiRequestAuditEntry(
+                        api_name=api_name,
+                        dataset=self.job.dataset,
+                        start_date=self.job.start_date,
+                        end_date=self.job.end_date,
+                        index_code=self.job.index_code,
+                        cache_hit=cache_hit,
+                        records=len(records),
+                        status=status,
+                        error=error,
+                        started_at=started_at,
+                        finished_at=finished_at,
+                        duration_seconds=max(0.0, time.perf_counter() - started),
+                    )
+                )
 
 
 def _clean(value: Any) -> Any | None:

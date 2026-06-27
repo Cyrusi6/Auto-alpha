@@ -13,7 +13,7 @@ This repository is now organized as a local A-share factor research platform. Th
 
 ## Data Layer
 
-`data_pipeline/` owns A-share data models, configuration, providers, local JSONL storage, sync orchestration, data quality checks, and sync state. It supports deterministic sample data and a standard-library Tushare Pro HTTP provider.
+`data_pipeline/` owns A-share data models, configuration, providers, local JSONL storage, sync planning, response cache, request audit, compaction, snapshots, dataset statistics, data quality checks, and sync state. It supports deterministic sample data and a standard-library Tushare Pro HTTP provider.
 
 The sample provider writes:
 
@@ -28,8 +28,15 @@ The sample provider writes:
 - `manifest.json`
 - `pipeline_state.json`
 - `quality_report.json` when validation is enabled
+- `sync_plan.json` when planned sync is used
+- `api_audit.jsonl` when request audit is enabled
+- `dataset_stats.json` when stats are requested
+- `snapshots/<snapshot_name>/<dataset>/records.jsonl` when snapshots are requested
+- `<dataset>/index.json` when a dataset index is built
 
 Append mode merges incoming records by dataset primary key. The quality report checks empty datasets, invalid dates, invalid stock codes, duplicate keys, daily bar price errors, financial announcement date fields, limit prices, adjustment factors, and index constituent weights.
+
+Planned sync splits large daily datasets by date windows and splits index constituents by index code plus date windows. Tushare planned jobs can use local response cache, request audit, resume from successful job ids in `pipeline_state.json`, post-sync compaction, snapshots, and dataset statistics. `run_pipeline --validate-only` checks existing data without fetching new records.
 
 ## Universe Layer
 
@@ -108,7 +115,7 @@ Returns are based on `adjusted_close`; simulated fills use raw `close`. The simu
 
 ## Dashboard
 
-`dashboard/` is a Streamlit artifact viewer. It reads local data, factor store, factor reports, batch reports, search reports, suite reports, artifact catalog, promotion decisions, backtest outputs, target positions, orders, and paper fills. Missing artifacts produce empty states instead of errors.
+`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, factor store, factor reports, batch reports, search reports, suite reports, artifact catalog, promotion decisions, backtest outputs, target positions, orders, and paper fills. Missing artifacts produce empty states instead of errors.
 
 ## Research Suite Outputs
 
@@ -125,4 +132,4 @@ The artifact catalog indexes data manifest, quality report, pipeline state, univ
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Production-grade Tushare incremental sync, neural-guided formula search, richer walk-forward policies, human promotion review, more stable neural training, finer matching realism, minute-level liquidity, fuller risk-model neutralization, finer industry classification, large-scale performance tuning, and broker connectivity are future work.
+The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton. Real Tushare token and quota validation, full-market performance testing, cross-source data checks, neural-guided formula search, richer walk-forward policies, human promotion review, more stable neural training, finer matching realism, minute-level volume modeling, fuller risk-model neutralization, finer industry classification, large-scale performance tuning, and broker connectivity are future work.

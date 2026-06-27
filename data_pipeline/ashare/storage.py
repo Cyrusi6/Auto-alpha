@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,6 +42,9 @@ class LocalAshareStorage:
     def dataset_path(self, dataset_name: str) -> Path:
         return self.data_dir / dataset_name / "records.jsonl"
 
+    def dataset_exists(self, dataset_name: str) -> bool:
+        return self.dataset_path(dataset_name).exists()
+
     def read_dataset(self, dataset_name: str) -> list[dict[str, Any]]:
         path = self.dataset_path(dataset_name)
         if not path.exists():
@@ -78,6 +82,45 @@ class LocalAshareStorage:
 
         return StorageWriteResult(dataset=dataset_name, path=str(path), records=len(payloads))
 
+    def compact_dataset(self, dataset_name: str) -> StorageWriteResult:
+        records = self.read_dataset(dataset_name)
+        compacted = self._deduplicate_records(dataset_name, records)
+        compacted = self._sort_records(dataset_name, compacted)
+        return self.write_dataset(dataset_name, compacted, mode="overwrite")
+
+    def snapshot_dataset(self, dataset_name: str, snapshot_name: str | None = None) -> Path:
+        source = self.dataset_path(dataset_name)
+        if not source.exists():
+            raise FileNotFoundError(f"dataset does not exist: {dataset_name}")
+
+        name = snapshot_name or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        target = self.data_dir / "snapshots" / name / dataset_name / "records.jsonl"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        return target
+
+    def build_record_index(self, dataset_name: str, key_fields: Sequence[str] | None = None) -> Path:
+        records = self.read_dataset(dataset_name)
+        fields = tuple(key_fields or DATASET_PRIMARY_KEYS.get(dataset_name, ()))
+        if not fields:
+            raise ValueError(f"No index key fields configured for dataset: {dataset_name}")
+
+        index = {
+            self._format_key(tuple(record.get(field) for field in fields)): line_number
+            for line_number, record in enumerate(records)
+        }
+        path = self.data_dir / dataset_name / "index.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(index, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        return path
+
+    def read_dataset_index(self, dataset_name: str) -> dict[str, int]:
+        path = self.data_dir / dataset_name / "index.json"
+        if not path.exists():
+            return {}
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return {str(key): int(value) for key, value in payload.items()}
+
     def write_manifest(
         self,
         config: AShareDataConfig,
@@ -114,6 +157,20 @@ class LocalAshareStorage:
                 order.append(key)
             deduped[key] = record
         return [deduped[key] for key in order]
+
+    @staticmethod
+    def _sort_records(dataset_name: str, records: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+        key_fields = DATASET_PRIMARY_KEYS.get(dataset_name)
+        if key_fields is None:
+            return sorted(records, key=lambda record: json.dumps(record, ensure_ascii=False, sort_keys=True))
+        return sorted(
+            records,
+            key=lambda record: tuple("" if record.get(field) is None else str(record.get(field)) for field in key_fields),
+        )
+
+    @staticmethod
+    def _format_key(key: tuple[Any, ...]) -> str:
+        return "|".join("" if value is None else str(value) for value in key)
 
     @staticmethod
     def _to_jsonable(record: object) -> dict[str, Any]:

@@ -6,7 +6,7 @@ The current implementation is local-first. It uses deterministic sample data and
 
 ## Modules
 
-- `data_pipeline/`: A-share data configuration, sample and Tushare HTTP providers, market constraint datasets, local JSONL storage, data quality checks, sync state, and data sync CLI.
+- `data_pipeline/`: A-share data configuration, sample and Tushare HTTP providers, market constraint datasets, sync planning, response cache, request audit, local JSONL storage, data quality checks, sync state, and data sync CLI.
 - `universe/`: Local A-share universe construction from governed data artifacts.
 - `model_core/`: A-share feature engineering, formula vocabulary, DSL operators, StackVM execution, factor evaluation, and mining engine.
 - `factor_engine/`: Cross-sectional preprocessing, market-cap and industry neutralization, correlation checks, and factor admission gate.
@@ -83,6 +83,42 @@ Common variables:
 
 Data sync writes `manifest.json` and `pipeline_state.json`. Passing `--validate` or `--quality-report` also writes `quality_report.json`. Passing `--mode append` merges with existing JSONL records by dataset primary key.
 
+Production-style data sync uses a stable plan of dataset jobs, date windows, and index-code windows:
+
+```bash
+uv run python -m data_pipeline.run_pipeline \
+  --plan-only \
+  --provider tushare \
+  --data-dir data/ashare \
+  --start-date 20240101 \
+  --end-date 20241231 \
+  --index-codes 000300.SH,000905.SH \
+  --chunk-days 30 \
+  --pretty
+
+uv run python -m data_pipeline.run_pipeline \
+  --sync \
+  --use-plan \
+  --provider tushare \
+  --data-dir data/ashare \
+  --start-date 20240101 \
+  --end-date 20241231 \
+  --index-codes 000300.SH,000905.SH \
+  --chunk-days 30 \
+  --mode append \
+  --cache \
+  --audit \
+  --resume \
+  --validate \
+  --fail-on-quality-error \
+  --compact \
+  --snapshot \
+  --stats \
+  --pretty
+```
+
+The same path works with `--provider sample` for offline verification. Planned sync writes `sync_plan.json`; request audit writes `api_audit.jsonl`; statistics write `dataset_stats.json`; snapshots are stored under `snapshots/<snapshot_name>/`. `--validate-only` validates existing artifacts without fetching data, and standalone `--compact`, `--snapshot`, and `--stats` actions operate on existing local datasets.
+
 Market constraint datasets include `daily_limits`, `adjustment_factors`, and `index_members`. The research and backtest stack uses `adjusted_close` for returns and raw `close` for local order simulation. The portfolio simulator applies local A-share constraints for suspension, limit up/down, T+1 selling, board lots, volume participation, and trading costs.
 
 The factor engine can be constrained to a local universe with `--universe-name` or `--universe-file`. `--factor-transform` supports `raw`, `winsorize`, `zscore`, `winsorize_zscore`, `neutralize_market_cap`, `neutralize_industry`, and `neutralize_industry_size`. Passing `--enable-gate` records coverage, turnover, split metrics, correlation checks, gate status, and transform metadata in the factor store and report.
@@ -103,7 +139,7 @@ Dashboard-specific overrides:
 
 ## Current Gaps
 
-- Tushare HTTP provider is available, but production use still requires valid token, quota, richer data quality rules, and a fuller incremental sync strategy.
+- Tushare HTTP provider and production sync scaffolding are available; production use still requires valid token, quota/permission verification, full-market performance tests, and more cross-source data checks.
 - Industry and market-cap neutralization now have a basic cross-sectional implementation; future work should expand this into a fuller risk model and finer industry classification.
 - Local daily simulation supports core A-share constraints; future work should add finer real-world matching, minute-level liquidity, and richer risk models.
 - Local formula search is available; future work should add neural-guided search, more operators, larger-scale performance tuning, and richer stability diagnostics.

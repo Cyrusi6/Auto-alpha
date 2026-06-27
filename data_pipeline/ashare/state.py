@@ -16,6 +16,9 @@ class DatasetSyncState:
     records: int
     start_date: str
     end_date: str | None
+    successful_job_ids: list[str] = field(default_factory=list)
+    failed_job_ids: list[str] = field(default_factory=list)
+    last_error: str | None = None
 
 
 @dataclass
@@ -30,16 +33,74 @@ class PipelineSyncState:
         start_date: str,
         end_date: str | None,
         synced_at: str | None = None,
+        successful_job_ids: list[str] | None = None,
+        failed_job_ids: list[str] | None = None,
+        last_error: str | None = None,
     ) -> None:
         timestamp = synced_at or _utc_now()
+        previous = self.datasets.get(dataset)
         self.datasets[dataset] = DatasetSyncState(
             dataset=dataset,
             last_sync_at=timestamp,
             records=records,
             start_date=start_date,
             end_date=end_date,
+            successful_job_ids=list(
+                successful_job_ids if successful_job_ids is not None else (previous.successful_job_ids if previous else [])
+            ),
+            failed_job_ids=list(
+                failed_job_ids if failed_job_ids is not None else (previous.failed_job_ids if previous else [])
+            ),
+            last_error=last_error,
         )
         self.updated_at = timestamp
+
+    def mark_job_success(
+        self,
+        dataset: str,
+        job_id: str,
+        records: int,
+        start_date: str,
+        end_date: str | None,
+    ) -> None:
+        previous = self.datasets.get(dataset)
+        successful = list(previous.successful_job_ids if previous else [])
+        failed = list(previous.failed_job_ids if previous else [])
+        if job_id not in successful:
+            successful.append(job_id)
+        failed = [existing for existing in failed if existing != job_id]
+        self.update_dataset(
+            dataset=dataset,
+            records=records,
+            start_date=start_date,
+            end_date=end_date,
+            successful_job_ids=successful,
+            failed_job_ids=failed,
+            last_error=None,
+        )
+
+    def mark_job_failed(
+        self,
+        dataset: str,
+        job_id: str,
+        error: str,
+        start_date: str,
+        end_date: str | None,
+    ) -> None:
+        previous = self.datasets.get(dataset)
+        successful = list(previous.successful_job_ids if previous else [])
+        failed = list(previous.failed_job_ids if previous else [])
+        if job_id not in failed:
+            failed.append(job_id)
+        self.update_dataset(
+            dataset=dataset,
+            records=previous.records if previous else 0,
+            start_date=start_date,
+            end_date=end_date,
+            successful_job_ids=successful,
+            failed_job_ids=failed,
+            last_error=error,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -57,10 +118,15 @@ def load_pipeline_state(path: str | Path) -> PipelineSyncState:
         return PipelineSyncState()
 
     payload = json.loads(state_path.read_text(encoding="utf-8"))
-    datasets = {
-        name: DatasetSyncState(**dataset_payload)
-        for name, dataset_payload in (payload.get("datasets") or {}).items()
-    }
+    datasets = {}
+    for name, dataset_payload in (payload.get("datasets") or {}).items():
+        payload_with_defaults = {
+            "successful_job_ids": [],
+            "failed_job_ids": [],
+            "last_error": None,
+            **dataset_payload,
+        }
+        datasets[name] = DatasetSyncState(**payload_with_defaults)
     return PipelineSyncState(
         datasets=datasets,
         updated_at=payload.get("updated_at"),

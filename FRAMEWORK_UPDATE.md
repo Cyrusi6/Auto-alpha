@@ -777,3 +777,69 @@
 - 为 production_candidate 增加人工审核、冻结版本和发布记录。
 - 扩展 walk-forward 为更多窗口策略、样本外分组和稳健性惩罚。
 - dashboard 增加 suite 历史对比、artifact 下载和 promotion 审核视图。
+
+## 2026-06-27 - 任务 015
+
+### 本次变更摘要
+- 新增生产化 A 股同步计划层，支持按数据集、日期窗口和指数代码生成稳定 sync jobs。
+- 增强 Tushare provider，支持按 `SyncJob` 分段拉取，并接入本地响应缓存和 API request audit。
+- 增强本地 JSONL storage，支持 dataset compaction、snapshot、record index 和 dataset stats。
+- 增强 `data_pipeline.run_pipeline`，支持 `--plan-only`、`--use-plan`、`--resume`、`--validate-only`、`--fail-on-quality-error`、`--compact`、`--snapshot`、`--stats`、`--audit`。
+- 增强 dashboard，展示 sync plan、pipeline state、API audit、dataset stats 和 snapshot summary。
+
+### 新增文件
+- `data_pipeline/ashare/sync_plan.py`
+- `data_pipeline/ashare/cache.py`
+- `data_pipeline/ashare/audit.py`
+- `data_pipeline/ashare/compaction.py`
+- `data_pipeline/ashare/stats.py`
+- `tests/test_ashare_sync_plan.py`
+- `tests/test_tushare_chunked_sync.py`
+- `tests/test_ashare_storage_governance.py`
+- `tests/test_ashare_manager_production_sync.py`
+- `tests/test_run_pipeline_production_sync.py`
+- `tests/test_production_sync_no_old_terms.py`
+
+### 修改文件
+- `data_pipeline/ashare/__init__.py`
+- `data_pipeline/ashare/manager.py`
+- `data_pipeline/ashare/providers/tushare.py`
+- `data_pipeline/ashare/state.py`
+- `data_pipeline/ashare/storage.py`
+- `data_pipeline/run_pipeline.py`
+- `dashboard/data_service.py`
+- `dashboard/app.py`
+- `tests/test_dashboard_artifacts.py`
+- `README.md`
+- `CATREADME.md`
+- `FRAMEWORK_UPDATE.md`
+
+### 删除或隔离的旧问题
+- Tushare 同步不再只能一次性按全数据集拉取，新增按 job/date-window/index-code 的计划执行路径。
+- 重复 append 后的数据集可通过 compaction 按主键稳定去重。
+- 本地数据湖不再只有 records 文件，新增 stats、snapshot 和 index 能力。
+- 同步过程可通过 pipeline state 记录 job 成功/失败，为 resume 提供依据。
+- 请求审计和缓存均不写入密钥。
+
+### 新增 A 股平台能力
+- `build_sync_plan()` 可生成稳定 `plan_id` 和 `job_id`，用于可复现同步计划。
+- `TushareResponseCache` 基于 `api_name`、`params`、`fields` 缓存响应。
+- `ApiRequestAuditor` 写入 `api_audit.jsonl`，记录 cache hit、records、status、error 和耗时。
+- `LocalAshareStorage` 支持 `compact_dataset()`、`snapshot_dataset()`、`build_record_index()`、`read_dataset_index()`、`dataset_exists()`。
+- `compute_all_dataset_stats()` 写出 `dataset_stats.json`，包含记录数、主键唯一数、重复数、日期范围、股票数量、空值计数和文件大小。
+- `run_pipeline --validate-only` 可只对现有数据做质量检查；`--fail-on-quality-error` 可作为质量门禁返回非 0。
+
+### 测试结果
+- `uv run pytest tests/test_ashare_config.py tests/test_ashare_validators.py tests/test_ashare_pipeline.py tests/test_ashare_provider_sample.py tests/test_ashare_quality.py tests/test_ashare_schema_market_constraints.py tests/test_ashare_state.py tests/test_ashare_storage.py tests/test_ashare_sync_plan.py tests/test_tushare_client.py tests/test_tushare_provider.py tests/test_tushare_chunked_sync.py tests/test_ashare_storage_governance.py tests/test_ashare_manager.py tests/test_ashare_manager_production_sync.py tests/test_run_pipeline_cli.py tests/test_run_pipeline_production_sync.py tests/test_dashboard_artifacts.py tests/test_dashboard_docs_dependencies.py tests/test_data_governance_no_old_terms.py tests/test_production_sync_no_old_terms.py`：通过，92 passed。
+- `uv run pytest`：通过，197 passed。
+- `uv run python -m data_pipeline.run_pipeline --plan-only --provider sample --data-dir /tmp/auto-alpha-production-sync/data --start-date 20240102 --end-date 20240104 --index-codes 000300.SH --chunk-days 1 --pretty`：通过，生成 20 个 sync jobs。
+- `uv run python -m data_pipeline.run_pipeline --sync --use-plan --provider sample --data-dir /tmp/auto-alpha-production-sync/data --start-date 20240102 --end-date 20240104 --index-codes 000300.SH --chunk-days 1 --validate --audit --stats --compact --snapshot --mode append --pretty`：通过，quality 无 error，生成 `sync_plan.json`、`api_audit.jsonl`、`dataset_stats.json` 和 snapshot。
+- `uv run python -m data_pipeline.run_pipeline --validate-only --data-dir /tmp/auto-alpha-production-sync/data --pretty`：通过，读取现有数据并重写 quality report。
+- `uv run python -m universe.run_universe --data-dir /tmp/auto-alpha-production-sync/data --as-of-date 20240104 --universe-name csi300_sample --use-index-members --index-code 000300.SH --min-listed-days 0 --min-amount 0 --pretty`：通过，构建 3 个 sample 成员。
+- `uv run python -m research_suite.run_suite --suite-name production_sync_sample_suite --provider sample --skip-data-sync --data-dir /tmp/auto-alpha-production-sync/data --universe-name csi300_sample --index-code 000300.SH --factor-store-dir /tmp/auto-alpha-production-sync/store --report-dir /tmp/auto-alpha-production-sync/reports --output-dir /tmp/auto-alpha-production-sync/suite --backtest-dir /tmp/auto-alpha-production-sync/backtest --orders-dir /tmp/auto-alpha-production-sync/orders --as-of-date 20240104 --factor-transform winsorize_zscore --search-seed 42 --search-population-size 12 --search-generations 2 --search-max-candidates 8 --top-k 5 --composite-method rank_average --promote-latest-composite --walk-forward-train-size 1 --walk-forward-test-size 1 --walk-forward-step-size 1 --pretty`：通过，suite status success，selected factor `factor_0c8dda802c9fd989` 晋级为 `production_candidate`。
+
+### 后续待办
+- 使用真实 Tushare token、权限和积分在全市场范围验证 chunked sync。
+- 增加跨数据源校验、异常值修复策略和更细质量门禁。
+- 对大规模 JSONL 读取、index 构建和 compaction 做性能压测。
+- dashboard 增加 sync job 明细、audit 错误过滤和 snapshot 差异对比。

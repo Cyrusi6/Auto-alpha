@@ -87,6 +87,20 @@ def render_app(config: DashboardConfig | None = None) -> None:
             )
         else:
             st.info("No quality_report.json found.")
+        sync_plan = service.load_sync_plan()
+        pipeline_state = service.load_pipeline_state()
+        dataset_stats = service.load_dataset_stats()
+        st.subheader("Production Sync")
+        st.json(
+            {
+                "plan_id": sync_plan.get("plan_id"),
+                "jobs": len(sync_plan.get("jobs", [])),
+                "state_updated_at": pipeline_state.get("updated_at"),
+                "dataset_stats": len(dataset_stats.get("datasets", [])),
+            }
+        )
+        _show_dataframe_or_empty("API Request Audit", service.load_api_audit())
+        _show_dataframe_or_empty("Snapshots", service.load_snapshot_summary())
         col1, col2 = st.columns(2)
         with col1:
             _show_dataframe_or_empty("Securities", service.load_dataset("securities"))

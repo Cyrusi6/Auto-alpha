@@ -204,6 +204,46 @@ def test_dashboard_service_reads_suite_artifacts(tmp_path):
     assert service.load_promotion_decision()["passed"] is True
 
 
+def test_dashboard_service_reads_production_sync_artifacts(tmp_path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "sync_plan.json").write_text(
+        '{"plan_id":"plan_test","jobs":[{"job_id":"job_1"}]}',
+        encoding="utf-8",
+    )
+    (data_dir / "pipeline_state.json").write_text(
+        '{"updated_at":"now","datasets":{}}',
+        encoding="utf-8",
+    )
+    (data_dir / "api_audit.jsonl").write_text(
+        '{"api_name":"daily","dataset":"daily_bars","status":"success","cache_hit":false}\n',
+        encoding="utf-8",
+    )
+    (data_dir / "dataset_stats.json").write_text(
+        '{"datasets":[{"dataset":"daily_bars","records":6}]}',
+        encoding="utf-8",
+    )
+    snapshot_dataset = data_dir / "snapshots" / "snap_test" / "daily_bars"
+    snapshot_dataset.mkdir(parents=True)
+    (snapshot_dataset / "records.jsonl").write_text("{}", encoding="utf-8")
+    service = AshareDashboardService(
+        DashboardConfig(
+            data_dir=data_dir,
+            factor_store_dir=tmp_path / "store",
+            report_dir=tmp_path / "reports",
+            backtest_dir=tmp_path / "backtest",
+            orders_dir=tmp_path / "orders",
+        )
+    )
+
+    assert service.load_sync_plan()["plan_id"] == "plan_test"
+    assert service.load_pipeline_state()["updated_at"] == "now"
+    assert not service.load_api_audit().empty
+    assert service.load_dataset_stats()["datasets"][0]["records"] == 6
+    snapshots = service.load_snapshot_summary()
+    assert snapshots.iloc[0]["snapshot"] == "snap_test"
+
+
 def test_dashboard_app_import_has_no_external_side_effects():
     module = importlib.import_module("dashboard.app")
 

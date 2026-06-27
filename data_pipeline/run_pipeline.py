@@ -10,6 +10,10 @@ from pathlib import Path
 
 from .ashare import ASHARE_DATASETS, AShareDataConfig, build_pipeline_plan
 from .ashare.manager import sync_ashare_datasets
+from .ashare.quality import validate_all_datasets, write_quality_report
+from .ashare.stats import compute_all_dataset_stats, write_dataset_stats
+from .ashare.storage import LocalAshareStorage
+from .ashare.sync_plan import build_sync_plan
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -25,6 +29,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Write local A-share datasets using the selected provider.",
     )
     parser.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Print a production sync plan without writing datasets.",
+    )
+    parser.add_argument(
+        "--use-plan",
+        action="store_true",
+        help="Execute sync through the production sync plan.",
+    )
+    parser.add_argument(
         "--pretty",
         action="store_true",
         help="Pretty-print JSON output.",
@@ -36,6 +50,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--adjust", help="Override the configured adjustment mode.")
     parser.add_argument("--universe", help="Override the configured universe.")
     parser.add_argument("--index-codes", help="Comma-separated index codes for index_members sync.")
+    parser.add_argument("--chunk-days", type=int, default=30, help="Date chunk size for planned sync jobs.")
     parser.add_argument(
         "--datasets",
         help="Comma-separated datasets to sync. Defaults to all A-share datasets.",
@@ -60,6 +75,31 @@ def _build_parser() -> argparse.ArgumentParser:
         "--state-file",
         help="Override the pipeline sync state file path.",
     )
+    parser.add_argument(
+        "--cache",
+        dest="cache_enabled",
+        action="store_true",
+        help="Enable local Tushare response cache for planned sync.",
+    )
+    parser.add_argument(
+        "--no-cache",
+        dest="cache_enabled",
+        action="store_false",
+        help="Disable local Tushare response cache.",
+    )
+    parser.set_defaults(cache_enabled=False)
+    parser.add_argument("--resume", action="store_true", help="Skip jobs already marked successful in state.")
+    parser.add_argument("--validate-only", action="store_true", help="Validate existing local datasets only.")
+    parser.add_argument(
+        "--fail-on-quality-error",
+        action="store_true",
+        help="Return non-zero when validation reports errors.",
+    )
+    parser.add_argument("--compact", action="store_true", help="Compact local datasets after sync or as a standalone action.")
+    parser.add_argument("--snapshot", action="store_true", help="Snapshot local datasets after sync or as a standalone action.")
+    parser.add_argument("--snapshot-name", help="Optional snapshot folder name.")
+    parser.add_argument("--stats", action="store_true", help="Write dataset_stats.json.")
+    parser.add_argument("--audit", action="store_true", help="Write api_audit.jsonl for planned provider requests.")
     return parser
 
 
@@ -76,6 +116,32 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     indent = 2 if args.pretty else None
+    if args.plan_only:
+        plan = build_sync_plan(
+            config,
+            datasets=selected_datasets,
+            chunk_days=args.chunk_days,
+            index_codes=config.index_codes,
+            start_date=config.start_date,
+            end_date=config.end_date,
+        )
+        print(json.dumps(plan.to_dict(), ensure_ascii=False, indent=indent))
+        return 0
+
+    if args.validate_only:
+        return _run_validate_only(config, indent=indent, fail_on_quality_error=args.fail_on_quality_error)
+
+    if not args.sync and (args.compact or args.snapshot or args.stats):
+        return _run_local_governance_actions(
+            config,
+            selected_datasets=selected_datasets,
+            compact=args.compact,
+            snapshot=args.snapshot,
+            snapshot_name=args.snapshot_name,
+            stats=args.stats,
+            indent=indent,
+        )
+
     if not args.sync:
         plan = build_pipeline_plan(config)
         print(json.dumps(plan.to_dict(), ensure_ascii=False, indent=indent))
@@ -88,12 +154,24 @@ def main(argv: list[str] | None = None) -> int:
             mode=args.mode,
             validate=args.validate or args.quality_report,
             state_file=args.state_file,
+            use_plan=args.use_plan,
+            chunk_days=args.chunk_days,
+            cache_enabled=args.cache_enabled,
+            audit_enabled=args.audit,
+            resume=args.resume,
+            fail_on_quality_error=args.fail_on_quality_error,
+            compact_after_sync=args.compact,
+            snapshot_after_sync=args.snapshot,
+            snapshot_name=args.snapshot_name,
+            write_stats=args.stats,
         )
     except (NotImplementedError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
 
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=indent))
+    if args.fail_on_quality_error and result.has_errors:
+        return 3
     return 0
 
 
@@ -132,6 +210,54 @@ def _parse_datasets(value: str | None) -> list[str] | None:
         raise ValueError(f"Unsupported A-share datasets: {', '.join(unsupported)}")
 
     return datasets
+
+
+def _run_validate_only(config: AShareDataConfig, indent: int | None, fail_on_quality_error: bool) -> int:
+    storage = LocalAshareStorage(config.data_dir)
+    report = validate_all_datasets(storage)
+    path = write_quality_report(report, storage.data_dir / "quality_report.json")
+    payload = report.to_dict()
+    payload["quality_report_path"] = str(path)
+    print(json.dumps(payload, ensure_ascii=False, indent=indent))
+    if fail_on_quality_error and payload["has_errors"]:
+        return 3
+    return 0
+
+
+def _run_local_governance_actions(
+    config: AShareDataConfig,
+    selected_datasets: list[str] | None,
+    compact: bool,
+    snapshot: bool,
+    snapshot_name: str | None,
+    stats: bool,
+    indent: int | None,
+) -> int:
+    storage = LocalAshareStorage(config.data_dir)
+    selected = list(ASHARE_DATASETS if selected_datasets is None else selected_datasets)
+    payload: dict[str, object] = {"data_dir": str(config.data_dir)}
+
+    if compact:
+        compacted = [storage.compact_dataset(dataset) for dataset in selected if storage.dataset_exists(dataset)]
+        payload["compaction_summary"] = [
+            {"dataset": result.dataset, "path": result.path, "records": result.records}
+            for result in compacted
+        ]
+
+    if snapshot:
+        snapshot_paths = [
+            storage.snapshot_dataset(dataset, snapshot_name=snapshot_name)
+            for dataset in selected
+            if storage.dataset_exists(dataset)
+        ]
+        payload["snapshot_paths"] = [str(path) for path in snapshot_paths]
+
+    if stats:
+        stats_path = write_dataset_stats(compute_all_dataset_stats(storage), storage.data_dir / "dataset_stats.json")
+        payload["stats_path"] = str(stats_path)
+
+    print(json.dumps(payload, ensure_ascii=False, indent=indent))
+    return 0
 
 
 if __name__ == "__main__":
