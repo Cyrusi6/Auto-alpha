@@ -24,6 +24,8 @@ def promote_factor_if_eligible(
         "positive_test_score_ratio": float(walk_forward_result.summary.get("positive_test_score_ratio", 0.0)),
         "fill_rate": float(backtest_metrics.get("fill_rate", 0.0)),
         "constraint_reject_rate": float(backtest_metrics.get("constraint_reject_rate", 0.0)),
+        "tracking_error": float(backtest_metrics.get("tracking_error", 0.0)),
+        "risk_constraint_violations": float(backtest_metrics.get("risk_constraint_violations", 0.0)),
         "factor_type": factor_type,
         "require_composite": bool(config.require_composite),
     }
@@ -36,6 +38,10 @@ def promote_factor_if_eligible(
         reasons.append("fill_rate_below_threshold")
     if checks["constraint_reject_rate"] > config.max_constraint_reject_rate:
         reasons.append("constraint_reject_rate_above_threshold")
+    if checks["tracking_error"] > config.max_tracking_error:
+        reasons.append("tracking_error_above_threshold")
+    if checks["risk_constraint_violations"] > config.max_constraint_violations:
+        reasons.append("risk_constraint_violations_above_threshold")
     if config.require_composite and factor_type != "composite":
         reasons.append("factor_is_not_composite")
 

@@ -19,7 +19,7 @@ class AShareRiskEngine:
         for target in targets:
             if target.target_weight < 0:
                 errors.append(f"{target.ts_code} has negative target weight")
-            if target.target_weight > self.max_weight:
+            if target.target_weight > self.max_weight + 1e-6:
                 errors.append(f"{target.ts_code} exceeds max_weight")
         return not errors, errors
 

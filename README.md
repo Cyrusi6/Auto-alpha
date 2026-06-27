@@ -15,7 +15,9 @@ The current implementation is local-first. It uses deterministic sample data and
 - `research/`: Batch candidate execution, factor ranking, composite factor construction, and batch research reports.
 - `formula_search/`: Formula metadata, random generation, mutation, crossover, multi-generation search, and search reports.
 - `research_suite/`: One-click orchestration, walk-forward robustness, production-candidate promotion, and artifact catalog.
-- `backtest/`: Long-only A-share portfolio simulation and backtest CLI.
+- `risk_model/`: Security exposures, portfolio/benchmark active exposures, covariance, risk constraints, and risk reports.
+- `portfolio_optimizer/`: Deterministic long-only benchmark-aware portfolio optimizer.
+- `backtest/`: Long-only A-share portfolio simulation, market constraints, and benchmark-aware risk mode.
 - `execution/`: Paper broker and order/fill export utilities.
 - `strategy_manager/`: Target position and paper order generation.
 - `dashboard/`: Streamlit dashboard for local artifacts.
@@ -129,6 +131,39 @@ Search-style research is available through `python -m formula_search.run_search`
 
 The suite runner is available through `python -m research_suite.run_suite`. It orchestrates data sync, universe construction, formula search, composite backtest, paper order export, walk-forward robustness evaluation, promotion decision, suite report, and `artifact_catalog.json`. When promotion passes, the selected composite factor is updated to `production_candidate` in the factor store with the promotion decision in metadata.
 
+Risk-aware portfolio construction is available in the optimizer, backtest, strategy, and suite CLIs:
+
+```bash
+uv run python -m portfolio_optimizer.run_optimize \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --output-dir /tmp/auto-alpha-demo/optimize \
+  --latest-approved \
+  --factor-type composite \
+  --index-code 000300.SH \
+  --as-of-date 20240104 \
+  --max-weight 0.10 \
+  --max-names 2 \
+  --risk-aversion 1.0 \
+  --turnover-penalty 0.1 \
+  --pretty
+
+uv run python -m backtest.run_backtest \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --output-dir /tmp/auto-alpha-demo/backtest_risk \
+  --latest-approved \
+  --factor-type composite \
+  --portfolio-method risk_aware \
+  --index-code 000300.SH \
+  --top-n 2 \
+  --max-weight 0.10 \
+  --risk-report-dir /tmp/auto-alpha-demo/risk_reports \
+  --pretty
+```
+
+`strategy_manager.runner` and `research_suite.run_suite` accept the same `--portfolio-method risk_aware`, `--index-code`, `--risk-aversion`, `--turnover-penalty`, `--max-turnover`, `--max-industry-active-weight`, and `--max-tracking-error` controls. Risk-aware artifacts include `optimization_result.json`, `risk_report.json`, and `risk_report.md`; target positions include optimized, benchmark, and active weights.
+
 Dashboard-specific overrides:
 
 - `ASHARE_DASHBOARD_DATA_DIR`
@@ -140,8 +175,8 @@ Dashboard-specific overrides:
 ## Current Gaps
 
 - Tushare HTTP provider and production sync scaffolding are available; production use still requires valid token, quota/permission verification, full-market performance tests, and more cross-source data checks.
-- Industry and market-cap neutralization now have a basic cross-sectional implementation; future work should expand this into a fuller risk model and finer industry classification.
-- Local daily simulation supports core A-share constraints; future work should add finer real-world matching, minute-level liquidity, and richer risk models.
+- Risk model and benchmark-aware portfolio optimization now have a basic local implementation; future work should add Barra-like multi-factor risk, more robust covariance estimation, a production optimizer, and large-scale performance tuning.
+- Local daily simulation supports core A-share constraints; future work should add finer real-world matching and minute-level volume modeling.
 - Local formula search is available; future work should add neural-guided search, more operators, larger-scale performance tuning, and richer stability diagnostics.
 - One-click research suites now provide local walk-forward and promotion gates; future work should add richer approval policies and human review workflow.
 - Paper order export is local only; no real broker integration is implemented.

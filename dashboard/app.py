@@ -58,8 +58,8 @@ def render_app(config: DashboardConfig | None = None) -> None:
         if st.button("Refresh"):
             st.rerun()
 
-    data_tab, factor_tab, report_tab, backtest_tab, orders_tab = st.tabs(
-        ["Data", "Factors", "Reports", "Backtest", "Orders"]
+    data_tab, factor_tab, report_tab, backtest_tab, risk_tab, orders_tab = st.tabs(
+        ["Data", "Factors", "Reports", "Backtest", "Risk", "Orders"]
     )
 
     with data_tab:
@@ -210,6 +210,28 @@ def render_app(config: DashboardConfig | None = None) -> None:
         st.plotly_chart(plot_backtest_metrics(metrics), use_container_width=True)
         st.plotly_chart(plot_equity_curve(equity_curve), use_container_width=True)
         _show_dataframe_or_empty("Trades", trades)
+
+    with risk_tab:
+        risk_report = service.load_risk_report_json()
+        risk_markdown = service.load_risk_report_markdown()
+        optimization = service.load_optimization_result()
+        st.subheader("Risk Metrics")
+        if risk_report:
+            st.json(
+                {
+                    "metrics": risk_report.get("metrics", {}),
+                    "violations": risk_report.get("violations", []),
+                    "checks": risk_report.get("checks", {}),
+                    "portfolio_industry": risk_report.get("portfolio", {}).get("industry_weights", {}),
+                    "active_industry": risk_report.get("active", {}).get("industry_weights", {}),
+                }
+            )
+        else:
+            st.info("No risk_report.json found.")
+        st.subheader("Optimization Result")
+        st.json(optimization if optimization else {"status": "No optimization_result.json found"})
+        if risk_markdown:
+            st.markdown(risk_markdown)
 
     with orders_tab:
         targets = service.load_target_positions()

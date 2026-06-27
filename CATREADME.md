@@ -7,7 +7,7 @@ This repository is now organized as a local A-share factor research platform. Th
 3. Register factors and experiments.
 4. Run batch or search-style research and build composite factors.
 5. Run the one-click research suite, including walk-forward and promotion.
-6. Run portfolio simulation.
+6. Run equal-weight or benchmark-aware portfolio simulation.
 7. Export target positions and paper orders.
 8. Review artifacts in the dashboard.
 
@@ -63,6 +63,24 @@ Planned sync splits large daily datasets by date windows and splits index consti
 
 `research_suite/` orchestrates the complete local workflow. It can run data sync, universe construction, formula search, backtest, paper orders, walk-forward robustness, promotion, suite report writing, and artifact catalog generation in one command.
 
+## Risk Model And Portfolio Optimization
+
+`risk_model/` builds local A-share risk views from the loaded data artifacts:
+
+- stock-level industry, size, volatility, and beta exposures
+- portfolio and benchmark industry weights
+- active exposure versus an index benchmark from `index_members`
+- return covariance, portfolio volatility, and tracking error
+- constraint checks for max weight, industry active weight, total active weight, tracking error, names, and HHI
+- `risk_report.json` and `risk_report.md`
+
+`portfolio_optimizer/` provides a deterministic long-only benchmark-aware optimizer. It ranks alpha scores, tilts from benchmark weights, clamps max names and max weight, shrinks turnover and tracking error, and outputs:
+
+- `optimized_weights.jsonl`
+- `optimization_result.json`
+- `risk_report.json`
+- `risk_report.md`
+
 ## Factor Store And Experiments
 
 `factor_store/` persists:
@@ -101,6 +119,8 @@ Promotion can update a passing composite factor to `status=production_candidate`
 
 Returns are based on `adjusted_close`; simulated fills use raw `close`. The simulator applies suspension, limit up/down, T+1 selling, board-lot rounding, volume participation, and cost rules, with rejected and partial fills recorded in `trades.jsonl`.
 
+Backtest supports `--portfolio-method equal_weight` and `--portfolio-method risk_aware`. Risk-aware mode calls the optimizer on each rebalance date, records tracking error, active share, HHI, top weight, industry active exposure, and risk constraint violations, and can write a risk report directory.
+
 ## Paper Execution And Order Export
 
 `execution/` provides local paper fills and order/fill export helpers using the same A-share trading rule primitives as the backtest.
@@ -113,9 +133,11 @@ Returns are based on `adjusted_close`; simulated fills use raw `close`. The simu
 - `orders.jsonl`
 - `paper_fills.jsonl`
 
+With `--portfolio-method risk_aware`, target positions include optimized weight, benchmark weight, and active weight. The summary includes risk metrics and constraint violations.
+
 ## Dashboard
 
-`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, factor store, factor reports, batch reports, search reports, suite reports, artifact catalog, promotion decisions, backtest outputs, target positions, orders, and paper fills. Missing artifacts produce empty states instead of errors.
+`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, factor store, factor reports, batch reports, search reports, suite reports, artifact catalog, promotion decisions, risk reports, optimization results, backtest outputs, target positions, orders, and paper fills. Missing artifacts produce empty states instead of errors.
 
 ## Research Suite Outputs
 
@@ -128,8 +150,8 @@ Returns are based on `adjusted_close`; simulated fills use raw `close`. The simu
 - `artifact_catalog.json`
 - `artifact_catalog.md`
 
-The artifact catalog indexes data manifest, quality report, pipeline state, universe summary, search reports, factor store files, selected factor values, backtest outputs, order outputs, suite report, and promotion decision.
+The artifact catalog indexes data manifest, quality report, pipeline state, universe summary, search reports, factor store files, selected factor values, backtest outputs, risk reports, optimization results, order outputs, suite report, and promotion decision.
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton. Real Tushare token and quota validation, full-market performance testing, cross-source data checks, neural-guided formula search, richer walk-forward policies, human promotion review, more stable neural training, finer matching realism, minute-level volume modeling, fuller risk-model neutralization, finer industry classification, large-scale performance tuning, and broker connectivity are future work.
+The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton. Risk model and portfolio optimization now have a basic benchmark-aware local implementation. Real Tushare token and quota validation, full-market performance testing, cross-source data checks, Barra-like multi-factor risk, more robust covariance estimation, a production optimizer, neural-guided formula search, richer walk-forward policies, human promotion review, more stable neural training, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, and broker connectivity are future work.

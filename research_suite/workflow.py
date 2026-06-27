@@ -235,6 +235,22 @@ class ResearchSuiteRunner:
                 "2",
                 "--max-weight",
                 "0.10",
+                "--portfolio-method",
+                self.config.portfolio_method,
+                "--index-code",
+                self.config.index_code,
+                "--risk-aversion",
+                str(self.config.risk_aversion),
+                "--turnover-penalty",
+                str(self.config.turnover_penalty),
+                "--max-turnover",
+                str(self.config.max_turnover),
+                "--max-industry-active-weight",
+                str(self.config.max_industry_active_weight),
+                "--max-tracking-error",
+                str(self.config.max_tracking_error),
+                "--risk-report-dir",
+                str(Path(self.config.backtest_dir) / "risk"),
             ],
         )
         self.backtest_summary = payload
@@ -244,12 +260,18 @@ class ResearchSuiteRunner:
             "equity_curve": str(Path(self.config.backtest_dir) / "equity_curve.jsonl"),
             "trades": str(Path(self.config.backtest_dir) / "trades.jsonl"),
         }
+        if payload.get("risk_report_path"):
+            output_paths["risk_report"] = str(payload["risk_report_path"])
+        if payload.get("risk_report_md_path"):
+            output_paths["risk_report_markdown"] = str(payload["risk_report_md_path"])
+        if payload.get("optimization_result_path"):
+            output_paths["optimization_result"] = str(payload["optimization_result_path"])
         if self.selected_factor_id:
             output_paths["selected_factor_values"] = str(
                 Path(self.config.factor_store_dir) / "factor_values" / f"{self.selected_factor_id}.jsonl"
             )
         for name, path in output_paths.items():
-            self.catalog = register_artifact(self.catalog, name, path, "jsonl" if path.endswith(".jsonl") else "json", "backtest")
+            self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "backtest")
         return payload, output_paths
 
     def _stage_orders(self) -> tuple[dict[str, Any], dict[str, str]]:
@@ -271,6 +293,20 @@ class ResearchSuiteRunner:
                 "0.10",
                 "--portfolio-value",
                 "1000000",
+                "--portfolio-method",
+                self.config.portfolio_method,
+                "--index-code",
+                self.config.index_code,
+                "--risk-aversion",
+                str(self.config.risk_aversion),
+                "--turnover-penalty",
+                str(self.config.turnover_penalty),
+                "--max-turnover",
+                str(self.config.max_turnover),
+                "--max-industry-active-weight",
+                str(self.config.max_industry_active_weight),
+                "--max-tracking-error",
+                str(self.config.max_tracking_error),
             ],
         )
         output_paths = {
@@ -278,8 +314,12 @@ class ResearchSuiteRunner:
             "orders": str(Path(self.config.orders_dir) / "orders.jsonl"),
             "paper_fills": str(Path(self.config.orders_dir) / "paper_fills.jsonl"),
         }
+        if payload.get("risk_report_path"):
+            output_paths["orders_risk_report"] = str(payload["risk_report_path"])
+        if payload.get("optimization_result_path"):
+            output_paths["orders_optimization_result"] = str(payload["optimization_result_path"])
         for name, path in output_paths.items():
-            self.catalog = register_artifact(self.catalog, name, path, "jsonl", "orders")
+            self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "orders")
         return payload, output_paths
 
     def _stage_walk_forward(self) -> tuple[dict[str, Any], dict[str, str]]:
@@ -348,3 +388,11 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 def _utc_now() -> str:
     return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+
+def _artifact_kind(path: str) -> str:
+    if path.endswith(".md"):
+        return "markdown"
+    if path.endswith(".jsonl"):
+        return "jsonl"
+    return "json"

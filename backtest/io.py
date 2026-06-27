@@ -23,7 +23,7 @@ def select_factor_id(
     if factor_type != "any":
         factors = [record for record in factors if _record_factor_type(record) == factor_type]
     if latest_approved:
-        approved = [record for record in factors if record.status == "approved"]
+        approved = [record for record in factors if record.status in {"approved", "production_candidate"}]
         if approved:
             return approved[-1].factor_id
     if not factors:

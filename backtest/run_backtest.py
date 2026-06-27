@@ -9,6 +9,7 @@ from pathlib import Path
 
 from factor_store import LocalFactorStore
 from model_core.data_loader import AShareDataLoader
+from risk_model import write_risk_report
 
 from .io import describe_factor, factor_values_to_matrix, select_factor_id
 from .simulator import AShareBacktestSimulator
@@ -33,6 +34,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--initial-cash", type=float, default=1_000_000.0)
     parser.add_argument("--top-n", type=int, default=20)
     parser.add_argument("--max-weight", type=float, default=0.10)
+    parser.add_argument("--portfolio-method", choices=["equal_weight", "risk_aware"], default="equal_weight")
+    parser.add_argument("--index-code", default="000300.SH")
+    parser.add_argument("--risk-aversion", type=float, default=1.0)
+    parser.add_argument("--turnover-penalty", type=float, default=0.1)
+    parser.add_argument("--max-turnover", type=float, default=1.0)
+    parser.add_argument("--max-industry-active-weight", type=float, default=0.20)
+    parser.add_argument("--max-tracking-error", type=float, default=1.0)
+    parser.add_argument("--risk-report-dir")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -52,11 +61,20 @@ def main(argv: list[str] | None = None) -> int:
     values = store.load_factor_values(factor_id)
     factors = factor_values_to_matrix(values, loader.ts_codes, loader.trade_dates)
 
-    result = AShareBacktestSimulator(
+    simulator = AShareBacktestSimulator(
         initial_cash=args.initial_cash,
         top_n=args.top_n,
         max_weight=args.max_weight,
-    ).simulate(factors, loader)
+        portfolio_method=args.portfolio_method,
+        index_code=args.index_code,
+        risk_aversion=args.risk_aversion,
+        turnover_penalty=args.turnover_penalty,
+        max_turnover=args.max_turnover,
+        max_industry_active_weight=args.max_industry_active_weight,
+        max_tracking_error=args.max_tracking_error,
+        factor_id=factor_id,
+    )
+    result = simulator.simulate(factors, loader)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "backtest_result.json").write_text(
@@ -65,15 +83,46 @@ def main(argv: list[str] | None = None) -> int:
     )
     _write_jsonl(output_dir / "equity_curve.jsonl", result.snapshots)
     _write_jsonl(output_dir / "trades.jsonl", result.fills)
+    risk_report_path = None
+    risk_report_md_path = None
+    optimization_result_path = None
+    if args.portfolio_method == "risk_aware":
+        risk_dir = Path(args.risk_report_dir) if args.risk_report_dir else output_dir
+        if simulator.risk_reports:
+            risk_json, risk_md = write_risk_report(simulator.risk_reports[-1], risk_dir)
+            risk_report_path = str(risk_json)
+            risk_report_md_path = str(risk_md)
+        if simulator.optimization_results:
+            optimization_result_path = output_dir / "optimization_result.json"
+            optimization_result_path.write_text(
+                json.dumps(
+                    {
+                        "factor_id": factor_id,
+                        "factor_type": factor_meta["factor_type"],
+                        "component_factor_ids": factor_meta["component_factor_ids"],
+                        "portfolio_method": args.portfolio_method,
+                        "index_code": args.index_code,
+                        "latest": simulator.optimization_results[-1].to_dict(),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
 
     summary = {
         "factor_id": factor_id,
         "factor_type": factor_meta["factor_type"],
         "component_factor_ids": factor_meta["component_factor_ids"],
+        "portfolio_method": args.portfolio_method,
         "output_dir": str(output_dir),
         "metrics": result.metrics,
         "n_snapshots": len(result.snapshots),
         "n_trades": len(result.fills),
+        "risk_report_path": risk_report_path,
+        "risk_report_md_path": risk_report_md_path,
+        "optimization_result_path": str(optimization_result_path) if optimization_result_path else None,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0

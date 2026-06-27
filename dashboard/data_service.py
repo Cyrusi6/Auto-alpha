@@ -165,6 +165,38 @@ class AshareDashboardService:
     def load_promotion_decision(self) -> dict[str, Any]:
         return self._read_json(self.config.report_dir.parent / "suite" / "promotion_decision.json")
 
+    def load_risk_report_json(self) -> dict[str, Any]:
+        for path in [
+            self.config.backtest_dir / "risk" / "risk_report.json",
+            self.config.backtest_dir / "risk_report.json",
+            self.config.orders_dir / "risk_report.json",
+        ]:
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_risk_report_markdown(self) -> str:
+        for path in [
+            self.config.backtest_dir / "risk" / "risk_report.md",
+            self.config.backtest_dir / "risk_report.md",
+            self.config.orders_dir / "risk_report.md",
+        ]:
+            if path.exists():
+                return path.read_text(encoding="utf-8")
+        return ""
+
+    def load_optimization_result(self) -> dict[str, Any]:
+        for path in [
+            self.config.backtest_dir / "optimization_result.json",
+            self.config.orders_dir / "optimization_result.json",
+            self.config.report_dir.parent / "optimize" / "optimization_result.json",
+        ]:
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
     def load_backtest_result(self) -> dict[str, Any]:
         return self._read_json(self.config.backtest_dir / "backtest_result.json")
 

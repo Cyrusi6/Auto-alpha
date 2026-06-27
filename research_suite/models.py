@@ -40,6 +40,12 @@ class ResearchSuiteConfig:
     search_max_candidates: int | None = None
     top_k: int = 5
     composite_method: str = "rank_average"
+    portfolio_method: str = "equal_weight"
+    risk_aversion: float = 1.0
+    turnover_penalty: float = 0.1
+    max_turnover: float = 1.0
+    max_industry_active_weight: float = 0.20
+    max_tracking_error: float = 1.0
     promote_latest_composite: bool = False
     pretty: bool = False
     skip_data_sync: bool = False
@@ -95,6 +101,8 @@ class PromotionConfig:
     min_positive_test_score_ratio: float = 0.0
     min_fill_rate: float = 0.0
     max_constraint_reject_rate: float = 1.0
+    max_tracking_error: float = 1.0
+    max_constraint_violations: float = 999.0
     require_composite: bool = True
 
 

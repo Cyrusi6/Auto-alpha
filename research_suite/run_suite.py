@@ -33,6 +33,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--search-max-candidates", type=int)
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--composite-method", default="rank_average")
+    parser.add_argument("--portfolio-method", choices=["equal_weight", "risk_aware"], default="equal_weight")
+    parser.add_argument("--risk-aversion", type=float, default=1.0)
+    parser.add_argument("--turnover-penalty", type=float, default=0.1)
+    parser.add_argument("--max-turnover", type=float, default=1.0)
+    parser.add_argument("--max-industry-active-weight", type=float, default=0.20)
+    parser.add_argument("--max-tracking-error", type=float, default=1.0)
     parser.add_argument("--promote-latest-composite", action="store_true")
     parser.add_argument("--skip-data-sync", action="store_true")
     parser.add_argument("--skip-universe", action="store_true")
@@ -87,6 +93,12 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
         search_max_candidates=args.search_max_candidates,
         top_k=args.top_k,
         composite_method=args.composite_method,
+        portfolio_method=args.portfolio_method,
+        risk_aversion=args.risk_aversion,
+        turnover_penalty=args.turnover_penalty,
+        max_turnover=args.max_turnover,
+        max_industry_active_weight=args.max_industry_active_weight,
+        max_tracking_error=args.max_tracking_error,
         promote_latest_composite=args.promote_latest_composite,
         pretty=args.pretty,
         skip_data_sync=args.skip_data_sync,

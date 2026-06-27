@@ -11,6 +11,9 @@ class TargetPosition:
     ts_code: str
     target_weight: float
     factor_value: float | None = None
+    optimized_weight: float | None = None
+    benchmark_weight: float | None = None
+    active_weight: float | None = None
 
 
 @dataclass(frozen=True)

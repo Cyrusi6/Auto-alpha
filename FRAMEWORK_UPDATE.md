@@ -843,3 +843,78 @@
 - 增加跨数据源校验、异常值修复策略和更细质量门禁。
 - 对大规模 JSONL 读取、index 构建和 compaction 做性能压测。
 - dashboard 增加 sync job 明细、audit 错误过滤和 snapshot 差异对比。
+
+## 2026-06-27 - 任务 016
+
+### 本次变更摘要
+- 新增 `risk_model/`，提供股票暴露、portfolio/benchmark/active exposure、协方差、tracking error、风险约束检查和风险报告。
+- 新增 `portfolio_optimizer/`，提供确定性 long-only benchmark-aware 启发式优化器和 CLI。
+- 增强 backtest，支持 `--portfolio-method equal_weight|risk_aware`，risk-aware 模式写出优化结果和风险报告。
+- 增强 strategy runner，支持用优化器生成目标持仓，并在 target positions 中输出 optimized / benchmark / active weights。
+- 增强 research suite，支持 risk-aware backtest/orders，并把 risk report 和 optimization result 纳入 artifact catalog 与 promotion checks。
+- 增强 dashboard，新增 Risk tab，读取 risk report 和 optimization result。
+
+### 新增文件
+- `risk_model/__init__.py`
+- `risk_model/models.py`
+- `risk_model/exposures.py`
+- `risk_model/covariance.py`
+- `risk_model/constraints.py`
+- `risk_model/report.py`
+- `portfolio_optimizer/__init__.py`
+- `portfolio_optimizer/models.py`
+- `portfolio_optimizer/optimizer.py`
+- `portfolio_optimizer/run_optimize.py`
+- `tests/test_risk_model.py`
+- `tests/test_portfolio_optimizer.py`
+- `tests/test_backtest_risk_aware.py`
+- `tests/test_strategy_runner_risk_aware.py`
+- `tests/test_risk_suite_integration.py`
+- `tests/test_risk_dashboard_artifacts.py`
+- `tests/test_risk_optimizer_no_old_terms.py`
+
+### 修改文件
+- `backtest/models.py`
+- `backtest/io.py`
+- `backtest/simulator.py`
+- `backtest/run_backtest.py`
+- `strategy_manager/runner.py`
+- `strategy_manager/risk.py`
+- `research_suite/models.py`
+- `research_suite/run_suite.py`
+- `research_suite/workflow.py`
+- `research_suite/promotion.py`
+- `dashboard/data_service.py`
+- `dashboard/app.py`
+- `README.md`
+- `CATREADME.md`
+- `FRAMEWORK_UPDATE.md`
+
+### 删除或隔离的旧问题
+- 组合构建不再只能依赖 top-N 等权和单票 max weight。
+- 回测和订单生成开始具备 benchmark-aware active exposure、tracking error、行业主动暴露和集中度约束。
+- production_candidate 晋级可纳入 tracking error 和 risk constraint violations。
+
+### 新增 A 股平台能力
+- `benchmark_weights_from_index_members()` 可从 `index_members` 构建指数 benchmark 权重。
+- `build_security_exposures()` 输出行业、市值、波动率和 beta 暴露。
+- `estimate_return_covariance()`、`portfolio_volatility()`、`tracking_error()` 提供本地协方差和风险度量。
+- `PortfolioOptimizer` 支持 alpha tilt、max weight/max names、turnover shrink、tracking-error shrink 和 long-only 输出。
+- `python -m portfolio_optimizer.run_optimize` 可写出 `optimized_weights.jsonl`、`optimization_result.json`、`risk_report.json` 和 `risk_report.md`。
+- `python -m backtest.run_backtest --portfolio-method risk_aware` 输出 tracking error、active share、HHI、top weight、industry active 和 risk constraint violations。
+- `python -m strategy_manager.runner --portfolio-method risk_aware` 可输出 benchmark/active weights 和风险摘要。
+- dashboard 可展示 risk metrics、violations、optimization result 和 risk report markdown。
+
+### 测试结果
+- `uv run pytest tests/test_backtest_cli.py tests/test_backtest_portfolio_simulator.py tests/test_strategy_runner_ashare.py tests/test_research_suite_cli.py tests/test_research_suite_workflow.py tests/test_dashboard_artifacts.py tests/test_dashboard_docs_dependencies.py tests/test_risk_model.py tests/test_portfolio_optimizer.py tests/test_backtest_risk_aware.py tests/test_strategy_runner_risk_aware.py tests/test_risk_suite_integration.py tests/test_risk_dashboard_artifacts.py tests/test_risk_optimizer_no_old_terms.py tests/test_execution_strategy_no_crypto_terms.py`：通过，27 passed。
+- `uv run pytest`：通过，206 passed。
+- `uv run python -m research_suite.run_suite --suite-name risk_aware_sample_suite --provider sample --data-dir /tmp/auto-alpha-risk-aware/data --universe-name csi300_sample --index-code 000300.SH --factor-store-dir /tmp/auto-alpha-risk-aware/store --report-dir /tmp/auto-alpha-risk-aware/reports --output-dir /tmp/auto-alpha-risk-aware/suite --backtest-dir /tmp/auto-alpha-risk-aware/backtest --orders-dir /tmp/auto-alpha-risk-aware/orders --as-of-date 20240104 --factor-transform winsorize_zscore --search-seed 42 --search-population-size 12 --search-generations 2 --search-max-candidates 8 --top-k 5 --composite-method rank_average --portfolio-method risk_aware --risk-aversion 1.0 --turnover-penalty 0.1 --max-turnover 1.0 --max-industry-active-weight 0.50 --max-tracking-error 1.00 --promote-latest-composite --walk-forward-train-size 1 --walk-forward-test-size 1 --walk-forward-step-size 1 --pretty`：通过，suite status success，selected factor `factor_0c8dda802c9fd989` 晋级为 `production_candidate`。
+- `uv run python -m portfolio_optimizer.run_optimize --data-dir /tmp/auto-alpha-risk-aware/data --factor-store-dir /tmp/auto-alpha-risk-aware/store --output-dir /tmp/auto-alpha-risk-aware/optimize --latest-approved --factor-type composite --index-code 000300.SH --as-of-date 20240104 --max-weight 0.10 --max-names 2 --risk-aversion 1.0 --turnover-penalty 0.1 --pretty`：通过，生成 optimized weights、optimization result 和 risk report。
+- `uv run python -m backtest.run_backtest --data-dir /tmp/auto-alpha-risk-aware/data --factor-store-dir /tmp/auto-alpha-risk-aware/store --output-dir /tmp/auto-alpha-risk-aware/backtest_direct --latest-approved --factor-type composite --portfolio-method risk_aware --index-code 000300.SH --top-n 2 --max-weight 0.10 --risk-report-dir /tmp/auto-alpha-risk-aware/risk_reports --pretty`：通过，tracking error 为 `0.0022750863116514706`，active share 为 `0.4095430374145508`。
+- `uv run python -m strategy_manager.runner --data-dir /tmp/auto-alpha-risk-aware/data --factor-store-dir /tmp/auto-alpha-risk-aware/store --output-dir /tmp/auto-alpha-risk-aware/orders_direct --latest-approved --factor-type composite --portfolio-method risk_aware --index-code 000300.SH --top-n 2 --max-weight 0.10 --portfolio-value 1000000 --pretty`：通过，生成 2 条订单，写出 risk report。
+
+### 后续待办
+- 将风险模型扩展为 Barra-like 多因子风险模型和更细行业分类。
+- 增强协方差估计、风险预算、换手预算和组合优化器求解质量。
+- 增加 benchmark 成分变更、权重漂移和交易约束的更真实处理。
+- dashboard 增加风险暴露时间序列、优化前后组合对比和约束诊断明细。
