@@ -1,7 +1,7 @@
 [project]
 name = "auto-alpha"
 version = "0.1.0"
-description = "Crypto quant research and execution stack for Solana meme tokens."
+description = "A-share quantitative factor research platform."
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
@@ -31,4 +31,3 @@ research = [
 
 [tool.uv]
 package = false
-
