@@ -27,7 +27,43 @@ def test_run_pipeline_sync_returns_not_implemented(capsys):
     captured = capsys.readouterr()
 
     assert result != 0
-    assert "not implemented yet" in captured.err
+    assert "Tushare provider is not implemented" in captured.err
+
+
+def test_run_pipeline_sync_sample_writes_local_files(tmp_path, capsys):
+    result = run_pipeline.main(
+        [
+            "--sync",
+            "--provider",
+            "sample",
+            "--data-dir",
+            str(tmp_path),
+            "--pretty",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert result == 0
+    payload = json.loads(captured.out)
+    assert payload["provider"] == "sample"
+    assert [dataset["dataset"] for dataset in payload["datasets"]] == [
+        "securities",
+        "trade_calendar",
+        "daily_bars",
+        "daily_basic",
+        "financial_features",
+    ]
+    for dataset in payload["datasets"]:
+        assert Path(dataset["path"]).is_relative_to(tmp_path)
+        assert Path(dataset["path"]).exists()
+
+
+def test_run_pipeline_sync_tushare_returns_not_implemented(capsys):
+    result = run_pipeline.main(["--sync", "--provider", "tushare"])
+    captured = capsys.readouterr()
+
+    assert result != 0
+    assert "Tushare provider is not implemented" in captured.err
 
 
 def test_run_pipeline_source_excludes_old_entrypoint_terms():

@@ -7,6 +7,15 @@ from dataclasses import dataclass
 from .config import AShareDataConfig
 
 
+ASHARE_DATASETS = (
+    "securities",
+    "trade_calendar",
+    "daily_bars",
+    "daily_basic",
+    "financial_features",
+)
+
+
 @dataclass(frozen=True)
 class DatasetPlan:
     name: str
@@ -56,10 +65,10 @@ def build_pipeline_plan(config: AShareDataConfig) -> PipelinePlan:
     datasets = [
         DatasetPlan(
             name=name,
-            target=str(config.data_dir / name),
+            target=str(config.data_dir / name / "records.jsonl"),
             description=dataset_descriptions[name],
         )
-        for name in dataset_descriptions
+        for name in ASHARE_DATASETS
     ]
 
     return PipelinePlan(

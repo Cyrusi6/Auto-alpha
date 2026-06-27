@@ -75,3 +75,56 @@
 ### 后续待办
 - 后续任务可在 `--sync` 下接入真实 A 股数据同步实现，优先保持公告日、交易日和复权口径一致。
 - 旧 `data_pipeline/config.py`、`data_manager.py`、`db_manager.py` 和 provider 目录仍待分阶段迁移或隔离。
+
+## 2026-06-27 - 任务 003
+
+### 本次变更摘要
+- 将 `data_pipeline` 核心入口替换为 A 股本地同步框架。
+- 删除旧 Birdeye/DexScreener provider 文件，不保留旧 crypto 兼容层。
+- 新增 A 股 provider 抽象、确定性 sample provider、本地 JSONL storage 和同步 manager。
+- 升级 `data_pipeline.run_pipeline`，支持 dry-run plan 与 `--sync --provider sample` 本地写入。
+
+### 新增文件
+- `data_pipeline/ashare/providers/__init__.py`
+- `data_pipeline/ashare/providers/base.py`
+- `data_pipeline/ashare/providers/factory.py`
+- `data_pipeline/ashare/providers/sample.py`
+- `data_pipeline/ashare/storage.py`
+- `data_pipeline/ashare/manager.py`
+- `tests/test_ashare_provider_sample.py`
+- `tests/test_ashare_storage.py`
+- `tests/test_ashare_manager.py`
+- `tests/test_data_pipeline_no_crypto_core.py`
+
+### 修改文件
+- `data_pipeline/config.py`
+- `data_pipeline/data_manager.py`
+- `data_pipeline/db_manager.py`
+- `data_pipeline/fetcher.py`
+- `data_pipeline/processor.py`
+- `data_pipeline/ashare/__init__.py`
+- `data_pipeline/ashare/pipeline.py`
+- `data_pipeline/run_pipeline.py`
+- `requirements-optional.txt`
+- `tests/test_run_pipeline_cli.py`
+- `FRAMEWORK_UPDATE.md`
+
+### 删除或隔离的旧问题
+- 删除 `data_pipeline/providers/base.py`、`data_pipeline/providers/birdeye.py`、`data_pipeline/providers/dexscreener.py`。
+- `data_pipeline/config.py` 不再定义旧 `Config`，不再 import 时读取旧环境变量。
+- `data_pipeline/data_manager.py` 和 `db_manager.py` 不再暴露旧异步 token 同步和 Postgres/Timescale crypto schema。
+- `data_pipeline/run_pipeline.py` 不再引用旧数据管理器、旧 provider 或旧业务配置。
+
+### 新增 A 股平台能力
+- `SampleAShareDataProvider` 可离线生成证券、交易日历、日线、每日指标和财务特征样例数据。
+- `LocalAshareStorage` 可将五类 A 股数据集写入 `data_dir/<dataset>/records.jsonl`，并生成不含密钥的 manifest。
+- `AShareDataManager.sync()` 可协调 provider 与 storage 完成本地同步。
+- `python -m data_pipeline.run_pipeline --sync --provider sample --data-dir <path> --pretty` 已可写入本地样例数据。
+
+### 测试结果
+- `uv run pytest tests/test_ashare_config.py tests/test_ashare_validators.py tests/test_times_secret.py tests/test_ashare_pipeline.py tests/test_run_pipeline_cli.py tests/test_ashare_provider_sample.py tests/test_ashare_storage.py tests/test_ashare_manager.py tests/test_data_pipeline_no_crypto_core.py`：通过，42 passed。
+- `uv run python -m data_pipeline.run_pipeline --sync --provider sample --data-dir /tmp/auto-alpha-ashare-sample --pretty`：通过，写出五类 JSONL 数据集和 manifest。
+
+### 后续待办
+- Tushare 真实 provider 仍未实现，后续应在 provider 层接入并保持无未来函数对齐。
+- 旧研究、模型、执行和看板模块仍需分阶段迁移到 A 股语义。
