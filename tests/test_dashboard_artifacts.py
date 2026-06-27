@@ -275,6 +275,68 @@ def test_dashboard_service_reads_production_sync_artifacts(tmp_path):
     assert snapshots.iloc[0]["snapshot"] == "snap_test"
 
 
+def test_dashboard_service_reads_production_operations_artifacts(tmp_path):
+    production_dir = tmp_path / "production"
+    approvals_dir = tmp_path / "approvals" / "approvals"
+    account_dir = tmp_path / "account"
+    monitoring_dir = tmp_path / "monitoring"
+    production_dir.mkdir(parents=True)
+    approvals_dir.mkdir(parents=True)
+    account_dir.mkdir(parents=True)
+    monitoring_dir.mkdir(parents=True)
+    (production_dir / "production_run.json").write_text(
+        '{"run_id":"prod_test","status":"pending_approval","approval_id":"approval_test"}',
+        encoding="utf-8",
+    )
+    (production_dir / "production_run.md").write_text("# Production Run", encoding="utf-8")
+    (approvals_dir / "approval_test.json").write_text(
+        '{"approval_id":"approval_test","created_at":"now","factor_id":"factor_x","factor_type":"composite","rebalance_date":"20240104","portfolio_method":"risk_aware","orders":[],"status":"pending"}',
+        encoding="utf-8",
+    )
+    (tmp_path / "approvals" / "approval_log.jsonl").write_text(
+        '{"event":"save","approval_id":"approval_test","status":"pending"}\n',
+        encoding="utf-8",
+    )
+    (account_dir / "account_state.json").write_text(
+        '{"account_id":"paper_ashare","initial_cash":1000000,"cash":1000000,"positions":{},"cash_ledger":[],"trade_ledger":[],"snapshots":[]}',
+        encoding="utf-8",
+    )
+    (account_dir / "positions.jsonl").write_text("", encoding="utf-8")
+    (account_dir / "account_snapshots.jsonl").write_text(
+        '{"trade_date":"20240104","equity":1000000,"cash":1000000,"positions_value":0,"daily_return":0,"n_positions":0,"exposure":0,"cash_ratio":1}\n',
+        encoding="utf-8",
+    )
+    (account_dir / "trade_ledger.jsonl").write_text("", encoding="utf-8")
+    (monitoring_dir / "monitoring_report.json").write_text(
+        '{"as_of_date":"20240104","checks":{},"alerts":[]}',
+        encoding="utf-8",
+    )
+    (monitoring_dir / "monitoring_report.md").write_text("# Monitoring Report", encoding="utf-8")
+    (monitoring_dir / "alerts.jsonl").write_text("", encoding="utf-8")
+    service = AshareDashboardService(
+        DashboardConfig(
+            data_dir=tmp_path / "data",
+            factor_store_dir=tmp_path / "store",
+            report_dir=tmp_path / "reports",
+            backtest_dir=tmp_path / "backtest",
+            orders_dir=tmp_path / "orders",
+            approval_store_dir=tmp_path / "approvals",
+            paper_account_dir=account_dir,
+            production_dir=production_dir,
+            monitoring_dir=monitoring_dir,
+        )
+    )
+
+    assert service.load_production_run()["run_id"] == "prod_test"
+    assert "Production Run" in service.load_production_run_markdown()
+    assert service.load_approvals().iloc[0]["approval_id"] == "approval_test"
+    assert not service.load_approval_log().empty
+    assert service.load_paper_account_state()["account_id"] == "paper_ashare"
+    assert not service.load_account_snapshots().empty
+    assert service.load_monitoring_report()["as_of_date"] == "20240104"
+    assert "Monitoring Report" in service.load_monitoring_report_markdown()
+
+
 def test_dashboard_app_import_has_no_external_side_effects():
     module = importlib.import_module("dashboard.app")
 

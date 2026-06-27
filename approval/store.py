@@ -1,0 +1,147 @@
+"""Local JSON approval store."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from .models import ApprovalBatch, ApprovalDecision, ApprovalOrder, ApprovalStatus
+
+
+class LocalApprovalStore:
+    def __init__(self, root_dir: str | Path):
+        self.root_dir = Path(root_dir)
+        self.approvals_dir = self.root_dir / "approvals"
+        self.log_path = self.root_dir / "approval_log.jsonl"
+
+    def save_batch(self, batch: ApprovalBatch) -> Path:
+        self.approvals_dir.mkdir(parents=True, exist_ok=True)
+        path = self._batch_path(batch.approval_id)
+        path.write_text(json.dumps(batch.to_dict(), ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        self._append_log("save", batch.approval_id, batch.status, {"factor_id": batch.factor_id})
+        return path
+
+    def load_batch(self, approval_id: str) -> ApprovalBatch:
+        path = self._batch_path(approval_id)
+        if not path.exists():
+            raise FileNotFoundError(f"approval batch not found: {approval_id}")
+        return _batch_from_payload(json.loads(path.read_text(encoding="utf-8")))
+
+    def list_batches(self, status: str | None = None) -> list[ApprovalBatch]:
+        if not self.approvals_dir.exists():
+            return []
+        batches = [_batch_from_payload(json.loads(path.read_text(encoding="utf-8"))) for path in sorted(self.approvals_dir.glob("*.json"))]
+        if status is not None:
+            batches = [batch for batch in batches if batch.status == status]
+        return batches
+
+    def approve(self, approval_id: str, reviewer: str, comment: str | None = None) -> ApprovalBatch:
+        batch = self.load_batch(approval_id)
+        if batch.status != ApprovalStatus.pending:
+            raise ValueError(f"only pending approval batches can be approved: {approval_id} is {batch.status}")
+        decision = ApprovalDecision(
+            status=ApprovalStatus.approved,
+            reviewer=reviewer,
+            decided_at=_utc_now(),
+            comment=comment,
+        )
+        updated = _replace_batch_status(batch, ApprovalStatus.approved, decision)
+        self._write_batch(updated)
+        self._append_log("approve", approval_id, updated.status, {"reviewer": reviewer, "comment": comment})
+        return updated
+
+    def reject(self, approval_id: str, reviewer: str, reason: str) -> ApprovalBatch:
+        batch = self.load_batch(approval_id)
+        if batch.status != ApprovalStatus.pending:
+            raise ValueError(f"only pending approval batches can be rejected: {approval_id} is {batch.status}")
+        decision = ApprovalDecision(
+            status=ApprovalStatus.rejected,
+            reviewer=reviewer,
+            decided_at=_utc_now(),
+            reason=reason,
+        )
+        updated = _replace_batch_status(batch, ApprovalStatus.rejected, decision)
+        self._write_batch(updated)
+        self._append_log("reject", approval_id, updated.status, {"reviewer": reviewer, "reason": reason})
+        return updated
+
+    def expire_pending(self, as_of_time: str | None = None) -> list[ApprovalBatch]:
+        expired: list[ApprovalBatch] = []
+        decision_time = as_of_time or _utc_now()
+        for batch in self.list_batches(status=ApprovalStatus.pending):
+            decision = ApprovalDecision(
+                status=ApprovalStatus.expired,
+                reviewer="system",
+                decided_at=decision_time,
+                reason="expired",
+            )
+            updated = _replace_batch_status(batch, ApprovalStatus.expired, decision)
+            self._write_batch(updated)
+            self._append_log("expire", updated.approval_id, updated.status, {"as_of_time": decision_time})
+            expired.append(updated)
+        return expired
+
+    def _write_batch(self, batch: ApprovalBatch) -> None:
+        self.approvals_dir.mkdir(parents=True, exist_ok=True)
+        self._batch_path(batch.approval_id).write_text(
+            json.dumps(batch.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+    def _batch_path(self, approval_id: str) -> Path:
+        return self.approvals_dir / f"{approval_id}.json"
+
+    def _append_log(self, event: str, approval_id: str, status: str, metadata: dict[str, Any] | None = None) -> None:
+        self.root_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "event": event,
+            "approval_id": approval_id,
+            "status": status,
+            "created_at": _utc_now(),
+            "metadata": metadata or {},
+        }
+        with self.log_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+            handle.write("\n")
+
+
+def _batch_from_payload(payload: dict[str, Any]) -> ApprovalBatch:
+    orders = [ApprovalOrder(**order) for order in payload.get("orders", [])]
+    decision_payload = payload.get("decision")
+    decision = ApprovalDecision(**decision_payload) if isinstance(decision_payload, dict) else None
+    return ApprovalBatch(
+        approval_id=str(payload["approval_id"]),
+        created_at=str(payload["created_at"]),
+        factor_id=str(payload["factor_id"]),
+        factor_type=str(payload.get("factor_type") or "unknown"),
+        rebalance_date=str(payload["rebalance_date"]),
+        portfolio_method=str(payload.get("portfolio_method") or "equal_weight"),
+        orders=orders,
+        risk_summary=dict(payload.get("risk_summary") or {}),
+        status=str(payload.get("status") or ApprovalStatus.pending),
+        decision=decision,
+        metadata=dict(payload.get("metadata") or {}),
+    )
+
+
+def _replace_batch_status(batch: ApprovalBatch, status: str, decision: ApprovalDecision) -> ApprovalBatch:
+    return ApprovalBatch(
+        approval_id=batch.approval_id,
+        created_at=batch.created_at,
+        factor_id=batch.factor_id,
+        factor_type=batch.factor_type,
+        rebalance_date=batch.rebalance_date,
+        portfolio_method=batch.portfolio_method,
+        orders=batch.orders,
+        risk_summary=batch.risk_summary,
+        status=status,
+        decision=decision,
+        metadata=batch.metadata,
+    )
+
+
+def _utc_now() -> str:
+    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"

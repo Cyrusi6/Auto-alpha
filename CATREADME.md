@@ -9,7 +9,8 @@ This repository is now organized as a local A-share factor research platform. Th
 5. Run the one-click research suite, including walk-forward and promotion.
 6. Run equal-weight or benchmark-aware portfolio simulation.
 7. Export target positions and paper orders.
-8. Review artifacts in the dashboard.
+8. Run approval-gated daily paper operations.
+9. Review artifacts and monitoring in the dashboard.
 
 ## Data Layer
 
@@ -146,9 +147,46 @@ Backtest supports `--portfolio-method equal_weight` and `--portfolio-method risk
 
 With `--portfolio-method risk_aware`, target positions include optimized weight, benchmark weight, and active weight. The summary includes risk metrics and constraint violations.
 
+## Production Operations
+
+`approval/` stores proposed order batches for local human review. It writes:
+
+- `approvals/<approval_id>.json`
+- `approval_log.jsonl`
+
+Batches move through `pending`, `approved`, `rejected`, and `expired`. Approved batches cannot be rejected later, and every decision is logged.
+
+`paper_account/` maintains a persistent local paper ledger. It writes:
+
+- `account_state.json`
+- `positions.jsonl`
+- `cash_ledger.jsonl`
+- `trade_ledger.jsonl`
+- `account_snapshots.jsonl`
+
+Filled and partial fills update cash and positions. Rejected fills are recorded in the trade ledger but do not change holdings. Mark-to-market writes account snapshots and performance metrics.
+
+`operations/` runs the daily production path:
+
+1. Select a `production_candidate` factor, or fall back to the latest approved composite factor.
+2. Generate target positions and proposed orders with `strategy_manager`.
+3. If approval is required, write a pending approval batch and stop.
+4. After approval, execute local paper fills, update the paper account, and write `production_run.json` plus `production_run.md`.
+
+`monitoring/` checks local production artifacts:
+
+- data freshness versus as-of date
+- quality report errors
+- production factor availability and recent factor drift
+- risk report violations
+- rejected and partial fill ratios
+- paper account equity, cash ratio, drawdown, and exposure
+
+It writes `monitoring_report.json`, `monitoring_report.md`, and `alerts.jsonl`.
+
 ## Dashboard
 
-`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, factor store, factor reports, batch reports, search reports, neural search reports, neural training history, checkpoint lists, suite reports, artifact catalog, promotion decisions, risk reports, optimization results, backtest outputs, target positions, orders, and paper fills. Missing artifacts produce empty states instead of errors.
+`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, factor store, factor reports, batch reports, search reports, neural search reports, neural training history, checkpoint lists, suite reports, artifact catalog, promotion decisions, risk reports, optimization results, backtest outputs, target positions, orders, paper fills, production runs, approvals, paper account state, account ledgers, monitoring reports, and alerts. Missing artifacts produce empty states instead of errors.
 
 ## Research Suite Outputs
 
@@ -165,4 +203,4 @@ The artifact catalog indexes data manifest, quality report, pipeline state, univ
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton. Risk model and portfolio optimization now have a basic benchmark-aware local implementation. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Real Tushare token and quota validation, full-market performance testing, cross-source data checks, Barra-like multi-factor risk, more robust covariance estimation, a production optimizer, stronger reinforcement learning, offline pretraining, richer walk-forward policies, human promotion review, broader neural training stability validation, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, and broker connectivity are future work.
+The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton. Risk model and portfolio optimization now have a basic benchmark-aware local implementation. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Daily production now has local approvals, paper account ledger, and monitoring reports. Real Tushare token and quota validation, full-market performance testing, cross-source data checks, Barra-like multi-factor risk, more robust covariance estimation, a production optimizer, stronger reinforcement learning, offline pretraining, richer walk-forward policies, richer approval policies, human review workflow, broader neural training stability validation, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, and broker connectivity are future work.

@@ -58,8 +58,8 @@ def render_app(config: DashboardConfig | None = None) -> None:
         if st.button("Refresh"):
             st.rerun()
 
-    data_tab, factor_tab, report_tab, backtest_tab, risk_tab, orders_tab = st.tabs(
-        ["Data", "Factors", "Reports", "Backtest", "Risk", "Orders"]
+    data_tab, factor_tab, report_tab, backtest_tab, risk_tab, orders_tab, production_tab = st.tabs(
+        ["Data", "Factors", "Reports", "Backtest", "Risk", "Orders", "Production"]
     )
 
     with data_tab:
@@ -263,6 +263,57 @@ def render_app(config: DashboardConfig | None = None) -> None:
         _show_dataframe_or_empty("Target Positions", targets)
         _show_dataframe_or_empty("Orders", orders)
         _show_dataframe_or_empty("Paper Fills", fills)
+
+    with production_tab:
+        production_run = service.load_production_run()
+        production_markdown = service.load_production_run_markdown()
+        approvals = service.load_approvals()
+        approval_log = service.load_approval_log()
+        account_state = service.load_paper_account_state()
+        positions = service.load_paper_positions()
+        snapshots = service.load_account_snapshots()
+        trade_ledger = service.load_trade_ledger()
+        monitoring_report = service.load_monitoring_report()
+        monitoring_markdown = service.load_monitoring_report_markdown()
+        monitoring_alerts = service.load_monitoring_alerts()
+        st.subheader("Production Run")
+        st.json(
+            production_run
+            if production_run
+            else {"status": "No production_run.json found"}
+        )
+        if production_markdown:
+            st.markdown(production_markdown)
+        st.subheader("Approvals")
+        _show_dataframe_or_empty("Approval Batches", approvals)
+        _show_dataframe_or_empty("Approval Log", approval_log)
+        st.subheader("Paper Account")
+        st.json(
+            {
+                "account_id": account_state.get("account_id"),
+                "cash": account_state.get("cash"),
+                "positions": len(account_state.get("positions", {})) if account_state else 0,
+                "updated_at": account_state.get("updated_at"),
+            }
+            if account_state
+            else {"status": "No account_state.json found"}
+        )
+        _show_dataframe_or_empty("Paper Positions", positions)
+        _show_dataframe_or_empty("Account Snapshots", snapshots)
+        _show_dataframe_or_empty("Trade Ledger", trade_ledger)
+        st.subheader("Monitoring")
+        st.json(
+            {
+                "as_of_date": monitoring_report.get("as_of_date"),
+                "alerts": len(monitoring_report.get("alerts", [])),
+                "checks": list((monitoring_report.get("checks") or {}).keys()),
+            }
+            if monitoring_report
+            else {"status": "No monitoring_report.json found"}
+        )
+        _show_dataframe_or_empty("Monitoring Alerts", monitoring_alerts)
+        if monitoring_markdown:
+            st.markdown(monitoring_markdown)
 
 
 def main() -> None:

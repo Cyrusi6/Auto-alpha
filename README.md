@@ -21,6 +21,10 @@ The current implementation is local-first. It uses deterministic sample data and
 - `backtest/`: Long-only A-share portfolio simulation, market constraints, and benchmark-aware risk mode.
 - `execution/`: Paper broker and order/fill export utilities.
 - `strategy_manager/`: Target position and paper order generation.
+- `approval/`: Local proposed-order batch approval, rejection, expiration, and audit log.
+- `paper_account/`: Persistent local paper cash, positions, trades, snapshots, and performance ledger.
+- `operations/`: Daily production run orchestration from production factor to proposed orders, approval-gated execution, account update, and production report.
+- `monitoring/`: Local production checks for data freshness, quality, factor drift, fill quality, account performance, and alerts.
 - `dashboard/`: Streamlit dashboard for local artifacts.
 
 ## Quickstart
@@ -199,6 +203,75 @@ Dashboard-specific overrides:
 - `ASHARE_DASHBOARD_REPORT_DIR`
 - `ASHARE_DASHBOARD_BACKTEST_DIR`
 - `ASHARE_DASHBOARD_ORDERS_DIR`
+- `ASHARE_DASHBOARD_APPROVAL_STORE_DIR`
+- `ASHARE_DASHBOARD_PAPER_ACCOUNT_DIR`
+- `ASHARE_DASHBOARD_PRODUCTION_DIR`
+- `ASHARE_DASHBOARD_MONITORING_DIR`
+
+## Daily Production Operations
+
+The platform still has no real broker integration. Daily production uses local approval and a persistent paper account:
+
+```bash
+uv run python -m paper_account.run_account \
+  --account-dir /tmp/auto-alpha-demo/account \
+  reset \
+  --initial-cash 1000000 \
+  --pretty
+
+uv run python -m operations.run_daily \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --approval-store-dir /tmp/auto-alpha-demo/approvals \
+  --paper-account-dir /tmp/auto-alpha-demo/account \
+  --output-dir /tmp/auto-alpha-demo/production \
+  --orders-dir /tmp/auto-alpha-demo/daily_orders \
+  --latest-production \
+  --rebalance-date 20240104 \
+  --portfolio-method risk_aware \
+  --index-code 000300.SH \
+  --top-n 2 \
+  --max-weight 0.10 \
+  --portfolio-value 1000000 \
+  --require-approval \
+  --pretty
+
+uv run python -m approval.run_approval \
+  --store-dir /tmp/auto-alpha-demo/approvals \
+  approve \
+  --approval-id <APPROVAL_ID> \
+  --reviewer local_reviewer \
+  --comment approved_for_paper \
+  --pretty
+
+uv run python -m operations.run_daily \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --approval-store-dir /tmp/auto-alpha-demo/approvals \
+  --paper-account-dir /tmp/auto-alpha-demo/account \
+  --output-dir /tmp/auto-alpha-demo/production_execute \
+  --orders-dir /tmp/auto-alpha-demo/daily_orders_execute \
+  --approval-id <APPROVAL_ID> \
+  --execute-approved \
+  --rebalance-date 20240104 \
+  --portfolio-method risk_aware \
+  --index-code 000300.SH \
+  --top-n 2 \
+  --max-weight 0.10 \
+  --portfolio-value 1000000 \
+  --pretty
+
+uv run python -m monitoring.run_monitor \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --paper-account-dir /tmp/auto-alpha-demo/account \
+  --orders-dir /tmp/auto-alpha-demo/daily_orders_execute \
+  --output-dir /tmp/auto-alpha-demo/monitoring \
+  --as-of-date 20240104 \
+  --pretty
+```
+
+Daily production writes `production_run.json/md`; approvals are stored under `approvals/<approval_id>.json` plus `approval_log.jsonl`; the paper account writes `account_state.json`, `positions.jsonl`, `cash_ledger.jsonl`, `trade_ledger.jsonl`, and `account_snapshots.jsonl`; monitoring writes `monitoring_report.json/md` and `alerts.jsonl`.
 
 ## Current Gaps
 
@@ -206,5 +279,5 @@ Dashboard-specific overrides:
 - Risk model and benchmark-aware portfolio optimization now have a basic local implementation; future work should add Barra-like multi-factor risk, more robust covariance estimation, a production optimizer, and large-scale performance tuning.
 - Local daily simulation supports core A-share constraints; future work should add finer real-world matching and minute-level volume modeling.
 - Local formula search and a first neural-guided policy-search path are available; future work should add stronger reinforcement learning, offline pretraining, more operators, GPU performance tuning, and broader stability validation.
-- One-click research suites now provide local walk-forward and promotion gates; future work should add richer approval policies and human review workflow.
-- Paper order export is local only; no real broker integration is implemented.
+- One-click research suites now provide local walk-forward and promotion gates; daily operations now provide local approval, paper account ledger, and monitoring artifacts. Future work should add richer approval policies and human review workflow.
+- Paper order export and account ledger are local only; no real broker integration is implemented.

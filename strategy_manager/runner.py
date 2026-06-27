@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import datetime
 from pathlib import Path
 
+from approval import ApprovalBatch, ApprovalOrder, LocalApprovalStore
 from backtest import TargetPosition, build_long_only_targets, describe_factor, factor_values_to_matrix, select_factor_id
 from execution import PaperBroker, export_orders_csv, export_orders_jsonl
 from factor_store import LocalFactorStore
@@ -38,6 +40,9 @@ class AShareStrategyRunner:
         max_turnover: float = 1.0,
         max_industry_active_weight: float = 0.20,
         max_tracking_error: float = 1.0,
+        propose_only: bool = False,
+        require_approval: bool = False,
+        approval_store_dir: str | Path | None = None,
     ):
         self.data_dir = Path(data_dir)
         self.factor_store_dir = Path(factor_store_dir)
@@ -56,6 +61,9 @@ class AShareStrategyRunner:
         self.max_turnover = float(max_turnover)
         self.max_industry_active_weight = float(max_industry_active_weight)
         self.max_tracking_error = float(max_tracking_error)
+        self.propose_only = bool(propose_only)
+        self.require_approval = bool(require_approval)
+        self.approval_store_dir = Path(approval_store_dir) if approval_store_dir is not None else None
         self.loader: AShareDataLoader | None = None
         self.selected_factor_id: str | None = None
         self.selected_factor_meta: dict[str, object] = {}
@@ -180,30 +188,58 @@ class AShareStrategyRunner:
                     encoding="utf-8",
                 )
 
-        close = self.loader.raw_data_cache["close"].detach().cpu()
-        date_idx = self.loader.trade_dates.index(target_book.trade_date)
-        prices = {
-            ts_code: float(close[idx, date_idx].item())
-            for idx, ts_code in enumerate(self.loader.ts_codes)
-        }
-        volume = self.loader.raw_data_cache["volume"].detach().cpu()
-        is_suspended = self.loader.raw_data_cache["is_suspended"].detach().cpu()
-        limit_up = self.loader.raw_data_cache["limit_up_flag"].detach().cpu()
-        limit_down = self.loader.raw_data_cache["limit_down_flag"].detach().cpu()
-        volumes = {ts_code: float(volume[idx, date_idx].item()) for idx, ts_code in enumerate(self.loader.ts_codes)}
-        suspended = {ts_code: bool(is_suspended[idx, date_idx].item() > 0.5) for idx, ts_code in enumerate(self.loader.ts_codes)}
-        limit_up_flags = {ts_code: bool(limit_up[idx, date_idx].item() > 0.5) for idx, ts_code in enumerate(self.loader.ts_codes)}
-        limit_down_flags = {ts_code: bool(limit_down[idx, date_idx].item() > 0.5) for idx, ts_code in enumerate(self.loader.ts_codes)}
-        fills = PaperBroker(self.output_dir).submit_orders(
-            orders,
-            prices,
-            target_book.trade_date,
-            volumes=volumes,
-            suspended=suspended,
-            limit_up=limit_up_flags,
-            limit_down=limit_down_flags,
-        )
+        approval_id = None
+        approval_status = None
+        fills = []
         fills_path = self.output_dir / "paper_fills.jsonl"
+        if self.require_approval or self.propose_only:
+            if self.approval_store_dir is None:
+                raise ValueError("approval_store_dir is required when propose_only or require_approval is enabled")
+            batch = ApprovalBatch(
+                approval_id=_make_approval_id(self.selected_factor_id or "factor", target_book.trade_date),
+                created_at=_utc_now(),
+                factor_id=str(self.selected_factor_id),
+                factor_type=str(self.selected_factor_meta.get("factor_type") or "unknown"),
+                rebalance_date=target_book.trade_date,
+                portfolio_method=self.portfolio_method,
+                orders=[
+                    ApprovalOrder(
+                        trade_date=order.trade_date,
+                        ts_code=order.ts_code,
+                        side=order.side,
+                        target_weight=order.target_weight,
+                        order_value=order.order_value,
+                        reason=order.reason,
+                    )
+                    for order in orders
+                ],
+                risk_summary={
+                    "risk_metrics": self.risk_report.metrics.to_dict() if self.risk_report is not None else {},
+                    "risk_constraint_violations": self.risk_report.violations if self.risk_report is not None else [],
+                    "n_orders": len(orders),
+                    "gross_order_value": float(sum(order.order_value for order in orders)),
+                },
+                metadata={
+                    "targets_path": str(targets_jsonl),
+                    "orders_path": str(orders_jsonl),
+                    "output_dir": str(self.output_dir),
+                    "component_factor_ids": self.selected_factor_meta.get("component_factor_ids", []),
+                },
+            )
+            LocalApprovalStore(self.approval_store_dir).save_batch(batch)
+            approval_id = batch.approval_id
+            approval_status = batch.status
+        else:
+            prices, volumes, suspended, limit_up_flags, limit_down_flags = _market_context(self.loader, target_book.trade_date)
+            fills = PaperBroker(self.output_dir).submit_orders(
+                orders,
+                prices,
+                target_book.trade_date,
+                volumes=volumes,
+                suspended=suspended,
+                limit_up=limit_up_flags,
+                limit_down=limit_down_flags,
+            )
         rejected = sum(1 for fill in fills if fill.status == "REJECTED")
         partial = sum(1 for fill in fills if fill.status == "PARTIAL")
         completed = sum(1 for fill in fills if fill.status in {"FILLED", "PARTIAL"})
@@ -226,6 +262,9 @@ class AShareStrategyRunner:
             "orders_path": str(orders_jsonl),
             "orders_csv_path": str(orders_csv),
             "fills_path": str(fills_path),
+            "approval_id": approval_id,
+            "approval_status": approval_status,
+            "propose_only": bool(self.propose_only or self.require_approval),
             "risk_metrics": self.risk_report.metrics.to_dict() if self.risk_report is not None else {},
             "risk_constraint_violations": self.risk_report.violations if self.risk_report is not None else [],
             "risk_report_path": risk_report_path,
@@ -254,6 +293,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-turnover", type=float, default=1.0)
     parser.add_argument("--max-industry-active-weight", type=float, default=0.20)
     parser.add_argument("--max-tracking-error", type=float, default=1.0)
+    parser.add_argument("--propose-only", action="store_true")
+    parser.add_argument("--require-approval", action="store_true")
+    parser.add_argument("--approval-store-dir")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -278,9 +320,40 @@ def main(argv: list[str] | None = None) -> int:
         max_turnover=args.max_turnover,
         max_industry_active_weight=args.max_industry_active_weight,
         max_tracking_error=args.max_tracking_error,
+        propose_only=args.propose_only,
+        require_approval=args.require_approval,
+        approval_store_dir=args.approval_store_dir,
     ).generate_orders()
     print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0
+
+
+def _market_context(loader: AShareDataLoader, trade_date: str):
+    close = loader.raw_data_cache["close"].detach().cpu()
+    date_idx = loader.trade_dates.index(trade_date)
+    prices = {ts_code: float(close[idx, date_idx].item()) for idx, ts_code in enumerate(loader.ts_codes)}
+    volume = loader.raw_data_cache["volume"].detach().cpu()
+    is_suspended = loader.raw_data_cache["is_suspended"].detach().cpu()
+    limit_up = loader.raw_data_cache["limit_up_flag"].detach().cpu()
+    limit_down = loader.raw_data_cache["limit_down_flag"].detach().cpu()
+    volumes = {ts_code: float(volume[idx, date_idx].item()) for idx, ts_code in enumerate(loader.ts_codes)}
+    suspended = {ts_code: bool(is_suspended[idx, date_idx].item() > 0.5) for idx, ts_code in enumerate(loader.ts_codes)}
+    limit_up_flags = {ts_code: bool(limit_up[idx, date_idx].item() > 0.5) for idx, ts_code in enumerate(loader.ts_codes)}
+    limit_down_flags = {ts_code: bool(limit_down[idx, date_idx].item() > 0.5) for idx, ts_code in enumerate(loader.ts_codes)}
+    return prices, volumes, suspended, limit_up_flags, limit_down_flags
+
+
+def _make_approval_id(factor_id: str, trade_date: str) -> str:
+    suffix = "".join(char for char in factor_id if char.isalnum())[-12:]
+    return f"approval_{trade_date}_{suffix}_{_safe_time(_utc_now())}"
+
+
+def _utc_now() -> str:
+    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+
+def _safe_time(value: str) -> str:
+    return "".join(char if char.isalnum() else "_" for char in value).strip("_")
 
 
 if __name__ == "__main__":

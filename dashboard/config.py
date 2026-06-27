@@ -14,6 +14,10 @@ class DashboardConfig:
     report_dir: Path = Path("artifacts/reports")
     backtest_dir: Path = Path("artifacts/backtest")
     orders_dir: Path = Path("artifacts/orders")
+    approval_store_dir: Path = Path("artifacts/approvals")
+    paper_account_dir: Path = Path("artifacts/account")
+    production_dir: Path = Path("artifacts/production")
+    monitoring_dir: Path = Path("artifacts/monitoring")
 
     @classmethod
     def from_env(cls) -> "DashboardConfig":
@@ -27,4 +31,8 @@ class DashboardConfig:
             report_dir=Path(os.getenv("ASHARE_DASHBOARD_REPORT_DIR") or "artifacts/reports"),
             backtest_dir=Path(os.getenv("ASHARE_DASHBOARD_BACKTEST_DIR") or "artifacts/backtest"),
             orders_dir=Path(os.getenv("ASHARE_DASHBOARD_ORDERS_DIR") or os.getenv("ASHARE_ORDER_OUTPUT_DIR") or "artifacts/orders"),
+            approval_store_dir=Path(os.getenv("ASHARE_DASHBOARD_APPROVAL_STORE_DIR") or "artifacts/approvals"),
+            paper_account_dir=Path(os.getenv("ASHARE_DASHBOARD_PAPER_ACCOUNT_DIR") or "artifacts/account"),
+            production_dir=Path(os.getenv("ASHARE_DASHBOARD_PRODUCTION_DIR") or "artifacts/production"),
+            monitoring_dir=Path(os.getenv("ASHARE_DASHBOARD_MONITORING_DIR") or "artifacts/monitoring"),
         )

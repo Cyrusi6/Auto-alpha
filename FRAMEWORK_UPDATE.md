@@ -990,3 +990,81 @@
 - 增加更丰富的 action mask 约束，如复杂度预算、lookback 预算和运算符频率约束的逐步剪枝。
 - 支持 GPU 大批量 neural search、checkpoint resume 的训练历史合并和搜索对比。
 - 将 neural/hybrid 搜索结果接入更细粒度 dashboard 曲线和人工审核视图。
+
+## 2026-06-27 - 任务 018
+
+### 本次变更摘要
+- 新增本地生产运营层，覆盖 proposed orders、人工审批、审批后 paper execution、纸面账户台账和运营监控。
+- `strategy_manager.runner` 支持 `--propose-only` 与 `--require-approval`，可生成 pending approval batch 而不执行 paper fills。
+- `operations.run_daily` 支持选择 `production_candidate`，生成审批批次，审批后执行本地 paper fills，并更新 paper account。
+- `paper_account` 持久化现金、持仓、成交、快照和绩效。
+- `monitoring` 生成数据新鲜度、quality、factor drift、fill quality 和 paper account 检查报告。
+- dashboard 新增 Production tab，展示 production run、approvals、paper account 和 monitoring artifacts。
+
+### 新增文件
+- `approval/__init__.py`
+- `approval/models.py`
+- `approval/store.py`
+- `approval/run_approval.py`
+- `paper_account/__init__.py`
+- `paper_account/models.py`
+- `paper_account/ledger.py`
+- `paper_account/performance.py`
+- `paper_account/run_account.py`
+- `operations/__init__.py`
+- `operations/models.py`
+- `operations/daily_runner.py`
+- `operations/report.py`
+- `operations/run_daily.py`
+- `monitoring/__init__.py`
+- `monitoring/models.py`
+- `monitoring/checks.py`
+- `monitoring/report.py`
+- `monitoring/run_monitor.py`
+- `tests/test_approval_store.py`
+- `tests/test_paper_account.py`
+- `tests/test_operations_daily_runner.py`
+- `tests/test_strategy_approval_integration.py`
+- `tests/test_monitoring_reports.py`
+- `tests/test_operations_no_old_terms.py`
+
+### 修改文件
+- `strategy_manager/runner.py`
+- `execution/paper_broker.py`
+- `dashboard/config.py`
+- `dashboard/data_service.py`
+- `dashboard/app.py`
+- `tests/test_dashboard_artifacts.py`
+- `README.md`
+- `CATREADME.md`
+- `FRAMEWORK_UPDATE.md`
+
+### 删除或隔离的旧问题
+- daily production 不再只能直接生成并执行 paper orders，新增审批门禁。
+- paper fills 不再只是一次性文件输出，新增持久化 paper account ledger。
+- production_candidate 进入每日运行后有 production_run、approval、account 和 monitoring artifacts 可追踪。
+- PaperBroker 保持本地模拟，不接真实券商接口，不读取任何密钥。
+
+### 新增 A 股平台能力
+- `python -m approval.run_approval` 支持 list/show/approve/reject/expire approval batches，并写 `approval_log.jsonl`。
+- `python -m paper_account.run_account` 支持 reset/show/mark-to-market/performance，并写账户状态、持仓、现金流水、成交流水和快照。
+- `python -m operations.run_daily --require-approval` 可生成 proposed orders 和 pending approval，不执行 fills。
+- `python -m operations.run_daily --approval-id ... --execute-approved` 可执行已审批订单，写 paper fills，并更新 paper account。
+- `python -m monitoring.run_monitor` 可写 `monitoring_report.json`、`monitoring_report.md` 和 `alerts.jsonl`。
+- dashboard Production tab 可读取 production run、approval batch/log、paper account state、positions、snapshots、trade ledger、monitoring report 和 alerts。
+
+### 测试结果
+- `uv run pytest tests/test_approval_store.py tests/test_paper_account.py tests/test_operations_daily_runner.py tests/test_strategy_approval_integration.py tests/test_monitoring_reports.py tests/test_dashboard_artifacts.py tests/test_operations_no_old_terms.py tests/test_execution_paper_broker.py tests/test_strategy_runner_ashare.py`：通过，20 passed。
+- `uv run pytest`：通过，228 passed。
+- `uv run python -m research_suite.run_suite --suite-name production_ops_suite --provider sample --data-dir /tmp/auto-alpha-production-ops/data --universe-name csi300_sample --index-code 000300.SH --factor-store-dir /tmp/auto-alpha-production-ops/store --report-dir /tmp/auto-alpha-production-ops/reports --output-dir /tmp/auto-alpha-production-ops/suite --backtest-dir /tmp/auto-alpha-production-ops/backtest --orders-dir /tmp/auto-alpha-production-ops/orders --as-of-date 20240104 --factor-transform winsorize_zscore --search-mode hybrid --search-seed 42 --search-population-size 12 --search-generations 2 --search-max-candidates 8 --neural-warmup-steps 1 --neural-policy-steps 1 --top-k 5 --composite-method rank_average --portfolio-method risk_aware --promote-latest-composite --walk-forward-train-size 1 --walk-forward-test-size 1 --walk-forward-step-size 1 --pretty`：通过，suite status success，selected factor `factor_c8cb3814b84e9c10`。
+- `uv run python -m paper_account.run_account --account-dir /tmp/auto-alpha-production-ops/account reset --initial-cash 1000000 --pretty`：通过，初始化现金 1,000,000。
+- `uv run python -m operations.run_daily --require-approval ...`：通过，生成 pending approval `approval_20240104_3814b84e9c10_2026_06_27T12_55_30Z`，未执行 paper fills。
+- `uv run python -m approval.run_approval --store-dir /tmp/auto-alpha-production-ops/approvals approve --approval-id ... --reviewer local_reviewer --comment approved_for_paper --pretty`：通过，approval status 更新为 approved。
+- `uv run python -m operations.run_daily --approval-id ... --execute-approved ...`：通过，生成 2 条 fills，均因交易约束 rejected；paper account cash 保持 1,000,000，写出账户快照。
+- `uv run python -m monitoring.run_monitor ...`：通过，data freshness 与 quality 均 OK，生成 1 条 fill_quality warning，写出 monitoring report 和 alerts。
+
+### 后续待办
+- 增加多审批人、审批有效期、审批差异比对和更完整的人工审核 UI。
+- 增强 paper account 对分红、送转、交易日资产重估和持仓漂移的处理。
+- 监控层增加历史趋势、SLO、通知通道和更严格的 production gate。
+- 未来如接入真实券商接口，应保持审批、台账、监控和本地 paper execution 的边界清晰。

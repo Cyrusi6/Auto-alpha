@@ -17,10 +17,12 @@ class PaperBroker:
         output_dir: str | Path,
         cost_model: AShareCostModel | None = None,
         trading_rules: AShareTradingRules | None = None,
+        account=None,
     ):
         self.output_dir = Path(output_dir)
         self.cost_model = cost_model or AShareCostModel()
         self.trading_rules = trading_rules or AShareTradingRules()
+        self.account = account
 
     def submit_orders(
         self,
@@ -88,6 +90,9 @@ class PaperBroker:
                 )
             )
         export_fills_jsonl(fills, self.output_dir / "paper_fills.jsonl")
+        if self.account is not None:
+            self.account.apply_fills(fills, prices, trade_date)
+            self.account.mark_to_market(prices, trade_date)
         return fills
 
     @staticmethod

@@ -244,6 +244,85 @@ class AshareDashboardService:
     def load_paper_fills(self) -> pd.DataFrame:
         return self._read_jsonl(self.config.orders_dir / "paper_fills.jsonl")
 
+    def load_production_run(self) -> dict[str, Any]:
+        for path in self._production_candidates("production_run.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_production_run_markdown(self) -> str:
+        for path in self._production_candidates("production_run.md"):
+            if path.exists():
+                return path.read_text(encoding="utf-8")
+        return ""
+
+    def load_approvals(self) -> pd.DataFrame:
+        records: list[dict[str, Any]] = []
+        for approvals_dir in self._approval_dir_candidates():
+            if not approvals_dir.exists():
+                continue
+            for path in sorted((approvals_dir / "approvals").glob("*.json")):
+                payload = self._read_json(path)
+                if payload:
+                    records.append(payload)
+        return pd.DataFrame(records)
+
+    def load_approval_log(self) -> pd.DataFrame:
+        for approvals_dir in self._approval_dir_candidates():
+            frame = self._read_jsonl(approvals_dir / "approval_log.jsonl")
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_paper_account_state(self) -> dict[str, Any]:
+        for path in self._account_candidates("account_state.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_paper_positions(self) -> pd.DataFrame:
+        for path in self._account_candidates("positions.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_account_snapshots(self) -> pd.DataFrame:
+        for path in self._account_candidates("account_snapshots.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_trade_ledger(self) -> pd.DataFrame:
+        for path in self._account_candidates("trade_ledger.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_monitoring_report(self) -> dict[str, Any]:
+        for path in self._monitoring_candidates("monitoring_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_monitoring_report_markdown(self) -> str:
+        for path in self._monitoring_candidates("monitoring_report.md"):
+            if path.exists():
+                return path.read_text(encoding="utf-8")
+        return ""
+
+    def load_monitoring_alerts(self) -> pd.DataFrame:
+        for path in self._monitoring_candidates("alerts.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
     def _neural_artifact_candidates(self, filename: str) -> list[Path]:
         root = self.config.report_dir.parent
         return [
@@ -265,6 +344,26 @@ class AshareDashboardService:
             root / "suite" / "search" / "checkpoints",
             root / "suite" / "search" / "neural" / "checkpoints",
         ]
+
+    def _production_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.production_dir / filename,
+            root / "production" / filename,
+            root / "production_execute" / filename,
+        ]
+
+    def _approval_dir_candidates(self) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [self.config.approval_store_dir, root / "approvals"]
+
+    def _account_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [self.config.paper_account_dir / filename, root / "account" / filename]
+
+    def _monitoring_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [self.config.monitoring_dir / filename, root / "monitoring" / filename]
 
     @staticmethod
     def _read_json(path: Path) -> dict[str, Any]:
