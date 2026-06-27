@@ -718,3 +718,62 @@
 - 将公式搜索扩展为 neural-guided search 和更大规模候选池。
 - 增加更多 A 股特色算子、行业/风格风险暴露控制和复杂度惩罚策略。
 - dashboard 增加 search generation 对比、公式树展示和候选演化路径。
+
+## 2026-06-27 - 任务 014
+
+### 本次变更摘要
+- 新增 `research_suite/`，提供一键运行 data sync、universe、formula search、backtest、orders、walk-forward、promotion 和 artifact catalog 的研究套件。
+- 新增 walk-forward 稳健性评估，输出每个窗口 train/test metrics 和稳定性摘要。
+- 新增 promotion gate，将合格 composite factor 晋级为 `production_candidate` 并写入 factor metadata。
+- 新增 artifact catalog，统一索引 suite 产生的数据、报告、因子库、回测、订单和晋级决策。
+- 增强 dashboard，读取 suite result、suite report、artifact catalog 和 promotion decision。
+
+### 新增文件
+- `research_suite/__init__.py`
+- `research_suite/models.py`
+- `research_suite/catalog.py`
+- `research_suite/walk_forward.py`
+- `research_suite/promotion.py`
+- `research_suite/workflow.py`
+- `research_suite/report.py`
+- `research_suite/run_suite.py`
+- `tests/test_research_suite_catalog.py`
+- `tests/test_research_suite_walk_forward.py`
+- `tests/test_research_suite_promotion.py`
+- `tests/test_research_suite_workflow.py`
+- `tests/test_research_suite_cli.py`
+- `tests/test_research_suite_no_old_terms.py`
+
+### 修改文件
+- `factor_store/storage.py`
+- `dashboard/data_service.py`
+- `dashboard/app.py`
+- `tests/test_factor_store_batch_compatibility.py`
+- `tests/test_dashboard_artifacts.py`
+- `README.md`
+- `CATREADME.md`
+- `FRAMEWORK_UPDATE.md`
+
+### 删除或隔离的旧问题
+- 完整研究流程不再需要手工串联多条命令。
+- 因子晋级不再只依赖单次 batch/search 结果，新增 walk-forward 和回测约束检查。
+- 一次研究运行产生的 artifact 不再分散无索引，新增统一 catalog。
+
+### 新增 A 股平台能力
+- `python -m research_suite.run_suite` 可一键生成 suite report、search report、backtest、orders、walk-forward、promotion decision 和 artifact catalog。
+- `build_walk_forward_windows()` 与 `evaluate_factor_walk_forward()` 可评估因子跨时间窗口稳定性。
+- `promote_factor_if_eligible()` 可将通过门槛的 composite factor 更新为 `production_candidate`。
+- `LocalFactorStore` 支持 `list_factors()`、`load_latest_factor()`，并可在 `update_factor_status()` 时写入 promotion metadata。
+- dashboard Reports tab 可展示 suite stage status、promotion decision 和 artifact catalog 摘要。
+
+### 测试结果
+- `uv run pytest tests/test_research_suite_catalog.py tests/test_research_suite_walk_forward.py tests/test_research_suite_promotion.py tests/test_factor_store_batch_compatibility.py tests/test_research_suite_workflow.py tests/test_research_suite_cli.py tests/test_dashboard_artifacts.py tests/test_research_suite_no_old_terms.py`：通过，19 passed。
+- `uv run pytest`：通过，182 passed。
+- `uv run python -m research_suite.run_suite --suite-name sample_suite --provider sample --data-dir /tmp/auto-alpha-research-suite/data --universe-name csi300_sample --index-code 000300.SH --factor-store-dir /tmp/auto-alpha-research-suite/store --report-dir /tmp/auto-alpha-research-suite/reports --output-dir /tmp/auto-alpha-research-suite/suite --backtest-dir /tmp/auto-alpha-research-suite/backtest --orders-dir /tmp/auto-alpha-research-suite/orders --as-of-date 20240104 --factor-transform winsorize_zscore --search-seed 42 --search-population-size 12 --search-generations 2 --search-max-candidates 8 --top-k 5 --composite-method rank_average --promote-latest-composite --walk-forward-train-size 1 --walk-forward-test-size 1 --walk-forward-step-size 1 --pretty`：通过，全部 stage success。
+- suite 输出 `suite_result.json`、`suite_report.md`、`walk_forward_result.json`、`promotion_decision.json`、`artifact_catalog.json`、`artifact_catalog.md`。
+- sample suite 选中 composite factor `factor_0c8dda802c9fd989`，promotion decision passed，并晋级为 `production_candidate`。
+
+### 后续待办
+- 为 production_candidate 增加人工审核、冻结版本和发布记录。
+- 扩展 walk-forward 为更多窗口策略、样本外分组和稳健性惩罚。
+- dashboard 增加 suite 历史对比、artifact 下载和 promotion 审核视图。

@@ -14,6 +14,7 @@ The current implementation is local-first. It uses deterministic sample data and
 - `evaluation/`: Time-series sample split, split-level metrics, and factor reports.
 - `research/`: Batch candidate execution, factor ranking, composite factor construction, and batch research reports.
 - `formula_search/`: Formula metadata, random generation, mutation, crossover, multi-generation search, and search reports.
+- `research_suite/`: One-click orchestration, walk-forward robustness, production-candidate promotion, and artifact catalog.
 - `backtest/`: Long-only A-share portfolio simulation and backtest CLI.
 - `execution/`: Paper broker and order/fill export utilities.
 - `strategy_manager/`: Target position and paper order generation.
@@ -21,77 +22,34 @@ The current implementation is local-first. It uses deterministic sample data and
 
 ## Quickstart
 
-Run the full sample workflow:
+Run the one-click sample suite:
 
 ```bash
 rm -rf /tmp/auto-alpha-demo
 
-uv run python -m data_pipeline.run_pipeline \
-  --sync \
+uv run python -m research_suite.run_suite \
+  --suite-name sample_suite \
   --provider sample \
   --data-dir /tmp/auto-alpha-demo/data \
-  --validate \
-  --mode overwrite \
-  --index-codes 000300.SH \
-  --pretty
-
-uv run python -m data_pipeline.run_pipeline \
-  --sync \
-  --provider sample \
-  --data-dir /tmp/auto-alpha-demo/data \
-  --validate \
-  --mode append \
-  --pretty
-
-uv run python -m universe.run_universe \
-  --data-dir /tmp/auto-alpha-demo/data \
-  --as-of-date 20240104 \
   --universe-name csi300_sample \
-  --use-index-members \
   --index-code 000300.SH \
-  --min-listed-days 0 \
-  --min-amount 0 \
-  --pretty
-
-uv run python -m formula_search.run_search \
-  --data-dir /tmp/auto-alpha-demo/data \
-  --universe-name csi300_sample \
   --factor-store-dir /tmp/auto-alpha-demo/store \
   --report-dir /tmp/auto-alpha-demo/reports \
-  --output-dir /tmp/auto-alpha-demo/search \
-  --seed 42 \
-  --population-size 12 \
-  --generations 2 \
-  --max-formula-len 8 \
-  --max-complexity 24 \
-  --max-lookback 10 \
+  --output-dir /tmp/auto-alpha-demo/suite \
+  --backtest-dir /tmp/auto-alpha-demo/backtest \
+  --orders-dir /tmp/auto-alpha-demo/orders \
+  --as-of-date 20240104 \
   --factor-transform winsorize_zscore \
-  --enable-gate \
+  --search-seed 42 \
+  --search-population-size 12 \
+  --search-generations 2 \
+  --search-max-candidates 8 \
   --top-k 5 \
   --composite-method rank_average \
-  --correlation-threshold 0.99 \
-  --min-coverage 0.5 \
-  --pretty
-
-uv run python -m backtest.run_backtest \
-  --data-dir /tmp/auto-alpha-demo/data \
-  --factor-store-dir /tmp/auto-alpha-demo/store \
-  --output-dir /tmp/auto-alpha-demo/backtest \
-  --latest-approved \
-  --factor-type composite \
-  --top-n 2 \
-  --max-weight 0.10 \
-  --pretty
-
-uv run python -m strategy_manager.runner \
-  --data-dir /tmp/auto-alpha-demo/data \
-  --factor-store-dir /tmp/auto-alpha-demo/store \
-  --output-dir /tmp/auto-alpha-demo/orders \
-  --latest-approved \
-  --factor-type composite \
-  --top-n 2 \
-  --max-weight 0.10 \
-  --portfolio-value 1000000 \
+  --promote-latest-composite \
+  --walk-forward-train-size 1 \
+  --walk-forward-test-size 1 \
+  --walk-forward-step-size 1 \
   --pretty
 ```
 
@@ -133,6 +91,8 @@ The formula DSL exposes operator arity, lookback, and complexity metadata. Stack
 
 Search-style research is available through `python -m formula_search.run_search`. It generates legal RPN formulas, mutates and crosses over formulas across generations, filters duplicate hashes, calls the same batch research gate/composite path, and writes `search_result.json`, `search_candidates.jsonl`, `search_report.json`, and `search_report.md`. Backtest and strategy CLIs can select the newest approved composite factor with `--latest-approved --factor-type composite`.
 
+The suite runner is available through `python -m research_suite.run_suite`. It orchestrates data sync, universe construction, formula search, composite backtest, paper order export, walk-forward robustness evaluation, promotion decision, suite report, and `artifact_catalog.json`. When promotion passes, the selected composite factor is updated to `production_candidate` in the factor store with the promotion decision in metadata.
+
 Dashboard-specific overrides:
 
 - `ASHARE_DASHBOARD_DATA_DIR`
@@ -147,4 +107,5 @@ Dashboard-specific overrides:
 - Industry and market-cap neutralization now have a basic cross-sectional implementation; future work should expand this into a fuller risk model and finer industry classification.
 - Local daily simulation supports core A-share constraints; future work should add finer real-world matching, minute-level liquidity, and richer risk models.
 - Local formula search is available; future work should add neural-guided search, more operators, larger-scale performance tuning, and richer stability diagnostics.
+- One-click research suites now provide local walk-forward and promotion gates; future work should add richer approval policies and human review workflow.
 - Paper order export is local only; no real broker integration is implemented.

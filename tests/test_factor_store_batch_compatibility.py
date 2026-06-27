@@ -60,3 +60,47 @@ def test_find_factor_by_hash_and_load_factor_values_matrix(tmp_path):
 
     assert store.find_factor_by_hash("hash_matrix").factor_id == "factor_matrix"
     assert matrix.tolist() == [[4.0, 3.0], [2.0, 1.0]]
+
+
+def test_list_latest_factor_and_promotion_metadata(tmp_path):
+    store = LocalFactorStore(tmp_path)
+    store.save_factor(
+        FactorRecord(
+            factor_id="factor_single",
+            formula=["RET_1D"],
+            formula_tokens=[0],
+            formula_hash="hash_single",
+            feature_version="ashare_features_v1",
+            operator_version="ashare_ops_v1",
+            lookback_days=1,
+            created_at="2026-06-27T00:00:00Z",
+            status="approved",
+            factor_type="single",
+        )
+    )
+    store.save_factor(
+        FactorRecord(
+            factor_id="factor_composite",
+            formula=["COMPOSITE"],
+            formula_tokens=[],
+            formula_hash="hash_composite",
+            feature_version="ashare_features_v1",
+            operator_version="ashare_ops_v1",
+            lookback_days=1,
+            created_at="2026-06-27T00:01:00Z",
+            status="approved",
+            factor_type="composite",
+        )
+    )
+
+    result = store.update_factor_status(
+        "factor_composite",
+        "production_candidate",
+        promotion_decision={"passed": True},
+    )
+    latest = store.load_latest_factor(status="production_candidate", factor_type="composite")
+
+    assert result.records == 1
+    assert [record.factor_id for record in store.list_factors(status="approved", factor_type="single")] == ["factor_single"]
+    assert latest.factor_id == "factor_composite"
+    assert latest.metadata["promotion_decision"]["passed"] is True

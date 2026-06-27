@@ -114,6 +114,10 @@ def render_app(config: DashboardConfig | None = None) -> None:
         batch_markdown = service.load_batch_report_markdown()
         search_report = service.load_search_report_json()
         search_markdown = service.load_search_report_markdown()
+        suite_result = service.load_suite_result()
+        suite_markdown = service.load_suite_report_markdown()
+        artifact_catalog = service.load_artifact_catalog()
+        promotion_decision = service.load_promotion_decision()
         if report:
             st.subheader("Factor Report")
             st.plotly_chart(plot_factor_split_metrics(report.get("metrics_by_split", {})), use_container_width=True)
@@ -151,6 +155,38 @@ def render_app(config: DashboardConfig | None = None) -> None:
             st.info("No search_report.json found.")
         if search_markdown:
             st.markdown(search_markdown)
+        st.subheader("Research Suite")
+        if suite_result:
+            st.json(
+                {
+                    "suite_name": suite_result.get("suite_name"),
+                    "status": suite_result.get("status"),
+                    "selected_factor_id": suite_result.get("selected_factor_id"),
+                    "stages": [
+                        {
+                            "name": stage.get("name"),
+                            "status": stage.get("status"),
+                            "error": stage.get("error"),
+                        }
+                        for stage in suite_result.get("stages", [])
+                    ],
+                }
+            )
+        else:
+            st.info("No suite_result.json found.")
+        if promotion_decision:
+            st.subheader("Promotion Decision")
+            st.json(promotion_decision)
+        if artifact_catalog:
+            st.subheader("Artifact Catalog")
+            st.json(
+                {
+                    "suite_name": artifact_catalog.get("suite_name"),
+                    "entries": len(artifact_catalog.get("entries", [])),
+                }
+            )
+        if suite_markdown:
+            st.markdown(suite_markdown)
 
     with backtest_tab:
         result = service.load_backtest_result()

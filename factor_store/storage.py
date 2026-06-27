@@ -59,6 +59,18 @@ class LocalFactorStore:
     def load_factors(self) -> list[FactorRecord]:
         return [FactorRecord(**self._factor_payload_with_defaults(payload)) for payload in self._read_jsonl(self.factor_path)]
 
+    def list_factors(self, status: str | None = None, factor_type: str | None = None) -> list[FactorRecord]:
+        records = self.load_factors()
+        if status is not None:
+            records = [record for record in records if record.status == status]
+        if factor_type is not None:
+            records = [record for record in records if (record.factor_type or "single") == factor_type]
+        return records
+
+    def load_latest_factor(self, status: str | None = None, factor_type: str | None = None) -> FactorRecord | None:
+        records = self.list_factors(status=status, factor_type=factor_type)
+        return records[-1] if records else None
+
     def load_experiments(self) -> list[ExperimentRecord]:
         return [ExperimentRecord(**payload) for payload in self._read_jsonl(self.experiment_path)]
 
@@ -72,7 +84,13 @@ class LocalFactorStore:
                 return record
         return None
 
-    def update_factor_status(self, factor_id: str, status: str, reason: str | None = None) -> StorageResult:
+    def update_factor_status(
+        self,
+        factor_id: str,
+        status: str,
+        reason: str | None = None,
+        promotion_decision: dict[str, Any] | None = None,
+    ) -> StorageResult:
         records = self.load_factors()
         updated: list[FactorRecord] = []
         count = 0
@@ -83,6 +101,9 @@ class LocalFactorStore:
             reasons = list(record.gate_reasons or [])
             if reason:
                 reasons.append(reason)
+            metadata = dict(record.metadata or {})
+            if promotion_decision is not None:
+                metadata["promotion_decision"] = promotion_decision
             updated.append(
                 FactorRecord(
                     factor_id=record.factor_id,
@@ -99,7 +120,7 @@ class LocalFactorStore:
                     transform_method=record.transform_method,
                     gate_status=record.gate_status,
                     gate_reasons=reasons or None,
-                    metadata=record.metadata,
+                    metadata=metadata or None,
                     parent_factor_ids=record.parent_factor_ids,
                     factor_type=record.factor_type,
                     batch_id=record.batch_id,

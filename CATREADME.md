@@ -6,9 +6,10 @@ This repository is now organized as a local A-share factor research platform. Th
 2. Build feature tensors and evaluate formula factors.
 3. Register factors and experiments.
 4. Run batch or search-style research and build composite factors.
-5. Run portfolio simulation.
-6. Export target positions and paper orders.
-7. Review artifacts in the dashboard.
+5. Run the one-click research suite, including walk-forward and promotion.
+6. Run portfolio simulation.
+7. Export target positions and paper orders.
+8. Review artifacts in the dashboard.
 
 ## Data Layer
 
@@ -53,6 +54,8 @@ Append mode merges incoming records by dataset primary key. The quality report c
 
 `formula_search/` adds local formula discovery. It uses StackVM metadata to generate legal RPN formulas, estimate arity/lookback/complexity, mutate formulas, cross over parent formulas, remove duplicate hashes, and run multi-generation search through the same batch research pipeline.
 
+`research_suite/` orchestrates the complete local workflow. It can run data sync, universe construction, formula search, backtest, paper orders, walk-forward robustness, promotion, suite report writing, and artifact catalog generation in one command.
+
 ## Factor Store And Experiments
 
 `factor_store/` persists:
@@ -79,6 +82,8 @@ Formula search writes:
 
 Composite factor records use `factor_type=composite` and store component factor ids in metadata.
 
+Promotion can update a passing composite factor to `status=production_candidate`. The promotion decision is stored as JSON and also merged into factor metadata.
+
 ## Portfolio Simulation
 
 `backtest/` reads single or composite factor values, builds long-only target weights, estimates local trading costs, and writes:
@@ -103,8 +108,21 @@ Returns are based on `adjusted_close`; simulated fills use raw `close`. The simu
 
 ## Dashboard
 
-`dashboard/` is a Streamlit artifact viewer. It reads local data, factor store, factor reports, batch reports, search reports, backtest outputs, target positions, orders, and paper fills. Missing artifacts produce empty states instead of errors.
+`dashboard/` is a Streamlit artifact viewer. It reads local data, factor store, factor reports, batch reports, search reports, suite reports, artifact catalog, promotion decisions, backtest outputs, target positions, orders, and paper fills. Missing artifacts produce empty states instead of errors.
+
+## Research Suite Outputs
+
+`research_suite.run_suite` writes:
+
+- `suite_result.json`
+- `suite_report.md`
+- `walk_forward_result.json`
+- `promotion_decision.json`
+- `artifact_catalog.json`
+- `artifact_catalog.md`
+
+The artifact catalog indexes data manifest, quality report, pipeline state, universe summary, search reports, factor store files, selected factor values, backtest outputs, order outputs, suite report, and promotion decision.
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Production-grade Tushare incremental sync, neural-guided formula search, more stable neural training, finer matching realism, minute-level liquidity, fuller risk-model neutralization, finer industry classification, large-scale performance tuning, and broker connectivity are future work.
+The platform is local-first and deterministic by default. Production-grade Tushare incremental sync, neural-guided formula search, richer walk-forward policies, human promotion review, more stable neural training, finer matching realism, minute-level liquidity, fuller risk-model neutralization, finer industry classification, large-scale performance tuning, and broker connectivity are future work.

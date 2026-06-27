@@ -172,6 +172,38 @@ def test_dashboard_service_reads_search_report(tmp_path):
     assert "Formula Search" in service.load_search_report_markdown()
 
 
+def test_dashboard_service_reads_suite_artifacts(tmp_path):
+    suite_dir = tmp_path / "suite"
+    suite_dir.mkdir(parents=True)
+    (suite_dir / "suite_result.json").write_text(
+        '{"suite_name":"sample_suite","status":"success","stages":[]}',
+        encoding="utf-8",
+    )
+    (suite_dir / "suite_report.md").write_text("# Research Suite Report", encoding="utf-8")
+    (suite_dir / "artifact_catalog.json").write_text(
+        '{"suite_name":"sample_suite","created_at":"now","entries":[]}',
+        encoding="utf-8",
+    )
+    (suite_dir / "promotion_decision.json").write_text(
+        '{"factor_id":"factor_x","passed":true}',
+        encoding="utf-8",
+    )
+    service = AshareDashboardService(
+        DashboardConfig(
+            data_dir=tmp_path / "data",
+            factor_store_dir=tmp_path / "store",
+            report_dir=tmp_path / "reports",
+            backtest_dir=tmp_path / "backtest",
+            orders_dir=tmp_path / "orders",
+        )
+    )
+
+    assert service.load_suite_result()["suite_name"] == "sample_suite"
+    assert "Research Suite" in service.load_suite_report_markdown()
+    assert service.load_artifact_catalog()["suite_name"] == "sample_suite"
+    assert service.load_promotion_decision()["passed"] is True
+
+
 def test_dashboard_app_import_has_no_external_side_effects():
     module = importlib.import_module("dashboard.app")
 

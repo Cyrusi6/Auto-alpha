@@ -120,6 +120,19 @@ class AshareDashboardService:
                 return path.read_text(encoding="utf-8")
         return ""
 
+    def load_suite_result(self) -> dict[str, Any]:
+        return self._read_json(self.config.report_dir.parent / "suite" / "suite_result.json")
+
+    def load_suite_report_markdown(self) -> str:
+        path = self.config.report_dir.parent / "suite" / "suite_report.md"
+        return path.read_text(encoding="utf-8") if path.exists() else ""
+
+    def load_artifact_catalog(self) -> dict[str, Any]:
+        return self._read_json(self.config.report_dir.parent / "suite" / "artifact_catalog.json")
+
+    def load_promotion_decision(self) -> dict[str, Any]:
+        return self._read_json(self.config.report_dir.parent / "suite" / "promotion_decision.json")
+
     def load_backtest_result(self) -> dict[str, Any]:
         return self._read_json(self.config.backtest_dir / "backtest_result.json")
 
