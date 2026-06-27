@@ -1,39 +1,27 @@
-from .config import StrategyConfig
-from execution.jupiter import JupiterAggregator # 复用 Jupiter 做模拟
-from loguru import logger
+"""A-share strategy risk checks."""
 
-class RiskEngine:
-    def __init__(self):
-        self.config = StrategyConfig()
-        self.jup = JupiterAggregator()
+from __future__ import annotations
 
-    async def check_safety(self, token_address, liquidity_usd):
-        if liquidity_usd < 5000:
-            logger.warning(f"[x] Risk: Liquidity too low (${liquidity_usd})")
-            return False
+from backtest import TargetPosition
+from execution import ExecutionOrder
 
-        try:
-            quote = await self.jup.get_quote(
-                input_mint=token_address,
-                output_mint="So11111111111111111111111111111111111111112",
-                amount_integer=1000000,
-                slippage_bps=1000
-            )
-            if not quote:
-                logger.warning(f"[x] Risk: Cannot verify sell path (Honeypot?)")
-                return False
-        except Exception:
-            return False
-            
-        return True
 
-    def calculate_position_size(self, wallet_balance_sol):
-        size = self.config.ENTRY_AMOUNT_SOL
-        
-        if wallet_balance_sol < size + 0.1:
-            return 0.0
-            
-        return size
+class AShareRiskEngine:
+    def __init__(self, max_weight: float = 0.10, max_names: int = 50, min_order_value: float = 0.0):
+        self.max_weight = float(max_weight)
+        self.max_names = int(max_names)
+        self.min_order_value = float(min_order_value)
 
-    async def close(self):
-        await self.jup.close()
+    def validate_targets(self, targets: list[TargetPosition]) -> tuple[bool, list[str]]:
+        errors: list[str] = []
+        if len(targets) > self.max_names:
+            errors.append(f"target count exceeds max_names: {len(targets)} > {self.max_names}")
+        for target in targets:
+            if target.target_weight < 0:
+                errors.append(f"{target.ts_code} has negative target weight")
+            if target.target_weight > self.max_weight:
+                errors.append(f"{target.ts_code} exceeds max_weight")
+        return not errors, errors
+
+    def filter_orders(self, orders: list[ExecutionOrder]) -> list[ExecutionOrder]:
+        return [order for order in orders if float(order.order_value) >= self.min_order_value]

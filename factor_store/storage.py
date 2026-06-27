@@ -60,6 +60,10 @@ class LocalFactorStore:
     def load_experiments(self) -> list[ExperimentRecord]:
         return [ExperimentRecord(**payload) for payload in self._read_jsonl(self.experiment_path)]
 
+    def load_factor_values(self, factor_id: str) -> list[FactorValueRecord]:
+        path = self.values_dir / f"{factor_id}.jsonl"
+        return [FactorValueRecord(**payload) for payload in self._read_jsonl(path)]
+
     @staticmethod
     def _append_jsonl(path: Path, record: object) -> None:
         with path.open("a", encoding="utf-8") as handle:

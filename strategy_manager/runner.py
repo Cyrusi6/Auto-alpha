@@ -1,321 +1,131 @@
-import asyncio
-import torch
+"""CLI for A-share target and paper order generation."""
+
+from __future__ import annotations
+
+import argparse
 import json
-import os
-import time
-from loguru import logger
+from pathlib import Path
 
-from data_pipeline.data_manager import DataManager
-from model_core.vm import StackVM
-from model_core.data_loader import CryptoDataLoader
-from execution.trader import SolanaTrader
-from execution.utils import get_mint_decimals
-from .config import StrategyConfig
-from .portfolio import PortfolioManager
-from .risk import RiskEngine
+from backtest import build_long_only_targets, factor_values_to_matrix, select_factor_id
+from execution import PaperBroker, export_orders_csv, export_orders_jsonl
+from factor_store import LocalFactorStore
+from model_core.data_loader import AShareDataLoader
 
-class StrategyRunner:
-    def __init__(self):
-        self.data_mgr = DataManager()
-        self.portfolio = PortfolioManager()
-        self.risk = RiskEngine()
-        self.trader = SolanaTrader()
-        self.vm = StackVM()
-        
-        self.loader = CryptoDataLoader()
-        self.token_map = {} # {address: tensor_index} 用于快速查找特征
-        self.last_scan_time = 0
-        self.stop_signal_path = os.getenv("STOP_SIGNAL_PATH", "STOP_SIGNAL")
-        
-        try:
-            with open("best_meme_strategy.json", "r") as f:
-                # 兼容早期版本
-                data = json.load(f)
-                self.formula = data if isinstance(data, list) else data.get("formula")
-            logger.success(f"Loaded Strategy: {self.formula}")
-        except FileNotFoundError:
-            logger.critical("Strategy file not found! Please train model first.")
-            exit(1)
+from .config import AShareStrategyConfig
+from .portfolio import StrategyTargetBook
+from .risk import AShareRiskEngine
 
-    async def initialize(self):
-        await self.data_mgr.initialize()
-        bal = await self.trader.rpc.get_balance()
-        logger.info(f"Bot Initialized. Wallet Balance: {bal:.4f} SOL")
 
-    async def run_loop(self):
-        logger.info(">_< | Strategy Runner Started (Live Mode)")
-        
-        while True:
-            try:
-                if self._handle_stop_signal():
-                    break
+class AShareStrategyRunner:
+    def __init__(
+        self,
+        data_dir,
+        factor_store_dir,
+        output_dir,
+        top_n: int = 20,
+        max_weight: float = 0.10,
+        factor_id: str | None = None,
+        rebalance_date: str | None = None,
+        portfolio_value: float = 1_000_000.0,
+    ):
+        self.data_dir = Path(data_dir)
+        self.factor_store_dir = Path(factor_store_dir)
+        self.output_dir = Path(output_dir)
+        self.top_n = int(top_n)
+        self.max_weight = float(max_weight)
+        self.factor_id = factor_id
+        self.rebalance_date = rebalance_date
+        self.portfolio_value = float(portfolio_value)
+        self.loader: AShareDataLoader | None = None
+        self.selected_factor_id: str | None = None
 
-                loop_start = time.time()
-                
-                if time.time() - self.last_scan_time > 900: # 15 min
-                    logger.info("o.O | Syncing Data Pipeline...")
-                    await self.data_mgr.pipeline_sync_daily()
-                    self.last_scan_time = time.time()
-
-                self.loader.load_data(limit_tokens=300)
-                await self._build_token_mapping()
-
-                if self._handle_stop_signal():
-                    break
-
-                await self.monitor_positions()
-
-                if self._handle_stop_signal():
-                    break
-                
-                if self.portfolio.get_open_count() < StrategyConfig.MAX_OPEN_POSITIONS:
-                    await self.scan_for_entries()
-                else:
-                    logger.info("=-= | Max positions reached. Scanning skipped.")
-                
-                elapsed = time.time() - loop_start
-                sleep_time = max(10, 60 - elapsed)
-                logger.info(f"Cycle finished in {elapsed:.2f}s. Sleeping {sleep_time:.2f}s...")
-                await asyncio.sleep(sleep_time)
-                
-            except Exception as e:
-                logger.exception(f"Global Loop Error: {e}")
-                await asyncio.sleep(30)
-
-    def _stop_requested(self):
-        if not os.path.exists(self.stop_signal_path):
-            return False
-        try:
-            with open(self.stop_signal_path, "r") as f:
-                signal = f.read().strip().upper()
-        except OSError:
-            return True
-        return signal in {"", "STOP", "STOPPED"}
-
-    def _handle_stop_signal(self):
-        if not self._stop_requested():
-            return False
-        logger.warning(f"STOP signal received from {self.stop_signal_path}. Trading loop will stop.")
-        try:
-            with open(self.stop_signal_path, "w") as f:
-                f.write("STOPPED")
-        except OSError as e:
-            logger.warning(f"Failed to mark stop signal as consumed: {e}")
-        return True
-
-    async def _build_token_mapping(self):
-        self.token_map = {addr: idx for idx, addr in enumerate(self.loader.addresses)}
-        logger.info(f"Mapped {len(self.token_map)} tokens for inference.")
-
-    async def monitor_positions(self):
-        if not self.portfolio.positions: return
-
-        logger.info(f"o.O | Monitoring {len(self.portfolio.positions)} positions...")
-        
-        for token_addr, pos in list(self.portfolio.positions.items()):
-            current_price = await self._fetch_live_price_sol(token_addr)
-            if current_price <= 0:
-                logger.warning(f"Could not fetch price for {pos.symbol}, skipping.")
-                continue
-
-            self.portfolio.update_price(token_addr, current_price)
-            
-            pnl_pct = (current_price - pos.entry_price) / pos.entry_price
-            
-            if pnl_pct <= StrategyConfig.STOP_LOSS_PCT:
-                logger.warning(f"!!! | STOP LOSS: {pos.symbol} PnL: {pnl_pct:.2%}")
-                await self._execute_sell(token_addr, 1.0, "StopLoss")
-                continue
-
-            if not pos.is_moonbag and pnl_pct >= StrategyConfig.TAKE_PROFIT_Target1:
-                logger.success(f"😄 | MOONBAG TP: {pos.symbol} PnL: {pnl_pct:.2%}")
-                await self._execute_sell(token_addr, StrategyConfig.TP_Target1_Ratio, "Moonbag")
-                pos.is_moonbag = True
-                self.portfolio.save_state()
-                continue
-
-            max_gain = (pos.highest_price - pos.entry_price) / pos.entry_price
-            drawdown = (pos.highest_price - current_price) / pos.highest_price
-            
-            if max_gain > StrategyConfig.TRAILING_ACTIVATION and drawdown > StrategyConfig.TRAILING_DROP:
-                logger.warning(f"😠 | TRAILING STOP: {pos.symbol} Max: {max_gain:.2%} DD: {drawdown:.2%}")
-                await self._execute_sell(token_addr, 1.0, "TrailingStop")
-                continue
-
-            if not pos.is_moonbag:
-                ai_score = await self._run_inference(token_addr)
-                if ai_score != -1 and ai_score < StrategyConfig.SELL_THRESHOLD:
-                    logger.info(f"🤖 | AI EXIT: {pos.symbol} Score: {ai_score:.2f}")
-                    await self._execute_sell(token_addr, 1.0, "AI_Signal")
-
-    async def scan_for_entries(self):
-        if self._handle_stop_signal():
-            return
-
-        raw_signals = self.vm.execute(self.formula, self.loader.feat_tensor)
-        
-        if raw_signals is None: return
-
-        latest_signals = raw_signals[:, -1]
-        scores = torch.sigmoid(latest_signals).cpu().numpy() # 转为概率 0~1
-        
-        # 翻转排序，从高分到低分处理
-        sorted_indices = scores.argsort()[::-1]
-        
-        # 反向查表：Index -> Address
-        # (效率较低，但 Top 300 没关系)
-        idx_to_addr = {v: k for k, v in self.token_map.items()}
-        
-        for idx in sorted_indices:
-            score = float(scores[idx])
-            
-            if score < StrategyConfig.BUY_THRESHOLD:
-                break # 后面的都不够分，不用看了
-                
-            token_addr = idx_to_addr.get(idx)
-            if not token_addr: continue
-            
-            # 过滤已持仓
-            if token_addr in self.portfolio.positions: continue
-            
-            # 从 loader 缓存获取该 Token 的最新流动性
-            # raw_data_cache['liquidity']: [Tokens, Time]
-            liq_usd = self.loader.raw_data_cache['liquidity'][idx, -1].item()
-            
-            logger.info(f"🔍 | Inspecting {token_addr} | Score: {score:.2f} | Liq: ${liq_usd:.0f}")
-            
-            is_safe = await self.risk.check_safety(token_addr, liq_usd)
-            if is_safe:
-                if self._handle_stop_signal():
-                    return
-                await self._execute_buy(token_addr, score)
-                
-                # 检查仓位上限
-                if self.portfolio.get_open_count() >= StrategyConfig.MAX_OPEN_POSITIONS:
-                    break
-
-    async def _execute_buy(self, token_addr, score):
-        if self._handle_stop_signal():
-            logger.warning("Buy skipped because STOP signal is active.")
-            return
-
-        balance = await self.trader.rpc.get_balance()
-        amount_sol = self.risk.calculate_position_size(balance)
-        
-        if amount_sol <= 0:
-            logger.warning("Insufficient balance for new entry.")
-            return
-
-        logger.info(f"🎉 | EXECUTING BUY: {token_addr} | Amt: {amount_sol} SOL")
-        
-        amount_lamports = int(amount_sol * 1e9)
-        quote = await self.trader.jup.get_quote(
-            input_mint=self.trader.config.SOL_MINT,
-            output_mint=token_addr,
-            amount_integer=amount_lamports
+    def build_target_book(self) -> StrategyTargetBook:
+        self.loader = AShareDataLoader(data_dir=self.data_dir, device="cpu").load_data()
+        store = LocalFactorStore(self.factor_store_dir)
+        self.selected_factor_id = select_factor_id(store, self.factor_id)
+        records = store.load_factor_values(self.selected_factor_id)
+        factor_matrix = factor_values_to_matrix(records, self.loader.ts_codes, self.loader.trade_dates)
+        trade_date = self.rebalance_date or self.loader.trade_dates[-1]
+        if trade_date not in self.loader.trade_dates:
+            raise ValueError(f"rebalance_date is not in loaded trade dates: {trade_date}")
+        date_idx = self.loader.trade_dates.index(trade_date)
+        targets_by_date = build_long_only_targets(
+            factor_matrix[:, date_idx : date_idx + 1],
+            self.loader.ts_codes,
+            [trade_date],
+            top_n=self.top_n,
+            max_weight=self.max_weight,
         )
-        
-        if not quote:
-            logger.error("Failed to get quote for buy.")
-            return
+        return StrategyTargetBook(trade_date=trade_date, targets=targets_by_date[0])
 
-        tx_signature = await self.trader.buy(token_addr, amount_sol)
-        
-        if tx_signature: # Assuming buy returns Sig or True
-            # 更新 Portfolio
-            # 由于链上查询余额有延迟，我们先用 Quote 的预估值 (outAmount) 记账
-            # 为了防止连续重复下单
-            expected_out = int(quote['outAmount'])
-            
-            decimals = await get_mint_decimals(token_addr, self.trader.rpc.client)
-            token_amount_ui = expected_out / (10 ** decimals)
-            
-            entry_price_sol = amount_sol / token_amount_ui if token_amount_ui > 0 else 0
-            
-            self.portfolio.add_position(
-                token=token_addr,
-                symbol=f"Meme_{token_addr[:4]}", # 暂时用简写，后续可查 Metadata
-                price=entry_price_sol,
-                amount=token_amount_ui,
-                cost_sol=amount_sol
-            )
-            logger.success(f"+ | Position Added: {token_amount_ui:.2f} units @ {entry_price_sol:.6f} SOL")
+    def generate_orders(self) -> dict[str, object]:
+        target_book = self.build_target_book()
+        risk = AShareRiskEngine(max_weight=self.max_weight)
+        ok, errors = risk.validate_targets(target_book.targets)
+        if not ok:
+            raise ValueError("; ".join(errors))
+        orders = risk.filter_orders(target_book.to_orders(portfolio_value=self.portfolio_value))
 
-    async def _execute_sell(self, token_addr, ratio, reason):
-        if self._handle_stop_signal():
-            logger.warning("Sell skipped because STOP signal is active.")
-            return
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        targets_csv = export_orders_csv(target_book.targets, self.output_dir / "target_positions.csv")
+        targets_jsonl = export_orders_jsonl(target_book.targets, self.output_dir / "target_positions.jsonl")
+        orders_csv = export_orders_csv(orders, self.output_dir / "orders.csv")
+        orders_jsonl = export_orders_jsonl(orders, self.output_dir / "orders.jsonl")
 
-        pos = self.portfolio.positions.get(token_addr)
-        if not pos: return
+        close = self.loader.raw_data_cache["close"].detach().cpu()
+        date_idx = self.loader.trade_dates.index(target_book.trade_date)
+        prices = {
+            ts_code: float(close[idx, date_idx].item())
+            for idx, ts_code in enumerate(self.loader.ts_codes)
+        }
+        fills = PaperBroker(self.output_dir).submit_orders(orders, prices, target_book.trade_date)
+        fills_path = self.output_dir / "paper_fills.jsonl"
 
-        logger.info(f"- | EXECUTING SELL: {token_addr} | Ratio: {ratio:.0%} | Reason: {reason}")
-        
-        success = await self.trader.sell(token_addr, percentage=ratio)
-        
-        if success:
-            new_amount = pos.amount_held * (1.0 - ratio)
-            
-            if ratio > 0.98 or new_amount * pos.entry_price < 0.001:
-                self.portfolio.close_position(token_addr)
-            else:
-                self.portfolio.update_holding(token_addr, new_amount)
-                
-            logger.success(f"o.O | Trade Completed: {reason}")
+        return {
+            "factor_id": self.selected_factor_id,
+            "rebalance_date": target_book.trade_date,
+            "n_targets": len(target_book.targets),
+            "n_orders": len(orders),
+            "n_fills": len(fills),
+            "output_dir": str(self.output_dir),
+            "targets_path": str(targets_jsonl),
+            "targets_csv_path": str(targets_csv),
+            "orders_path": str(orders_jsonl),
+            "orders_csv_path": str(orders_csv),
+            "fills_path": str(fills_path),
+        }
 
-    async def _run_inference(self, token_addr):
-        idx = self.token_map.get(token_addr)
-        if idx is None:
-            return -1
 
-        features = self.loader.feat_tensor[idx] # 此时是 2D Tensor
-        
-        features_batch = features.unsqueeze(0) # [1, F, T]
-        
-        res = self.vm.execute(self.formula, features_batch) # -> [1, Time]
-        
-        if res is None: return -1
-        
-        latest_logit = res[0, -1]
-        score = torch.sigmoid(latest_logit).item()
-        return score
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Generate A-share target positions and paper orders.")
+    defaults = AShareStrategyConfig.from_env()
+    parser.add_argument("--data-dir", default=str(defaults.data_dir))
+    parser.add_argument("--factor-store-dir", default=str(defaults.factor_store_dir))
+    parser.add_argument("--output-dir", default=str(defaults.output_dir))
+    parser.add_argument("--factor-id")
+    parser.add_argument("--rebalance-date", default=defaults.rebalance_date)
+    parser.add_argument("--top-n", type=int, default=defaults.top_n)
+    parser.add_argument("--max-weight", type=float, default=defaults.max_weight)
+    parser.add_argument("--portfolio-value", type=float, default=1_000_000.0)
+    parser.add_argument("--pretty", action="store_true")
+    return parser
 
-    async def _fetch_live_price_sol(self, token_addr):
-        try:
-            # 1. 获取精度
-            decimals = await get_mint_decimals(token_addr, self.trader.rpc.client)
-            amount_1_unit = 10 ** decimals
-            
-            # 2. 询价: 1 Token -> ? SOL
-            quote = await self.trader.jup.get_quote(
-                input_mint=token_addr,
-                output_mint=self.trader.config.SOL_MINT,
-                amount_integer=amount_1_unit
-            )
-            
-            if quote:
-                out_lamports = int(quote['outAmount'])
-                price_sol = out_lamports / 1e9
-                return price_sol
-            
-        except Exception as e:
-            logger.warning(f"Price fetch failed for {token_addr}: {e}")
-        
-        return 0.0
 
-    async def shutdown(self):
-        logger.info("O.o | Shutting down strategy runner...")
-        await self.data_mgr.close()
-        await self.trader.close()
-        await self.risk.close()
+def main(argv: list[str] | None = None) -> int:
+    args = _build_parser().parse_args(argv)
+    summary = AShareStrategyRunner(
+        data_dir=args.data_dir,
+        factor_store_dir=args.factor_store_dir,
+        output_dir=args.output_dir,
+        top_n=args.top_n,
+        max_weight=args.max_weight,
+        factor_id=args.factor_id,
+        rebalance_date=args.rebalance_date,
+        portfolio_value=args.portfolio_value,
+    ).generate_orders()
+    print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))
+    return 0
+
 
 if __name__ == "__main__":
-    runner = StrategyRunner()
-    loop = asyncio.get_event_loop()
-    try:
-        loop.run_until_complete(runner.initialize())
-        loop.run_until_complete(runner.run_loop())
-    except KeyboardInterrupt:
-        pass
-    finally:
-        loop.run_until_complete(runner.shutdown())
+    raise SystemExit(main())

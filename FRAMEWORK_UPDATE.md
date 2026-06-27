@@ -232,3 +232,66 @@
 - 增加因子相关性去重、重复公式治理和因子版本生命周期管理。
 - 增加行业/市值中性化、组合回测和更完整的样本外验证。
 - 接入真实 Tushare provider 后扩展数据覆盖率、停复牌和财务公告质量检查。
+
+## 2026-06-27 - 任务 006
+
+### 本次变更摘要
+- 新增 `backtest` A 股组合回测包，支持从因子值生成 long-only 目标权重和组合回测结果。
+- 将 `execution` 从旧实盘执行替换为 A 股 paper broker 和交易指令导出层。
+- 将 `strategy_manager` 从旧实盘循环替换为 A 股目标持仓和订单生成入口。
+- 增强 `factor_store`，支持读取已保存的 factor values。
+
+### 新增文件
+- `backtest/__init__.py`
+- `backtest/models.py`
+- `backtest/cost.py`
+- `backtest/rules.py`
+- `backtest/portfolio.py`
+- `backtest/io.py`
+- `backtest/simulator.py`
+- `backtest/run_backtest.py`
+- `execution/__init__.py`
+- `execution/models.py`
+- `execution/exporter.py`
+- `execution/paper_broker.py`
+- `tests/test_factor_store_load_values.py`
+- `tests/test_backtest_cost_rules.py`
+- `tests/test_backtest_portfolio_simulator.py`
+- `tests/test_backtest_cli.py`
+- `tests/test_execution_paper_broker.py`
+- `tests/test_strategy_runner_ashare.py`
+- `tests/test_execution_strategy_no_crypto_terms.py`
+
+### 修改文件
+- `factor_store/storage.py`
+- `execution/config.py`
+- `strategy_manager/__init__.py`
+- `strategy_manager/config.py`
+- `strategy_manager/portfolio.py`
+- `strategy_manager/risk.py`
+- `strategy_manager/runner.py`
+- `.env.example`
+- `FRAMEWORK_UPDATE.md`
+
+### 删除或隔离的旧问题
+- 删除旧 `execution/jupiter.py`、`execution/rpc_handler.py`、`execution/trader.py`、`execution/utils.py`。
+- `execution` 不再读取私钥、钱包、RPC 或链上交易配置。
+- `strategy_manager` 不再读取旧策略文件、不再启动异步实盘循环、不再依赖旧模型加载器或实盘交易器。
+- `backtest`、`execution`、`strategy_manager` 均不接网络和真实券商接口。
+
+### 新增 A 股平台能力
+- `AShareBacktestSimulator` 输出 equity snapshots、fills 和组合指标。
+- `backtest.run_backtest` 可从 `factor_store/factor_values` 读取因子值并写出 `backtest_result.json`、`equity_curve.jsonl`、`trades.jsonl`。
+- `PaperBroker` 可基于本地价格生成 paper fills。
+- `AShareStrategyRunner` 可生成目标持仓、订单 CSV/JSONL 和 paper fills。
+
+### 测试结果
+- `uv run pytest tests/test_ashare_config.py tests/test_ashare_validators.py tests/test_ashare_pipeline.py tests/test_run_pipeline_cli.py tests/test_ashare_provider_sample.py tests/test_ashare_storage.py tests/test_ashare_manager.py tests/test_data_pipeline_no_crypto_core.py tests/test_model_core_vocab_ops.py tests/test_model_core_vm.py tests/test_model_core_features.py tests/test_model_core_data_loader.py tests/test_model_core_evaluator.py tests/test_model_core_engine_cli.py tests/test_model_core_no_crypto_terms.py tests/test_factor_store.py tests/test_factor_store_load_values.py tests/test_evaluation_split_metrics_report.py tests/test_engine_register_factor.py tests/test_engine_training_register.py tests/test_engine_no_register.py tests/test_factor_platform_no_crypto_terms.py tests/test_backtest_cost_rules.py tests/test_backtest_portfolio_simulator.py tests/test_backtest_cli.py tests/test_execution_paper_broker.py tests/test_strategy_runner_ashare.py tests/test_execution_strategy_no_crypto_terms.py`：通过。
+- `uv run python -m backtest.run_backtest --data-dir /tmp/auto-alpha-portfolio-platform/data --factor-store-dir /tmp/auto-alpha-portfolio-platform/store --output-dir /tmp/auto-alpha-portfolio-platform/backtest --top-n 2 --max-weight 0.10 --pretty`：通过。
+- `uv run python -m strategy_manager.runner --data-dir /tmp/auto-alpha-portfolio-platform/data --factor-store-dir /tmp/auto-alpha-portfolio-platform/store --output-dir /tmp/auto-alpha-portfolio-platform/orders --top-n 2 --max-weight 0.10 --portfolio-value 1000000 --pretty`：通过。
+
+### 后续待办
+- 迁移 dashboard 为 A 股因子研究看板。
+- 接入真实 Tushare provider 并扩展停复牌、涨跌停、成交约束。
+- 增加行业/市值中性化和更完整的组合回测。
+- 清理旧依赖和仍未迁移的文档描述。
