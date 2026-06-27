@@ -21,6 +21,11 @@ class FactorReport:
     valid_dates: list[str]
     test_dates: list[str]
     created_at: str
+    transform_method: str | None = None
+    gate_decision: dict[str, object] | None = None
+    max_abs_correlation: float | None = None
+    similar_factors: list[dict[str, object]] | None = None
+    status: str | None = None
 
 
 def build_factor_report(
@@ -36,6 +41,11 @@ def build_factor_report(
     valid_dates: list[str],
     test_dates: list[str],
     created_at: str,
+    transform_method: str | None = None,
+    gate_decision: dict[str, object] | None = None,
+    max_abs_correlation: float | None = None,
+    similar_factors: list[dict[str, object]] | None = None,
+    status: str | None = None,
 ) -> FactorReport:
     return FactorReport(
         factor_id=factor_id,
@@ -50,6 +60,11 @@ def build_factor_report(
         valid_dates=valid_dates,
         test_dates=test_dates,
         created_at=created_at,
+        transform_method=transform_method,
+        gate_decision=gate_decision,
+        max_abs_correlation=max_abs_correlation,
+        similar_factors=similar_factors,
+        status=status,
     )
 
 
@@ -78,6 +93,9 @@ def _render_markdown(report: FactorReport) -> str:
         f"- experiment_id: `{report.experiment_id}`",
         f"- formula: `{' '.join(report.formula)}`",
         f"- created_at: `{report.created_at}`",
+        f"- status: `{report.status or 'candidate'}`",
+        f"- transform_method: `{report.transform_method or 'raw'}`",
+        f"- max_abs_correlation: `{float(report.max_abs_correlation or 0.0):.6f}`",
         "",
         "## Sample Ranges",
         "",
@@ -87,22 +105,51 @@ def _render_markdown(report: FactorReport) -> str:
         "",
         "## Metrics",
         "",
-        "| split | rank_ic_mean | rank_ic_ir | top_bottom_spread | coverage | turnover | score |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
+    metric_names = _metric_names(report.metrics_by_split)
+    lines.append("| split | " + " | ".join(metric_names) + " |")
+    lines.append("| --- | " + " | ".join("---:" for _ in metric_names) + " |")
     for split_name in ["train", "valid", "test", "all"]:
         metrics = report.metrics_by_split.get(split_name, {})
-        lines.append(
-            "| {split} | {rank_ic_mean:.6f} | {rank_ic_ir:.6f} | {top_bottom_spread:.6f} | "
-            "{coverage:.6f} | {turnover:.6f} | {score:.6f} |".format(
-                split=split_name,
-                rank_ic_mean=float(metrics.get("rank_ic_mean", 0.0)),
-                rank_ic_ir=float(metrics.get("rank_ic_ir", 0.0)),
-                top_bottom_spread=float(metrics.get("top_bottom_spread", 0.0)),
-                coverage=float(metrics.get("coverage", 0.0)),
-                turnover=float(metrics.get("turnover", 0.0)),
-                score=float(metrics.get("score", 0.0)),
-            )
-        )
+        values = [f"{float(metrics.get(name, 0.0)):.6f}" for name in metric_names]
+        lines.append("| " + split_name + " | " + " | ".join(values) + " |")
+    lines.extend(_render_gate_section(report))
     lines.append("")
     return "\n".join(lines)
+
+
+def _metric_names(metrics_by_split: dict[str, dict[str, float]]) -> list[str]:
+    preferred = [
+        "rank_ic_mean",
+        "rank_ic_std",
+        "rank_ic_ir",
+        "rank_ic_t_stat",
+        "rank_ic_positive_ratio",
+        "top_bottom_spread",
+        "top_bottom_win_rate",
+        "monotonicity",
+        "coverage",
+        "turnover",
+        "score",
+    ]
+    present = {
+        key
+        for split_metrics in metrics_by_split.values()
+        for key in split_metrics.keys()
+    }
+    ordered = [name for name in preferred if name in present]
+    ordered.extend(sorted(present - set(ordered)))
+    return ordered or ["score"]
+
+
+def _render_gate_section(report: FactorReport) -> list[str]:
+    if report.gate_decision is None and not report.similar_factors:
+        return []
+    lines = ["", "## Gate And Correlation", ""]
+    if report.gate_decision is not None:
+        lines.append("```json")
+        lines.append(json.dumps(report.gate_decision, ensure_ascii=False, indent=2))
+        lines.append("```")
+    similar_count = len(report.similar_factors or [])
+    lines.append(f"- similar_factors: `{similar_count}`")
+    return lines

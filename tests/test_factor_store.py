@@ -67,3 +67,56 @@ def test_local_factor_store_roundtrip_and_values(tmp_path):
     written = "\n".join(path.read_text(encoding="utf-8") for path in tmp_path.rglob("*.jsonl"))
     for forbidden in ["TUSHARE_TOKEN", "secret", "meme", "crypto", "solana", "birdeye", "dexscreener"]:
         assert forbidden not in written.lower()
+
+
+def test_factor_store_load_factors_is_compatible_with_new_metadata_fields(tmp_path):
+    store = LocalFactorStore(tmp_path)
+    store.factor_path.parent.mkdir(parents=True, exist_ok=True)
+    store.factor_path.write_text(
+        json.dumps(
+            {
+                "factor_id": "factor_old",
+                "formula": ["RET_1D"],
+                "formula_tokens": [0],
+                "formula_hash": "old",
+                "feature_version": "v1",
+                "operator_version": "v1",
+                "lookback_days": 1,
+                "created_at": "2026-06-27T00:00:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    loaded = store.load_factors()[0]
+
+    assert loaded.transform_method is None
+    assert loaded.gate_status is None
+    assert loaded.metadata is None
+
+
+def test_factor_store_saves_transform_gate_metadata(tmp_path):
+    store = LocalFactorStore(tmp_path)
+    record = FactorRecord(
+        factor_id="factor_new",
+        formula=["RET_1D"],
+        formula_tokens=[0],
+        formula_hash="new",
+        feature_version="v1",
+        operator_version="v1",
+        lookback_days=1,
+        created_at="2026-06-27T00:00:00Z",
+        status="approved",
+        transform_method="zscore",
+        gate_status="approved",
+        gate_reasons=[],
+        metadata={"max_abs_correlation": 0.1, "similar_factors": []},
+    )
+
+    store.save_factor(record)
+    loaded = store.load_factors()[0]
+
+    assert loaded.status == "approved"
+    assert loaded.transform_method == "zscore"
+    assert loaded.metadata["max_abs_correlation"] == 0.1

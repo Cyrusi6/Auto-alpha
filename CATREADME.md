@@ -41,9 +41,9 @@ Append mode merges incoming records by dataset primary key. The quality report c
 - Formula vocabulary and operators.
 - StackVM formula execution.
 - RankIC, coverage, spread, turnover, and score evaluation.
-- Dry-run and minimal training engine.
+- Universe-aware dry-run and minimal training engine.
 
-The engine can register factor outputs into the factor store.
+`factor_engine/` adds cross-sectional preprocessing, basic market-cap and industry neutralization, factor correlation checks, and admission gates. The engine can register transformed factor outputs into the factor store with gate metadata and similar-factor information.
 
 ## Factor Store And Experiments
 
@@ -53,7 +53,7 @@ The engine can register factor outputs into the factor store.
 - `experiments.jsonl`
 - `factor_values/<factor_id>.jsonl`
 
-`evaluation/` provides train/valid/test splitting, split-level metrics, and factor reports in JSON and Markdown.
+`evaluation/` provides train/valid/test splitting, split-level metrics, and factor reports in JSON and Markdown. Reports render metric columns dynamically and include transform, gate, status, and correlation metadata when available.
 
 ## Portfolio Simulation
 
@@ -81,4 +81,4 @@ The engine can register factor outputs into the factor store.
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Production-grade Tushare incremental sync, richer neutralization, and broker connectivity are future work.
+The platform is local-first and deterministic by default. Production-grade Tushare incremental sync, fuller risk-model neutralization, finer industry classification, and broker connectivity are future work.

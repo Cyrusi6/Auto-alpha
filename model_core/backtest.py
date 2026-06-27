@@ -13,8 +13,13 @@ from .ops import cs_rank
 @dataclass(frozen=True)
 class FactorEvaluationResult:
     rank_ic_mean: float
+    rank_ic_std: float
     rank_ic_ir: float
+    rank_ic_t_stat: float
+    rank_ic_positive_ratio: float
     top_bottom_spread: float
+    top_bottom_win_rate: float
+    monotonicity: float
     coverage: float
     turnover: float
     score: float
@@ -22,8 +27,13 @@ class FactorEvaluationResult:
     def to_dict(self) -> dict[str, float]:
         return {
             "rank_ic_mean": float(self.rank_ic_mean),
+            "rank_ic_std": float(self.rank_ic_std),
             "rank_ic_ir": float(self.rank_ic_ir),
+            "rank_ic_t_stat": float(self.rank_ic_t_stat),
+            "rank_ic_positive_ratio": float(self.rank_ic_positive_ratio),
             "top_bottom_spread": float(self.top_bottom_spread),
+            "top_bottom_win_rate": float(self.top_bottom_win_rate),
+            "monotonicity": float(self.monotonicity),
             "coverage": float(self.coverage),
             "turnover": float(self.turnover),
             "score": float(self.score),
@@ -47,6 +57,7 @@ class AShareFactorEvaluator:
 
         rank_ics = []
         spreads = []
+        monotonicity_values = []
         top_sets: list[set[int]] = []
         for date_idx in range(clean_factors.shape[1]):
             mask = valid[:, date_idx]
@@ -64,6 +75,7 @@ class AShareFactorEvaluator:
             bottom = order[:group_size]
             top = order[-group_size:]
             spreads.append((t_col[top].mean() - t_col[bottom].mean()).item())
+            monotonicity_values.append(self._monotonicity(f_col.squeeze(1), t_col.squeeze(1)))
             original_indices = torch.where(mask)[0]
             top_sets.append(set(int(original_indices[idx].item()) for idx in top))
 
@@ -71,18 +83,29 @@ class AShareFactorEvaluator:
             rank_ic_tensor = torch.tensor(rank_ics, dtype=torch.float32)
             rank_ic_mean = rank_ic_tensor.mean().item()
             rank_ic_std = rank_ic_tensor.std(unbiased=False).item()
+            rank_ic_t_stat = rank_ic_mean / (rank_ic_std / max(len(rank_ics), 1) ** 0.5 + 1e-6)
+            rank_ic_positive_ratio = (rank_ic_tensor > 0).float().mean().item()
         else:
             rank_ic_mean = 0.0
             rank_ic_std = 0.0
+            rank_ic_t_stat = 0.0
+            rank_ic_positive_ratio = 0.0
         rank_ic_ir = rank_ic_mean / (rank_ic_std + 1e-6) if rank_ic_std > 0 else rank_ic_mean
         top_bottom_spread = float(sum(spreads) / len(spreads)) if spreads else 0.0
+        top_bottom_win_rate = float(sum(1.0 for spread in spreads if spread > 0) / len(spreads)) if spreads else 0.0
+        monotonicity = float(sum(monotonicity_values) / len(monotonicity_values)) if monotonicity_values else 0.0
         turnover = self._turnover(top_sets)
-        score = rank_ic_ir + top_bottom_spread - 0.1 * turnover
+        score = rank_ic_ir + top_bottom_spread + 0.1 * monotonicity - 0.1 * turnover
 
         return FactorEvaluationResult(
             rank_ic_mean=float(rank_ic_mean),
+            rank_ic_std=float(rank_ic_std),
             rank_ic_ir=float(rank_ic_ir),
+            rank_ic_t_stat=float(rank_ic_t_stat),
+            rank_ic_positive_ratio=float(rank_ic_positive_ratio),
             top_bottom_spread=float(top_bottom_spread),
+            top_bottom_win_rate=float(top_bottom_win_rate),
+            monotonicity=float(monotonicity),
             coverage=float(coverage),
             turnover=float(turnover),
             score=float(score),
@@ -96,6 +119,23 @@ class AShareFactorEvaluator:
         if denom.item() <= 1e-12:
             return 0.0
         return float((x_centered * y_centered).sum().item() / denom.item())
+
+    @classmethod
+    def _monotonicity(cls, factors: torch.Tensor, target: torch.Tensor) -> float:
+        n = factors.shape[0]
+        if n < 3:
+            return 0.0
+        groups = min(5, n)
+        order = torch.argsort(factors)
+        group_returns = []
+        for group_idx in range(groups):
+            start = int(group_idx * n / groups)
+            end = int((group_idx + 1) * n / groups)
+            selected = order[start:max(end, start + 1)]
+            group_returns.append(target[selected].mean())
+        y = torch.stack(group_returns)
+        x = torch.arange(groups, dtype=y.dtype, device=y.device)
+        return cls._corr(x, y)
 
     @staticmethod
     def _turnover(top_sets: list[set[int]]) -> float:

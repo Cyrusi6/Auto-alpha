@@ -15,6 +15,9 @@ def test_factor_evaluator_returns_finite_metrics():
     for value in result.__dict__.values():
         assert math.isfinite(value)
     assert 0.0 <= result.coverage <= 1.0
+    assert 0.0 <= result.rank_ic_positive_ratio <= 1.0
+    assert 0.0 <= result.top_bottom_win_rate <= 1.0
+    assert "rank_ic_t_stat" in result.to_dict()
 
 
 def test_aligned_factor_scores_better_than_reversed_factor():

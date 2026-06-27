@@ -18,6 +18,10 @@ class FactorRecord:
     status: str = "candidate"
     description: str | None = None
     metrics: dict[str, float] | None = None
+    transform_method: str | None = None
+    gate_status: str | None = None
+    gate_reasons: list[str] | None = None
+    metadata: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)

@@ -84,6 +84,9 @@ def test_dashboard_service_reads_local_artifacts(tmp_path, capsys):
     assert not service.load_dataset("securities").empty
     assert not service.load_dataset("daily_bars").empty
     assert not service.load_factors().empty
+    overview = service.load_factor_overview()
+    assert not overview.empty
+    assert {"status", "transform_method", "gate_status", "max_abs_correlation", "similar_factors"} <= set(overview.columns)
     assert not service.load_experiments().empty
     assert service.load_factor_report_json()["factor_id"].startswith("factor_")
     assert service.load_backtest_result()["metrics"]

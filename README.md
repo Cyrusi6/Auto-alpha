@@ -9,6 +9,7 @@ The current implementation is local-first. It uses deterministic sample data and
 - `data_pipeline/`: A-share data configuration, sample and Tushare HTTP providers, local JSONL storage, data quality checks, sync state, and data sync CLI.
 - `universe/`: Local A-share universe construction from governed data artifacts.
 - `model_core/`: A-share feature engineering, formula vocabulary, DSL operators, StackVM execution, factor evaluation, and mining engine.
+- `factor_engine/`: Cross-sectional preprocessing, market-cap and industry neutralization, correlation checks, and factor admission gate.
 - `factor_store/`: Local factor registry, experiment registry, factor value storage, and stable factor identifiers.
 - `evaluation/`: Time-series sample split, split-level metrics, and factor reports.
 - `backtest/`: Long-only A-share portfolio simulation and backtest CLI.
@@ -51,9 +52,15 @@ uv run python -m model_core.engine \
   --dry-run \
   --register \
   --data-dir /tmp/auto-alpha-demo/data \
+  --universe-name all_a_sample \
   --output-dir /tmp/auto-alpha-demo/out \
   --factor-store-dir /tmp/auto-alpha-demo/store \
-  --report-dir /tmp/auto-alpha-demo/reports
+  --report-dir /tmp/auto-alpha-demo/reports \
+  --factor-transform neutralize_industry_size \
+  --enable-gate \
+  --correlation-threshold 0.99 \
+  --min-coverage 0.5 \
+  --pretty
 
 uv run python -m backtest.run_backtest \
   --data-dir /tmp/auto-alpha-demo/data \
@@ -103,6 +110,8 @@ Common variables:
 
 Data sync writes `manifest.json` and `pipeline_state.json`. Passing `--validate` or `--quality-report` also writes `quality_report.json`. Passing `--mode append` merges with existing JSONL records by dataset primary key.
 
+The factor engine can be constrained to a local universe with `--universe-name` or `--universe-file`. `--factor-transform` supports `raw`, `winsorize`, `zscore`, `winsorize_zscore`, `neutralize_market_cap`, `neutralize_industry`, and `neutralize_industry_size`. Passing `--enable-gate` records coverage, turnover, split metrics, correlation checks, gate status, and transform metadata in the factor store and report.
+
 Dashboard-specific overrides:
 
 - `ASHARE_DASHBOARD_DATA_DIR`
@@ -114,6 +123,6 @@ Dashboard-specific overrides:
 ## Current Gaps
 
 - Tushare HTTP provider is available, but production use still requires valid token, quota, richer data quality rules, and a fuller incremental sync strategy.
-- Industry and market-cap neutralization are still future work.
+- Industry and market-cap neutralization now have a basic cross-sectional implementation; future work should expand this into a fuller risk model and finer industry classification.
 - Portfolio simulation is intentionally simple and needs richer A-share trading constraints.
 - Paper order export is local only; no real broker integration is implemented.

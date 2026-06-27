@@ -74,7 +74,9 @@ def render_app(config: DashboardConfig | None = None) -> None:
 
     with factor_tab:
         factors = service.load_factors()
+        factor_overview = service.load_factor_overview()
         experiments = service.load_experiments()
+        _show_dataframe_or_empty("Factor Gate And Transform Overview", factor_overview)
         _show_dataframe_or_empty("Factors", factors)
         _show_dataframe_or_empty("Experiments", experiments)
         latest_metrics = service.load_latest_factor_metrics()

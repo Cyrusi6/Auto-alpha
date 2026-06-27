@@ -27,6 +27,33 @@ class AshareDashboardService:
     def load_factors(self) -> pd.DataFrame:
         return self._read_jsonl(self.config.factor_store_dir / "factors.jsonl")
 
+    def load_factor_overview(self) -> pd.DataFrame:
+        factors = self.load_factors()
+        if factors.empty:
+            return factors
+
+        records: list[dict[str, Any]] = []
+        for _, row in factors.iterrows():
+            metadata = row.get("metadata")
+            metadata = metadata if isinstance(metadata, dict) else {}
+            similar = metadata.get("similar_factors")
+            similar = similar if isinstance(similar, list) else []
+            gate_reasons = row.get("gate_reasons")
+            gate_reasons = gate_reasons if isinstance(gate_reasons, list) else []
+            records.append(
+                {
+                    "factor_id": row.get("factor_id"),
+                    "status": row.get("status") or "candidate",
+                    "transform_method": row.get("transform_method") or "raw",
+                    "gate_status": row.get("gate_status") or "",
+                    "gate_reasons": ", ".join(str(reason) for reason in gate_reasons),
+                    "max_abs_correlation": float(metadata.get("max_abs_correlation", 0.0) or 0.0),
+                    "similar_factors": len(similar),
+                    "score": self._metric_value(row.get("metrics"), "score"),
+                }
+            )
+        return pd.DataFrame(records)
+
     def load_experiments(self) -> pd.DataFrame:
         return self._read_jsonl(self.config.factor_store_dir / "experiments.jsonl")
 
@@ -37,6 +64,12 @@ class AshareDashboardService:
         latest = factors.iloc[-1].to_dict()
         metrics = latest.get("metrics")
         return metrics if isinstance(metrics, dict) else {}
+
+    @staticmethod
+    def _metric_value(metrics: Any, key: str) -> float:
+        if isinstance(metrics, dict):
+            return float(metrics.get(key, 0.0) or 0.0)
+        return 0.0
 
     def load_factor_report_json(self) -> dict[str, Any]:
         return self._read_json(self.config.report_dir / "factor_report.json")

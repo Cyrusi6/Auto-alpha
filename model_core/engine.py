@@ -9,7 +9,8 @@ from pathlib import Path
 
 import torch
 
-from evaluation import build_factor_report, evaluate_by_splits, split_trade_dates, write_factor_report
+from evaluation import build_factor_report, split_trade_dates, write_factor_report
+from factor_engine import SUPPORTED_TRANSFORMS, FactorGateConfig, FactorResearchPipeline
 from factor_store import (
     ExperimentRecord,
     FactorRecord,
@@ -35,11 +36,20 @@ class FactorMiningEngine:
         data_dir: str | Path | None = None,
         output_dir: str | Path | None = None,
         device: torch.device | str | None = None,
+        universe_file: str | Path | None = None,
+        universe_name: str | None = None,
     ):
         self.data_dir = Path(data_dir) if data_dir is not None else Path(ModelConfig.DATA_DIR)
         self.output_dir = Path(output_dir) if output_dir is not None else Path(ModelConfig.OUTPUT_DIR)
         self.device = torch.device(device) if device is not None else ModelConfig.DEVICE
-        self.loader = AShareDataLoader(data_dir=self.data_dir, device=self.device)
+        self.universe_file = Path(universe_file) if universe_file is not None else None
+        self.universe_name = universe_name
+        self.loader = AShareDataLoader(
+            data_dir=self.data_dir,
+            device=self.device,
+            universe_file=self.universe_file,
+            universe_name=self.universe_name,
+        )
         self.vm = StackVM()
         self.evaluator = AShareFactorEvaluator()
         self.best_score = -float("inf")
@@ -57,6 +67,10 @@ class FactorMiningEngine:
         report_dir: str | Path | None = None,
         train_ratio: float = 0.6,
         valid_ratio: float = 0.2,
+        factor_transform: str = "raw",
+        enable_gate: bool = False,
+        gate_config: FactorGateConfig | None = None,
+        correlation_threshold: float = 0.95,
     ) -> dict[str, object]:
         self.load_data()
         formula = [FORMULA_VOCAB.encode_name("RET_1D")]
@@ -74,6 +88,10 @@ class FactorMiningEngine:
                     report_dir=report_dir,
                     train_ratio=train_ratio,
                     valid_ratio=valid_ratio,
+                    factor_transform=factor_transform,
+                    enable_gate=enable_gate,
+                    gate_config=gate_config,
+                    correlation_threshold=correlation_threshold,
                 )
             )
         return payload
@@ -87,6 +105,10 @@ class FactorMiningEngine:
         report_dir: str | Path | None = None,
         train_ratio: float = 0.6,
         valid_ratio: float = 0.2,
+        factor_transform: str = "raw",
+        enable_gate: bool = False,
+        gate_config: FactorGateConfig | None = None,
+        correlation_threshold: float = 0.95,
     ) -> dict[str, object]:
         self.load_data()
         steps = int(steps if steps is not None else ModelConfig.TRAIN_STEPS)
@@ -144,6 +166,10 @@ class FactorMiningEngine:
                     report_dir=report_dir,
                     train_ratio=train_ratio,
                     valid_ratio=valid_ratio,
+                    factor_transform=factor_transform,
+                    enable_gate=enable_gate,
+                    gate_config=gate_config,
+                    correlation_threshold=correlation_threshold,
                 )
             )
         return best_payload
@@ -156,6 +182,10 @@ class FactorMiningEngine:
         report_dir: str | Path | None = None,
         train_ratio: float = 0.6,
         valid_ratio: float = 0.2,
+        factor_transform: str = "raw",
+        enable_gate: bool = False,
+        gate_config: FactorGateConfig | None = None,
+        correlation_threshold: float = 0.95,
     ) -> dict[str, object]:
         created_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
         formula_tokens = [int(token) for token in formula]
@@ -169,23 +199,33 @@ class FactorMiningEngine:
         factor_id = make_factor_id(formula_hash)
         experiment_id = make_experiment_id(factor_id, created_at)
 
+        factor_store_path = Path(factor_store_dir) if factor_store_dir is not None else Path("artifacts/factor_store")
+        report_path = Path(report_dir) if report_dir is not None else Path("artifacts/reports")
+        store = LocalFactorStore(factor_store_path)
         split_result = split_trade_dates(
             self.loader.trade_dates,
             train_ratio=train_ratio,
             valid_ratio=valid_ratio,
         )
-        metrics_by_split = evaluate_by_splits(
-            self.evaluator,
-            factors,
-            self.loader.raw_data_cache,
-            self.loader.target_ret,
-            self.loader.trade_dates,
-            split_result,
+        research = FactorResearchPipeline(
+            evaluator=self.evaluator,
+            gate_config=gate_config,
+            enable_gate=enable_gate,
+            correlation_threshold=correlation_threshold,
+        ).run(
+            factors=factors,
+            raw_data=self.loader.raw_data_cache,
+            target_ret=self.loader.target_ret,
+            trade_dates=self.loader.trade_dates,
+            ts_codes=self.loader.ts_codes,
+            store=store,
+            transform_method=factor_transform,
+            train_ratio=train_ratio,
+            valid_ratio=valid_ratio,
         )
-
-        factor_store_path = Path(factor_store_dir) if factor_store_dir is not None else Path("artifacts/factor_store")
-        report_path = Path(report_dir) if report_dir is not None else Path("artifacts/reports")
-        store = LocalFactorStore(factor_store_path)
+        metrics_by_split = research.metrics_by_split
+        gate_decision_payload = research.gate_decision.to_dict() if research.gate_decision is not None else None
+        gate_reasons = research.gate_decision.reasons if research.gate_decision is not None else None
         factor_record = FactorRecord(
             factor_id=factor_id,
             formula=formula_names,
@@ -195,7 +235,18 @@ class FactorMiningEngine:
             operator_version=self.operator_version,
             lookback_days=self._estimate_lookback_days(formula_names),
             created_at=created_at,
+            status=research.status,
             metrics=metrics_by_split["all"],
+            transform_method=research.transform_method,
+            gate_status=research.gate_decision.status if research.gate_decision is not None else None,
+            gate_reasons=gate_reasons,
+            metadata={
+                "max_abs_correlation": float(research.max_abs_correlation),
+                "similar_factors": research.similar_factors,
+                "gate_decision": gate_decision_payload,
+                "universe_name": self.universe_name,
+                "universe_file": str(self.universe_file) if self.universe_file is not None else None,
+            },
         )
         experiment_record = ExperimentRecord(
             experiment_id=experiment_id,
@@ -214,7 +265,7 @@ class FactorMiningEngine:
             factor_id,
             self.loader.ts_codes,
             self.loader.trade_dates,
-            factors,
+            research.transformed_factors,
         )
 
         report = build_factor_report(
@@ -230,6 +281,11 @@ class FactorMiningEngine:
             valid_dates=split_result.valid_dates,
             test_dates=split_result.test_dates,
             created_at=created_at,
+            transform_method=research.transform_method,
+            gate_decision=gate_decision_payload,
+            max_abs_correlation=research.max_abs_correlation,
+            similar_factors=research.similar_factors,
+            status=research.status,
         )
         report_json_path, report_md_path = write_factor_report(report, report_path)
 
@@ -243,6 +299,11 @@ class FactorMiningEngine:
             "report_json_path": str(report_json_path),
             "report_md_path": str(report_md_path),
             "metrics_by_split": metrics_by_split,
+            "transform_method": research.transform_method,
+            "gate_decision": gate_decision_payload,
+            "max_abs_correlation": float(research.max_abs_correlation),
+            "similar_factors": research.similar_factors,
+            "status": research.status,
         }
 
     def _summary(self, formula: list[int], metrics: FactorEvaluationResult) -> dict[str, object]:
@@ -254,6 +315,8 @@ class FactorMiningEngine:
             "formula": self.vm.describe(formula),
             "formula_tokens": [int(token) for token in formula],
             "metrics": metrics.to_dict(),
+            "universe_name": self.universe_name,
+            "universe_file": str(self.universe_file) if self.universe_file is not None else None,
         }
 
     @staticmethod
@@ -290,19 +353,43 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", default=str(ModelConfig.OUTPUT_DIR))
     parser.add_argument("--factor-store-dir", default="artifacts/factor_store")
     parser.add_argument("--report-dir", default="artifacts/reports")
+    parser.add_argument("--universe-name")
+    parser.add_argument("--universe-file")
+    parser.add_argument("--factor-transform", default="raw", choices=sorted(SUPPORTED_TRANSFORMS))
+    parser.add_argument("--enable-gate", action="store_true")
+    parser.add_argument("--disable-gate", action="store_true")
+    parser.add_argument("--correlation-threshold", type=float, default=0.95)
+    parser.add_argument("--min-coverage", type=float, default=0.8)
+    parser.add_argument("--min-test-rank-ic-ir", type=float, default=-999.0)
+    parser.add_argument("--min-test-score", type=float, default=-999.0)
+    parser.add_argument("--max-turnover", type=float, default=1.0)
     parser.add_argument("--register", action="store_true", help="Write factor records and reports.")
     parser.add_argument("--no-register", action="store_true", help="Skip factor records and reports.")
     parser.add_argument("--train-ratio", type=float, default=0.6)
     parser.add_argument("--valid-ratio", type=float, default=0.2)
+    parser.add_argument("--pretty", action="store_true")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    engine = FactorMiningEngine(data_dir=args.data_dir, output_dir=args.output_dir)
+    engine = FactorMiningEngine(
+        data_dir=args.data_dir,
+        output_dir=args.output_dir,
+        universe_file=args.universe_file,
+        universe_name=args.universe_name,
+    )
 
     register = False if args.no_register else (True if args.register else not args.dry_run)
+    enable_gate = args.enable_gate and not args.disable_gate
+    gate_config = FactorGateConfig(
+        min_coverage=args.min_coverage,
+        min_test_rank_ic_ir=args.min_test_rank_ic_ir,
+        min_test_score=args.min_test_score,
+        max_turnover=args.max_turnover,
+        max_abs_correlation=args.correlation_threshold,
+    )
     if args.dry_run:
         payload = engine.dry_run(
             register=register,
@@ -310,6 +397,10 @@ def main(argv: list[str] | None = None) -> int:
             report_dir=args.report_dir,
             train_ratio=args.train_ratio,
             valid_ratio=args.valid_ratio,
+            factor_transform=args.factor_transform,
+            enable_gate=enable_gate,
+            gate_config=gate_config,
+            correlation_threshold=args.correlation_threshold,
         )
     else:
         payload = engine.train(
@@ -320,8 +411,12 @@ def main(argv: list[str] | None = None) -> int:
             report_dir=args.report_dir,
             train_ratio=args.train_ratio,
             valid_ratio=args.valid_ratio,
+            factor_transform=args.factor_transform,
+            enable_gate=enable_gate,
+            gate_config=gate_config,
+            correlation_threshold=args.correlation_threshold,
         )
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    print(json.dumps(payload, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0
 
 

@@ -55,7 +55,7 @@ class LocalFactorStore:
         return StorageResult(path=str(path), records=count)
 
     def load_factors(self) -> list[FactorRecord]:
-        return [FactorRecord(**payload) for payload in self._read_jsonl(self.factor_path)]
+        return [FactorRecord(**self._factor_payload_with_defaults(payload)) for payload in self._read_jsonl(self.factor_path)]
 
     def load_experiments(self) -> list[ExperimentRecord]:
         return [ExperimentRecord(**payload) for payload in self._read_jsonl(self.experiment_path)]
@@ -83,6 +83,15 @@ class LocalFactorStore:
         if isinstance(record, dict):
             return dict(record)
         raise TypeError(f"record must be a dataclass instance or dict: {type(record)!r}")
+
+    @staticmethod
+    def _factor_payload_with_defaults(payload: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(payload)
+        normalized.setdefault("transform_method", None)
+        normalized.setdefault("gate_status", None)
+        normalized.setdefault("gate_reasons", None)
+        normalized.setdefault("metadata", None)
+        return normalized
 
     @staticmethod
     def _to_matrix(values: Any) -> list[list[float]]:

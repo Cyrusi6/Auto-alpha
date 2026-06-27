@@ -447,3 +447,68 @@
 - 将 dashboard Data tab 增强为质量报告、同步状态和股票池 summary 的可视化入口。
 - 为 Tushare 生产同步补充分页、增量日期窗口、重试退避和数据覆盖率报告。
 - 增加更完整的 A 股股票池规则，例如上市板块、风险警示变更、停复牌连续性和行业覆盖。
+
+## 2026-06-27 - 任务 010
+
+### 本次变更摘要
+- 新增 `factor_engine/`，提供横截面 winsorize、zscore、市值中性化、行业中性化、相关性检查和准入门禁。
+- 增强 `AShareDataLoader`，支持 `universe_name` / `universe_file` 过滤，并输出行业编码和 `log_mkt_cap`。
+- 增强因子评价指标，增加 RankIC std/t-stat/正值比例、Top-Bottom 胜率和单调性。
+- 增强 engine 注册路径，支持 transform、correlation check、gate decision、universe-aware 注册。
+- 增强 factor store、report 和 dashboard 因子页，展示 transform/gate/correlation metadata。
+
+### 新增文件
+- `factor_engine/__init__.py`
+- `factor_engine/transforms.py`
+- `factor_engine/correlation.py`
+- `factor_engine/gate.py`
+- `factor_engine/pipeline.py`
+- `tests/test_factor_engine_transforms.py`
+- `tests/test_factor_engine_correlation.py`
+- `tests/test_factor_engine_gate.py`
+- `tests/test_engine_factor_research_integration.py`
+- `tests/test_factor_research_no_old_terms.py`
+
+### 修改文件
+- `model_core/data_loader.py`
+- `model_core/backtest.py`
+- `model_core/engine.py`
+- `evaluation/metrics.py`
+- `evaluation/report.py`
+- `factor_store/models.py`
+- `factor_store/storage.py`
+- `dashboard/data_service.py`
+- `dashboard/app.py`
+- `tests/test_model_core_data_loader.py`
+- `tests/test_model_core_evaluator.py`
+- `tests/test_evaluation_split_metrics_report.py`
+- `tests/test_factor_store.py`
+- `tests/test_dashboard_artifacts.py`
+- `README.md`
+- `CATREADME.md`
+- `FRAMEWORK_UPDATE.md`
+
+### 删除或隔离的旧问题
+- engine 注册因子不再只保存原始因子值，可保存处理后的因子值。
+- factor store 兼容旧记录缺少 transform/gate metadata 的情况。
+- dashboard 因子页不再只显示基础 metrics，可查看 status、gate 和 transform metadata。
+
+### 新增 A 股平台能力
+- `--universe-name` / `--universe-file` 让 engine 只在指定股票池内研发和注册因子。
+- `--factor-transform` 支持 raw、winsorize、zscore、winsorize_zscore、neutralize_market_cap、neutralize_industry、neutralize_industry_size。
+- `--enable-gate` 可基于 coverage、test split 指标、turnover 和 max_abs_correlation 生成 approved/rejected。
+- 注册结果写入 factor record、experiment、factor values 和 factor report，并在 stdout 输出 gate/correlation/status。
+
+### 测试结果
+- `uv run pytest tests/test_factor_engine_transforms.py tests/test_factor_engine_correlation.py tests/test_factor_engine_gate.py tests/test_model_core_data_loader.py tests/test_model_core_evaluator.py tests/test_evaluation_split_metrics_report.py tests/test_factor_store.py tests/test_engine_factor_research_integration.py tests/test_dashboard_artifacts.py tests/test_factor_research_no_old_terms.py`：通过，34 passed。
+- `uv run pytest`：通过，131 passed。
+- `uv run python -m data_pipeline.run_pipeline --sync --provider sample --data-dir /tmp/auto-alpha-factor-research/data --validate --mode overwrite --pretty`：通过，质量报告无错误。
+- `uv run python -m universe.run_universe --data-dir /tmp/auto-alpha-factor-research/data --as-of-date 20240104 --universe-name all_a_sample --min-listed-days 0 --min-amount 0 --pretty`：通过，选出 3 个 sample 成员。
+- `uv run python -m model_core.engine --dry-run --register --data-dir /tmp/auto-alpha-factor-research/data --universe-name all_a_sample --output-dir /tmp/auto-alpha-factor-research/out --factor-store-dir /tmp/auto-alpha-factor-research/store --report-dir /tmp/auto-alpha-factor-research/reports --factor-transform neutralize_industry_size --enable-gate --correlation-threshold 0.99 --min-coverage 0.5 --pretty`：通过，gate approved，写出 transform/gate/correlation metadata。
+- `uv run python -m model_core.engine --steps 3 --batch-size 4 --data-dir /tmp/auto-alpha-factor-research/data --universe-name all_a_sample --output-dir /tmp/auto-alpha-factor-research/train_out --factor-store-dir /tmp/auto-alpha-factor-research/store --report-dir /tmp/auto-alpha-factor-research/train_reports --factor-transform winsorize_zscore --enable-gate --correlation-threshold 0.99 --min-coverage 0.5`：通过，训练模式默认注册，gate approved。
+- `uv run python -m backtest.run_backtest --data-dir /tmp/auto-alpha-factor-research/data --factor-store-dir /tmp/auto-alpha-factor-research/store --output-dir /tmp/auto-alpha-factor-research/backtest --top-n 2 --max-weight 0.10 --pretty`：通过，生成组合回测结果。
+
+### 后续待办
+- 将中性化扩展为更完整的风险模型和更细行业分类。
+- 增加因子库相似因子治理策略，例如自动降级、替换和分组展示。
+- dashboard 增加多因子对比、gate 失败原因筛选和相关性网络视图。

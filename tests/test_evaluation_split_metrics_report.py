@@ -52,8 +52,13 @@ def test_write_factor_report_outputs_json_and_markdown(tmp_path):
         metrics_by_split={
             split: {
                 "rank_ic_mean": 0.1,
+                "rank_ic_std": 0.05,
                 "rank_ic_ir": 0.2,
+                "rank_ic_t_stat": 1.0,
+                "rank_ic_positive_ratio": 1.0,
                 "top_bottom_spread": 0.3,
+                "top_bottom_win_rate": 1.0,
+                "monotonicity": 0.5,
                 "coverage": 1.0,
                 "turnover": 0.4,
                 "score": 0.5,
@@ -67,12 +72,42 @@ def test_write_factor_report_outputs_json_and_markdown(tmp_path):
         valid_dates=["20240103"],
         test_dates=["20240104"],
         created_at="2026-06-27T00:00:00Z",
+        transform_method="winsorize_zscore",
+        gate_decision={"status": "approved", "passed": True, "reasons": [], "checks": {"coverage": 1.0}},
+        max_abs_correlation=0.12,
+        similar_factors=[],
+        status="approved",
     )
 
     json_path, md_path = write_factor_report(report, tmp_path)
 
     assert json_path.exists()
     assert md_path.exists()
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    assert payload["transform_method"] == "winsorize_zscore"
+    assert payload["status"] == "approved"
     markdown = md_path.read_text(encoding="utf-8")
-    for expected in ["factor_1234567890abcdef", "exp_1234567890abcdef", "train", "valid", "test", "all"]:
+    for expected in ["factor_1234567890abcdef", "exp_1234567890abcdef", "train", "valid", "test", "all", "monotonicity", "Gate And Correlation"]:
         assert expected in markdown
+
+
+def test_factor_report_old_optional_fields_are_compatible(tmp_path):
+    report = build_factor_report(
+        factor_id="factor_old",
+        experiment_id="exp_old",
+        formula=["RET_1D"],
+        formula_tokens=[0],
+        metrics_by_split={"all": {"score": 0.1}},
+        n_stocks=1,
+        n_dates=1,
+        n_features=1,
+        train_dates=[],
+        valid_dates=[],
+        test_dates=["20240102"],
+        created_at="2026-06-27T00:00:00Z",
+    )
+
+    json_path, md_path = write_factor_report(report, tmp_path)
+
+    assert json_path.exists()
+    assert "candidate" in md_path.read_text(encoding="utf-8")
