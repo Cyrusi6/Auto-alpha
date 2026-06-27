@@ -2,11 +2,11 @@
 
 Auto-alpha is an A-share quantitative factor research platform. It provides a local, reproducible workflow for data preparation, factor formula research, factor registration, portfolio simulation, paper order export, and artifact review.
 
-The current implementation is intentionally local-first. It uses deterministic sample data and JSON/JSONL artifacts so the full research loop can run without external services.
+The current implementation is local-first. It uses deterministic sample data and JSON/JSONL artifacts so the full research loop can run without external services, while the Tushare HTTP provider can be enabled with a valid token.
 
 ## Modules
 
-- `data_pipeline/`: A-share data configuration, sample provider, local JSONL storage, and data sync CLI.
+- `data_pipeline/`: A-share data configuration, sample and Tushare HTTP providers, local JSONL storage, and data sync CLI.
 - `model_core/`: A-share feature engineering, formula vocabulary, DSL operators, StackVM execution, factor evaluation, and mining engine.
 - `factor_store/`: Local factor registry, experiment registry, factor value storage, and stable factor identifiers.
 - `evaluation/`: Time-series sample split, split-level metrics, and factor reports.
@@ -69,8 +69,11 @@ uv run streamlit run dashboard/app.py
 
 Common variables:
 
-- `TUSHARE_TOKEN`: reserved for a future provider.
-- `ASHARE_PROVIDER`: data provider, currently `sample` for local sync.
+- `TUSHARE_TOKEN`: required when `ASHARE_PROVIDER=tushare`.
+- `TUSHARE_API_URL`: optional Tushare Pro HTTP endpoint override.
+- `TUSHARE_TIMEOUT_SECONDS`: optional HTTP timeout.
+- `TUSHARE_RETRY_COUNT`: optional HTTP retry count.
+- `ASHARE_PROVIDER`: data provider, `sample` for local deterministic data or `tushare` for Tushare Pro HTTP sync.
 - `ASHARE_DATA_DIR`: local A-share data directory.
 - `ASHARE_FACTOR_STORE_DIR`: local factor store directory.
 - `ASHARE_ORDER_OUTPUT_DIR`: order export directory.
@@ -89,7 +92,7 @@ Dashboard-specific overrides:
 
 ## Current Gaps
 
-- Real Tushare provider is not implemented.
+- Tushare HTTP provider is available, but production use still requires valid token, quota, data quality checks, and richer incremental sync.
 - Industry and market-cap neutralization are still future work.
 - Portfolio simulation is intentionally simple and needs richer A-share trading constraints.
 - Paper order export is local only; no real broker integration is implemented.

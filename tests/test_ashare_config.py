@@ -9,6 +9,9 @@ def test_from_env_defaults(monkeypatch):
     for key in [
         "ASHARE_PROVIDER",
         "TUSHARE_TOKEN",
+        "TUSHARE_API_URL",
+        "TUSHARE_TIMEOUT_SECONDS",
+        "TUSHARE_RETRY_COUNT",
         "ASHARE_DATABASE_URL",
         "DATABASE_URL",
         "ASHARE_DATA_DIR",
@@ -23,6 +26,9 @@ def test_from_env_defaults(monkeypatch):
 
     assert config.provider == "tushare"
     assert config.tushare_token is None
+    assert config.tushare_api_url == "http://api.tushare.pro"
+    assert config.tushare_timeout_seconds == 30
+    assert config.tushare_retry_count == 3
     assert config.database_url is None
     assert config.data_dir == Path("data/ashare")
     assert config.start_date == "20150101"
@@ -37,6 +43,18 @@ def test_from_env_reads_tushare_token(monkeypatch):
     config = AShareDataConfig.from_env()
 
     assert config.tushare_token == "test-token"
+
+
+def test_from_env_reads_tushare_http_settings(monkeypatch):
+    monkeypatch.setenv("TUSHARE_API_URL", "http://example.test/pro")
+    monkeypatch.setenv("TUSHARE_TIMEOUT_SECONDS", "5")
+    monkeypatch.setenv("TUSHARE_RETRY_COUNT", "1")
+
+    config = AShareDataConfig.from_env()
+
+    assert config.tushare_api_url == "http://example.test/pro"
+    assert config.tushare_timeout_seconds == 5
+    assert config.tushare_retry_count == 1
 
 
 def test_from_env_rejects_invalid_adjust(monkeypatch):

@@ -5,6 +5,7 @@ from __future__ import annotations
 from ..config import AShareDataConfig
 from .base import AShareDataProvider
 from .sample import SampleAShareDataProvider
+from .tushare import TushareAShareDataProvider
 
 
 def create_ashare_provider(config: AShareDataConfig) -> AShareDataProvider:
@@ -12,8 +13,5 @@ def create_ashare_provider(config: AShareDataConfig) -> AShareDataProvider:
     if provider in {"sample", "fixture", "mock"}:
         return SampleAShareDataProvider()
     if provider == "tushare":
-        raise NotImplementedError(
-            "Tushare provider is not implemented in this task; "
-            "use --provider sample for local sync."
-        )
+        return TushareAShareDataProvider()
     raise ValueError(f"Unsupported A-share provider: {config.provider}")

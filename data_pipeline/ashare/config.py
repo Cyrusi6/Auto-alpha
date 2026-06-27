@@ -14,6 +14,9 @@ from .validators import is_valid_yyyymmdd
 class AShareDataConfig:
     provider: str = "tushare"
     tushare_token: str | None = None
+    tushare_api_url: str = "http://api.tushare.pro"
+    tushare_timeout_seconds: int = 30
+    tushare_retry_count: int = 3
     database_url: str | None = None
     data_dir: Path = Path("data/ashare")
     start_date: str = "20150101"
@@ -34,6 +37,9 @@ class AShareDataConfig:
         return cls(
             provider=env.get("ASHARE_PROVIDER", "tushare"),
             tushare_token=env.get("TUSHARE_TOKEN") or None,
+            tushare_api_url=env.get("TUSHARE_API_URL") or "http://api.tushare.pro",
+            tushare_timeout_seconds=env.get("TUSHARE_TIMEOUT_SECONDS") or 30,
+            tushare_retry_count=env.get("TUSHARE_RETRY_COUNT") or 3,
             database_url=database_url,
             data_dir=Path(env.get("ASHARE_DATA_DIR") or "data/ashare"),
             start_date=env.get("ASHARE_START_DATE", "20150101"),
@@ -45,6 +51,16 @@ class AShareDataConfig:
     def __post_init__(self) -> None:
         data_dir = Path(self.data_dir)
         object.__setattr__(self, "data_dir", data_dir)
+        object.__setattr__(
+            self,
+            "tushare_timeout_seconds",
+            self._coerce_positive_int(self.tushare_timeout_seconds, "tushare_timeout_seconds"),
+        )
+        object.__setattr__(
+            self,
+            "tushare_retry_count",
+            self._coerce_positive_int(self.tushare_retry_count, "tushare_retry_count"),
+        )
 
         if self.adjust not in {"none", "qfq", "hfq"}:
             raise ValueError("adjust must be one of: none, qfq, hfq")
@@ -54,3 +70,13 @@ class AShareDataConfig:
 
         if self.end_date is not None and not is_valid_yyyymmdd(self.end_date):
             raise ValueError("end_date must be a real date in YYYYMMDD format")
+
+    @staticmethod
+    def _coerce_positive_int(value: int | str, field_name: str) -> int:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{field_name} must be a positive integer") from exc
+        if parsed <= 0:
+            raise ValueError(f"{field_name} must be a positive integer")
+        return parsed

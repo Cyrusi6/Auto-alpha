@@ -341,3 +341,51 @@
 - 为 dashboard 增加因子对比、参数过滤和多实验选择。
 - 接入真实 Tushare provider 后补充数据质量和覆盖率面板。
 - 继续收敛可选研究脚本和依赖边界。
+
+## 2026-06-27 - 任务 008
+
+### 本次变更摘要
+- 新增基于 Python 标准库 `urllib.request` 的 Tushare Pro HTTP client。
+- 新增 `TushareAShareDataProvider`，实现 securities、trade_calendar、daily_bars、daily_basic、financial_features 五类数据拉取和字段映射。
+- 将 `provider=tushare` 从未实现入口切换为真实 HTTP provider，缺少 `TUSHARE_TOKEN` 时返回明确错误。
+- 保持 sample provider 和本地 JSONL 同步路径不变。
+
+### 新增文件
+- `data_pipeline/ashare/providers/tushare_client.py`
+- `data_pipeline/ashare/providers/tushare.py`
+- `tests/test_tushare_client.py`
+- `tests/test_tushare_provider.py`
+
+### 修改文件
+- `data_pipeline/ashare/config.py`
+- `data_pipeline/ashare/providers/factory.py`
+- `data_pipeline/ashare/providers/__init__.py`
+- `data_pipeline/ashare/__init__.py`
+- `tests/test_ashare_config.py`
+- `tests/test_run_pipeline_cli.py`
+- `README.md`
+- `CATREADME.md`
+- `requirements-optional.txt`
+- `FRAMEWORK_UPDATE.md`
+
+### 删除或隔离的旧问题
+- `provider=tushare` 不再抛固定未实现错误。
+- Tushare 接入不依赖 SDK，不新增第三方依赖。
+- 测试通过 fake transport 和 fake client 离线验证，不访问真实 Tushare。
+
+### 新增 A 股平台能力
+- `AShareDataConfig` 支持 `TUSHARE_API_URL`、`TUSHARE_TIMEOUT_SECONDS`、`TUSHARE_RETRY_COUNT`。
+- HTTP client 按 Tushare Pro 的 `api_name`、`token`、`params`、`fields` 请求结构提交 JSON。
+- Provider 完成 Tushare 字段到 A 股 dataclass 的映射，例如 `vol -> volume`、`ann_date -> announce_date`。
+- `run_pipeline --sync --provider tushare` 在配置真实 `TUSHARE_TOKEN` 后可进入真实同步路径。
+
+### 测试结果
+- `uv run pytest tests/test_ashare_config.py tests/test_tushare_client.py tests/test_tushare_provider.py tests/test_run_pipeline_cli.py`：通过，19 passed。
+- `uv run pytest`：通过，91 passed。
+- `uv run python -m data_pipeline.run_pipeline --sync --provider sample --data-dir /tmp/auto-alpha-task008-sample --pretty`：通过，写出五类 sample A 股 JSONL 数据。
+- `env -u TUSHARE_TOKEN uv run python -m data_pipeline.run_pipeline --sync --provider tushare --data-dir /tmp/auto-alpha-task008-tushare`：返回 code 2，并提示缺少 `TUSHARE_TOKEN`。
+
+### 后续待办
+- 针对真实 Tushare 数据增加分页、增量同步和配额退避策略。
+- 增加数据质量报告，覆盖缺失值、重复记录、停复牌和财务公告延迟。
+- 为生产同步增加更完整的字段覆盖和分市场交易日历处理。

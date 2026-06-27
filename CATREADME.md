@@ -11,7 +11,7 @@ This repository is now organized as a local A-share factor research platform. Th
 
 ## Data Layer
 
-`data_pipeline/` owns A-share data models, configuration, providers, local JSONL storage, and sync orchestration.
+`data_pipeline/` owns A-share data models, configuration, providers, local JSONL storage, and sync orchestration. It supports deterministic sample data and a standard-library Tushare Pro HTTP provider.
 
 The sample provider writes:
 
@@ -70,4 +70,4 @@ The engine can register factor outputs into the factor store.
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Real data provider integration, richer neutralization, and broker connectivity are future work.
+The platform is local-first and deterministic by default. Production-grade Tushare incremental sync, richer neutralization, and broker connectivity are future work.
