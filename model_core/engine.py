@@ -1,157 +1,145 @@
-import torch
-from torch.distributions import Categorical
-from tqdm import tqdm
+"""A-share factor mining engine."""
+
+from __future__ import annotations
+
+import argparse
 import json
+from dataclasses import asdict
+from pathlib import Path
 
+import torch
+
+from .backtest import AShareFactorEvaluator, FactorEvaluationResult
 from .config import ModelConfig
-from .data_loader import CryptoDataLoader
-from .alphagpt import AlphaGPT, NewtonSchulzLowRankDecay, StableRankMonitor
+from .data_loader import AShareDataLoader
 from .vm import StackVM
-from .backtest import MemeBacktest
+from .vocab import FORMULA_VOCAB
 
-class AlphaEngine:
-    def __init__(self, use_lord_regularization=True, lord_decay_rate=1e-3, lord_num_iterations=5):
-        """
-        Initialize AlphaGPT training engine.
-        
-        Args:
-            use_lord_regularization: Enable Low-Rank Decay (LoRD) regularization
-            lord_decay_rate: Strength of LoRD regularization
-            lord_num_iterations: Number of Newton-Schulz iterations per step
-        """
-        self.loader = CryptoDataLoader()
-        self.loader.load_data()
-        
-        self.model = AlphaGPT().to(ModelConfig.DEVICE)
-        
-        # Standard optimizer
-        self.opt = torch.optim.AdamW(self.model.parameters(), lr=1e-3)
-        
-        # Low-Rank Decay regularizer
-        self.use_lord = use_lord_regularization
-        if self.use_lord:
-            self.lord_opt = NewtonSchulzLowRankDecay(
-                self.model.named_parameters(),
-                decay_rate=lord_decay_rate,
-                num_iterations=lord_num_iterations,
-                target_keywords=["q_proj", "k_proj", "attention", "qk_norm"]
-            )
-            self.rank_monitor = StableRankMonitor(
-                self.model,
-                target_keywords=["q_proj", "k_proj"]
-            )
-        else:
-            self.lord_opt = None
-            self.rank_monitor = None
-        
+
+class FactorMiningEngine:
+    def __init__(
+        self,
+        data_dir: str | Path | None = None,
+        output_dir: str | Path | None = None,
+        device: torch.device | str | None = None,
+    ):
+        self.data_dir = Path(data_dir) if data_dir is not None else Path(ModelConfig.DATA_DIR)
+        self.output_dir = Path(output_dir) if output_dir is not None else Path(ModelConfig.OUTPUT_DIR)
+        self.device = torch.device(device) if device is not None else ModelConfig.DEVICE
+        self.loader = AShareDataLoader(data_dir=self.data_dir, device=self.device)
         self.vm = StackVM()
-        self.bt = MemeBacktest()
-        
-        self.best_score = -float('inf')
-        self.best_formula = None
-        self.training_history = {
-            'step': [],
-            'avg_reward': [],
-            'best_score': [],
-            'stable_rank': []
+        self.evaluator = AShareFactorEvaluator()
+        self.best_score = -float("inf")
+        self.best_formula: list[int] | None = None
+        self.best_metrics: FactorEvaluationResult | None = None
+        self.training_history: list[dict[str, object]] = []
+
+    def load_data(self) -> None:
+        self.loader.load_data()
+
+    def dry_run(self) -> dict[str, object]:
+        self.load_data()
+        formula = [FORMULA_VOCAB.encode_name("RET_1D")]
+        factors = self.vm.execute(formula, self.loader.feat_tensor)
+        if factors is None:
+            raise RuntimeError("failed to execute dry-run formula")
+        metrics = self.evaluator.evaluate(factors, self.loader.raw_data_cache, self.loader.target_ret)
+        return self._summary(formula, metrics)
+
+    def train(self, steps: int | None = None, batch_size: int | None = None) -> dict[str, object]:
+        self.load_data()
+        steps = int(steps if steps is not None else ModelConfig.TRAIN_STEPS)
+        batch_size = int(batch_size if batch_size is not None else ModelConfig.BATCH_SIZE)
+
+        candidates = self._candidate_formulas()
+        for step in range(max(steps, 0)):
+            step_scores: list[float] = []
+            for idx in range(max(batch_size, 1)):
+                formula = candidates[(step * max(batch_size, 1) + idx) % len(candidates)]
+                factors = self.vm.execute(formula, self.loader.feat_tensor)
+                if factors is None:
+                    continue
+                metrics = self.evaluator.evaluate(factors, self.loader.raw_data_cache, self.loader.target_ret)
+                step_scores.append(metrics.score)
+                if metrics.score > self.best_score:
+                    self.best_score = metrics.score
+                    self.best_formula = formula
+                    self.best_metrics = metrics
+            self.training_history.append(
+                {
+                    "step": step,
+                    "avg_score": float(sum(step_scores) / len(step_scores)) if step_scores else 0.0,
+                    "best_score": float(self.best_score if self.best_metrics is not None else 0.0),
+                }
+            )
+
+        if self.best_formula is None or self.best_metrics is None:
+            self.best_formula = [FORMULA_VOCAB.encode_name("RET_1D")]
+            factors = self.vm.execute(self.best_formula, self.loader.feat_tensor)
+            if factors is None:
+                raise RuntimeError("failed to execute fallback formula")
+            self.best_metrics = self.evaluator.evaluate(factors, self.loader.raw_data_cache, self.loader.target_ret)
+            self.best_score = self.best_metrics.score
+
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        best_payload = self._summary(self.best_formula, self.best_metrics)
+        (self.output_dir / "best_factor_formula.json").write_text(
+            json.dumps(best_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        (self.output_dir / "training_history.json").write_text(
+            json.dumps(self.training_history, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return best_payload
+
+    def _summary(self, formula: list[int], metrics: FactorEvaluationResult) -> dict[str, object]:
+        return {
+            "data_dir": str(self.data_dir),
+            "n_stocks": len(self.loader.ts_codes),
+            "n_dates": len(self.loader.trade_dates),
+            "n_features": int(self.loader.feat_tensor.shape[1]),
+            "formula": self.vm.describe(formula),
+            "formula_tokens": [int(token) for token in formula],
+            "metrics": asdict(metrics),
         }
 
-    def train(self):
-        print("🚀 Starting Meme Alpha Mining with LoRD Regularization..." if self.use_lord else "🚀 Starting Meme Alpha Mining...")
-        if self.use_lord:
-            print(f"   LoRD Regularization enabled")
-            print(f"   Target keywords: ['q_proj', 'k_proj', 'attention', 'qk_norm']")
-        
-        pbar = tqdm(range(ModelConfig.TRAIN_STEPS))
-        
-        for step in pbar:
-            bs = ModelConfig.BATCH_SIZE
-            inp = torch.zeros((bs, 1), dtype=torch.long, device=ModelConfig.DEVICE)
-            
-            log_probs = []
-            tokens_list = []
-            
-            for _ in range(ModelConfig.MAX_FORMULA_LEN):
-                logits, _, _ = self.model(inp)
-                dist = Categorical(logits=logits)
-                action = dist.sample()
-                
-                log_probs.append(dist.log_prob(action))
-                tokens_list.append(action)
-                inp = torch.cat([inp, action.unsqueeze(1)], dim=1)
-            
-            seqs = torch.stack(tokens_list, dim=1)
-            
-            rewards = torch.zeros(bs, device=ModelConfig.DEVICE)
-            
-            for i in range(bs):
-                formula = seqs[i].tolist()
-                
-                res = self.vm.execute(formula, self.loader.feat_tensor)
-                
-                if res is None:
-                    rewards[i] = -5.0
-                    continue
-                
-                if res.std() < 1e-4:
-                    rewards[i] = -2.0
-                    continue
-                
-                score, ret_val = self.bt.evaluate(res, self.loader.raw_data_cache, self.loader.target_ret)
-                rewards[i] = score
-                
-                if score.item() > self.best_score:
-                    self.best_score = score.item()
-                    self.best_formula = formula
-                    tqdm.write(f"[!] New King: Score {score:.2f} | Ret {ret_val:.2%} | Formula {formula}")
-            
-            # Normalize rewards
-            adv = (rewards - rewards.mean()) / (rewards.std() + 1e-5)
-            
-            loss = 0
-            for t in range(len(log_probs)):
-                loss += -log_probs[t] * adv
-            
-            loss = loss.mean()
-            
-            # Gradient step
-            self.opt.zero_grad()
-            loss.backward()
-            self.opt.step()
-            
-            # Apply Low-Rank Decay regularization
-            if self.use_lord:
-                self.lord_opt.step()
-            
-            # Logging
-            avg_reward = rewards.mean().item()
-            postfix_dict = {'AvgRew': f"{avg_reward:.3f}", 'BestScore': f"{self.best_score:.3f}"}
-            
-            if self.use_lord and step % 100 == 0:
-                stable_rank = self.rank_monitor.compute()
-                postfix_dict['Rank'] = f"{stable_rank:.2f}"
-                self.training_history['stable_rank'].append(stable_rank)
-            
-            self.training_history['step'].append(step)
-            self.training_history['avg_reward'].append(avg_reward)
-            self.training_history['best_score'].append(self.best_score)
-            
-            pbar.set_postfix(postfix_dict)
+    @staticmethod
+    def _candidate_formulas() -> list[list[int]]:
+        enc = FORMULA_VOCAB.encode_name
+        return [
+            [enc("RET_1D")],
+            [enc("RET_5D")],
+            [enc("TURNOVER_RATE")],
+            [enc("ROE")],
+            [enc("REVENUE_YOY")],
+            [enc("RET_1D"), enc("CS_ZSCORE")],
+            [enc("RET_1D"), enc("DELAY1")],
+            [enc("RET_1D"), enc("ROE"), enc("ADD")],
+            [enc("RET_5D"), enc("PB"), enc("SUB")],
+            [enc("ROE"), enc("REVENUE_YOY"), enc("ADD"), enc("CS_RANK")],
+        ]
 
-        # Save best formula
-        with open("best_meme_strategy.json", "w") as f:
-            json.dump(self.best_formula, f)
-        
-        # Save training history
-        import json as js
-        with open("training_history.json", "w") as f:
-            js.dump(self.training_history, f)
-        
-        print(f"\n✓ Training completed!")
-        print(f"  Best score: {self.best_score:.4f}")
-        print(f"  Best formula: {self.best_formula}")
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run the A-share factor mining engine.")
+    parser.add_argument("--dry-run", action="store_true", help="Load data and evaluate a simple formula.")
+    parser.add_argument("--steps", type=int, default=ModelConfig.TRAIN_STEPS)
+    parser.add_argument("--batch-size", type=int, default=ModelConfig.BATCH_SIZE)
+    parser.add_argument("--data-dir", default=str(ModelConfig.DATA_DIR))
+    parser.add_argument("--output-dir", default=str(ModelConfig.OUTPUT_DIR))
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    engine = FactorMiningEngine(data_dir=args.data_dir, output_dir=args.output_dir)
+
+    payload = engine.dry_run() if args.dry_run else engine.train(steps=args.steps, batch_size=args.batch_size)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
 
 
 if __name__ == "__main__":
-    eng = AlphaEngine(use_lord_regularization=True)
-    eng.train()
+    raise SystemExit(main())

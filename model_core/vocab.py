@@ -1,15 +1,24 @@
+"""Formula vocabulary for A-share factor research."""
+
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from .ops import OPS_CONFIG
 
 
 FEATURE_NAMES = (
-    "RET",
-    "LIQ_SCORE",
-    "PRESSURE",
-    "FOMO",
-    "DEV",
-    "LOG_VOL",
+    "RET_1D",
+    "RET_5D",
+    "AMPLITUDE",
+    "TURNOVER_RATE",
+    "VOLUME_RATIO",
+    "LOG_AMOUNT",
+    "LOG_MKT_CAP",
+    "PB",
+    "PE_TTM",
+    "ROE",
+    "REVENUE_YOY",
 )
 
 
@@ -33,6 +42,15 @@ class FormulaVocab:
     @property
     def size(self) -> int:
         return len(self.token_names)
+
+    def token_name(self, token_id: int) -> str:
+        return self.token_names[int(token_id)]
+
+    def encode_name(self, name: str) -> int:
+        return self.token_names.index(name)
+
+    def decode_tokens(self, tokens: list[int]) -> list[str]:
+        return [self.token_name(token) for token in tokens]
 
 
 FORMULA_VOCAB = FormulaVocab(

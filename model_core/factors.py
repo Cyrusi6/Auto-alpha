@@ -1,193 +1,75 @@
+"""A-share feature engineering."""
+
+from __future__ import annotations
+
 import torch
-import torch.nn as nn
 
 from .vocab import FEATURE_NAMES
 
 
-class RMSNormFactor(nn.Module):
-    """RMSNorm for factor normalization"""
-    def __init__(self, d_model, eps=1e-6):
-        super().__init__()
-        self.eps = eps
-        self.weight = nn.Parameter(torch.ones(d_model))
-    
-    def forward(self, x):
-        rms = torch.sqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)
-        return (x / rms) * self.weight
+def _finite(x: torch.Tensor) -> torch.Tensor:
+    return torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
 
 
-class MemeIndicators:
-    @staticmethod
-    def liquidity_health(liquidity, fdv):
-        ratio = liquidity / (fdv + 1e-6)
-        return torch.clamp(ratio * 4.0, 0.0, 1.0)
-
-    @staticmethod
-    def buy_sell_imbalance(close, open_, high, low):
-        range_hl = high - low + 1e-9
-        body = close - open_
-        strength = body / range_hl
-        return torch.tanh(strength * 3.0)
-
-    @staticmethod
-    def fomo_acceleration(volume, window=5):
-        vol_prev = torch.roll(volume, 1, dims=1)
-        vol_chg = (volume - vol_prev) / (vol_prev + 1.0)
-        acc = vol_chg - torch.roll(vol_chg, 1, dims=1)
-        return torch.clamp(acc, -5.0, 5.0)
-
-    @staticmethod
-    def pump_deviation(close, window=20):
-        pad = torch.zeros((close.shape[0], window-1), device=close.device)
-        c_pad = torch.cat([pad, close], dim=1)
-        ma = c_pad.unfold(1, window, 1).mean(dim=-1)
-        dev = (close - ma) / (ma + 1e-9)
-        return dev
-
-    @staticmethod
-    def volatility_clustering(close, window=10):
-        """Detect volatility clustering patterns"""
-        ret = torch.log(close / (torch.roll(close, 1, dims=1) + 1e-9))
-        ret_sq = ret ** 2
-        
-        pad = torch.zeros((ret_sq.shape[0], window-1), device=close.device)
-        ret_sq_pad = torch.cat([pad, ret_sq], dim=1)
-        vol_ma = ret_sq_pad.unfold(1, window, 1).mean(dim=-1)
-        
-        return torch.sqrt(vol_ma + 1e-9)
-
-    @staticmethod
-    def momentum_reversal(close, window=5):
-        """Capture momentum reversal signals"""
-        ret = torch.log(close / (torch.roll(close, 1, dims=1) + 1e-9))
-        
-        pad = torch.zeros((ret.shape[0], window-1), device=close.device)
-        ret_pad = torch.cat([pad, ret], dim=1)
-        mom = ret_pad.unfold(1, window, 1).sum(dim=-1)
-        
-        # Detect reversals
-        mom_prev = torch.roll(mom, 1, dims=1)
-        reversal = (mom * mom_prev < 0).float()
-        
-        return reversal
-
-    @staticmethod
-    def relative_strength(close, high, low, window=14):
-        """RSI-like indicator for strength detection"""
-        ret = close - torch.roll(close, 1, dims=1)
-        
-        gains = torch.relu(ret)
-        losses = torch.relu(-ret)
-        
-        pad = torch.zeros((gains.shape[0], window-1), device=close.device)
-        gains_pad = torch.cat([pad, gains], dim=1)
-        losses_pad = torch.cat([pad, losses], dim=1)
-        
-        avg_gain = gains_pad.unfold(1, window, 1).mean(dim=-1)
-        avg_loss = losses_pad.unfold(1, window, 1).mean(dim=-1)
-        
-        rs = (avg_gain + 1e-9) / (avg_loss + 1e-9)
-        rsi = 100 - (100 / (1 + rs))
-        
-        return (rsi - 50) / 50  # Normalize
+def _delay(x: torch.Tensor, periods: int) -> torch.Tensor:
+    if periods <= 0:
+        return _finite(x)
+    if periods >= x.shape[1]:
+        return torch.zeros_like(x)
+    pad = torch.zeros((x.shape[0], periods), dtype=x.dtype, device=x.device)
+    return _finite(torch.cat([pad, x[:, :-periods]], dim=1))
 
 
-class AdvancedFactorEngineer:
-    """Advanced feature engineering with multiple factor types"""
-    def __init__(self):
-        self.rms_norm = RMSNormFactor(1)
-    
-    def robust_norm(self, t):
-        """Robust normalization using median absolute deviation"""
-        median = torch.nanmedian(t, dim=1, keepdim=True)[0]
-        mad = torch.nanmedian(torch.abs(t - median), dim=1, keepdim=True)[0] + 1e-6
-        norm = (t - median) / mad
-        return torch.clamp(norm, -5.0, 5.0)
-    
-    def compute_advanced_features(self, raw_dict):
-        """Compute 12-dimensional feature space with advanced factors"""
-        c = raw_dict['close']
-        o = raw_dict['open']
-        h = raw_dict['high']
-        l = raw_dict['low']
-        v = raw_dict['volume']
-        liq = raw_dict['liquidity']
-        fdv = raw_dict['fdv']
-        
-        # Basic factors
-        ret = torch.log(c / (torch.roll(c, 1, dims=1) + 1e-9))
-        liq_score = MemeIndicators.liquidity_health(liq, fdv)
-        pressure = MemeIndicators.buy_sell_imbalance(c, o, h, l)
-        fomo = MemeIndicators.fomo_acceleration(v)
-        dev = MemeIndicators.pump_deviation(c)
-        log_vol = torch.log1p(v)
-        
-        # Advanced factors
-        vol_cluster = MemeIndicators.volatility_clustering(c)
-        momentum_rev = MemeIndicators.momentum_reversal(c)
-        rel_strength = MemeIndicators.relative_strength(c, h, l)
-        
-        # High-low range
-        hl_range = (h - l) / (c + 1e-9)
-        
-        # Close position in range
-        close_pos = (c - l) / (h - l + 1e-9)
-        
-        # Volume trend
-        vol_prev = torch.roll(v, 1, dims=1)
-        vol_trend = (v - vol_prev) / (vol_prev + 1.0)
-        
-        features = torch.stack([
-            self.robust_norm(ret),
-            liq_score,
-            pressure,
-            self.robust_norm(fomo),
-            self.robust_norm(dev),
-            self.robust_norm(log_vol),
-            self.robust_norm(vol_cluster),
-            momentum_rev,
-            self.robust_norm(rel_strength),
-            self.robust_norm(hl_range),
-            close_pos,
-            self.robust_norm(vol_trend)
-        ], dim=1)
-        
-        return features
+def robust_cross_section_zscore(x: torch.Tensor, limit: float = 5.0) -> torch.Tensor:
+    clean = _finite(x)
+    median = clean.median(dim=0, keepdim=True).values
+    centered = clean - median
+    scale = torch.abs(centered).median(dim=0, keepdim=True).values
+    scale = torch.where(scale < 1e-6, torch.ones_like(scale), scale)
+    return torch.clamp(_finite(centered / scale), -limit, limit)
 
 
-class FeatureEngineer:
+class AShareFeatureEngineer:
     INPUT_DIM = len(FEATURE_NAMES)
 
     @staticmethod
-    def compute_features(raw_dict):
-        c = raw_dict['close']
-        o = raw_dict['open']
-        h = raw_dict['high']
-        l = raw_dict['low']
-        v = raw_dict['volume']
-        liq = raw_dict['liquidity']
-        fdv = raw_dict['fdv']
-        
-        ret = torch.log(c / (torch.roll(c, 1, dims=1) + 1e-9))
-        liq_score = MemeIndicators.liquidity_health(liq, fdv)
-        pressure = MemeIndicators.buy_sell_imbalance(c, o, h, l)
-        fomo = MemeIndicators.fomo_acceleration(v)
-        dev = MemeIndicators.pump_deviation(c)
-        log_vol = torch.log1p(v)
-        
-        def robust_norm(t):
-            median = torch.nanmedian(t, dim=1, keepdim=True)[0]
-            mad = torch.nanmedian(torch.abs(t - median), dim=1, keepdim=True)[0] + 1e-6
-            norm = (t - median) / mad
-            return torch.clamp(norm, -5.0, 5.0)
+    def compute_features(raw_dict: dict[str, torch.Tensor]) -> torch.Tensor:
+        close = raw_dict["close"]
+        high = raw_dict["high"]
+        low = raw_dict["low"]
+        pre_close = raw_dict["pre_close"]
+        amount = raw_dict["amount"]
+        turnover_rate = raw_dict["turnover_rate"]
+        volume_ratio = raw_dict["volume_ratio"]
+        pe_ttm = raw_dict["pe_ttm"]
+        pb = raw_dict["pb"]
+        total_mv = raw_dict["total_mv"]
+        roe = raw_dict["roe"]
+        revenue_yoy = raw_dict["revenue_yoy"]
 
-        features = torch.stack([
-            robust_norm(ret),
-            liq_score,
-            pressure,
-            robust_norm(fomo),
-            robust_norm(dev),
-            robust_norm(log_vol)
-        ], dim=1)
-        
-        return features
+        prev_close = _delay(close, 1)
+        prev5_close = _delay(close, 5)
+        ret_1d = torch.log(torch.clamp(close, min=1e-6) / torch.clamp(prev_close, min=1e-6))
+        ret_5d = torch.log(torch.clamp(close, min=1e-6) / torch.clamp(prev5_close, min=1e-6))
+        ret_1d[:, 0] = 0.0
+        ret_5d[:, : min(5, ret_5d.shape[1])] = 0.0
+
+        features = [
+            ret_1d,
+            ret_5d,
+            (high - low) / torch.clamp(pre_close, min=1e-6),
+            turnover_rate,
+            volume_ratio,
+            torch.log1p(torch.clamp(amount, min=0.0)),
+            torch.log1p(torch.clamp(total_mv, min=0.0)),
+            pb,
+            pe_ttm,
+            roe,
+            revenue_yoy,
+        ]
+
+        normalized = [robust_cross_section_zscore(feature) for feature in features]
+        return torch.stack(normalized, dim=1).to(dtype=torch.float32)
+
+
+FeatureEngineer = AShareFeatureEngineer

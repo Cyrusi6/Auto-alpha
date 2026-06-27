@@ -128,3 +128,54 @@
 ### 后续待办
 - Tushare 真实 provider 仍未实现，后续应在 provider 层接入并保持无未来函数对齐。
 - 旧研究、模型、执行和看板模块仍需分阶段迁移到 A 股语义。
+
+## 2026-06-27 - 任务 004
+
+### 本次变更摘要
+- 将 `model_core` 从旧 meme/crypto 因子系统迁移为 A 股因子研发核心层。
+- 新增 A 股特征工程、JSONL 数据加载、公式 DSL 算子、StackVM 执行和因子评价。
+- 新增 `FactorMiningEngine`，支持 dry-run 评估和最小训练输出。
+- 新增测试锁定 `model_core` 主干不再包含旧 crypto/Solana/meme 业务词。
+
+### 新增文件
+- `model_core/__init__.py`
+- `tests/test_model_core_vocab_ops.py`
+- `tests/test_model_core_vm.py`
+- `tests/test_model_core_features.py`
+- `tests/test_model_core_data_loader.py`
+- `tests/test_model_core_evaluator.py`
+- `tests/test_model_core_engine_cli.py`
+- `tests/test_model_core_no_crypto_terms.py`
+
+### 修改文件
+- `model_core/config.py`
+- `model_core/vocab.py`
+- `model_core/ops.py`
+- `model_core/vm.py`
+- `model_core/factors.py`
+- `model_core/data_loader.py`
+- `model_core/backtest.py`
+- `model_core/engine.py`
+- `FRAMEWORK_UPDATE.md`
+
+### 删除或隔离的旧问题
+- 移除旧 `CryptoDataLoader`、`MemeBacktest`、`MemeIndicators` 和 `best_meme_strategy.json` 输出。
+- 移除模型核心对数据库连接、旧交易规模、旧流动性阈值和旧滑点/费用逻辑的依赖。
+- 移除旧特征词表中的 meme/crypto 特征，改为 A 股价量、估值和财务特征。
+
+### 新增 A 股平台能力
+- `AShareDataLoader` 可读取 data_pipeline 写出的 A 股 JSONL 数据，并按 `ts_code`、交易日和财务公告日对齐。
+- `AShareFeatureEngineer` 输出与 `FEATURE_NAMES` 一致的 A 股特征张量。
+- `StackVM` 支持 A 股 DSL 算子执行、公式描述和 arity 校验。
+- `AShareFactorEvaluator` 输出 RankIC、RankIC IR、Top-Bottom spread、覆盖率、换手率和综合分数。
+- `python -m model_core.engine --dry-run --data-dir <path>` 可对 sample 数据执行端到端因子评估。
+
+### 测试结果
+- `uv run pytest tests/test_ashare_config.py tests/test_ashare_validators.py tests/test_ashare_pipeline.py tests/test_run_pipeline_cli.py tests/test_ashare_provider_sample.py tests/test_ashare_storage.py tests/test_ashare_manager.py tests/test_data_pipeline_no_crypto_core.py tests/test_model_core_vocab_ops.py tests/test_model_core_vm.py tests/test_model_core_features.py tests/test_model_core_data_loader.py tests/test_model_core_evaluator.py tests/test_model_core_engine_cli.py tests/test_model_core_no_crypto_terms.py`：通过，59 passed。
+- `uv run python -m data_pipeline.run_pipeline --sync --provider sample --data-dir /tmp/auto-alpha-model-core-sample/data --pretty`：通过，写出 sample A 股 JSONL 数据。
+- `uv run python -m model_core.engine --dry-run --data-dir /tmp/auto-alpha-model-core-sample/data --output-dir /tmp/auto-alpha-model-core-sample/out`：通过，输出 dry-run JSON metrics。
+
+### 后续待办
+- 增加更完整的横截面中性化、行业/市值暴露控制和因子库管理。
+- 增加样本内/样本外切分、滚动验证和组合级 A 股回测。
+- 接入真实 Tushare provider 后扩展数据质量检查和公告日校验。

@@ -1,14 +1,22 @@
-import torch
+"""Configuration for A-share factor research."""
+
+from __future__ import annotations
+
 import os
+from pathlib import Path
+
+import torch
+
 from .vocab import FORMULA_VOCAB
+
 
 class ModelConfig:
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    DB_URL = f"postgresql://{os.getenv('DB_USER','postgres')}:{os.getenv('DB_PASSWORD','password')}@{os.getenv('DB_HOST','localhost')}:5432/{os.getenv('DB_NAME','crypto_quant')}"
-    BATCH_SIZE = 8192
-    TRAIN_STEPS = 1000
-    MAX_FORMULA_LEN = 12
-    TRADE_SIZE_USD = 1000.0
-    MIN_LIQUIDITY = 5000.0 # 低于此流动性视为归零/无法交易
-    BASE_FEE = 0.005 # 基础费率 0.5% (Swap + Gas + Jito Tip)
+    BATCH_SIZE = int(os.getenv("ALPHA_BATCH_SIZE", "128"))
+    TRAIN_STEPS = int(os.getenv("ALPHA_TRAIN_STEPS", "10"))
+    MAX_FORMULA_LEN = int(os.getenv("ALPHA_MAX_FORMULA_LEN", "8"))
+    DATA_DIR = Path(os.getenv("ASHARE_MODEL_DATA_DIR") or os.getenv("ASHARE_DATA_DIR") or "data/ashare")
+    OUTPUT_DIR = Path(os.getenv("ALPHA_OUTPUT_DIR") or "artifacts/factors")
+    MIN_COVERAGE = float(os.getenv("ALPHA_MIN_COVERAGE", "0.5"))
+    TOP_BOTTOM_QUANTILE = float(os.getenv("ALPHA_TOP_BOTTOM_QUANTILE", "0.33"))
     INPUT_DIM = FORMULA_VOCAB.feature_count
