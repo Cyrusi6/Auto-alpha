@@ -9,7 +9,16 @@ from pathlib import Path
 
 from approval import ApprovalBatch, ApprovalOrder, LocalApprovalStore
 from backtest import TargetPosition, build_long_only_targets, describe_factor, factor_values_to_matrix, select_factor_id
-from execution import PaperBroker, export_orders_csv, export_orders_jsonl
+from capacity_model import CapacityConfig, build_capacity_report, write_capacity_report
+from execution import PaperBroker, export_fills_jsonl, export_orders_csv, export_orders_jsonl
+from execution_plan import (
+    ExecutionPlanConfig,
+    ExecutionPlanResult,
+    build_execution_schedule,
+    build_parent_orders_from_target_orders,
+    simulate_child_orders,
+    write_execution_plan_report,
+)
 from factor_store import LocalFactorStore
 from model_core.data_loader import AShareDataLoader
 from portfolio_optimizer import OptimizationConfig, PortfolioOptimizer
@@ -52,6 +61,12 @@ class AShareStrategyRunner:
         risk_model_shrinkage: float = 0.1,
         max_style_exposure: float | None = None,
         max_active_style_exposure: float | None = None,
+        capacity_aware: bool = False,
+        execution_plan_dir: str | Path | None = None,
+        max_participation: float = 0.10,
+        execution_buckets: str | tuple[str, ...] = "open,morning,afternoon,close",
+        propose_parent_orders: bool = False,
+        export_child_orders: bool = False,
         propose_only: bool = False,
         require_approval: bool = False,
         approval_store_dir: str | Path | None = None,
@@ -78,6 +93,12 @@ class AShareStrategyRunner:
         self.risk_model_shrinkage = float(risk_model_shrinkage)
         self.max_style_exposure = max_style_exposure
         self.max_active_style_exposure = max_active_style_exposure
+        self.capacity_aware = bool(capacity_aware)
+        self.execution_plan_dir = Path(execution_plan_dir) if execution_plan_dir is not None else self.output_dir / "plan"
+        self.max_participation = float(max_participation)
+        self.execution_buckets = _parse_buckets(execution_buckets)
+        self.propose_parent_orders = bool(propose_parent_orders)
+        self.export_child_orders = bool(export_child_orders)
         self.propose_only = bool(propose_only)
         self.require_approval = bool(require_approval)
         self.approval_store_dir = Path(approval_store_dir) if approval_store_dir is not None else None
@@ -189,6 +210,13 @@ class AShareStrategyRunner:
         targets_jsonl = export_orders_jsonl(target_book.targets, self.output_dir / "target_positions.jsonl")
         orders_csv = export_orders_csv(orders, self.output_dir / "orders.csv")
         orders_jsonl = export_orders_jsonl(orders, self.output_dir / "orders.jsonl")
+        capacity_summary: dict[str, object] = {}
+        execution_quality: dict[str, object] = {}
+        execution_paths: dict[str, str] = {}
+        parent_orders_payload: list[dict[str, object]] = []
+        child_orders_payload: list[dict[str, object]] = []
+        plan_result: ExecutionPlanResult | None = None
+        capacity_report_payload: dict[str, object] = {}
         risk_report_path = None
         risk_report_md_path = None
         optimization_result_path = None
@@ -222,6 +250,19 @@ class AShareStrategyRunner:
         approval_status = None
         fills = []
         fills_path = self.output_dir / "paper_fills.jsonl"
+        if self.capacity_aware:
+            plan_result, capacity_report_payload, execution_paths = self._build_execution_plan(orders, target_book.trade_date)
+            parent_orders_payload = [order.to_dict() for order in plan_result.schedule.parent_orders]
+            child_orders_payload = [order.to_dict() for order in plan_result.schedule.child_orders]
+            capacity_summary = {
+                "capacity_warning_count": plan_result.quality.rejected_child_orders
+                + int(plan_result.capacity_report.get("portfolio", {}).get("capacity_warning_count", 0) if plan_result.capacity_report else 0),
+                "estimated_impact_cost": plan_result.quality.estimated_impact_cost,
+                "unfilled_order_value": plan_result.quality.unfilled_order_value,
+                "execution_fill_rate": plan_result.quality.execution_fill_rate,
+            }
+            execution_quality = plan_result.quality.to_dict()
+
         if self.require_approval or self.propose_only:
             if self.approval_store_dir is None:
                 raise ValueError("approval_store_dir is required when propose_only or require_approval is enabled")
@@ -252,27 +293,35 @@ class AShareStrategyRunner:
                     "n_orders": len(orders),
                     "gross_order_value": float(sum(order.order_value for order in orders)),
                 },
+                parent_orders=parent_orders_payload,
+                child_orders=child_orders_payload,
+                capacity_summary=capacity_summary,
                 metadata={
                     "targets_path": str(targets_jsonl),
                     "orders_path": str(orders_jsonl),
                     "output_dir": str(self.output_dir),
                     "component_factor_ids": self.selected_factor_meta.get("component_factor_ids", []),
+                    **execution_paths,
                 },
             )
             LocalApprovalStore(self.approval_store_dir).save_batch(batch)
             approval_id = batch.approval_id
             approval_status = batch.status
         else:
-            prices, volumes, suspended, limit_up_flags, limit_down_flags = _market_context(self.loader, target_book.trade_date)
-            fills = PaperBroker(self.output_dir).submit_orders(
-                orders,
-                prices,
-                target_book.trade_date,
-                volumes=volumes,
-                suspended=suspended,
-                limit_up=limit_up_flags,
-                limit_down=limit_down_flags,
-            )
+            if self.capacity_aware and plan_result is not None:
+                fills = plan_result.fills
+                export_fills_jsonl(fills, fills_path)
+            else:
+                prices, volumes, suspended, limit_up_flags, limit_down_flags = _market_context(self.loader, target_book.trade_date)
+                fills = PaperBroker(self.output_dir).submit_orders(
+                    orders,
+                    prices,
+                    target_book.trade_date,
+                    volumes=volumes,
+                    suspended=suspended,
+                    limit_up=limit_up_flags,
+                    limit_down=limit_down_flags,
+                )
         rejected = sum(1 for fill in fills if fill.status == "REJECTED")
         partial = sum(1 for fill in fills if fill.status == "PARTIAL")
         completed = sum(1 for fill in fills if fill.status in {"FILLED", "PARTIAL"})
@@ -289,6 +338,11 @@ class AShareStrategyRunner:
             "n_rejected": rejected,
             "n_partial": partial,
             "fill_rate": completed / len(fills) if fills else 0.0,
+            "capacity_aware": self.capacity_aware,
+            "capacity_warning_count": capacity_summary.get("capacity_warning_count", 0),
+            "estimated_impact_cost": capacity_summary.get("estimated_impact_cost", 0.0),
+            "child_order_count": len(child_orders_payload),
+            "execution_quality": execution_quality,
             "output_dir": str(self.output_dir),
             "targets_path": str(targets_jsonl),
             "targets_csv_path": str(targets_csv),
@@ -306,7 +360,43 @@ class AShareStrategyRunner:
             "risk_report_path": risk_report_path,
             "risk_report_md_path": risk_report_md_path,
             "optimization_result_path": str(optimization_result_path) if optimization_result_path else None,
+            "capacity_report_path": execution_paths.get("capacity_report_path"),
+            "capacity_report_md_path": execution_paths.get("capacity_report_md_path"),
+            "execution_plan_path": execution_paths.get("execution_plan_path"),
+            "execution_plan_md_path": execution_paths.get("execution_plan_md_path"),
+            "parent_orders_path": execution_paths.get("parent_orders_path"),
+            "child_orders_path": execution_paths.get("child_orders_path"),
+            "child_fills_path": execution_paths.get("child_fills_path"),
+            "execution_quality_path": execution_paths.get("execution_quality_path"),
         }
+
+    def _build_execution_plan(self, orders, trade_date: str) -> tuple[ExecutionPlanResult, dict[str, object], dict[str, str]]:
+        if self.loader is None:
+            raise ValueError("loader is not initialized")
+        config = ExecutionPlanConfig(
+            buckets=self.execution_buckets,
+            max_child_participation=self.max_participation,
+        )
+        parents = build_parent_orders_from_target_orders(orders)
+        schedule, capacity = build_execution_schedule(parents, self.loader, trade_date, config)
+        simulated = simulate_child_orders(schedule, self.loader)
+        plan_result = ExecutionPlanResult(
+            schedule=schedule,
+            fills=simulated.fills,
+            quality=simulated.quality,
+            capacity_report=capacity.to_dict(),
+        )
+        paths = write_execution_plan_report(plan_result, self.execution_plan_dir)
+        capacity_report = build_capacity_report(
+            capacity,
+            CapacityConfig(max_participation=self.max_participation),
+            {"source": "strategy_manager"},
+        )
+        capacity_json, capacity_md = write_capacity_report(capacity_report, self.execution_plan_dir)
+        payload_paths = {key: str(path) for key, path in paths.items()}
+        payload_paths["capacity_report_path"] = str(capacity_json)
+        payload_paths["capacity_report_md_path"] = str(capacity_md)
+        return plan_result, capacity_report.to_dict(), payload_paths
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -334,6 +424,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--risk-model-shrinkage", type=float, default=0.1)
     parser.add_argument("--max-style-exposure", type=float)
     parser.add_argument("--max-active-style-exposure", type=float)
+    parser.add_argument("--capacity-aware", action="store_true")
+    parser.add_argument("--execution-plan-dir")
+    parser.add_argument("--max-participation", type=float, default=0.10)
+    parser.add_argument("--execution-buckets", default="open,morning,afternoon,close")
+    parser.add_argument("--propose-parent-orders", action="store_true")
+    parser.add_argument("--export-child-orders", action="store_true")
     parser.add_argument("--propose-only", action="store_true")
     parser.add_argument("--require-approval", action="store_true")
     parser.add_argument("--approval-store-dir")
@@ -366,6 +462,12 @@ def main(argv: list[str] | None = None) -> int:
         risk_model_shrinkage=args.risk_model_shrinkage,
         max_style_exposure=args.max_style_exposure,
         max_active_style_exposure=args.max_active_style_exposure,
+        capacity_aware=args.capacity_aware,
+        execution_plan_dir=args.execution_plan_dir,
+        max_participation=args.max_participation,
+        execution_buckets=args.execution_buckets,
+        propose_parent_orders=args.propose_parent_orders,
+        export_child_orders=args.export_child_orders,
         propose_only=args.propose_only,
         require_approval=args.require_approval,
         approval_store_dir=args.approval_store_dir,
@@ -392,6 +494,13 @@ def _market_context(loader: AShareDataLoader, trade_date: str):
 def _make_approval_id(factor_id: str, trade_date: str) -> str:
     suffix = "".join(char for char in factor_id if char.isalnum())[-12:]
     return f"approval_{trade_date}_{suffix}_{_safe_time(_utc_now())}"
+
+
+def _parse_buckets(value: str | tuple[str, ...]) -> tuple[str, ...]:
+    if isinstance(value, tuple):
+        return tuple(item for item in value if item)
+    buckets = tuple(item.strip() for item in str(value).split(",") if item.strip())
+    return buckets or ("open", "morning", "afternoon", "close")
 
 
 def _utc_now() -> str:

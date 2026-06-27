@@ -48,6 +48,9 @@ class ApprovalBatch:
     portfolio_method: str
     orders: list[ApprovalOrder]
     risk_summary: dict[str, Any] = field(default_factory=dict)
+    parent_orders: list[dict[str, Any]] = field(default_factory=list)
+    child_orders: list[dict[str, Any]] = field(default_factory=list)
+    capacity_summary: dict[str, Any] = field(default_factory=dict)
     status: str = ApprovalStatus.pending
     decision: ApprovalDecision | None = None
     metadata: dict[str, Any] = field(default_factory=dict)

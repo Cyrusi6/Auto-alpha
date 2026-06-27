@@ -271,6 +271,48 @@ class AshareDashboardService:
     def load_paper_fills(self) -> pd.DataFrame:
         return self._read_jsonl(self.config.orders_dir / "paper_fills.jsonl")
 
+    def load_capacity_report(self) -> dict[str, Any]:
+        for path in self._execution_plan_candidates("capacity_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_execution_plan(self) -> dict[str, Any]:
+        for path in self._execution_plan_candidates("execution_plan.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_parent_orders(self) -> pd.DataFrame:
+        for path in self._execution_plan_candidates("parent_orders.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_child_orders(self) -> pd.DataFrame:
+        for path in self._execution_plan_candidates("child_orders.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_child_fills(self) -> pd.DataFrame:
+        for path in self._execution_plan_candidates("child_fills.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_execution_quality(self) -> dict[str, Any]:
+        for path in self._execution_plan_candidates("execution_quality.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
     def load_production_run(self) -> dict[str, Any]:
         for path in self._production_candidates("production_run.json"):
             payload = self._read_json(path)
@@ -464,6 +506,18 @@ class AshareDashboardService:
             self.config.orders_dir / filename,
             root / "backtest" / filename,
             root / "backtest_direct" / filename,
+        ]
+
+    def _execution_plan_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.orders_dir / "plan" / filename,
+            self.config.orders_dir / filename,
+            self.config.backtest_dir / "execution_plan" / filename,
+            root / "execution_plan" / filename,
+            root / "orders_capacity" / "plan" / filename,
+            root / "daily_orders" / "plan" / filename,
+            root / "daily_orders_execute" / "plan" / filename,
         ]
 
     @staticmethod

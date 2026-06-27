@@ -20,6 +20,9 @@ def test_paper_account_reset_apply_fills_and_performance(tmp_path):
         value=1000.0,
         cost=1.0,
         status="FILLED",
+        parent_order_id="parent_1",
+        child_order_id="child_1",
+        bucket="open",
     )
     rejected = ExecutionFill(
         trade_date="20240104",
@@ -36,6 +39,7 @@ def test_paper_account_reset_apply_fills_and_performance(tmp_path):
     assert state.cash == 98999.0
     assert state.positions["000001.SZ"].shares == 100
     assert "600000.SH" not in state.positions
+    assert state.trade_ledger[0].child_order_id == "child_1"
 
     state = account.mark_to_market({"000001.SZ": 11.0}, "20240104")
     assert state.snapshots[-1].equity == 100099.0

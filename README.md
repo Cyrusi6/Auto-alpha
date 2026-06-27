@@ -18,8 +18,10 @@ The current implementation is local-first. It uses deterministic sample data and
 - `research_suite/`: One-click orchestration, walk-forward robustness, production-candidate promotion, and artifact catalog.
 - `risk_model/`: Security exposures, Barra-like style and industry factors, factor returns, risk decomposition, attribution, covariance, risk constraints, and risk reports.
 - `portfolio_optimizer/`: Deterministic long-only benchmark-aware portfolio optimizer.
+- `capacity_model/`: Local capacity, participation, and impact-cost estimates from amount, volume, turnover, and volatility.
 - `backtest/`: Long-only A-share portfolio simulation, market constraints, and benchmark-aware risk mode.
 - `execution/`: Paper broker and order/fill export utilities.
+- `execution_plan/`: Parent-order to child-order slicing, schedule simulation, and execution quality reports.
 - `strategy_manager/`: Target position and paper order generation.
 - `approval/`: Local proposed-order batch approval, rejection, expiration, and audit log.
 - `paper_account/`: Persistent local paper cash, positions, trades, snapshots, and performance ledger.
@@ -259,6 +261,42 @@ Barra-like risk model v1 adds style factors (`size`, `value`, `momentum`, `volat
 
 `strategy_manager.runner` and `research_suite.run_suite` accept the same `--portfolio-method risk_aware`, `--index-code`, `--risk-aversion`, `--turnover-penalty`, `--max-turnover`, `--max-industry-active-weight`, `--max-tracking-error`, `--use-factor-risk-model`, `--max-style-exposure`, and `--max-active-style-exposure` controls. Risk-aware artifacts include `optimization_result.json`, `risk_report.json` or `risk_model_report.json`, and Markdown reports; target positions include optimized, benchmark, and active weights.
 
+Capacity-aware execution planning is available for research and paper operations:
+
+```bash
+uv run python -m backtest.run_backtest \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --output-dir /tmp/auto-alpha-demo/backtest_capacity \
+  --latest-approved \
+  --factor-type composite \
+  --portfolio-method risk_aware \
+  --index-code 000300.SH \
+  --top-n 2 \
+  --max-weight 0.10 \
+  --capacity-aware \
+  --max-participation 0.10 \
+  --execution-plan-dir /tmp/auto-alpha-demo/execution_plan \
+  --pretty
+
+uv run python -m strategy_manager.runner \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --output-dir /tmp/auto-alpha-demo/orders_capacity \
+  --latest-approved \
+  --factor-type composite \
+  --portfolio-method risk_aware \
+  --index-code 000300.SH \
+  --top-n 2 \
+  --max-weight 0.10 \
+  --portfolio-value 1000000 \
+  --capacity-aware \
+  --execution-plan-dir /tmp/auto-alpha-demo/orders_capacity/plan \
+  --pretty
+```
+
+The capacity layer writes `capacity_report.json/md`; execution planning writes `execution_plan.json/md`, `parent_orders.jsonl`, `child_orders.jsonl`, `child_fills.jsonl`, and `execution_quality.json`. It remains local paper simulation only; no real broker interface is implemented.
+
 Dashboard-specific overrides:
 
 - `ASHARE_DASHBOARD_DATA_DIR`
@@ -297,6 +335,7 @@ uv run python -m operations.run_daily \
   --portfolio-method risk_aware \
   --index-code 000300.SH \
   --use-factor-risk-model \
+  --capacity-aware \
   --max-active-style-exposure 1.0 \
   --top-n 2 \
   --max-weight 0.10 \
@@ -325,6 +364,7 @@ uv run python -m operations.run_daily \
   --portfolio-method risk_aware \
   --index-code 000300.SH \
   --use-factor-risk-model \
+  --capacity-aware \
   --max-active-style-exposure 1.0 \
   --top-n 2 \
   --max-weight 0.10 \
@@ -347,7 +387,7 @@ Daily production writes `production_run.json/md`; approvals are stored under `ap
 
 - Tushare HTTP provider and production sync scaffolding are available; production use still requires valid token, quota/permission verification, real full-market performance runs, and more data-source comparisons.
 - Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
-- Local daily simulation supports core A-share constraints; future work should add finer real-world matching and minute-level volume modeling.
+- Local daily simulation supports A-share constraints, capacity estimates, impact-cost estimates, child-order scheduling, and paper execution quality reports; future work should add finer real-world matching and minute-level volume modeling.
 - Local formula search and a first neural-guided policy-search path are available; future work should add stronger reinforcement learning, offline pretraining, more operators, GPU performance tuning, and broader stability validation.
 - Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.
 - One-click research suites now provide local walk-forward and promotion gates; daily operations now provide local approval, paper account ledger, and monitoring artifacts. Future work should add richer approval policies and human review workflow.

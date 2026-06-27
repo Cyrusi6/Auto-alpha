@@ -8,7 +8,7 @@ This repository is now organized as a local A-share factor research platform. Th
 4. Run batch or search-style research and build composite factors.
 5. Run the one-click research suite, including walk-forward and promotion.
 6. Run equal-weight or benchmark-aware portfolio simulation.
-7. Export target positions and paper orders.
+7. Estimate capacity, build execution plans, and export target positions plus paper orders.
 8. Run approval-gated daily paper operations.
 9. Review artifacts and monitoring in the dashboard.
 
@@ -89,6 +89,10 @@ Planned sync splits large daily datasets by date windows and splits index consti
 - `risk_report.json`
 - `risk_report.md`
 
+`capacity_model/` estimates stock and portfolio trading capacity from local amount, volume, turnover, and volatility matrices. It reports amount participation, volume participation, max trade value, max trade shares, estimated impact cost, capacity score, and capacity warnings.
+
+`execution_plan/` converts target orders into parent orders, child orders, bucketed schedules, simulated child fills, and execution quality artifacts. Default buckets are `open`, `morning`, `afternoon`, and `close`.
+
 ## Factor Store And Experiments
 
 `factor_store/` persists:
@@ -138,6 +142,8 @@ Returns are based on `adjusted_close`; simulated fills use raw `close`. The simu
 
 Backtest supports `--portfolio-method equal_weight` and `--portfolio-method risk_aware`. Risk-aware mode calls the optimizer on each rebalance date, records tracking error, active share, HHI, top weight, industry active exposure, and risk constraint violations, and can write a risk report directory. With `--use-factor-risk-model --attribution`, it also writes `risk_exposures.jsonl`, `risk_decomposition.jsonl`, `return_attribution.jsonl`, and `risk_model_report.json/md`.
 
+With `--capacity-aware`, backtest generates parent/child execution plans before each rebalance, estimates capacity and impact cost, simulates child fills, and adds capacity/execution metrics such as amount participation, volume participation, estimated impact cost, realized execution cost, unfilled order value, execution fill rate, and capacity warning count.
+
 ## Paper Execution And Order Export
 
 `execution/` provides local paper fills and order/fill export helpers using the same A-share trading rule primitives as the backtest.
@@ -150,7 +156,7 @@ Backtest supports `--portfolio-method equal_weight` and `--portfolio-method risk
 - `orders.jsonl`
 - `paper_fills.jsonl`
 
-With `--portfolio-method risk_aware`, target positions include optimized weight, benchmark weight, and active weight. The summary includes risk metrics and constraint violations. With `--use-factor-risk-model`, strategy and daily operations summaries include style exposure, active style exposure, and risk decomposition.
+With `--portfolio-method risk_aware`, target positions include optimized weight, benchmark weight, and active weight. The summary includes risk metrics and constraint violations. With `--use-factor-risk-model`, strategy and daily operations summaries include style exposure, active style exposure, and risk decomposition. With `--capacity-aware`, strategy writes `capacity_report.json/md`, `execution_plan.json/md`, `parent_orders.jsonl`, `child_orders.jsonl`, `child_fills.jsonl`, and `execution_quality.json`.
 
 ## Production Operations
 
@@ -178,6 +184,8 @@ Filled and partial fills update cash and positions. Rejected fills are recorded 
 3. If approval is required, write a pending approval batch and stop.
 4. After approval, execute local paper fills, update the paper account, and write `production_run.json` plus `production_run.md`.
 
+Capacity-aware daily runs store parent and child order schedules inside approval batches. Approved child orders are executed by the local simulator and then applied to the paper account ledger with parent order id, child order id, and bucket metadata.
+
 `monitoring/` checks local production artifacts:
 
 - data freshness versus as-of date
@@ -188,6 +196,10 @@ Filled and partial fills update cash and positions. Rejected fills are recorded 
 - active risk drift
 - factor risk concentration
 - return attribution anomalies
+- capacity warnings
+- execution fill quality
+- unfilled order value
+- impact cost spikes
 - rejected and partial fill ratios
 - paper account equity, cash ratio, drawdown, and exposure
 
@@ -212,7 +224,7 @@ It writes `monitoring_report.json`, `monitoring_report.md`, and `alerts.jsonl`.
 
 ## Dashboard
 
-`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, matrix cache metadata, matrix validation reports, benchmark reports, data-source comparison reports, factor store, factor reports, batch reports, search reports, neural search reports, neural training history, checkpoint lists, suite reports, artifact catalog, promotion decisions, risk reports, risk model reports, risk exposures, risk decomposition, return attribution, optimization results, backtest outputs, target positions, orders, paper fills, production runs, approvals, paper account state, account ledgers, monitoring reports, and alerts. Missing artifacts produce empty states instead of errors.
+`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, matrix cache metadata, matrix validation reports, benchmark reports, data-source comparison reports, factor store, factor reports, batch reports, search reports, neural search reports, neural training history, checkpoint lists, suite reports, artifact catalog, promotion decisions, risk reports, risk model reports, risk exposures, risk decomposition, return attribution, capacity reports, execution plans, parent orders, child orders, child fills, execution quality, optimization results, backtest outputs, target positions, orders, paper fills, production runs, approvals, paper account state, account ledgers, monitoring reports, and alerts. Missing artifacts produce empty states instead of errors.
 
 ## Research Suite Outputs
 
@@ -229,4 +241,4 @@ The artifact catalog indexes data manifest, quality report, pipeline state, univ
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton. Matrix cache, local benchmark, and data-source comparison skeletons are available. Barra-like risk model v1 and benchmark-aware portfolio optimization now have a local implementation. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Daily production now has local approvals, paper account ledger, and monitoring reports. Real Tushare token and quota validation, real full-market stress runs, incremental matrix refresh, richer provider comparisons, production Barra definitions, robust full-market covariance calibration, a professional optimizer, stronger reinforcement learning, offline pretraining, richer walk-forward policies, richer approval policies, human review workflow, broader neural training stability validation, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, and broker connectivity are future work.
+The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton. Matrix cache, local benchmark, and data-source comparison skeletons are available. Barra-like risk model v1 and benchmark-aware portfolio optimization now have a local implementation. Capacity-aware execution planning and paper child-order simulation are available. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Daily production now has local approvals, paper account ledger, and monitoring reports. Real Tushare token and quota validation, real full-market stress runs, incremental matrix refresh, richer provider comparisons, production Barra definitions, robust full-market covariance calibration, a professional optimizer, stronger reinforcement learning, offline pretraining, richer walk-forward policies, richer approval policies, human review workflow, broader neural training stability validation, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, and broker connectivity are future work.

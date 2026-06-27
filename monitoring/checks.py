@@ -159,6 +159,57 @@ def check_attribution_anomaly(return_attribution_path: str | Path | None) -> tup
     return {"exists": bool(rows), "rows": len(rows), "max_abs_active_return": max_active_return}, alerts
 
 
+def check_capacity_warnings(capacity_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not capacity_report_path:
+        return {"exists": False, "capacity_warning_count": 0}, []
+    payload = _read_json(Path(capacity_report_path))
+    portfolio = payload.get("portfolio", {}) if payload else {}
+    count = int(portfolio.get("capacity_warning_count", 0) or 0) if isinstance(portfolio, dict) else 0
+    impact = float(portfolio.get("estimated_impact_cost", 0.0) or 0.0) if isinstance(portfolio, dict) else 0.0
+    alerts = []
+    if count > 0:
+        alerts.append(MonitoringAlert("warning", "capacity_warnings", "capacity report contains warnings", {"count": count}))
+    return {"exists": bool(payload), "capacity_warning_count": count, "impact_cost_estimate": impact}, alerts
+
+
+def check_execution_quality(execution_quality_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not execution_quality_path:
+        return {"exists": False, "execution_fill_rate": 0.0}, []
+    payload = _read_json(Path(execution_quality_path))
+    fill_rate = float(payload.get("execution_fill_rate", 0.0) or 0.0) if payload else 0.0
+    rejected = int(payload.get("rejected_child_orders", 0) or 0) if payload else 0
+    partial = int(payload.get("partial_child_orders", 0) or 0) if payload else 0
+    alerts = []
+    if payload and fill_rate < 0.5:
+        alerts.append(MonitoringAlert("warning", "execution_quality", "execution fill rate is low", {"execution_fill_rate": fill_rate}))
+    return {"exists": bool(payload), "execution_fill_rate": fill_rate, "rejected_child_orders": rejected, "partial_child_orders": partial}, alerts
+
+
+def check_unfilled_orders(execution_quality_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not execution_quality_path:
+        return {"exists": False, "unfilled_order_value": 0.0}, []
+    payload = _read_json(Path(execution_quality_path))
+    unfilled = float(payload.get("unfilled_order_value", 0.0) or 0.0) if payload else 0.0
+    alerts = []
+    if unfilled > 0:
+        alerts.append(MonitoringAlert("warning", "unfilled_orders", "execution plan has unfilled order value", {"unfilled_order_value": unfilled}))
+    return {"exists": bool(payload), "unfilled_order_value": unfilled}, alerts
+
+
+def check_impact_cost_spike(capacity_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not capacity_report_path:
+        return {"exists": False, "impact_cost_ratio": 0.0}, []
+    payload = _read_json(Path(capacity_report_path))
+    portfolio = payload.get("portfolio", {}) if payload else {}
+    impact = float(portfolio.get("estimated_impact_cost", 0.0) or 0.0) if isinstance(portfolio, dict) else 0.0
+    total = float(portfolio.get("total_order_value", 0.0) or 0.0) if isinstance(portfolio, dict) else 0.0
+    ratio = impact / total if total > 1e-12 else 0.0
+    alerts = []
+    if ratio > 0.01:
+        alerts.append(MonitoringAlert("warning", "impact_cost_spike", "estimated impact cost ratio is elevated", {"impact_cost_ratio": ratio}))
+    return {"exists": bool(payload), "impact_cost_estimate": impact, "impact_cost_ratio": ratio}, alerts
+
+
 def check_order_fill_quality(fills_path: str | Path) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     fills = _read_jsonl(Path(fills_path))
     total = len(fills)

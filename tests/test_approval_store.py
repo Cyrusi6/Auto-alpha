@@ -23,6 +23,9 @@ def _batch():
             )
         ],
         risk_summary={"n_orders": 1},
+        parent_orders=[{"parent_order_id": "parent_1", "ts_code": "000001.SZ"}],
+        child_orders=[{"child_order_id": "child_1", "parent_order_id": "parent_1", "bucket": "open"}],
+        capacity_summary={"capacity_warning_count": 0},
     )
 
 
@@ -31,6 +34,7 @@ def test_approval_store_create_list_approve_reject_and_expire(tmp_path):
     store.save_batch(_batch())
 
     assert store.load_batch("approval_test").status == ApprovalStatus.pending
+    assert store.load_batch("approval_test").child_orders[0]["child_order_id"] == "child_1"
     assert len(store.list_batches(status=ApprovalStatus.pending)) == 1
 
     approved = store.approve("approval_test", reviewer="reviewer", comment="ok")

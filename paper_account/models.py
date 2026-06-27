@@ -42,6 +42,9 @@ class PaperTradeLedgerEntry:
     cost: float
     status: str
     reason: str = ""
+    parent_order_id: str | None = None
+    child_order_id: str | None = None
+    bucket: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

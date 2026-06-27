@@ -29,6 +29,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--risk-model-shrinkage", type=float, default=0.1)
     parser.add_argument("--max-style-exposure", type=float)
     parser.add_argument("--max-active-style-exposure", type=float)
+    parser.add_argument("--capacity-aware", action="store_true")
+    parser.add_argument("--execution-plan-dir")
+    parser.add_argument("--max-participation", type=float, default=0.10)
+    parser.add_argument("--execution-buckets", default="open,morning,afternoon,close")
     parser.add_argument("--require-approval", action="store_true")
     parser.add_argument("--approval-id")
     parser.add_argument("--execute-approved", action="store_true")
@@ -58,6 +62,10 @@ def main(argv: list[str] | None = None) -> int:
         risk_model_shrinkage=args.risk_model_shrinkage,
         max_style_exposure=args.max_style_exposure,
         max_active_style_exposure=args.max_active_style_exposure,
+        capacity_aware=args.capacity_aware,
+        execution_plan_dir=args.execution_plan_dir,
+        max_participation=args.max_participation,
+        execution_buckets=args.execution_buckets,
     )
     result = runner.run(
         require_approval=args.require_approval,

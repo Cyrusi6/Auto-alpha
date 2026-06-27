@@ -9,6 +9,8 @@ from pathlib import Path
 
 from factor_store import LocalFactorStore
 from model_core.data_loader import AShareDataLoader
+from capacity_model import write_capacity_report
+from execution_plan import write_execution_plan_report
 from risk_model import write_risk_model_report, write_risk_report
 
 from .io import describe_factor, factor_values_to_matrix, select_factor_id
@@ -57,6 +59,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-style-exposure", type=float)
     parser.add_argument("--max-active-style-exposure", type=float)
     parser.add_argument("--max-factor-risk-contribution", type=float)
+    parser.add_argument("--capacity-aware", action="store_true")
+    parser.add_argument("--capacity-lookback", type=int, default=20)
+    parser.add_argument("--max-participation", type=float, default=0.10)
+    parser.add_argument("--impact-base-bps", type=float, default=5.0)
+    parser.add_argument("--impact-power", type=float, default=0.5)
+    parser.add_argument("--execution-buckets", default="open,morning,afternoon,close")
+    parser.add_argument("--execution-plan-dir")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -95,6 +104,12 @@ def main(argv: list[str] | None = None) -> int:
         max_style_exposure=args.max_style_exposure,
         max_active_style_exposure=args.max_active_style_exposure,
         max_factor_risk_contribution=args.max_factor_risk_contribution,
+        capacity_aware=args.capacity_aware,
+        capacity_lookback=args.capacity_lookback,
+        max_participation=args.max_participation,
+        impact_base_bps=args.impact_base_bps,
+        impact_power=args.impact_power,
+        execution_buckets=tuple(item.strip() for item in args.execution_buckets.split(",") if item.strip()),
     )
     result = simulator.simulate(factors, loader)
 
@@ -149,6 +164,25 @@ def main(argv: list[str] | None = None) -> int:
                 encoding="utf-8",
             )
 
+    capacity_report_path = None
+    capacity_report_md_path = None
+    execution_plan_paths: dict[str, str | None] = {
+        "execution_plan_path": None,
+        "execution_plan_md_path": None,
+        "parent_orders_path": None,
+        "child_orders_path": None,
+        "child_fills_path": None,
+        "execution_quality_path": None,
+    }
+    if args.capacity_aware and simulator.execution_plan_results:
+        plan_dir = Path(args.execution_plan_dir) if args.execution_plan_dir else output_dir / "execution_plan"
+        paths = write_execution_plan_report(simulator.execution_plan_results[-1], plan_dir)
+        execution_plan_paths = {key: str(path) for key, path in paths.items()}
+        if simulator.capacity_reports:
+            capacity_json, capacity_md = write_capacity_report(simulator.capacity_reports[-1], plan_dir)
+            capacity_report_path = str(capacity_json)
+            capacity_report_md_path = str(capacity_md)
+
     summary = {
         "factor_id": factor_id,
         "factor_type": factor_meta["factor_type"],
@@ -164,6 +198,9 @@ def main(argv: list[str] | None = None) -> int:
         "risk_exposures_path": str(risk_exposures_path) if risk_exposures_path else None,
         "risk_decomposition_path": str(risk_decomposition_path) if risk_decomposition_path else None,
         "return_attribution_path": str(return_attribution_path) if return_attribution_path else None,
+        "capacity_report_path": capacity_report_path,
+        "capacity_report_md_path": capacity_report_md_path,
+        **execution_plan_paths,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0

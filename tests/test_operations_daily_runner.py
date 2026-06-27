@@ -58,6 +58,8 @@ def test_daily_run_requires_approval_then_executes_approved_batch(tmp_path):
         max_weight=0.10,
         use_factor_risk_model=True,
         max_active_style_exposure=1.0,
+        capacity_aware=True,
+        execution_plan_dir=tmp_path / "orders" / "plan",
     )
     proposed = runner.run(require_approval=True)
 
@@ -67,8 +69,13 @@ def test_daily_run_requires_approval_then_executes_approved_batch(tmp_path):
     assert proposed.summary["style_exposures"]
     assert proposed.summary["active_style_exposures"]
     assert proposed.summary["risk_decomposition"]
+    assert proposed.summary["child_order_count"] > 0
     assert not (tmp_path / "orders" / "paper_fills.jsonl").exists()
-    assert LocalApprovalStore(tmp_path / "approvals").load_batch(proposed.approval_id).status == "pending"
+    pending_batch = LocalApprovalStore(tmp_path / "approvals").load_batch(proposed.approval_id)
+    assert pending_batch.status == "pending"
+    assert pending_batch.parent_orders
+    assert pending_batch.child_orders
+    assert pending_batch.capacity_summary
 
     failed_exit = run_daily.main(
         [
@@ -98,9 +105,13 @@ def test_daily_run_requires_approval_then_executes_approved_batch(tmp_path):
     assert executed.executed is True
     assert executed.summary["style_exposures"]
     assert executed.summary["active_style_exposures"]
+    assert executed.summary["execution_quality"]
     assert (tmp_path / "orders" / "paper_fills.jsonl").exists()
+    assert (tmp_path / "orders" / "plan" / "child_fills.jsonl").exists()
     assert (tmp_path / "account" / "account_state.json").exists()
     assert (tmp_path / "account" / "account_snapshots.jsonl").exists()
+    account_payload = json.loads((tmp_path / "account" / "account_state.json").read_text(encoding="utf-8"))
+    assert all("child_order_id" in entry for entry in account_payload["trade_ledger"])
     json.dumps(executed.to_dict())
 
 

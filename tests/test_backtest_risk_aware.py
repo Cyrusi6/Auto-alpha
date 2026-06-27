@@ -114,3 +114,44 @@ def test_backtest_factor_risk_model_outputs_exposure_and_attribution(tmp_path, c
     assert (output_dir / "risk_exposures.jsonl").exists()
     assert (output_dir / "risk_decomposition.jsonl").exists()
     assert (output_dir / "return_attribution.jsonl").exists()
+
+
+def test_backtest_capacity_aware_outputs_plan_and_metrics(tmp_path, capsys):
+    data_dir, store_dir, factor_id = _prepare_factor(tmp_path)
+    output_dir = tmp_path / "backtest_capacity"
+    plan_dir = tmp_path / "execution_plan"
+
+    result = run_backtest.main(
+        [
+            "--data-dir",
+            str(data_dir),
+            "--factor-store-dir",
+            str(store_dir),
+            "--output-dir",
+            str(output_dir),
+            "--factor-id",
+            factor_id,
+            "--portfolio-method",
+            "risk_aware",
+            "--index-code",
+            "000300.SH",
+            "--top-n",
+            "2",
+            "--max-weight",
+            "0.10",
+            "--capacity-aware",
+            "--max-participation",
+            "0.10",
+            "--execution-plan-dir",
+            str(plan_dir),
+            "--pretty",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert result == 0
+    assert "execution_fill_rate" in payload["metrics"]
+    assert "estimated_impact_cost" in payload["metrics"]
+    assert (plan_dir / "capacity_report.json").exists()
+    assert (plan_dir / "execution_plan.json").exists()
+    assert (plan_dir / "child_fills.jsonl").exists()

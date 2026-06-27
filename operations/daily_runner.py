@@ -9,6 +9,7 @@ from typing import Any
 
 from approval import ApprovalStatus, LocalApprovalStore
 from execution import ExecutionOrder, PaperBroker, export_fills_jsonl, export_orders_csv, export_orders_jsonl
+from execution_plan import ChildOrder, ExecutionPlanResult, ExecutionSchedule, ParentOrder, simulate_child_orders, write_execution_plan_report
 from factor_store import LocalFactorStore
 from model_core.data_loader import AShareDataLoader
 from paper_account import LocalPaperAccount, compute_account_performance
@@ -40,6 +41,10 @@ class ProductionDailyRunner:
         risk_model_shrinkage: float = 0.1,
         max_style_exposure: float | None = None,
         max_active_style_exposure: float | None = None,
+        capacity_aware: bool = False,
+        execution_plan_dir: str | Path | None = None,
+        max_participation: float = 0.10,
+        execution_buckets: str | tuple[str, ...] = "open,morning,afternoon,close",
     ):
         self.data_dir = Path(data_dir)
         self.factor_store_dir = Path(factor_store_dir)
@@ -60,6 +65,10 @@ class ProductionDailyRunner:
         self.risk_model_shrinkage = float(risk_model_shrinkage)
         self.max_style_exposure = max_style_exposure
         self.max_active_style_exposure = max_active_style_exposure
+        self.capacity_aware = bool(capacity_aware)
+        self.execution_plan_dir = Path(execution_plan_dir) if execution_plan_dir is not None else self.orders_dir / "plan"
+        self.max_participation = float(max_participation)
+        self.execution_buckets = execution_buckets
 
     def run(
         self,
@@ -113,6 +122,10 @@ class ProductionDailyRunner:
             risk_model_shrinkage=self.risk_model_shrinkage,
             max_style_exposure=self.max_style_exposure,
             max_active_style_exposure=self.max_active_style_exposure,
+            capacity_aware=self.capacity_aware,
+            execution_plan_dir=self.execution_plan_dir,
+            max_participation=self.max_participation,
+            execution_buckets=self.execution_buckets,
             propose_only=require_approval,
             require_approval=require_approval,
             approval_store_dir=self.approval_store_dir if require_approval else None,
@@ -163,19 +176,46 @@ class ProductionDailyRunner:
         self.orders_dir.mkdir(parents=True, exist_ok=True)
         orders_jsonl = export_orders_jsonl(orders, self.orders_dir / "orders.jsonl")
         orders_csv = export_orders_csv(orders, self.orders_dir / "orders.csv")
-        fills = PaperBroker(self.orders_dir).submit_orders(
-            orders,
-            prices,
-            batch.rebalance_date,
-            volumes=volumes,
-            suspended=suspended,
-            limit_up=limit_up,
-            limit_down=limit_down,
-        )
+        execution_quality: dict[str, Any] = {}
+        child_order_count = 0
+        plan_paths: dict[str, str] = {}
+        if batch.child_orders:
+            parent_orders = [ParentOrder(**payload) for payload in batch.parent_orders]
+            child_orders = [ChildOrder(**payload) for payload in batch.child_orders]
+            schedule = ExecutionSchedule(
+                trade_date=batch.rebalance_date,
+                parent_orders=parent_orders,
+                child_orders=child_orders,
+                buckets=sorted({order.bucket for order in child_orders}),
+                metadata={"approved": True},
+            )
+            simulated = simulate_child_orders(schedule, loader)
+            plan_result = ExecutionPlanResult(
+                schedule=schedule,
+                fills=simulated.fills,
+                quality=simulated.quality,
+                capacity_report=batch.capacity_summary,
+            )
+            paths = write_execution_plan_report(plan_result, self.execution_plan_dir)
+            plan_paths = {key: str(path) for key, path in paths.items()}
+            fills = simulated.fills
+            child_order_count = len(child_orders)
+            execution_quality = simulated.quality.to_dict()
+            export_fills_jsonl(fills, self.orders_dir / "paper_fills.jsonl")
+        else:
+            fills = PaperBroker(self.orders_dir).submit_orders(
+                orders,
+                prices,
+                batch.rebalance_date,
+                volumes=volumes,
+                suspended=suspended,
+                limit_up=limit_up,
+                limit_down=limit_down,
+            )
         fills_path = self.orders_dir / "paper_fills.jsonl"
         export_fills_jsonl(fills, fills_path)
         account = LocalPaperAccount(self.paper_account_dir)
-        account.apply_fills(fills, prices, batch.rebalance_date)
+        account.apply_child_fills(fills, prices, batch.rebalance_date)
         state = account.mark_to_market(prices, batch.rebalance_date)
         rejected = sum(1 for fill in fills if fill.status == "REJECTED")
         partial = sum(1 for fill in fills if fill.status == "PARTIAL")
@@ -192,6 +232,9 @@ class ProductionDailyRunner:
             "n_rejected": rejected,
             "n_partial": partial,
             "fill_rate": completed / len(fills) if fills else 0.0,
+            "capacity_summary": batch.capacity_summary,
+            "child_order_count": child_order_count,
+            "execution_quality": execution_quality,
             "risk_summary": batch.risk_summary,
             "style_exposures": batch.risk_summary.get("style_exposures", {}),
             "active_style_exposures": batch.risk_summary.get("active_style_exposures", {}),
@@ -202,6 +245,7 @@ class ProductionDailyRunner:
             "account_state_path": str(account.state_path),
             "positions_path": str(account.positions_path),
             "account_snapshots_path": str(account.snapshots_path),
+            **plan_paths,
             "account": {
                 "cash": state.cash,
                 "positions": len(state.positions),
@@ -251,6 +295,14 @@ def _paths_from_summary(summary: dict[str, Any]) -> dict[str, str]:
         "account_state_path",
         "positions_path",
         "account_snapshots_path",
+        "capacity_report_path",
+        "capacity_report_md_path",
+        "execution_plan_path",
+        "execution_plan_md_path",
+        "parent_orders_path",
+        "child_orders_path",
+        "child_fills_path",
+        "execution_quality_path",
     ]
     return {key: str(summary[key]) for key in keys if summary.get(key)}
 

@@ -107,6 +107,9 @@ class LocalPaperAccount:
                     cost=cost,
                     status=status,
                     reason=reason,
+                    parent_order_id=payload.get("parent_order_id"),
+                    child_order_id=payload.get("child_order_id"),
+                    bucket=payload.get("bucket"),
                 )
             )
             if status not in {"FILLED", "PARTIAL"} or shares <= 0:
@@ -151,6 +154,14 @@ class LocalPaperAccount:
         if prices:
             updated = self._mark_positions(updated, prices)
         return self.save_state(updated)
+
+    def apply_child_fills(
+        self,
+        child_fills: Sequence[object],
+        prices: dict[str, float] | None = None,
+        trade_date: str | None = None,
+    ) -> PaperAccountState:
+        return self.apply_fills(child_fills, prices=prices, trade_date=trade_date)
 
     def mark_to_market(self, prices: dict[str, float], trade_date: str) -> PaperAccountState:
         state = self._mark_positions(self.load_state(), prices)

@@ -22,6 +22,20 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
         '{"trade_date":"20240104","total_active_return":0.01}\n',
         encoding="utf-8",
     )
+    orders_plan = tmp_path / "orders" / "plan"
+    orders_plan.mkdir(parents=True)
+    (orders_plan / "capacity_report.json").write_text(
+        '{"portfolio":{"capacity_warning_count":1,"estimated_impact_cost":10.0}}',
+        encoding="utf-8",
+    )
+    (orders_plan / "execution_plan.json").write_text(
+        '{"schedule":{"buckets":["open"],"child_orders":[]},"quality":{"execution_fill_rate":0.5}}',
+        encoding="utf-8",
+    )
+    (orders_plan / "parent_orders.jsonl").write_text('{"parent_order_id":"parent_1"}\n', encoding="utf-8")
+    (orders_plan / "child_orders.jsonl").write_text('{"child_order_id":"child_1"}\n', encoding="utf-8")
+    (orders_plan / "child_fills.jsonl").write_text('{"child_order_id":"child_1","status":"FILLED"}\n', encoding="utf-8")
+    (orders_plan / "execution_quality.json").write_text('{"execution_fill_rate":0.5}\n', encoding="utf-8")
     (tmp_path / "backtest" / "optimization_result.json").write_text(
         '{"factor_id":"factor_x","weights":{"000001.SZ":0.1}}',
         encoding="utf-8",
@@ -42,3 +56,8 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
     assert not service.load_risk_exposures().empty
     assert not service.load_risk_decomposition().empty
     assert not service.load_return_attribution().empty
+    assert service.load_capacity_report()["portfolio"]["capacity_warning_count"] == 1
+    assert service.load_execution_quality()["execution_fill_rate"] == 0.5
+    assert not service.load_parent_orders().empty
+    assert not service.load_child_orders().empty
+    assert not service.load_child_fills().empty

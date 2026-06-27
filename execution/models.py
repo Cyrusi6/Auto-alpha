@@ -26,3 +26,6 @@ class ExecutionFill:
     status: str
     cost: float = 0.0
     reason: str = ""
+    parent_order_id: str | None = None
+    child_order_id: str | None = None
+    bucket: str | None = None

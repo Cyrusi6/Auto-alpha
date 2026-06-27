@@ -1219,3 +1219,93 @@
 - 增加 benchmark-aware optimizer 的严格约束求解器与更细 risk budget。
 - 将收益归因扩展为多期 Brinson、行业/风格分层和交易成本归因。
 - 增加 dashboard 风格暴露趋势图、风险贡献趋势图和 production drift 历史看板。
+
+## 2026-06-27 - 任务 021
+
+### 本次变更摘要
+- 新增 `capacity_model/`，基于成交额、成交量、波动和参与率估算单票/组合容量、容量得分和冲击成本。
+- 新增 `execution_plan/`，支持 parent orders、child orders、bucket schedule、child fills、execution quality 和调仓计划报告。
+- `backtest.run_backtest` 支持 `--capacity-aware`，capacity-aware 模式输出容量报告、执行计划、child fills 和执行质量指标。
+- `strategy_manager.runner` 支持 `--capacity-aware` 和 `--execution-plan-dir`，可额外导出 parent/child orders、capacity report 和 execution plan。
+- `operations.run_daily` 在 approval 阶段保存 parent/child schedule，审批后优先执行 approved child orders，并将 execution quality 写入 production summary。
+- `approval` 支持可选 parent_orders、child_orders 和 capacity_summary，旧 approval records 兼容。
+- `paper_account` 支持 `apply_child_fills()`，trade ledger 记录 parent_order_id、child_order_id 和 bucket。
+- `monitoring` 增加 capacity warnings、execution quality、unfilled orders 和 impact cost spike 检查。
+- dashboard Orders tab 展示 capacity report、execution plan、parent orders、child orders、child fills 和 execution quality。
+
+### 新增文件
+- `capacity_model/__init__.py`
+- `capacity_model/models.py`
+- `capacity_model/estimator.py`
+- `capacity_model/impact.py`
+- `capacity_model/report.py`
+- `capacity_model/run_capacity.py`
+- `execution_plan/__init__.py`
+- `execution_plan/models.py`
+- `execution_plan/scheduler.py`
+- `execution_plan/simulator.py`
+- `execution_plan/report.py`
+- `execution_plan/run_plan.py`
+- `tests/test_capacity_model.py`
+- `tests/test_execution_plan.py`
+- `tests/test_capacity_execution_no_old_terms.py`
+
+### 修改文件
+- `backtest/models.py`
+- `backtest/simulator.py`
+- `backtest/run_backtest.py`
+- `execution/models.py`
+- `strategy_manager/runner.py`
+- `operations/daily_runner.py`
+- `operations/run_daily.py`
+- `approval/models.py`
+- `approval/store.py`
+- `paper_account/models.py`
+- `paper_account/ledger.py`
+- `paper_account/performance.py`
+- `monitoring/checks.py`
+- `monitoring/run_monitor.py`
+- `dashboard/data_service.py`
+- `dashboard/app.py`
+- `README.md`
+- `CATREADME.md`
+- `FRAMEWORK_UPDATE.md`
+- `tests/test_backtest_risk_aware.py`
+- `tests/test_strategy_runner_risk_aware.py`
+- `tests/test_operations_daily_runner.py`
+- `tests/test_approval_store.py`
+- `tests/test_paper_account.py`
+- `tests/test_monitoring_reports.py`
+- `tests/test_risk_dashboard_artifacts.py`
+
+### 删除或隔离的旧问题
+- 本地 paper execution 不再只能按整单模拟成交，新增 parent/child order schedule。
+- 回测不再只记录整体成交约束，新增容量占用、冲击成本、未成交金额和执行质量指标。
+- 审批批次不再只能审批扁平订单，新增 parent/child order metadata 和 capacity summary。
+- 纸面账户台账不再丢失切片来源，trade ledger 记录 parent/child/bucket。
+
+### 新增 A 股平台能力
+- `estimate_security_capacity()` 与 `estimate_portfolio_capacity()` 输出 avg daily amount/volume、amount/volume participation、max trade value/shares、impact cost、capacity score 和 warnings。
+- `python -m capacity_model.run_capacity` 可独立生成 `capacity_report.json/md`。
+- `build_execution_schedule()` 可将 target orders 切成默认 `open/morning/afternoon/close` bucket 的 child orders。
+- `simulate_child_orders()` 按停牌、涨跌停、T+1、整手、成交量参与率和成本生成 child fills。
+- `python -m execution_plan.run_plan` 可从 orders 文件生成 execution plan 和 child fills。
+- `backtest.run_backtest --capacity-aware` 增加 `avg_amount_participation`、`avg_volume_participation`、`estimated_impact_cost`、`realized_execution_cost`、`unfilled_order_value`、`execution_fill_rate` 和 `capacity_warning_count`。
+- `strategy_manager.runner --capacity-aware` 额外写出 `parent_orders.jsonl`、`child_orders.jsonl`、`child_fills.jsonl`、`execution_quality.json` 和 execution plan report。
+- `operations.run_daily --capacity-aware --require-approval` 生成待审批 child schedule；审批后 `--execute-approved` 执行 approved child orders 并更新 paper account。
+
+### 测试结果
+- `uv run pytest tests/test_capacity_model.py tests/test_execution_plan.py tests/test_backtest_risk_aware.py tests/test_strategy_runner_risk_aware.py tests/test_operations_daily_runner.py tests/test_approval_store.py tests/test_paper_account.py tests/test_monitoring_reports.py tests/test_risk_dashboard_artifacts.py tests/test_capacity_execution_no_old_terms.py`：通过，18 passed。
+- `uv run python -m research_suite.run_suite --suite-name capacity_execution_suite --provider sample --data-dir /tmp/auto-alpha-capacity-execution/data --universe-name csi300_sample --index-code 000300.SH --factor-store-dir /tmp/auto-alpha-capacity-execution/store --report-dir /tmp/auto-alpha-capacity-execution/reports --output-dir /tmp/auto-alpha-capacity-execution/suite --backtest-dir /tmp/auto-alpha-capacity-execution/backtest --orders-dir /tmp/auto-alpha-capacity-execution/orders --as-of-date 20240104 --factor-transform winsorize_zscore --search-mode hybrid --search-seed 42 --search-population-size 12 --search-generations 2 --search-max-candidates 8 --neural-warmup-steps 1 --neural-policy-steps 1 --top-k 5 --composite-method rank_average --portfolio-method risk_aware --use-factor-risk-model --attribution --promote-latest-composite --walk-forward-train-size 1 --walk-forward-test-size 1 --walk-forward-step-size 1 --pretty`：通过，suite status success，selected factor `factor_c8cb3814b84e9c10` 晋级为 `production_candidate`。
+- `uv run python -m backtest.run_backtest --capacity-aware ...`：通过，生成 capacity report、execution plan 和 child fills，execution fill rate 为 `0.6002587991746816`。
+- `uv run python -m strategy_manager.runner --capacity-aware ...`：通过，生成 8 个 child orders，capacity warnings 为 8。
+- `uv run python -m operations.run_daily --capacity-aware --require-approval ...`：通过，生成 pending approval `approval_20240104_3814b84e9c10_2026_06_27T14_26_57Z` 和 8 个 child orders。
+- `uv run python -m approval.run_approval ... approve ...`：通过，approval status 更新为 approved。
+- `uv run python -m operations.run_daily --approval-id ... --execute-approved --capacity-aware ...`：通过，执行 8 个 child fills，production status executed。
+- `uv run python -m monitoring.run_monitor ...`：通过生成 monitoring artifacts，包含 unfilled_orders、impact_cost_spike、fill_quality 和 paper_account checks。
+
+### 后续待办
+- 用真实全市场数据校准容量模型、成交额参与率阈值和冲击成本参数。
+- 增加更真实的日内成交曲线、分钟级容量、订单簿约束和交易暂停处理。
+- 将 execution plan 与审批 UI 做差异比对，支持审批后订单计划冻结和版本追踪。
+- 增加多日调仓计划、跨日未完成订单滚动和更完整的执行归因。

@@ -11,14 +11,18 @@ from factor_store import LocalFactorStore
 from .checks import (
     check_active_risk_drift,
     check_attribution_anomaly,
+    check_capacity_warnings,
     check_data_freshness,
+    check_execution_quality,
     check_factor_risk_concentration,
     check_factor_drift,
+    check_impact_cost_spike,
     check_order_fill_quality,
     check_paper_account,
     check_quality_report,
     check_risk_report,
     check_style_exposure_drift,
+    check_unfilled_orders,
 )
 from .report import build_monitoring_report, write_monitoring_report
 
@@ -36,6 +40,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--risk-exposures-path")
     parser.add_argument("--risk-decomposition-path")
     parser.add_argument("--return-attribution-path")
+    parser.add_argument("--capacity-report-path")
+    parser.add_argument("--execution-quality-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -53,6 +59,10 @@ def main(argv: list[str] | None = None) -> int:
         ("active_risk_drift", lambda: check_active_risk_drift(args.risk_decomposition_path or _default_path(args.orders_dir, "risk_decomposition.jsonl"))),
         ("factor_risk_concentration", lambda: check_factor_risk_concentration(args.risk_report_path or _default_risk_path(args.orders_dir))),
         ("attribution_anomaly", lambda: check_attribution_anomaly(args.return_attribution_path or _default_path(args.orders_dir, "return_attribution.jsonl"))),
+        ("capacity_warnings", lambda: check_capacity_warnings(args.capacity_report_path or _default_plan_path(args.orders_dir, "capacity_report.json"))),
+        ("execution_quality", lambda: check_execution_quality(args.execution_quality_path or _default_plan_path(args.orders_dir, "execution_quality.json"))),
+        ("unfilled_orders", lambda: check_unfilled_orders(args.execution_quality_path or _default_plan_path(args.orders_dir, "execution_quality.json"))),
+        ("impact_cost_spike", lambda: check_impact_cost_spike(args.capacity_report_path or _default_plan_path(args.orders_dir, "capacity_report.json"))),
         ("fill_quality", lambda: check_order_fill_quality(Path(args.orders_dir) / "paper_fills.jsonl")),
         ("paper_account", lambda: check_paper_account(args.paper_account_dir)),
     ]:
@@ -84,6 +94,14 @@ def _default_risk_path(orders_dir: str | Path) -> str:
 def _default_path(orders_dir: str | Path, filename: str) -> str:
     path = Path(orders_dir) / filename
     return str(path) if path.exists() else ""
+
+
+def _default_plan_path(orders_dir: str | Path, filename: str) -> str:
+    root = Path(orders_dir)
+    for path in (root / filename, root / "plan" / filename):
+        if path.exists():
+            return str(path)
+    return ""
 
 
 if __name__ == "__main__":

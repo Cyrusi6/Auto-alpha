@@ -74,6 +74,16 @@ def _prepare_monitoring_artifacts(tmp_path):
         '{"trade_date":"20240104","total_active_return":0.01}\n',
         encoding="utf-8",
     )
+    plan_dir = orders_dir / "plan"
+    plan_dir.mkdir(parents=True)
+    (plan_dir / "capacity_report.json").write_text(
+        '{"portfolio":{"capacity_warning_count":1,"estimated_impact_cost":10.0,"total_order_value":1000.0}}',
+        encoding="utf-8",
+    )
+    (plan_dir / "execution_quality.json").write_text(
+        '{"execution_fill_rate":0.25,"rejected_child_orders":2,"partial_child_orders":1,"unfilled_order_value":750.0}',
+        encoding="utf-8",
+    )
     return data_dir, tmp_path / "store", tmp_path / "account", orders_dir
 
 
@@ -104,6 +114,10 @@ def test_monitoring_report_cli_writes_alerts(tmp_path, capsys):
     assert payload["checks"]["active_risk_drift"]["exists"] is True
     assert payload["checks"]["factor_risk_concentration"]["exists"] is True
     assert payload["checks"]["attribution_anomaly"]["exists"] is True
+    assert payload["checks"]["capacity_warnings"]["capacity_warning_count"] == 1
+    assert payload["checks"]["execution_quality"]["execution_fill_rate"] == 0.25
+    assert payload["checks"]["unfilled_orders"]["unfilled_order_value"] == 750.0
+    assert payload["checks"]["impact_cost_spike"]["impact_cost_ratio"] == 0.01
     assert any(alert["check"] == "fill_quality" for alert in payload["alerts"])
     assert (tmp_path / "monitoring" / "monitoring_report.json").exists()
     assert (tmp_path / "monitoring" / "monitoring_report.md").exists()

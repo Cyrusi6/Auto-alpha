@@ -271,10 +271,29 @@ def render_app(config: DashboardConfig | None = None) -> None:
         targets = service.load_target_positions()
         orders = service.load_orders()
         fills = service.load_paper_fills()
+        capacity_report = service.load_capacity_report()
+        execution_plan = service.load_execution_plan()
+        parent_orders = service.load_parent_orders()
+        child_orders = service.load_child_orders()
+        child_fills = service.load_child_fills()
+        execution_quality = service.load_execution_quality()
         st.plotly_chart(plot_order_distribution(orders), use_container_width=True)
+        st.subheader("Capacity And Execution Quality")
+        st.json(
+            {
+                "capacity": (capacity_report.get("portfolio") or {}) if capacity_report else {},
+                "execution_quality": execution_quality,
+                "child_orders": len(child_orders),
+                "child_fills": len(child_fills),
+                "buckets": (execution_plan.get("schedule") or {}).get("buckets", []) if execution_plan else [],
+            }
+        )
         _show_dataframe_or_empty("Target Positions", targets)
         _show_dataframe_or_empty("Orders", orders)
+        _show_dataframe_or_empty("Parent Orders", parent_orders)
+        _show_dataframe_or_empty("Child Orders", child_orders)
         _show_dataframe_or_empty("Paper Fills", fills)
+        _show_dataframe_or_empty("Child Fills", child_fills)
 
     with production_tab:
         production_run = service.load_production_run()
