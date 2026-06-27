@@ -33,6 +33,7 @@ class TradeFill:
     shares: int
     value: float
     cost: float
+    status: str = "FILLED"
     allowed: bool = True
     reason: str = ""
 

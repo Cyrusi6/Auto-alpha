@@ -19,6 +19,7 @@ def test_from_env_defaults(monkeypatch):
         "ASHARE_END_DATE",
         "ASHARE_ADJUST",
         "ASHARE_UNIVERSE",
+        "ASHARE_INDEX_CODES",
     ]:
         monkeypatch.delenv(key, raising=False)
 
@@ -35,6 +36,7 @@ def test_from_env_defaults(monkeypatch):
     assert config.end_date is None
     assert config.adjust == "qfq"
     assert config.universe == "all_a"
+    assert config.index_codes == ("000300.SH",)
 
 
 def test_from_env_reads_tushare_token(monkeypatch):
@@ -55,6 +57,14 @@ def test_from_env_reads_tushare_http_settings(monkeypatch):
     assert config.tushare_api_url == "http://example.test/pro"
     assert config.tushare_timeout_seconds == 5
     assert config.tushare_retry_count == 1
+
+
+def test_from_env_reads_index_codes(monkeypatch):
+    monkeypatch.setenv("ASHARE_INDEX_CODES", "000300.SH,000905.SH")
+
+    config = AShareDataConfig.from_env()
+
+    assert config.index_codes == ("000300.SH", "000905.SH")
 
 
 def test_from_env_rejects_invalid_adjust(monkeypatch):

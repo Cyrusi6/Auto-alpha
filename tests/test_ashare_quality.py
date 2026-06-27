@@ -20,6 +20,9 @@ def test_quality_report_for_sample_data_has_no_errors(tmp_path):
         "securities",
         "trade_calendar",
         "daily_bars",
+        "daily_limits",
+        "adjustment_factors",
+        "index_members",
     }
 
 
@@ -86,6 +89,25 @@ def test_quality_detects_financial_feature_date_errors():
     assert "invalid_date" in codes
     assert "missing_announce_date" in codes
     assert summary.errors == 2
+
+
+def test_quality_detects_market_constraint_dataset_errors():
+    limit_summary = validate_dataset(
+        "daily_limits",
+        [{"ts_code": "000001.SZ", "trade_date": "20240102", "up_limit": 8.0, "down_limit": 9.0, "pre_close": 0.0}],
+    )
+    factor_summary = validate_dataset(
+        "adjustment_factors",
+        [{"ts_code": "000001.SZ", "trade_date": "20240102", "adj_factor": 0.0}],
+    )
+    member_summary = validate_dataset(
+        "index_members",
+        [{"index_code": "000300.SH", "ts_code": "000001.SZ", "trade_date": "20240102", "weight": -1.0}],
+    )
+
+    assert "up_limit_less_than_down_limit" in {issue.code for issue in limit_summary.issues}
+    assert "invalid_adjustment_factor" in {issue.code for issue in factor_summary.issues}
+    assert "invalid_index_weight" in {issue.code for issue in member_summary.issues}
 
 
 def test_write_quality_report_writes_json(tmp_path):

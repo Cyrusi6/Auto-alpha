@@ -66,11 +66,35 @@ def render_app(config: DashboardConfig | None = None) -> None:
         manifest = service.load_manifest()
         st.subheader("Manifest")
         st.json(manifest if manifest else {"status": "No manifest found"})
+        quality_report = service.load_quality_report()
+        st.subheader("Quality Summary")
+        if quality_report:
+            st.json(
+                {
+                    "has_errors": quality_report.get("has_errors", False),
+                    "total_errors": quality_report.get("total_errors", 0),
+                    "total_warnings": quality_report.get("total_warnings", 0),
+                    "datasets": [
+                        {
+                            "dataset": dataset.get("dataset"),
+                            "records": dataset.get("records"),
+                            "errors": dataset.get("errors"),
+                            "warnings": dataset.get("warnings"),
+                        }
+                        for dataset in quality_report.get("datasets", [])
+                    ],
+                }
+            )
+        else:
+            st.info("No quality_report.json found.")
         col1, col2 = st.columns(2)
         with col1:
             _show_dataframe_or_empty("Securities", service.load_dataset("securities"))
+            _show_dataframe_or_empty("Daily Limits", service.load_dataset("daily_limits"))
+            _show_dataframe_or_empty("Index Members", service.load_dataset("index_members"))
         with col2:
             _show_dataframe_or_empty("Daily Bars", service.load_dataset("daily_bars"))
+            _show_dataframe_or_empty("Adjustment Factors", service.load_dataset("adjustment_factors"))
 
     with factor_tab:
         factors = service.load_factors()

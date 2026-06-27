@@ -56,9 +56,16 @@ def test_strategy_runner_generates_targets_orders_and_fills(tmp_path, capsys):
     assert payload["rebalance_date"]
     assert payload["n_targets"] > 0
     assert payload["n_orders"] > 0
+    assert "n_rejected" in payload
+    assert "n_partial" in payload
+    assert "fill_rate" in payload
     assert (output_dir / "target_positions.csv").exists()
     assert (output_dir / "target_positions.jsonl").exists()
     assert (output_dir / "orders.csv").exists()
     assert (output_dir / "orders.jsonl").exists()
     assert (output_dir / "paper_fills.jsonl").exists()
+    fill_payload = json.loads((output_dir / "paper_fills.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert "status" in fill_payload
+    assert "reason" in fill_payload
+    assert "cost" in fill_payload
     assert not (output_dir / "best_meme_strategy.json").exists()

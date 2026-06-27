@@ -30,6 +30,10 @@ class AShareBacktestSimulator:
     def simulate(self, factors, loader) -> PortfolioBacktestResult:
         factor_tensor = factors.detach().cpu() if hasattr(factors, "detach") else torch.tensor(factors)
         close = loader.raw_data_cache["close"].detach().cpu()
+        volume = loader.raw_data_cache.get("volume", torch.zeros_like(close)).detach().cpu()
+        is_suspended = loader.raw_data_cache.get("is_suspended", torch.zeros_like(close)).detach().cpu()
+        limit_up = loader.raw_data_cache.get("limit_up_flag", torch.zeros_like(close)).detach().cpu()
+        limit_down = loader.raw_data_cache.get("limit_down_flag", torch.zeros_like(close)).detach().cpu()
         target_ret = loader.target_ret.detach().cpu()
         targets_by_date = build_long_only_targets(
             factor_tensor,
@@ -57,6 +61,7 @@ class AShareBacktestSimulator:
             desired_weights = torch.clamp(desired_weights, 0.0, self.max_weight)
             deltas = desired_weights - current_weights
             day_cost = 0.0
+            day_traded_value = 0.0
             adjusted_weights = current_weights.clone()
 
             for stock_idx, delta in enumerate(deltas.tolist()):
@@ -64,22 +69,57 @@ class AShareBacktestSimulator:
                     continue
                 side = "BUY" if delta > 0 else "SELL"
                 price = float(close[stock_idx, date_idx].item())
+                suspended = bool(is_suspended[stock_idx, date_idx].item() > 0.5)
+                is_limit_up = bool(limit_up[stock_idx, date_idx].item() > 0.5)
+                is_limit_down = bool(limit_down[stock_idx, date_idx].item() > 0.5)
                 if side == "BUY":
-                    allowed, reason = self.trading_rules.can_buy(price)
+                    allowed, reason = self.trading_rules.can_buy(price, suspended, is_limit_up)
                 else:
-                    allowed, reason = self.trading_rules.can_sell(price)
+                    allowed, reason = self.trading_rules.can_sell(price, suspended, is_limit_down)
                     buy_index = first_buy_index.get(stock_idx, -1)
                     if allowed and buy_index >= 0 and not self.trading_rules.is_t_plus_one_sell_allowed(
                         buy_index, date_idx
                     ):
                         allowed, reason = False, "t_plus_one"
                 order_value = abs(delta) * equity
-                shares = self.trading_rules.round_shares(order_value / price) if allowed and price > 0 else 0
+                requested_shares = self.trading_rules.round_shares(order_value / price) if allowed and price > 0 else 0
+                shares, volume_reason = self.trading_rules.volume_limited_shares(
+                    requested_shares,
+                    float(volume[stock_idx, date_idx].item()),
+                ) if requested_shares > 0 else (0, "")
+                status = "FILLED"
+                if not allowed:
+                    status = "REJECTED"
+                    shares = 0
+                elif requested_shares <= 0:
+                    status = "REJECTED"
+                    reason = "zero_shares"
+                elif shares <= 0:
+                    status = "REJECTED"
+                    reason = volume_reason or "zero_shares"
+                elif shares < requested_shares:
+                    status = "PARTIAL"
+                    reason = volume_reason or "partial_fill"
                 if shares <= 0:
+                    fills.append(
+                        TradeFill(
+                            trade_date=trade_date,
+                            ts_code=loader.ts_codes[stock_idx],
+                            side=side,
+                            price=float(price),
+                            shares=0,
+                            value=0.0,
+                            cost=0.0,
+                            status=status,
+                            allowed=False,
+                            reason=reason,
+                        )
+                    )
                     continue
                 fill_value = shares * price
                 cost = self.cost_model.estimate(side, fill_value).total
                 day_cost += cost
+                day_traded_value += fill_value
                 fills.append(
                     TradeFill(
                         trade_date=trade_date,
@@ -89,11 +129,16 @@ class AShareBacktestSimulator:
                         shares=int(shares),
                         value=float(fill_value),
                         cost=float(cost),
+                        status=status,
                         allowed=allowed,
                         reason=reason,
                     )
                 )
-                adjusted_weights[stock_idx] = desired_weights[stock_idx]
+                filled_weight = fill_value / max(equity, 1e-6)
+                if side == "BUY":
+                    adjusted_weights[stock_idx] = min(desired_weights[stock_idx], current_weights[stock_idx] + filled_weight)
+                else:
+                    adjusted_weights[stock_idx] = max(desired_weights[stock_idx], current_weights[stock_idx] - filled_weight)
                 if side == "BUY":
                     first_buy_index.setdefault(stock_idx, date_idx)
 
@@ -104,7 +149,7 @@ class AShareBacktestSimulator:
             positions_value = equity * invested_weight
             cash = equity - positions_value
             daily_return = (equity / prev_equity - 1.0) if prev_equity > 0 else 0.0
-            turnover = float(torch.abs(deltas).sum().item())
+            turnover = float(day_traded_value / max(equity, 1e-6))
             snapshots.append(
                 PortfolioSnapshot(
                     trade_date=trade_date,
@@ -132,6 +177,12 @@ class AShareBacktestSimulator:
                 "avg_turnover": 0.0,
                 "total_cost": 0.0,
                 "n_trades": 0.0,
+                "rejected_trades": 0.0,
+                "partial_fills": 0.0,
+                "fill_rate": 0.0,
+                "constraint_reject_rate": 0.0,
+                "avg_exposure": 0.0,
+                "cash_drag": 0.0,
             }
         returns = torch.tensor([snapshot.daily_return for snapshot in snapshots], dtype=torch.float32)
         final_equity = snapshots[-1].equity
@@ -142,6 +193,20 @@ class AShareBacktestSimulator:
         equity_curve = torch.tensor([snapshot.equity for snapshot in snapshots], dtype=torch.float32)
         running_max = torch.cummax(equity_curve, dim=0).values
         drawdowns = 1.0 - equity_curve / torch.clamp(running_max, min=1e-6)
+        rejected = sum(1 for fill in fills if fill.status == "REJECTED")
+        partial = sum(1 for fill in fills if fill.status == "PARTIAL")
+        completed = sum(1 for fill in fills if fill.status in {"FILLED", "PARTIAL"})
+        fill_rate = completed / len(fills) if fills else 0.0
+        constraint_rejects = sum(
+            1
+            for fill in fills
+            if fill.status == "REJECTED" and fill.reason in {"suspended", "limit_up", "limit_down", "t_plus_one", "volume_limit"}
+        )
+        exposure_values = [
+            snapshot.positions_value / snapshot.equity if snapshot.equity > 0 else 0.0
+            for snapshot in snapshots
+        ]
+        avg_exposure = sum(exposure_values) / len(exposure_values) if exposure_values else 0.0
         return {
             "total_return": float(total_return),
             "annualized_return": float(annualized_return),
@@ -150,4 +215,10 @@ class AShareBacktestSimulator:
             "avg_turnover": float(sum(snapshot.turnover for snapshot in snapshots) / len(snapshots)),
             "total_cost": float(total_cost),
             "n_trades": float(len(fills)),
+            "rejected_trades": float(rejected),
+            "partial_fills": float(partial),
+            "fill_rate": float(fill_rate),
+            "constraint_reject_rate": float(constraint_rejects / len(fills) if fills else 0.0),
+            "avg_exposure": float(avg_exposure),
+            "cash_drag": float(1.0 - avg_exposure),
         }

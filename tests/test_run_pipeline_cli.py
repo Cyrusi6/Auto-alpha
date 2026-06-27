@@ -5,6 +5,17 @@ from data_pipeline import run_pipeline
 from data_pipeline.ashare import LocalAshareStorage
 from data_pipeline.ashare.providers.sample import SampleAShareDataProvider
 
+EXPECTED_DATASETS = [
+    "securities",
+    "trade_calendar",
+    "daily_bars",
+    "daily_basic",
+    "financial_features",
+    "daily_limits",
+    "adjustment_factors",
+    "index_members",
+]
+
 
 def test_run_pipeline_main_outputs_default_plan(capsys):
     result = run_pipeline.main([])
@@ -50,13 +61,7 @@ def test_run_pipeline_sync_sample_writes_local_files(tmp_path, capsys):
     assert result == 0
     payload = json.loads(captured.out)
     assert payload["provider"] == "sample"
-    assert [dataset["dataset"] for dataset in payload["datasets"]] == [
-        "securities",
-        "trade_calendar",
-        "daily_bars",
-        "daily_basic",
-        "financial_features",
-    ]
+    assert [dataset["dataset"] for dataset in payload["datasets"]] == EXPECTED_DATASETS
     for dataset in payload["datasets"]:
         assert Path(dataset["path"]).is_relative_to(tmp_path)
         assert Path(dataset["path"]).exists()
@@ -107,6 +112,8 @@ def test_run_pipeline_sync_sample_append_deduplicates(tmp_path, capsys):
 
     storage = LocalAshareStorage(tmp_path)
     assert len(storage.read_dataset("daily_bars")) == 6
+    assert len(storage.read_dataset("daily_limits")) == 6
+    assert len(storage.read_dataset("index_members")) == 3
     assert next(dataset for dataset in payload["datasets"] if dataset["dataset"] == "daily_bars")["records"] == 6
 
 
@@ -130,6 +137,30 @@ def test_run_pipeline_sync_selected_datasets_only(tmp_path, capsys):
     assert (tmp_path / "securities" / "records.jsonl").exists()
     assert (tmp_path / "daily_bars" / "records.jsonl").exists()
     assert not (tmp_path / "daily_basic" / "records.jsonl").exists()
+
+
+def test_run_pipeline_sync_selected_market_constraint_datasets_and_index_codes(tmp_path, capsys):
+    result = run_pipeline.main(
+        [
+            "--sync",
+            "--provider",
+            "sample",
+            "--data-dir",
+            str(tmp_path),
+            "--datasets",
+            "daily_limits,index_members",
+            "--index-codes",
+            "000300.SH,000905.SH",
+            "--pretty",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert result == 0
+    payload = json.loads(captured.out)
+    assert [dataset["dataset"] for dataset in payload["datasets"]] == ["daily_limits", "index_members"]
+    members = LocalAshareStorage(tmp_path).read_dataset("index_members")
+    assert {record["index_code"] for record in members} == {"000300.SH", "000905.SH"}
 
 
 def test_run_pipeline_sync_tushare_with_fake_provider_writes_local_files(
@@ -158,13 +189,7 @@ def test_run_pipeline_sync_tushare_with_fake_provider_writes_local_files(
     assert result == 0
     payload = json.loads(captured.out)
     assert payload["provider"] == "tushare"
-    assert [dataset["dataset"] for dataset in payload["datasets"]] == [
-        "securities",
-        "trade_calendar",
-        "daily_bars",
-        "daily_basic",
-        "financial_features",
-    ]
+    assert [dataset["dataset"] for dataset in payload["datasets"]] == EXPECTED_DATASETS
     for dataset in payload["datasets"]:
         assert Path(dataset["path"]).is_relative_to(tmp_path)
         assert Path(dataset["path"]).exists()

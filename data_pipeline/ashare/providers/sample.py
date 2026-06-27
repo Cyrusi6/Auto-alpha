@@ -3,7 +3,16 @@
 from __future__ import annotations
 
 from ..config import AShareDataConfig
-from ..schema import DailyBar, DailyBasic, FinancialFeature, Security, TradeCalendarRecord
+from ..schema import (
+    AdjustmentFactor,
+    DailyBar,
+    DailyBasic,
+    DailyLimit,
+    FinancialFeature,
+    IndexMember,
+    Security,
+    TradeCalendarRecord,
+)
 
 
 class SampleAShareDataProvider:
@@ -224,3 +233,42 @@ class SampleAShareDataProvider:
                 operating_cashflow=21500.0,
             ),
         ]
+
+    def fetch_daily_limits(self, config: AShareDataConfig) -> list[DailyLimit]:
+        return [
+            DailyLimit("20240102", "000001.SZ", up_limit=10.33, down_limit=8.45, pre_close=9.39),
+            DailyLimit("20240103", "000001.SZ", up_limit=9.55, down_limit=8.55, pre_close=9.50),
+            DailyLimit("20240102", "600000.SH", up_limit=7.30, down_limit=5.98, pre_close=6.64),
+            DailyLimit("20240103", "600000.SH", up_limit=7.36, down_limit=6.70, pre_close=6.69),
+            DailyLimit("20240102", "830000.BJ", up_limit=15.66, down_limit=8.44, pre_close=12.05),
+            DailyLimit("20240103", "830000.BJ", up_limit=15.99, down_limit=8.61, pre_close=12.30),
+        ]
+
+    def fetch_adjustment_factors(self, config: AShareDataConfig) -> list[AdjustmentFactor]:
+        return [
+            AdjustmentFactor("20240102", "000001.SZ", adj_factor=1.02),
+            AdjustmentFactor("20240103", "000001.SZ", adj_factor=1.03),
+            AdjustmentFactor("20240102", "600000.SH", adj_factor=1.01),
+            AdjustmentFactor("20240103", "600000.SH", adj_factor=1.01),
+            AdjustmentFactor("20240102", "830000.BJ", adj_factor=1.00),
+            AdjustmentFactor("20240103", "830000.BJ", adj_factor=1.00),
+        ]
+
+    def fetch_index_members(self, config: AShareDataConfig) -> list[IndexMember]:
+        records: list[IndexMember] = []
+        weights = {
+            "000001.SZ": 0.42,
+            "600000.SH": 0.38,
+            "830000.BJ": 0.20,
+        }
+        for index_code in config.index_codes:
+            for ts_code, weight in weights.items():
+                records.append(
+                    IndexMember(
+                        index_code=index_code,
+                        trade_date="20240103",
+                        ts_code=ts_code,
+                        weight=weight,
+                    )
+                )
+        return records

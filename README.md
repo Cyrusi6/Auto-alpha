@@ -6,7 +6,7 @@ The current implementation is local-first. It uses deterministic sample data and
 
 ## Modules
 
-- `data_pipeline/`: A-share data configuration, sample and Tushare HTTP providers, local JSONL storage, data quality checks, sync state, and data sync CLI.
+- `data_pipeline/`: A-share data configuration, sample and Tushare HTTP providers, market constraint datasets, local JSONL storage, data quality checks, sync state, and data sync CLI.
 - `universe/`: Local A-share universe construction from governed data artifacts.
 - `model_core/`: A-share feature engineering, formula vocabulary, DSL operators, StackVM execution, factor evaluation, and mining engine.
 - `factor_engine/`: Cross-sectional preprocessing, market-cap and industry neutralization, correlation checks, and factor admission gate.
@@ -30,6 +30,7 @@ uv run python -m data_pipeline.run_pipeline \
   --data-dir /tmp/auto-alpha-demo/data \
   --validate \
   --mode overwrite \
+  --index-codes 000300.SH \
   --pretty
 
 uv run python -m data_pipeline.run_pipeline \
@@ -43,7 +44,9 @@ uv run python -m data_pipeline.run_pipeline \
 uv run python -m universe.run_universe \
   --data-dir /tmp/auto-alpha-demo/data \
   --as-of-date 20240104 \
-  --universe-name all_a_sample \
+  --universe-name csi300_sample \
+  --use-index-members \
+  --index-code 000300.SH \
   --min-listed-days 0 \
   --min-amount 0 \
   --pretty
@@ -52,7 +55,7 @@ uv run python -m model_core.engine \
   --dry-run \
   --register \
   --data-dir /tmp/auto-alpha-demo/data \
-  --universe-name all_a_sample \
+  --universe-name csi300_sample \
   --output-dir /tmp/auto-alpha-demo/out \
   --factor-store-dir /tmp/auto-alpha-demo/store \
   --report-dir /tmp/auto-alpha-demo/reports \
@@ -110,6 +113,8 @@ Common variables:
 
 Data sync writes `manifest.json` and `pipeline_state.json`. Passing `--validate` or `--quality-report` also writes `quality_report.json`. Passing `--mode append` merges with existing JSONL records by dataset primary key.
 
+Market constraint datasets include `daily_limits`, `adjustment_factors`, and `index_members`. The research and backtest stack uses `adjusted_close` for returns and raw `close` for local order simulation. The portfolio simulator applies local A-share constraints for suspension, limit up/down, T+1 selling, board lots, volume participation, and trading costs.
+
 The factor engine can be constrained to a local universe with `--universe-name` or `--universe-file`. `--factor-transform` supports `raw`, `winsorize`, `zscore`, `winsorize_zscore`, `neutralize_market_cap`, `neutralize_industry`, and `neutralize_industry_size`. Passing `--enable-gate` records coverage, turnover, split metrics, correlation checks, gate status, and transform metadata in the factor store and report.
 
 Dashboard-specific overrides:
@@ -124,5 +129,5 @@ Dashboard-specific overrides:
 
 - Tushare HTTP provider is available, but production use still requires valid token, quota, richer data quality rules, and a fuller incremental sync strategy.
 - Industry and market-cap neutralization now have a basic cross-sectional implementation; future work should expand this into a fuller risk model and finer industry classification.
-- Portfolio simulation is intentionally simple and needs richer A-share trading constraints.
+- Local daily simulation supports core A-share constraints; future work should add finer real-world matching, minute-level liquidity, and richer risk models.
 - Paper order export is local only; no real broker integration is implemented.

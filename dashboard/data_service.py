@@ -18,6 +18,9 @@ class AshareDashboardService:
     def load_manifest(self) -> dict[str, Any]:
         return self._read_json(self.config.data_dir / "manifest.json")
 
+    def load_quality_report(self) -> dict[str, Any]:
+        return self._read_json(self.config.data_dir / "quality_report.json")
+
     def load_dataset(self, name: str, limit: int | None = 200) -> pd.DataFrame:
         frame = self._read_jsonl(self.config.data_dir / name / "records.jsonl")
         if limit is not None and len(frame) > limit:

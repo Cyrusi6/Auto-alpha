@@ -26,6 +26,28 @@ def test_sample_data_builds_universe(tmp_path):
     assert json.loads(Path(result.summary_path).read_text(encoding="utf-8"))["selected"] == 3
 
 
+def test_sample_data_builds_index_member_universe(tmp_path):
+    AShareDataManager(AShareDataConfig(provider="sample", data_dir=tmp_path)).sync()
+    result = build_universe_from_storage(
+        LocalAshareStorage(tmp_path),
+        UniverseBuildConfig(
+            universe_name="csi300_sample",
+            as_of_date="20240104",
+            min_listed_days=0,
+            min_amount=0,
+            use_index_members=True,
+            index_code="000300.SH",
+        ),
+    )
+    summary = json.loads(Path(result.summary_path).read_text(encoding="utf-8"))
+
+    assert result.source == "index_members"
+    assert result.index_code == "000300.SH"
+    assert result.latest_index_trade_date == "20240103"
+    assert result.selected == 3
+    assert summary["source"] == "index_members"
+
+
 def test_universe_filters_st_suspended_listed_days_and_amount(tmp_path):
     storage = LocalAshareStorage(tmp_path)
     storage.write_dataset(
@@ -120,6 +142,9 @@ def test_universe_cli_outputs_json_summary(tmp_path, capsys):
             "0",
             "--min-amount",
             "0",
+            "--use-index-members",
+            "--index-code",
+            "000300.SH",
             "--pretty",
         ]
     )
@@ -129,4 +154,5 @@ def test_universe_cli_outputs_json_summary(tmp_path, capsys):
     assert result == 0
     assert payload["universe_name"] == "all_a_sample"
     assert payload["selected"] == 3
+    assert payload["source"] == "index_members"
     assert Path(payload["output_path"]).exists()

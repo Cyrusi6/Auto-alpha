@@ -5,7 +5,16 @@ from __future__ import annotations
 from typing import Any
 
 from ..config import AShareDataConfig
-from ..schema import DailyBar, DailyBasic, FinancialFeature, Security, TradeCalendarRecord
+from ..schema import (
+    AdjustmentFactor,
+    DailyBar,
+    DailyBasic,
+    DailyLimit,
+    FinancialFeature,
+    IndexMember,
+    Security,
+    TradeCalendarRecord,
+)
 from ..validators import is_valid_ts_code, is_valid_yyyymmdd
 from .tushare_client import TushareHttpClient
 
@@ -160,6 +169,83 @@ class TushareAShareDataProvider:
                     operating_cashflow=_optional_float(row.get("ocfps")),
                 )
             )
+        return records
+
+    def fetch_daily_limits(self, config: AShareDataConfig) -> list[DailyLimit]:
+        rows = self._post(
+            config,
+            "stk_limit",
+            params=_date_params(config),
+            fields="trade_date,ts_code,up_limit,down_limit,pre_close",
+        )
+        records: list[DailyLimit] = []
+        for row in rows:
+            ts_code = _text(row.get("ts_code"))
+            trade_date = _text(row.get("trade_date"))
+            if not is_valid_ts_code(ts_code) or not is_valid_yyyymmdd(trade_date):
+                continue
+            records.append(
+                DailyLimit(
+                    trade_date=trade_date,
+                    ts_code=ts_code,
+                    up_limit=_float_or_zero(row.get("up_limit")),
+                    down_limit=_float_or_zero(row.get("down_limit")),
+                    pre_close=_float_or_zero(row.get("pre_close")),
+                )
+            )
+        return records
+
+    def fetch_adjustment_factors(self, config: AShareDataConfig) -> list[AdjustmentFactor]:
+        rows = self._post(
+            config,
+            "adj_factor",
+            params=_date_params(config),
+            fields="ts_code,trade_date,adj_factor",
+        )
+        records: list[AdjustmentFactor] = []
+        for row in rows:
+            ts_code = _text(row.get("ts_code"))
+            trade_date = _text(row.get("trade_date"))
+            if not is_valid_ts_code(ts_code) or not is_valid_yyyymmdd(trade_date):
+                continue
+            adj_factor = _optional_float(row.get("adj_factor"))
+            if adj_factor is None or adj_factor <= 0:
+                continue
+            records.append(
+                AdjustmentFactor(
+                    trade_date=trade_date,
+                    ts_code=ts_code,
+                    adj_factor=adj_factor,
+                )
+            )
+        return records
+
+    def fetch_index_members(self, config: AShareDataConfig) -> list[IndexMember]:
+        records: list[IndexMember] = []
+        for index_code in config.index_codes:
+            rows = self._post(
+                config,
+                "index_weight",
+                params={**_date_params(config), "index_code": index_code},
+                fields="index_code,con_code,trade_date,weight",
+            )
+            for row in rows:
+                ts_code = _text(row.get("con_code"))
+                trade_date = _text(row.get("trade_date"))
+                index = _text(row.get("index_code")) or index_code
+                if not is_valid_ts_code(ts_code) or not is_valid_yyyymmdd(trade_date):
+                    continue
+                weight = _optional_float(row.get("weight"))
+                if weight is None or weight < 0:
+                    continue
+                records.append(
+                    IndexMember(
+                        index_code=index,
+                        trade_date=trade_date,
+                        ts_code=ts_code,
+                        weight=weight,
+                    )
+                )
         return records
 
     def _post(

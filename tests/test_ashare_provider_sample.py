@@ -17,6 +17,9 @@ def test_sample_provider_returns_all_dataset_types():
     assert provider.fetch_daily_bars(config)
     assert provider.fetch_daily_basic(config)
     assert provider.fetch_financial_features(config)
+    assert provider.fetch_daily_limits(config)
+    assert provider.fetch_adjustment_factors(config)
+    assert provider.fetch_index_members(config)
 
 
 def test_sample_provider_contains_required_securities():
@@ -50,8 +53,25 @@ def test_sample_provider_payload_excludes_old_business_terms():
         *provider.fetch_daily_bars(config),
         *provider.fetch_daily_basic(config),
         *provider.fetch_financial_features(config),
+        *provider.fetch_daily_limits(config),
+        *provider.fetch_adjustment_factors(config),
+        *provider.fetch_index_members(config),
     ]
     payload = json.dumps([asdict(record) for record in records], ensure_ascii=False).lower()
 
     for forbidden in FORBIDDEN_TERMS:
         assert forbidden not in payload
+
+
+def test_sample_provider_market_constraint_data_has_expected_scenarios():
+    provider = SampleAShareDataProvider()
+    config = AShareDataConfig(provider="sample", index_codes=("000300.SH",))
+
+    limits = provider.fetch_daily_limits(config)
+    factors = provider.fetch_adjustment_factors(config)
+    members = provider.fetch_index_members(config)
+
+    assert any(limit.ts_code == "000001.SZ" and limit.trade_date == "20240103" and limit.up_limit == 9.55 for limit in limits)
+    assert any(limit.ts_code == "600000.SH" and limit.trade_date == "20240103" and limit.down_limit == 6.70 for limit in limits)
+    assert any(record.adj_factor != 1.0 for record in factors)
+    assert {record.index_code for record in members} == {"000300.SH"}

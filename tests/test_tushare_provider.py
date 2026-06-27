@@ -69,6 +69,30 @@ class FakeTushareClient:
                     "roe": "99",
                 },
             ],
+            "stk_limit": [
+                {
+                    "ts_code": "000001.SZ",
+                    "trade_date": "20240102",
+                    "up_limit": "10.33",
+                    "down_limit": "8.45",
+                    "pre_close": "9.39",
+                }
+            ],
+            "adj_factor": [
+                {
+                    "ts_code": "000001.SZ",
+                    "trade_date": "20240102",
+                    "adj_factor": "1.02",
+                }
+            ],
+            "index_weight": [
+                {
+                    "index_code": "000300.SH",
+                    "con_code": "000001.SZ",
+                    "trade_date": "20240102",
+                    "weight": "0.42",
+                }
+            ],
         }
 
     def post(self, api_name, params=None, fields=None):
@@ -84,6 +108,7 @@ def test_tushare_provider_maps_all_dataset_types():
         tushare_token="test-token",
         start_date="20240101",
         end_date="20240103",
+        index_codes=("000300.SH",),
     )
 
     securities = provider.fetch_securities(config)
@@ -91,6 +116,9 @@ def test_tushare_provider_maps_all_dataset_types():
     bars = provider.fetch_daily_bars(config)
     basic = provider.fetch_daily_basic(config)
     financial = provider.fetch_financial_features(config)
+    limits = provider.fetch_daily_limits(config)
+    factors = provider.fetch_adjustment_factors(config)
+    members = provider.fetch_index_members(config)
 
     assert securities[0].ts_code == "000001.SZ"
     assert securities[0].board == "主板"
@@ -110,6 +138,12 @@ def test_tushare_provider_maps_all_dataset_types():
     assert financial[0].debt_to_asset == 91.8
     assert financial[0].operating_cashflow == 1.28
     assert len(financial) == 1
+    assert limits[0].up_limit == 10.33
+    assert limits[0].down_limit == 8.45
+    assert factors[0].adj_factor == 1.02
+    assert members[0].index_code == "000300.SH"
+    assert members[0].ts_code == "000001.SZ"
+    assert members[0].weight == 0.42
 
 
 def test_tushare_provider_uses_expected_api_names_and_params():
@@ -120,6 +154,7 @@ def test_tushare_provider_uses_expected_api_names_and_params():
         tushare_token="test-token",
         start_date="20240101",
         end_date="20240103",
+        index_codes=("000300.SH",),
     )
 
     provider.fetch_securities(config)
@@ -127,6 +162,9 @@ def test_tushare_provider_uses_expected_api_names_and_params():
     provider.fetch_daily_bars(config)
     provider.fetch_daily_basic(config)
     provider.fetch_financial_features(config)
+    provider.fetch_daily_limits(config)
+    provider.fetch_adjustment_factors(config)
+    provider.fetch_index_members(config)
 
     assert [call["api_name"] for call in client.calls] == [
         "stock_basic",
@@ -134,6 +172,9 @@ def test_tushare_provider_uses_expected_api_names_and_params():
         "daily",
         "daily_basic",
         "fina_indicator",
+        "stk_limit",
+        "adj_factor",
+        "index_weight",
     ]
     assert client.calls[0]["params"] == {"list_status": "L"}
     assert client.calls[1]["params"] == {

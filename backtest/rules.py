@@ -43,3 +43,11 @@ class AShareTradingRules:
 
     def clamp_weight(self, weight: float) -> float:
         return max(0.0, min(float(weight), self.max_position_weight))
+
+    def volume_limited_shares(self, requested_shares: int, volume: float) -> tuple[int, str]:
+        max_shares = self.round_shares(max(float(volume), 0.0) * self.volume_limit_ratio)
+        if max_shares <= 0:
+            return 0, "volume_limit"
+        if requested_shares > max_shares:
+            return max_shares, "volume_limit_partial"
+        return requested_shares, ""

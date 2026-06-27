@@ -57,6 +57,30 @@ class DailyBasic:
 
 
 @dataclass(frozen=True)
+class DailyLimit:
+    trade_date: str
+    ts_code: str
+    up_limit: float
+    down_limit: float
+    pre_close: float
+
+
+@dataclass(frozen=True)
+class AdjustmentFactor:
+    trade_date: str
+    ts_code: str
+    adj_factor: float
+
+
+@dataclass(frozen=True)
+class IndexMember:
+    index_code: str
+    trade_date: str
+    ts_code: str
+    weight: float
+
+
+@dataclass(frozen=True)
 class FinancialFeature:
     ts_code: str
     report_period: str

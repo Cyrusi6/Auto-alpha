@@ -20,15 +20,18 @@ The sample provider writes:
 - `daily_bars/records.jsonl`
 - `daily_basic/records.jsonl`
 - `financial_features/records.jsonl`
+- `daily_limits/records.jsonl`
+- `adjustment_factors/records.jsonl`
+- `index_members/records.jsonl`
 - `manifest.json`
 - `pipeline_state.json`
 - `quality_report.json` when validation is enabled
 
-Append mode merges incoming records by dataset primary key. The quality report checks empty datasets, invalid dates, invalid stock codes, duplicate keys, daily bar price errors, and financial announcement date fields.
+Append mode merges incoming records by dataset primary key. The quality report checks empty datasets, invalid dates, invalid stock codes, duplicate keys, daily bar price errors, financial announcement date fields, limit prices, adjustment factors, and index constituent weights.
 
 ## Universe Layer
 
-`universe/` builds local A-share research universes from governed data artifacts. It filters invalid stock codes, special-treatment names, delisted securities, suspended daily bars, listing age, amount, exchange, and board, then writes:
+`universe/` builds local A-share research universes from governed data artifacts or `index_members`. It filters invalid stock codes, special-treatment names, delisted securities, suspended daily bars, listing age, amount, exchange, and board, then writes:
 
 - `universe/<universe_name>.jsonl`
 - `universe/<universe_name>_summary.json`
@@ -63,9 +66,11 @@ Append mode merges incoming records by dataset primary key. The quality report c
 - `equity_curve.jsonl`
 - `trades.jsonl`
 
+Returns are based on `adjusted_close`; simulated fills use raw `close`. The simulator applies suspension, limit up/down, T+1 selling, board-lot rounding, volume participation, and cost rules, with rejected and partial fills recorded in `trades.jsonl`.
+
 ## Paper Execution And Order Export
 
-`execution/` provides local paper fills and order/fill export helpers.
+`execution/` provides local paper fills and order/fill export helpers using the same A-share trading rule primitives as the backtest.
 
 `strategy_manager/` builds a target book for a rebalance date, validates weights, generates orders, and writes:
 
@@ -81,4 +86,4 @@ Append mode merges incoming records by dataset primary key. The quality report c
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Production-grade Tushare incremental sync, fuller risk-model neutralization, finer industry classification, and broker connectivity are future work.
+The platform is local-first and deterministic by default. Production-grade Tushare incremental sync, finer matching realism, minute-level liquidity, fuller risk-model neutralization, finer industry classification, and broker connectivity are future work.

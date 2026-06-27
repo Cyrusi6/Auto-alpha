@@ -38,6 +38,9 @@ class AShareDataLoader:
         bars = self._read_jsonl("daily_bars")
         daily_basic = self._read_jsonl("daily_basic")
         financial_features = self._read_jsonl("financial_features")
+        daily_limits = self._read_optional_jsonl("daily_limits")
+        adjustment_factors = self._read_optional_jsonl("adjustment_factors")
+        index_members = self._read_optional_jsonl("index_members")
 
         universe_codes = self._load_universe_codes()
         selected_securities = [
@@ -55,6 +58,9 @@ class AShareDataLoader:
         bar_df = pd.DataFrame(bars)
         basic_df = pd.DataFrame(daily_basic)
         financial_df = pd.DataFrame(financial_features)
+        limit_df = pd.DataFrame(daily_limits)
+        adj_df = pd.DataFrame(adjustment_factors)
+        index_df = pd.DataFrame(index_members)
 
         raw = {
             "open": self._pivot_market(bar_df, "open"),
@@ -71,24 +77,47 @@ class AShareDataLoader:
             "total_mv": self._pivot_daily_basic(basic_df, "total_mv"),
             "roe": self._align_financial(financial_df, "roe"),
             "revenue_yoy": self._align_financial(financial_df, "revenue_yoy"),
+            "adj_factor": self._pivot_adjustment_factor(adj_df),
+            "up_limit": self._pivot_optional_market(limit_df, "up_limit"),
+            "down_limit": self._pivot_optional_market(limit_df, "down_limit"),
+            "is_suspended": self._derive_suspension_matrix(bar_df),
+            "index_member_matrix": self._align_index_members(index_df),
         }
 
         self.raw_data_cache = {
             key: torch.tensor(value, dtype=torch.float32, device=self.device)
             for key, value in raw.items()
         }
+        self.raw_data_cache["adjusted_close"] = self.raw_data_cache["close"] * self.raw_data_cache["adj_factor"]
+        self.raw_data_cache["adjusted_open"] = self.raw_data_cache["open"] * self.raw_data_cache["adj_factor"]
+        self.raw_data_cache["limit_up_flag"] = self._limit_flag(
+            self.raw_data_cache["close"],
+            self.raw_data_cache["up_limit"],
+            direction="up",
+        )
+        self.raw_data_cache["limit_down_flag"] = self._limit_flag(
+            self.raw_data_cache["close"],
+            self.raw_data_cache["down_limit"],
+            direction="down",
+        )
         self.raw_data_cache["log_mkt_cap"] = torch.log1p(torch.clamp(self.raw_data_cache["total_mv"], min=0.0))
         self.industry_codes = self._build_industry_codes()
         self.raw_data_cache["industry_codes"] = self.industry_codes
         self.raw_data_cache["industry_code_matrix"] = self.industry_codes.unsqueeze(1).expand(-1, len(self.trade_dates))
         self.feat_tensor = AShareFeatureEngineer.compute_features(self.raw_data_cache)
-        self.target_ret = self._compute_target_ret(self.raw_data_cache["close"])
+        self.target_ret = self._compute_target_ret(self.raw_data_cache["adjusted_close"])
         return self
 
     def _read_jsonl(self, dataset: str) -> list[dict[str, object]]:
         path = self.data_dir / dataset / "records.jsonl"
         if not path.exists():
             raise FileNotFoundError(f"missing A-share dataset file: {path}")
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+    def _read_optional_jsonl(self, dataset: str) -> list[dict[str, object]]:
+        path = self.data_dir / dataset / "records.jsonl"
+        if not path.exists():
+            return []
         return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
     def _load_universe_codes(self) -> set[str] | None:
@@ -103,10 +132,46 @@ class AShareDataLoader:
         return {str(record["ts_code"]) for record in records if record.get("ts_code")}
 
     def _pivot_market(self, df: pd.DataFrame, column: str) -> list[list[float]]:
+        if df.empty or column not in df.columns:
+            return [[0.0 for _ in self.trade_dates] for _ in self.ts_codes]
         pivot = df.pivot_table(index="trade_date", columns="ts_code", values=column, aggfunc="last")
         pivot = pivot.reindex(index=self.trade_dates, columns=self.ts_codes)
         pivot = pivot.ffill().fillna(0.0)
         return pivot.to_numpy(dtype="float32").T.tolist()
+
+    def _pivot_optional_market(self, df: pd.DataFrame, column: str) -> list[list[float]]:
+        if df.empty or column not in df.columns:
+            return [[0.0 for _ in self.trade_dates] for _ in self.ts_codes]
+        pivot = df.pivot_table(index="trade_date", columns="ts_code", values=column, aggfunc="last")
+        pivot = pivot.reindex(index=self.trade_dates, columns=self.ts_codes)
+        pivot = pivot.ffill().fillna(0.0)
+        return pivot.to_numpy(dtype="float32").T.tolist()
+
+    def _pivot_adjustment_factor(self, df: pd.DataFrame) -> list[list[float]]:
+        if df.empty or "adj_factor" not in df.columns:
+            return [[1.0 for _ in self.trade_dates] for _ in self.ts_codes]
+        pivot = df.pivot_table(index="trade_date", columns="ts_code", values="adj_factor", aggfunc="last")
+        pivot = pivot.reindex(index=self.trade_dates, columns=self.ts_codes)
+        pivot = pivot.ffill().fillna(1.0)
+        return pivot.to_numpy(dtype="float32").T.tolist()
+
+    def _derive_suspension_matrix(self, df: pd.DataFrame) -> list[list[float]]:
+        if df.empty:
+            return [[1.0 for _ in self.trade_dates] for _ in self.ts_codes]
+        presence = df.assign(_present=1.0).pivot_table(
+            index="trade_date",
+            columns="ts_code",
+            values="_present",
+            aggfunc="last",
+        )
+        presence = presence.reindex(index=self.trade_dates, columns=self.ts_codes).fillna(0.0)
+        if "is_suspended" in df.columns:
+            suspended = df.pivot_table(index="trade_date", columns="ts_code", values="is_suspended", aggfunc="last")
+            suspended = suspended.reindex(index=self.trade_dates, columns=self.ts_codes).fillna(False)
+        else:
+            suspended = presence * 0.0
+        result = ((presence <= 0.0) | suspended.astype(bool)).astype("float32")
+        return result.to_numpy(dtype="float32").T.tolist()
 
     def _pivot_daily_basic(self, df: pd.DataFrame, column: str) -> list[list[float]]:
         if column not in df.columns:
@@ -134,6 +199,19 @@ class AShareDataLoader:
             aligned.append(values)
         return aligned
 
+    def _align_index_members(self, df: pd.DataFrame) -> list[list[float]]:
+        if df.empty:
+            return [[0.0 for _ in self.trade_dates] for _ in self.ts_codes]
+        aligned: list[list[float]] = []
+        for ts_code in self.ts_codes:
+            stock_df = df[df["ts_code"] == ts_code].sort_values(["trade_date", "index_code"])
+            values: list[float] = []
+            for trade_date in self.trade_dates:
+                available = stock_df[stock_df["trade_date"] <= trade_date]
+                values.append(0.0 if available.empty else 1.0)
+            aligned.append(values)
+        return aligned
+
     def _build_industry_codes(self) -> torch.Tensor:
         industries = [
             str(self.security_metadata.get(ts_code, {}).get("industry") or "UNKNOWN")
@@ -151,3 +229,13 @@ class AShareDataLoader:
             nxt = torch.clamp(close[:, 1:], min=1e-6)
             target[:, :-1] = torch.log(nxt / current)
         return torch.nan_to_num(target, nan=0.0, posinf=0.0, neginf=0.0).to(dtype=torch.float32)
+
+    @staticmethod
+    def _limit_flag(close: torch.Tensor, limit: torch.Tensor, direction: str) -> torch.Tensor:
+        valid = limit > 0
+        tolerance = torch.clamp(limit.abs() * 1e-4, min=1e-4)
+        if direction == "up":
+            flag = valid & (close >= limit - tolerance)
+        else:
+            flag = valid & (close <= limit + tolerance)
+        return flag.to(dtype=torch.float32)

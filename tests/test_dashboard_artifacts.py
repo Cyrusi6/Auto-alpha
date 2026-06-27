@@ -83,6 +83,9 @@ def test_dashboard_service_reads_local_artifacts(tmp_path, capsys):
     assert service.load_manifest()["provider"] == "sample"
     assert not service.load_dataset("securities").empty
     assert not service.load_dataset("daily_bars").empty
+    assert not service.load_dataset("daily_limits").empty
+    assert not service.load_dataset("adjustment_factors").empty
+    assert not service.load_dataset("index_members").empty
     assert not service.load_factors().empty
     overview = service.load_factor_overview()
     assert not overview.empty
@@ -90,6 +93,7 @@ def test_dashboard_service_reads_local_artifacts(tmp_path, capsys):
     assert not service.load_experiments().empty
     assert service.load_factor_report_json()["factor_id"].startswith("factor_")
     assert service.load_backtest_result()["metrics"]
+    assert "fill_rate" in service.load_backtest_result()["metrics"]
     assert not service.load_equity_curve().empty
     assert not service.load_orders().empty
     assert not service.load_paper_fills().empty

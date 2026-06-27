@@ -78,8 +78,27 @@ class AShareStrategyRunner:
             ts_code: float(close[idx, date_idx].item())
             for idx, ts_code in enumerate(self.loader.ts_codes)
         }
-        fills = PaperBroker(self.output_dir).submit_orders(orders, prices, target_book.trade_date)
+        volume = self.loader.raw_data_cache["volume"].detach().cpu()
+        is_suspended = self.loader.raw_data_cache["is_suspended"].detach().cpu()
+        limit_up = self.loader.raw_data_cache["limit_up_flag"].detach().cpu()
+        limit_down = self.loader.raw_data_cache["limit_down_flag"].detach().cpu()
+        volumes = {ts_code: float(volume[idx, date_idx].item()) for idx, ts_code in enumerate(self.loader.ts_codes)}
+        suspended = {ts_code: bool(is_suspended[idx, date_idx].item() > 0.5) for idx, ts_code in enumerate(self.loader.ts_codes)}
+        limit_up_flags = {ts_code: bool(limit_up[idx, date_idx].item() > 0.5) for idx, ts_code in enumerate(self.loader.ts_codes)}
+        limit_down_flags = {ts_code: bool(limit_down[idx, date_idx].item() > 0.5) for idx, ts_code in enumerate(self.loader.ts_codes)}
+        fills = PaperBroker(self.output_dir).submit_orders(
+            orders,
+            prices,
+            target_book.trade_date,
+            volumes=volumes,
+            suspended=suspended,
+            limit_up=limit_up_flags,
+            limit_down=limit_down_flags,
+        )
         fills_path = self.output_dir / "paper_fills.jsonl"
+        rejected = sum(1 for fill in fills if fill.status == "REJECTED")
+        partial = sum(1 for fill in fills if fill.status == "PARTIAL")
+        completed = sum(1 for fill in fills if fill.status in {"FILLED", "PARTIAL"})
 
         return {
             "factor_id": self.selected_factor_id,
@@ -87,6 +106,9 @@ class AShareStrategyRunner:
             "n_targets": len(target_book.targets),
             "n_orders": len(orders),
             "n_fills": len(fills),
+            "n_rejected": rejected,
+            "n_partial": partial,
+            "fill_rate": completed / len(fills) if fills else 0.0,
             "output_dir": str(self.output_dir),
             "targets_path": str(targets_jsonl),
             "targets_csv_path": str(targets_csv),

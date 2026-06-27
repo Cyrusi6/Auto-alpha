@@ -28,6 +28,8 @@ class UniverseBuildConfig:
     min_amount: float = 0.0
     exchanges: tuple[str, ...] | None = None
     boards: tuple[str, ...] | None = None
+    index_code: str | None = None
+    use_index_members: bool = False
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,9 @@ class UniverseBuildResult:
     total_candidates: int
     selected: int
     rejected: dict[str, int]
+    source: str = "securities"
+    index_code: str | None = None
+    latest_index_trade_date: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -51,4 +56,7 @@ class UniverseBuildResult:
             "total_candidates": self.total_candidates,
             "selected": self.selected,
             "rejected": dict(sorted(self.rejected.items())),
+            "source": self.source,
+            "index_code": self.index_code,
+            "latest_index_trade_date": self.latest_index_trade_date,
         }

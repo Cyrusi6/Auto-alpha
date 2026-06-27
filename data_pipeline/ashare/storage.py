@@ -17,6 +17,9 @@ DATASET_PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
     "daily_bars": ("ts_code", "trade_date"),
     "daily_basic": ("ts_code", "trade_date"),
     "financial_features": ("ts_code", "report_period", "announce_date"),
+    "daily_limits": ("ts_code", "trade_date"),
+    "adjustment_factors": ("ts_code", "trade_date"),
+    "index_members": ("index_code", "ts_code", "trade_date"),
 }
 
 
@@ -88,6 +91,7 @@ class LocalAshareStorage:
             "start_date": config.start_date,
             "end_date": config.end_date,
             "adjust": config.adjust,
+            "index_codes": list(config.index_codes),
             "datasets": [asdict(result) for result in datasets],
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }

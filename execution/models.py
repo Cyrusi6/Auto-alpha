@@ -24,4 +24,5 @@ class ExecutionFill:
     shares: int
     value: float
     status: str
+    cost: float = 0.0
     reason: str = ""

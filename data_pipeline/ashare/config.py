@@ -23,6 +23,7 @@ class AShareDataConfig:
     end_date: str | None = None
     adjust: str = "qfq"
     universe: str = "all_a"
+    index_codes: tuple[str, ...] = ("000300.SH",)
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "AShareDataConfig":
@@ -46,6 +47,7 @@ class AShareDataConfig:
             end_date=end_date,
             adjust=(env.get("ASHARE_ADJUST", "qfq")).lower(),
             universe=env.get("ASHARE_UNIVERSE", "all_a"),
+            index_codes=_parse_csv_tuple(env.get("ASHARE_INDEX_CODES")) or ("000300.SH",),
         )
 
     def __post_init__(self) -> None:
@@ -71,6 +73,10 @@ class AShareDataConfig:
         if self.end_date is not None and not is_valid_yyyymmdd(self.end_date):
             raise ValueError("end_date must be a real date in YYYYMMDD format")
 
+        object.__setattr__(self, "index_codes", tuple(str(code).strip() for code in self.index_codes if str(code).strip()))
+        if not self.index_codes:
+            raise ValueError("index_codes must include at least one index code")
+
     @staticmethod
     def _coerce_positive_int(value: int | str, field_name: str) -> int:
         try:
@@ -80,3 +86,10 @@ class AShareDataConfig:
         if parsed <= 0:
             raise ValueError(f"{field_name} must be a positive integer")
         return parsed
+
+
+def _parse_csv_tuple(value: str | None) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    parsed = tuple(item.strip() for item in value.split(",") if item.strip())
+    return parsed or None

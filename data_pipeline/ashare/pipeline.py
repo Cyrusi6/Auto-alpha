@@ -13,6 +13,9 @@ ASHARE_DATASETS = (
     "daily_bars",
     "daily_basic",
     "financial_features",
+    "daily_limits",
+    "adjustment_factors",
+    "index_members",
 )
 
 
@@ -61,6 +64,9 @@ def build_pipeline_plan(config: AShareDataConfig) -> PipelinePlan:
         "daily_bars": "Daily price and volume bars.",
         "daily_basic": "Daily market indicators.",
         "financial_features": "Financial features aligned by announcement date.",
+        "daily_limits": "Daily limit up/down prices.",
+        "adjustment_factors": "Daily adjustment factors.",
+        "index_members": "Index constituent weights.",
     }
     datasets = [
         DatasetPlan(

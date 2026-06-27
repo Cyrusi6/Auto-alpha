@@ -44,6 +44,22 @@ def test_local_storage_append_deduplicates_by_dataset_key(tmp_path):
     assert len(loaded) == len(records)
 
 
+def test_local_storage_append_deduplicates_new_market_constraint_datasets(tmp_path):
+    config = AShareDataConfig(provider="sample", data_dir=tmp_path)
+    provider = SampleAShareDataProvider()
+    storage = LocalAshareStorage(tmp_path)
+
+    for dataset, records in {
+        "daily_limits": provider.fetch_daily_limits(config),
+        "adjustment_factors": provider.fetch_adjustment_factors(config),
+        "index_members": provider.fetch_index_members(config),
+    }.items():
+        storage.write_dataset(dataset, records, mode="append")
+        result = storage.write_dataset(dataset, records, mode="append")
+        assert result.records == len(records)
+        assert len(storage.read_dataset(dataset)) == len(records)
+
+
 def test_local_storage_overwrite_replaces_existing_records(tmp_path):
     config = AShareDataConfig(provider="sample", data_dir=tmp_path)
     records = SampleAShareDataProvider().fetch_securities(config)

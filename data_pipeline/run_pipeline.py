@@ -35,6 +35,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--end-date", help="Override the configured end date.")
     parser.add_argument("--adjust", help="Override the configured adjustment mode.")
     parser.add_argument("--universe", help="Override the configured universe.")
+    parser.add_argument("--index-codes", help="Comma-separated index codes for index_members sync.")
     parser.add_argument(
         "--datasets",
         help="Comma-separated datasets to sync. Defaults to all A-share datasets.",
@@ -112,6 +113,8 @@ def _config_from_args(args: argparse.Namespace) -> AShareDataConfig:
         overrides["adjust"] = args.adjust.lower()
     if args.universe is not None:
         overrides["universe"] = args.universe
+    if args.index_codes is not None:
+        overrides["index_codes"] = tuple(item.strip() for item in args.index_codes.split(",") if item.strip())
 
     return replace(config, **overrides)
 

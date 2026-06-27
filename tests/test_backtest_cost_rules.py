@@ -23,5 +23,7 @@ def test_trading_rules_lot_t_plus_one_and_limits():
     assert rules.can_sell(10.0, is_suspended=True)[0] is False
     assert rules.can_buy(10.0, is_limit_up=True)[0] is False
     assert rules.can_sell(10.0, is_limit_down=True)[0] is False
+    assert rules.volume_limited_shares(1000, 5000) == (500, "volume_limit_partial")
+    assert rules.volume_limited_shares(1000, 0) == (0, "volume_limit")
     assert rules.clamp_weight(0.25) == 0.10
     assert rules.clamp_weight(-0.1) == 0.0

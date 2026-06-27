@@ -23,6 +23,15 @@ def build_universe_from_storage(
         raise ValueError("as_of_date must be a real date in YYYYMMDD format")
 
     securities = storage.read_dataset("securities")
+    index_codes, latest_index_trade_date = _index_member_codes(
+        storage.read_dataset("index_members"),
+        config.as_of_date,
+        config.index_code,
+    ) if config.use_index_members else (None, None)
+    if config.use_index_members and config.index_code is None:
+        raise ValueError("index_code is required when use_index_members=True")
+    if index_codes is not None:
+        securities = [record for record in securities if str(record.get("ts_code")) in index_codes]
     bars_by_code = _latest_bars_by_code(storage.read_dataset("daily_bars"), config.as_of_date)
     rejected: Counter[str] = Counter()
     members: list[UniverseMember] = []
@@ -33,7 +42,15 @@ def build_universe_from_storage(
             members.append(member)
 
     members.sort(key=lambda item: item.ts_code)
-    output_path, summary_path = _write_universe(storage.data_dir, config, members, len(securities), rejected)
+    output_path, summary_path = _write_universe(
+        storage.data_dir,
+        config,
+        members,
+        len(securities),
+        rejected,
+        source="index_members" if config.use_index_members else "securities",
+        latest_index_trade_date=latest_index_trade_date,
+    )
     return UniverseBuildResult(
         universe_name=config.universe_name,
         as_of_date=config.as_of_date,
@@ -43,6 +60,9 @@ def build_universe_from_storage(
         total_candidates=len(securities),
         selected=len(members),
         rejected=dict(rejected),
+        source="index_members" if config.use_index_members else "securities",
+        index_code=config.index_code,
+        latest_index_trade_date=latest_index_trade_date,
     )
 
 
@@ -127,12 +147,36 @@ def _latest_bars_by_code(records: list[dict[str, Any]], as_of_date: str) -> dict
     return latest
 
 
+def _index_member_codes(
+    records: list[dict[str, Any]],
+    as_of_date: str,
+    index_code: str | None,
+) -> tuple[set[str], str | None]:
+    eligible = [
+        record
+        for record in records
+        if record.get("index_code") == index_code
+        and is_valid_yyyymmdd(str(record.get("trade_date", "")))
+        and str(record.get("trade_date")) <= as_of_date
+    ]
+    if not eligible:
+        return set(), None
+    latest_date = max(str(record["trade_date"]) for record in eligible)
+    return {
+        str(record["ts_code"])
+        for record in eligible
+        if str(record.get("trade_date")) == latest_date and is_valid_ts_code(str(record.get("ts_code", "")))
+    }, latest_date
+
+
 def _write_universe(
     data_dir: Path,
     config: UniverseBuildConfig,
     members: list[UniverseMember],
     total_candidates: int,
     rejected: Counter[str],
+    source: str,
+    latest_index_trade_date: str | None,
 ) -> tuple[Path, Path]:
     output_dir = data_dir / "universe"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -151,6 +195,9 @@ def _write_universe(
         "total_candidates": total_candidates,
         "selected": len(members),
         "rejected": dict(sorted(rejected.items())),
+        "source": source,
+        "index_code": config.index_code,
+        "latest_index_trade_date": latest_index_trade_date,
     }
     summary_path.write_text(
         json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True),

@@ -85,6 +85,12 @@ def validate_dataset(dataset_name: str, records: Sequence[dict[str, Any]]) -> Da
         _validate_daily_basic(records, issues)
     elif dataset_name == "financial_features":
         _validate_financial_features(records, issues)
+    elif dataset_name == "daily_limits":
+        _validate_daily_limits(records, issues)
+    elif dataset_name == "adjustment_factors":
+        _validate_adjustment_factors(records, issues)
+    elif dataset_name == "index_members":
+        _validate_index_members(records, issues)
 
     errors = sum(issue.severity == "error" for issue in issues)
     warnings = sum(issue.severity == "warning" for issue in issues)
@@ -246,6 +252,91 @@ def _validate_financial_features(records: Sequence[dict[str, Any]], issues: list
             )
         else:
             _require_date(dataset, "announce_date", announce_date, issues, key)
+
+
+def _validate_daily_limits(records: Sequence[dict[str, Any]], issues: list[DataQualityIssue]) -> None:
+    for record in records:
+        dataset = "daily_limits"
+        key = _record_key(record, ("ts_code", "trade_date"))
+        _require_ts_code(dataset, str(record.get("ts_code", "")), issues)
+        _require_date(dataset, "trade_date", record.get("trade_date"), issues, key)
+        up_limit = _to_float(record.get("up_limit"))
+        down_limit = _to_float(record.get("down_limit"))
+        pre_close = _to_float(record.get("pre_close"))
+        for field_name, value in {
+            "up_limit": up_limit,
+            "down_limit": down_limit,
+            "pre_close": pre_close,
+        }.items():
+            if value is None or value <= 0:
+                issues.append(
+                    DataQualityIssue(
+                        dataset=dataset,
+                        severity="error",
+                        code="invalid_limit_price",
+                        message=f"{field_name} must be positive",
+                        key=key,
+                    )
+                )
+        if up_limit is not None and down_limit is not None and up_limit < down_limit:
+            issues.append(
+                DataQualityIssue(
+                    dataset=dataset,
+                    severity="error",
+                    code="up_limit_less_than_down_limit",
+                    message="up_limit must be greater than or equal to down_limit",
+                    key=key,
+                )
+            )
+
+
+def _validate_adjustment_factors(records: Sequence[dict[str, Any]], issues: list[DataQualityIssue]) -> None:
+    for record in records:
+        dataset = "adjustment_factors"
+        key = _record_key(record, ("ts_code", "trade_date"))
+        _require_ts_code(dataset, str(record.get("ts_code", "")), issues)
+        _require_date(dataset, "trade_date", record.get("trade_date"), issues, key)
+        adj_factor = _to_float(record.get("adj_factor"))
+        if adj_factor is None or adj_factor <= 0:
+            issues.append(
+                DataQualityIssue(
+                    dataset=dataset,
+                    severity="error",
+                    code="invalid_adjustment_factor",
+                    message="adj_factor must be positive",
+                    key=key,
+                )
+            )
+
+
+def _validate_index_members(records: Sequence[dict[str, Any]], issues: list[DataQualityIssue]) -> None:
+    for record in records:
+        dataset = "index_members"
+        key = _record_key(record, ("index_code", "ts_code", "trade_date"))
+        index_code = str(record.get("index_code", ""))
+        if not index_code:
+            issues.append(
+                DataQualityIssue(
+                    dataset=dataset,
+                    severity="error",
+                    code="invalid_index_code",
+                    message="index_code is required",
+                    key=key,
+                )
+            )
+        _require_ts_code(dataset, str(record.get("ts_code", "")), issues)
+        _require_date(dataset, "trade_date", record.get("trade_date"), issues, key)
+        weight = _to_float(record.get("weight"))
+        if weight is None or weight < 0:
+            issues.append(
+                DataQualityIssue(
+                    dataset=dataset,
+                    severity="error",
+                    code="invalid_index_weight",
+                    message="weight must be non-negative",
+                    key=key,
+                )
+            )
 
 
 def _require_ts_code(dataset: str, ts_code: str, issues: list[DataQualityIssue]) -> bool:

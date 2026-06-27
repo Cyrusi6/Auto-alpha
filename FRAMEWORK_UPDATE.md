@@ -512,3 +512,70 @@
 - 将中性化扩展为更完整的风险模型和更细行业分类。
 - 增加因子库相似因子治理策略，例如自动降级、替换和分组展示。
 - dashboard 增加多因子对比、gate 失败原因筛选和相关性网络视图。
+
+## 2026-06-27 - 任务 011
+
+### 本次变更摘要
+- 扩展 A 股数据模型和本地数据管线，新增 `daily_limits`、`adjustment_factors`、`index_members` 三类市场约束数据。
+- 增强 sample / Tushare provider，支持涨跌停、复权因子和指数成分字段映射。
+- 增强 `AShareDataLoader`，输出复权价格、涨跌停标记、停牌标记、指数成分矩阵和成交量/成交额矩阵。
+- 增强 universe 构建，支持基于 `index_members` 的指数股票池。
+- 升级 A 股组合回测撮合，支持停牌、涨跌停、T+1、整手、成交量参与率、成本、拒单和部分成交。
+- 增强 paper broker / strategy runner，使纸面成交与回测共用交易约束并输出拒单原因。
+- 增强 dashboard 本地 artifact 展示，增加市场约束数据、质量报告和成交状态字段。
+
+### 新增文件
+- `tests/test_ashare_schema_market_constraints.py`
+
+### 修改文件
+- `data_pipeline/ashare/schema.py`
+- `data_pipeline/ashare/config.py`
+- `data_pipeline/ashare/pipeline.py`
+- `data_pipeline/ashare/storage.py`
+- `data_pipeline/ashare/providers/base.py`
+- `data_pipeline/ashare/providers/sample.py`
+- `data_pipeline/ashare/providers/tushare.py`
+- `data_pipeline/ashare/quality.py`
+- `data_pipeline/ashare/__init__.py`
+- `data_pipeline/run_pipeline.py`
+- `model_core/data_loader.py`
+- `universe/models.py`
+- `universe/builder.py`
+- `universe/run_universe.py`
+- `backtest/models.py`
+- `backtest/rules.py`
+- `backtest/simulator.py`
+- `execution/models.py`
+- `execution/paper_broker.py`
+- `strategy_manager/runner.py`
+- `dashboard/data_service.py`
+- `dashboard/app.py`
+- `README.md`
+- `CATREADME.md`
+- 相关测试文件
+- `FRAMEWORK_UPDATE.md`
+
+### 删除或隔离的旧问题
+- 回测不再只做简化权重收益模拟，新增交易约束、拒单和部分成交结果。
+- 纸面成交不再静默跳过无法成交订单，而是写出 `REJECTED` 状态和原因。
+- 股票池构建不再只能从全市场证券列表出发，可使用本地指数成分数据。
+
+### 新增 A 股平台能力
+- `run_pipeline --index-codes` 可同步指数成分，并在 manifest / state / quality report 中覆盖 8 类数据集。
+- `universe.run_universe --use-index-members --index-code` 可按指定指数最新成分构建股票池。
+- `AShareDataLoader` 使用 `adjusted_close` 计算目标收益，并保留 `close` 作为成交价格。
+- `AShareBacktestSimulator` 记录 `rejected_trades`、`partial_fills`、`fill_rate`、`constraint_reject_rate`、`avg_exposure` 和 `cash_drag`。
+- `PaperBroker` 输出 `FILLED` / `PARTIAL` / `REJECTED`，并保存成本和拒单原因。
+
+### 测试结果
+- `uv run pytest`：通过，142 passed。
+- `uv run python -m data_pipeline.run_pipeline --sync --provider sample --data-dir /tmp/auto-alpha-market-rules/data --validate --mode overwrite --index-codes 000300.SH --pretty`：通过，写出 8 类数据集，quality report 无 error / warning。
+- `uv run python -m universe.run_universe --data-dir /tmp/auto-alpha-market-rules/data --as-of-date 20240104 --universe-name csi300_sample --use-index-members --index-code 000300.SH --min-listed-days 0 --min-amount 0 --pretty`：通过，基于 `000300.SH` 最新成分选出 3 个 sample 成员。
+- `uv run python -m model_core.engine --dry-run --register --data-dir /tmp/auto-alpha-market-rules/data --universe-name csi300_sample --output-dir /tmp/auto-alpha-market-rules/out --factor-store-dir /tmp/auto-alpha-market-rules/store --report-dir /tmp/auto-alpha-market-rules/reports --factor-transform winsorize_zscore --enable-gate --correlation-threshold 0.99 --min-coverage 0.5 --pretty`：通过，gate approved 并写出因子库、实验、因子值和报告。
+- `uv run python -m backtest.run_backtest --data-dir /tmp/auto-alpha-market-rules/data --factor-store-dir /tmp/auto-alpha-market-rules/store --output-dir /tmp/auto-alpha-market-rules/backtest --top-n 2 --max-weight 0.10 --pretty`：通过，生成约束撮合回测，包含拒单和 fill rate 指标。
+- `uv run python -m strategy_manager.runner --data-dir /tmp/auto-alpha-market-rules/data --factor-store-dir /tmp/auto-alpha-market-rules/store --output-dir /tmp/auto-alpha-market-rules/orders --top-n 2 --max-weight 0.10 --portfolio-value 1000000 --pretty`：通过，生成目标持仓、订单和 paper fills，纸面成交包含拒单原因。
+
+### 后续待办
+- 将日频约束撮合扩展到更精细的盘口、分钟级成交量和真实滑点模型。
+- 完善指数成分历史变更、复权校验和停复牌连续性检查。
+- 增加更多指数股票池模板和真实券商接口前的人工复核流程。

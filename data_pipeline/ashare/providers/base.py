@@ -5,7 +5,16 @@ from __future__ import annotations
 from typing import Protocol
 
 from ..config import AShareDataConfig
-from ..schema import DailyBar, DailyBasic, FinancialFeature, Security, TradeCalendarRecord
+from ..schema import (
+    AdjustmentFactor,
+    DailyBar,
+    DailyBasic,
+    DailyLimit,
+    FinancialFeature,
+    IndexMember,
+    Security,
+    TradeCalendarRecord,
+)
 
 
 class AShareDataProvider(Protocol):
@@ -22,4 +31,13 @@ class AShareDataProvider(Protocol):
         ...
 
     def fetch_financial_features(self, config: AShareDataConfig) -> list[FinancialFeature]:
+        ...
+
+    def fetch_daily_limits(self, config: AShareDataConfig) -> list[DailyLimit]:
+        ...
+
+    def fetch_adjustment_factors(self, config: AShareDataConfig) -> list[AdjustmentFactor]:
+        ...
+
+    def fetch_index_members(self, config: AShareDataConfig) -> list[IndexMember]:
         ...
