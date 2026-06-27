@@ -11,7 +11,7 @@ This repository is now organized as a local A-share factor research platform. Th
 
 ## Data Layer
 
-`data_pipeline/` owns A-share data models, configuration, providers, local JSONL storage, and sync orchestration. It supports deterministic sample data and a standard-library Tushare Pro HTTP provider.
+`data_pipeline/` owns A-share data models, configuration, providers, local JSONL storage, sync orchestration, data quality checks, and sync state. It supports deterministic sample data and a standard-library Tushare Pro HTTP provider.
 
 The sample provider writes:
 
@@ -21,6 +21,17 @@ The sample provider writes:
 - `daily_basic/records.jsonl`
 - `financial_features/records.jsonl`
 - `manifest.json`
+- `pipeline_state.json`
+- `quality_report.json` when validation is enabled
+
+Append mode merges incoming records by dataset primary key. The quality report checks empty datasets, invalid dates, invalid stock codes, duplicate keys, daily bar price errors, and financial announcement date fields.
+
+## Universe Layer
+
+`universe/` builds local A-share research universes from governed data artifacts. It filters invalid stock codes, special-treatment names, delisted securities, suspended daily bars, listing age, amount, exchange, and board, then writes:
+
+- `universe/<universe_name>.jsonl`
+- `universe/<universe_name>_summary.json`
 
 ## Factor Research Layer
 

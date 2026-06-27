@@ -39,6 +39,26 @@ def _build_parser() -> argparse.ArgumentParser:
         "--datasets",
         help="Comma-separated datasets to sync. Defaults to all A-share datasets.",
     )
+    parser.add_argument(
+        "--mode",
+        choices=("overwrite", "append"),
+        default="overwrite",
+        help="Write mode for synced datasets.",
+    )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Write a data quality report after sync.",
+    )
+    parser.add_argument(
+        "--quality-report",
+        action="store_true",
+        help="Write a data quality report after sync.",
+    )
+    parser.add_argument(
+        "--state-file",
+        help="Override the pipeline sync state file path.",
+    )
     return parser
 
 
@@ -61,7 +81,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        result = sync_ashare_datasets(config, datasets=selected_datasets)
+        result = sync_ashare_datasets(
+            config,
+            datasets=selected_datasets,
+            mode=args.mode,
+            validate=args.validate or args.quality_report,
+            state_file=args.state_file,
+        )
     except (NotImplementedError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2

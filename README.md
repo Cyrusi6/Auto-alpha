@@ -6,7 +6,8 @@ The current implementation is local-first. It uses deterministic sample data and
 
 ## Modules
 
-- `data_pipeline/`: A-share data configuration, sample and Tushare HTTP providers, local JSONL storage, and data sync CLI.
+- `data_pipeline/`: A-share data configuration, sample and Tushare HTTP providers, local JSONL storage, data quality checks, sync state, and data sync CLI.
+- `universe/`: Local A-share universe construction from governed data artifacts.
 - `model_core/`: A-share feature engineering, formula vocabulary, DSL operators, StackVM execution, factor evaluation, and mining engine.
 - `factor_store/`: Local factor registry, experiment registry, factor value storage, and stable factor identifiers.
 - `evaluation/`: Time-series sample split, split-level metrics, and factor reports.
@@ -26,6 +27,24 @@ uv run python -m data_pipeline.run_pipeline \
   --sync \
   --provider sample \
   --data-dir /tmp/auto-alpha-demo/data \
+  --validate \
+  --mode overwrite \
+  --pretty
+
+uv run python -m data_pipeline.run_pipeline \
+  --sync \
+  --provider sample \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --validate \
+  --mode append \
+  --pretty
+
+uv run python -m universe.run_universe \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --as-of-date 20240104 \
+  --universe-name all_a_sample \
+  --min-listed-days 0 \
+  --min-amount 0 \
   --pretty
 
 uv run python -m model_core.engine \
@@ -82,6 +101,8 @@ Common variables:
 - `ASHARE_MAX_WEIGHT`: maximum single-name weight.
 - `ASHARE_REBALANCE_DATE`: optional rebalance date.
 
+Data sync writes `manifest.json` and `pipeline_state.json`. Passing `--validate` or `--quality-report` also writes `quality_report.json`. Passing `--mode append` merges with existing JSONL records by dataset primary key.
+
 Dashboard-specific overrides:
 
 - `ASHARE_DASHBOARD_DATA_DIR`
@@ -92,7 +113,7 @@ Dashboard-specific overrides:
 
 ## Current Gaps
 
-- Tushare HTTP provider is available, but production use still requires valid token, quota, data quality checks, and richer incremental sync.
+- Tushare HTTP provider is available, but production use still requires valid token, quota, richer data quality rules, and a fuller incremental sync strategy.
 - Industry and market-cap neutralization are still future work.
 - Portfolio simulation is intentionally simple and needs richer A-share trading constraints.
 - Paper order export is local only; no real broker integration is implemented.

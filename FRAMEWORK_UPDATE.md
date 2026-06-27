@@ -389,3 +389,61 @@
 - 针对真实 Tushare 数据增加分页、增量同步和配额退避策略。
 - 增加数据质量报告，覆盖缺失值、重复记录、停复牌和财务公告延迟。
 - 为生产同步增加更完整的字段覆盖和分市场交易日历处理。
+
+## 2026-06-27 - 任务 009
+
+### 本次变更摘要
+- 增强 A 股本地 JSONL storage，支持 dataset 读取、append 写入和按主键去重。
+- 新增数据质量检查与 `quality_report.json` 输出。
+- 新增 `pipeline_state.json` 同步状态文件。
+- 增强 `data_pipeline.run_pipeline`，支持 `--mode overwrite|append`、`--validate`、`--quality-report`、`--state-file`。
+- 新增 `universe/` 股票池构建包和 CLI。
+
+### 新增文件
+- `data_pipeline/ashare/quality.py`
+- `data_pipeline/ashare/state.py`
+- `universe/__init__.py`
+- `universe/models.py`
+- `universe/builder.py`
+- `universe/run_universe.py`
+- `tests/test_ashare_quality.py`
+- `tests/test_ashare_state.py`
+- `tests/test_universe_builder.py`
+- `tests/test_data_governance_no_old_terms.py`
+
+### 修改文件
+- `data_pipeline/ashare/storage.py`
+- `data_pipeline/ashare/manager.py`
+- `data_pipeline/ashare/__init__.py`
+- `data_pipeline/run_pipeline.py`
+- `tests/test_ashare_storage.py`
+- `tests/test_ashare_manager.py`
+- `tests/test_run_pipeline_cli.py`
+- `README.md`
+- `CATREADME.md`
+- `FRAMEWORK_UPDATE.md`
+
+### 删除或隔离的旧问题
+- append 同步不再简单追加重复记录，而是按数据集主键合并。
+- 同步状态文件和质量报告不保存 token 或密钥。
+- 新增治理和股票池代码不引入旧业务执行逻辑。
+
+### 新增 A 股平台能力
+- `LocalAshareStorage.read_dataset()` 可读取本地 JSONL 数据集。
+- `validate_all_datasets()` 检查空数据集、非法股票代码、非法日期、重复主键、日线价格错误和财务公告日期字段。
+- `AShareDataManager.sync(validate=True)` 同步后写出 manifest、pipeline state 和 quality report。
+- `universe.run_universe` 可按 as-of-date、上市天数、成交额、交易所和板块构建本地股票池。
+
+### 测试结果
+- `uv run pytest tests/test_ashare_storage.py tests/test_ashare_quality.py tests/test_ashare_state.py tests/test_ashare_manager.py tests/test_run_pipeline_cli.py tests/test_universe_builder.py tests/test_data_governance_no_old_terms.py`：通过，30 passed。
+- `uv run pytest`：通过，110 passed。
+- `uv run python -m data_pipeline.run_pipeline --sync --provider sample --data-dir /tmp/auto-alpha-data-governance/data --validate --mode overwrite --pretty`：通过，写出五类数据、manifest、pipeline state 和 quality report。
+- `uv run python -m data_pipeline.run_pipeline --sync --provider sample --data-dir /tmp/auto-alpha-data-governance/data --validate --mode append --pretty`：通过，重复同步后主键去重，记录数不膨胀。
+- `uv run python -m universe.run_universe --data-dir /tmp/auto-alpha-data-governance/data --as-of-date 20240104 --universe-name all_a_sample --min-listed-days 0 --min-amount 0 --pretty`：通过，选出 3 个 sample 股票池成员。
+- `uv run python -m model_core.engine --dry-run --register --data-dir /tmp/auto-alpha-data-governance/data --output-dir /tmp/auto-alpha-data-governance/out --factor-store-dir /tmp/auto-alpha-data-governance/store --report-dir /tmp/auto-alpha-data-governance/reports`：通过，生成因子库和报告。
+- `uv run python -m backtest.run_backtest --data-dir /tmp/auto-alpha-data-governance/data --factor-store-dir /tmp/auto-alpha-data-governance/store --output-dir /tmp/auto-alpha-data-governance/backtest --top-n 2 --max-weight 0.10 --pretty`：通过，生成组合回测结果。
+
+### 后续待办
+- 将 dashboard Data tab 增强为质量报告、同步状态和股票池 summary 的可视化入口。
+- 为 Tushare 生产同步补充分页、增量日期窗口、重试退避和数据覆盖率报告。
+- 增加更完整的 A 股股票池规则，例如上市板块、风险警示变更、停复牌连续性和行业覆盖。

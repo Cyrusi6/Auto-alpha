@@ -1,0 +1,54 @@
+"""Dataclasses for A-share universe construction."""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from typing import Any
+
+
+@dataclass(frozen=True)
+class UniverseMember:
+    universe_name: str
+    as_of_date: str
+    ts_code: str
+    name: str
+    exchange: str
+    list_date: str
+    listed_days: int
+    amount: float
+    industry: str | None = None
+    board: str | None = None
+
+
+@dataclass(frozen=True)
+class UniverseBuildConfig:
+    universe_name: str
+    as_of_date: str
+    min_listed_days: int = 60
+    min_amount: float = 0.0
+    exchanges: tuple[str, ...] | None = None
+    boards: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True)
+class UniverseBuildResult:
+    universe_name: str
+    as_of_date: str
+    members: list[UniverseMember]
+    output_path: str
+    summary_path: str
+    total_candidates: int
+    selected: int
+    rejected: dict[str, int]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "universe_name": self.universe_name,
+            "as_of_date": self.as_of_date,
+            "members": [asdict(member) for member in self.members],
+            "output_path": self.output_path,
+            "summary_path": self.summary_path,
+            "total_candidates": self.total_candidates,
+            "selected": self.selected,
+            "rejected": dict(sorted(self.rejected.items())),
+        }
