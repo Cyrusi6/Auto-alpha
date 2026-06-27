@@ -19,6 +19,16 @@ class FactorEvaluationResult:
     turnover: float
     score: float
 
+    def to_dict(self) -> dict[str, float]:
+        return {
+            "rank_ic_mean": float(self.rank_ic_mean),
+            "rank_ic_ir": float(self.rank_ic_ir),
+            "top_bottom_spread": float(self.top_bottom_spread),
+            "coverage": float(self.coverage),
+            "turnover": float(self.turnover),
+            "score": float(self.score),
+        }
+
 
 class AShareFactorEvaluator:
     def __init__(self, top_bottom_quantile: float | None = None):

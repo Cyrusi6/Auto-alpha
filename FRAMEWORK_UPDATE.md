@@ -179,3 +179,56 @@
 - 增加更完整的横截面中性化、行业/市值暴露控制和因子库管理。
 - 增加样本内/样本外切分、滚动验证和组合级 A 股回测。
 - 接入真实 Tushare provider 后扩展数据质量检查和公告日校验。
+
+## 2026-06-27 - 任务 005
+
+### 本次变更摘要
+- 新增本地 JSONL 因子库 `factor_store`，支持因子、实验和因子值持久化。
+- 新增 `evaluation` 包，提供时间序列样本切分、split metrics 和因子报告生成。
+- 增强 `model_core.engine`，支持 `--register` / `--no-register`。
+- 训练模式默认将 best factor 写入因子库、实验库、因子值和报告。
+
+### 新增文件
+- `factor_store/__init__.py`
+- `factor_store/hash.py`
+- `factor_store/models.py`
+- `factor_store/storage.py`
+- `evaluation/__init__.py`
+- `evaluation/split.py`
+- `evaluation/metrics.py`
+- `evaluation/report.py`
+- `tests/test_factor_store.py`
+- `tests/test_evaluation_split_metrics_report.py`
+- `tests/test_engine_register_factor.py`
+- `tests/test_engine_training_register.py`
+- `tests/test_engine_no_register.py`
+- `tests/test_factor_platform_no_crypto_terms.py`
+
+### 修改文件
+- `model_core/backtest.py`
+- `model_core/engine.py`
+- `tests/test_model_core_engine_cli.py`
+- `FRAMEWORK_UPDATE.md`
+
+### 删除或隔离的旧问题
+- 因子研究结果不再只停留在 engine 输出文件，已形成可追踪的因子库和实验记录。
+- dry-run 默认仍不写入持久层，避免无意创建实验记录；显式 `--register` 才注册。
+- `--no-register` 可让训练只生成本次训练产物，不写因子库和报告。
+
+### 新增 A 股平台能力
+- `LocalFactorStore` 写入 `factors.jsonl`、`experiments.jsonl` 和 `factor_values/<factor_id>.jsonl`。
+- `split_trade_dates()` 支持 train/valid/test 时间序列切分，小样本可稳定工作。
+- `evaluate_by_splits()` 输出 train、valid、test、all 四类 metrics。
+- `write_factor_report()` 输出 `factor_report.json` 和 `factor_report.md`。
+- `model_core.engine --dry-run --register` 可完成公式评估、因子入库、实验记录、因子值落盘和报告生成。
+
+### 测试结果
+- `uv run pytest tests/test_ashare_config.py tests/test_ashare_validators.py tests/test_ashare_pipeline.py tests/test_run_pipeline_cli.py tests/test_ashare_provider_sample.py tests/test_ashare_storage.py tests/test_ashare_manager.py tests/test_data_pipeline_no_crypto_core.py tests/test_model_core_vocab_ops.py tests/test_model_core_vm.py tests/test_model_core_features.py tests/test_model_core_data_loader.py tests/test_model_core_evaluator.py tests/test_model_core_engine_cli.py tests/test_model_core_no_crypto_terms.py tests/test_factor_store.py tests/test_evaluation_split_metrics_report.py tests/test_engine_register_factor.py tests/test_engine_training_register.py tests/test_engine_no_register.py tests/test_factor_platform_no_crypto_terms.py`：通过，69 passed。
+- `uv run python -m data_pipeline.run_pipeline --sync --provider sample --data-dir /tmp/auto-alpha-factor-platform/data --pretty`：通过，写出 sample A 股 JSONL 数据。
+- `uv run python -m model_core.engine --dry-run --register --data-dir /tmp/auto-alpha-factor-platform/data --output-dir /tmp/auto-alpha-factor-platform/out --factor-store-dir /tmp/auto-alpha-factor-platform/store --report-dir /tmp/auto-alpha-factor-platform/reports`：通过，写出因子库、实验记录、因子值和报告。
+- `uv run python -m model_core.engine --steps 2 --batch-size 3 --data-dir /tmp/auto-alpha-factor-platform/data --output-dir /tmp/auto-alpha-factor-platform/train_out --factor-store-dir /tmp/auto-alpha-factor-platform/train_store --report-dir /tmp/auto-alpha-factor-platform/train_reports`：通过，训练模式默认注册 best factor。
+
+### 后续待办
+- 增加因子相关性去重、重复公式治理和因子版本生命周期管理。
+- 增加行业/市值中性化、组合回测和更完整的样本外验证。
+- 接入真实 Tushare provider 后扩展数据覆盖率、停复牌和财务公告质量检查。
