@@ -10,7 +10,6 @@ import math
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-TS_TOKEN = '20af39742f461b1edc79ff0aec09c8940265babe0c6733e7bf358078'
 INDEX_CODE = '511260.SH'
 START_DATE = '20150101' # 训练数据开始
 END_DATE = '20240101' # 训练数据结束
@@ -24,6 +23,14 @@ COST_RATE = 0.0005         # 双边万一 (ETF/IC期货费率较低)，设为万
 DATA_CACHE_PATH = 'data_cache_final.parquet' # 缓存文件，如果修改配置需要重命名
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.set_float32_matmul_precision('high')
+
+def get_tushare_token():
+    token = os.getenv("TUSHARE_TOKEN")
+    if not token:
+        raise RuntimeError(
+            "TUSHARE_TOKEN is not set. Export TUSHARE_TOKEN before running times.py."
+        )
+    return token
 
 @torch.jit.script
 def _ts_delay(x: torch.Tensor, d: int) -> torch.Tensor:
@@ -101,8 +108,9 @@ class AlphaGPT(nn.Module):
         return self.head_actor(last), self.head_critic(last)
 
 class DataEngine:
-    def __init__(self):
-        self.pro = ts.pro_api(TS_TOKEN)
+    def __init__(self, tushare_token=None):
+        self.tushare_token = tushare_token or get_tushare_token()
+        self.pro = ts.pro_api(self.tushare_token)
     def load(self):
         if os.path.exists(DATA_CACHE_PATH):
             df = pd.read_parquet(DATA_CACHE_PATH)
