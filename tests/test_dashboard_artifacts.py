@@ -98,6 +98,10 @@ def test_dashboard_service_reads_local_artifacts(tmp_path, capsys):
         "factor_type",
         "batch_id",
         "component_factor_ids",
+        "formula_complexity",
+        "formula_lookback",
+        "formula_source",
+        "generation",
     } <= set(overview.columns)
     assert not service.load_experiments().empty
     assert service.load_factor_report_json()["factor_id"].startswith("factor_")
@@ -143,6 +147,29 @@ def test_dashboard_service_reads_batch_report(tmp_path):
 
     assert service.load_batch_report_json()["batch_id"] == "batch_test"
     assert "Batch Research" in service.load_batch_report_markdown()
+
+
+def test_dashboard_service_reads_search_report(tmp_path):
+    report_dir = tmp_path / "reports"
+    search_dir = tmp_path / "search"
+    search_dir.mkdir(parents=True)
+    (search_dir / "search_report.json").write_text(
+        '{"search_id":"search_test","candidates_evaluated":3}',
+        encoding="utf-8",
+    )
+    (search_dir / "search_report.md").write_text("# Formula Search Report", encoding="utf-8")
+    service = AshareDashboardService(
+        DashboardConfig(
+            data_dir=tmp_path / "data",
+            factor_store_dir=tmp_path / "store",
+            report_dir=report_dir,
+            backtest_dir=tmp_path / "backtest",
+            orders_dir=tmp_path / "orders",
+        )
+    )
+
+    assert service.load_search_report_json()["search_id"] == "search_test"
+    assert "Formula Search" in service.load_search_report_markdown()
 
 
 def test_dashboard_app_import_has_no_external_side_effects():

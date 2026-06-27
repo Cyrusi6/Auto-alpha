@@ -58,8 +58,8 @@ def _render_markdown(result: BatchResearchResult) -> str:
         "",
         "## Candidate Ranking",
         "",
-        "| rank | candidate | factor_id | status | score | max_abs_correlation | gate_reasons |",
-        "| ---: | --- | --- | --- | ---: | ---: | --- |",
+        "| rank | candidate | factor_id | status | score | complexity | lookback | source | generation | max_abs_correlation | gate_reasons |",
+        "| ---: | --- | --- | --- | ---: | ---: | ---: | --- | ---: | ---: | --- |",
     ]
     for rank, item in enumerate(ranked, start=1):
         reasons = ", ".join(item.gate_reasons)
@@ -72,6 +72,10 @@ def _render_markdown(result: BatchResearchResult) -> str:
                     item.factor_id or "",
                     item.status,
                     f"{float(item.score):.6f}",
+                    str(item.candidate.complexity or 0),
+                    str(item.candidate.lookback or 0),
+                    item.candidate.source or "",
+                    "" if item.candidate.generation is None else str(item.candidate.generation),
                     f"{float(item.max_abs_correlation):.6f}",
                     reasons,
                 ]

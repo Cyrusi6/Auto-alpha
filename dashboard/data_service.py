@@ -51,6 +51,10 @@ class AshareDashboardService:
                     "factor_type": row.get("factor_type") or "single",
                     "batch_id": row.get("batch_id") or metadata.get("batch_id") or "",
                     "component_factor_ids": ", ".join(str(item) for item in components),
+                    "formula_complexity": metadata.get("formula_complexity", ""),
+                    "formula_lookback": metadata.get("formula_lookback", ""),
+                    "formula_source": metadata.get("formula_source", ""),
+                    "generation": metadata.get("generation", ""),
                     "status": row.get("status") or "candidate",
                     "transform_method": row.get("transform_method") or "raw",
                     "gate_status": row.get("gate_status") or "",
@@ -95,6 +99,21 @@ class AshareDashboardService:
         candidates = [
             self.config.report_dir / "batch_report.md",
             self.config.report_dir.parent / "batch" / "batch_report.md",
+        ]
+        for path in candidates:
+            if path.exists():
+                return path.read_text(encoding="utf-8")
+        return ""
+
+    def load_search_report_json(self) -> dict[str, Any]:
+        return self._read_json(self.config.report_dir / "search_report.json") or self._read_json(
+            self.config.report_dir.parent / "search" / "search_report.json"
+        )
+
+    def load_search_report_markdown(self) -> str:
+        candidates = [
+            self.config.report_dir / "search_report.md",
+            self.config.report_dir.parent / "search" / "search_report.md",
         ]
         for path in candidates:
             if path.exists():

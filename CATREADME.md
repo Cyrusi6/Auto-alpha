@@ -5,7 +5,7 @@ This repository is now organized as a local A-share factor research platform. Th
 1. Prepare A-share data artifacts.
 2. Build feature tensors and evaluate formula factors.
 3. Register factors and experiments.
-4. Run batch research and build composite factors.
+4. Run batch or search-style research and build composite factors.
 5. Run portfolio simulation.
 6. Export target positions and paper orders.
 7. Review artifacts in the dashboard.
@@ -51,6 +51,8 @@ Append mode merges incoming records by dataset primary key. The quality report c
 
 `research/` orchestrates batch factor experiments. It loads default or JSON-defined candidate formulas, executes StackVM, applies transforms and gates, skips duplicate formula hashes, writes per-factor reports, ranks candidates, and can register a composite factor. Composite methods include equal weight, score weight, and rank average.
 
+`formula_search/` adds local formula discovery. It uses StackVM metadata to generate legal RPN formulas, estimate arity/lookback/complexity, mutate formulas, cross over parent formulas, remove duplicate hashes, and run multi-generation search through the same batch research pipeline.
+
 ## Factor Store And Experiments
 
 `factor_store/` persists:
@@ -67,6 +69,13 @@ Batch research writes:
 - `batch_results.jsonl`
 - `batch_report.json`
 - `batch_report.md`
+
+Formula search writes:
+
+- `search_result.json`
+- `search_candidates.jsonl`
+- `search_report.json`
+- `search_report.md`
 
 Composite factor records use `factor_type=composite` and store component factor ids in metadata.
 
@@ -94,8 +103,8 @@ Returns are based on `adjusted_close`; simulated fills use raw `close`. The simu
 
 ## Dashboard
 
-`dashboard/` is a Streamlit artifact viewer. It reads local data, factor store, factor reports, batch reports, backtest outputs, target positions, orders, and paper fills. Missing artifacts produce empty states instead of errors.
+`dashboard/` is a Streamlit artifact viewer. It reads local data, factor store, factor reports, batch reports, search reports, backtest outputs, target positions, orders, and paper fills. Missing artifacts produce empty states instead of errors.
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Production-grade Tushare incremental sync, stronger formula search, more stable neural training, finer matching realism, minute-level liquidity, fuller risk-model neutralization, finer industry classification, large-scale performance tuning, and broker connectivity are future work.
+The platform is local-first and deterministic by default. Production-grade Tushare incremental sync, neural-guided formula search, more stable neural training, finer matching realism, minute-level liquidity, fuller risk-model neutralization, finer industry classification, large-scale performance tuning, and broker connectivity are future work.

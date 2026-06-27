@@ -10,15 +10,18 @@ def test_default_candidates_are_valid_stack_formulas():
     candidates = default_candidates()
     vm = StackVM()
 
-    assert len(candidates) >= 12
+    assert len(candidates) >= 20
     assert {candidate.name for candidate in candidates} >= {
         "ret_1d",
         "ret_5d",
         "turnover_rate",
         "roe",
         "rank_roe",
+        "corr5_ret_turnover",
+        "growth_quality",
     }
     assert all(vm.validate(candidate.formula_tokens) for candidate in candidates)
+    assert all(candidate.complexity is not None and candidate.lookback is not None for candidate in candidates)
 
 
 def test_save_and_load_candidates_json_round_trip(tmp_path):

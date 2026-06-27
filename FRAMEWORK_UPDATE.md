@@ -649,3 +649,72 @@
 - 扩展候选公式来源，包括配置化公式库、搜索器输出和训练生成公式。
 - 增强 composite factor 的权重优化、稳定性分析和样本外衰减监控。
 - dashboard 增加 batch 间对比、相关性热力图和 composite component drill-down。
+
+## 2026-06-27 - 任务 013
+
+### 本次变更摘要
+- 增强公式 DSL，新增 delay、delta、rolling mean/std/rank/min/max/corr 等 A 股因子算子。
+- 为算子增加 arity、lookback、complexity 元数据和查询 helper。
+- 增强 `StackVM`，支持 `validate_with_reason()`、公式 complexity/lookback、canonical formula 和 explain。
+- 新增 `formula_search/`，支持随机生成、seed formulas、变异、交叉、去重、多代搜索和 search report。
+- 增强 `research/` 候选公式 metadata，支持 formula search candidate 转 batch candidate。
+- 增强 batch report、factor metadata 和 dashboard，展示 source、generation、complexity、lookback 和 search report。
+
+### 新增文件
+- `formula_search/__init__.py`
+- `formula_search/models.py`
+- `formula_search/generator.py`
+- `formula_search/mutation.py`
+- `formula_search/search.py`
+- `formula_search/report.py`
+- `formula_search/run_search.py`
+- `tests/test_formula_search_generator.py`
+- `tests/test_formula_search_mutation.py`
+- `tests/test_formula_search_runner.py`
+- `tests/test_formula_search_cli.py`
+- `tests/test_formula_search_no_old_terms.py`
+
+### 修改文件
+- `model_core/ops.py`
+- `model_core/vm.py`
+- `research/models.py`
+- `research/candidates.py`
+- `research/batch_runner.py`
+- `research/report.py`
+- `research/__init__.py`
+- `dashboard/data_service.py`
+- `dashboard/app.py`
+- `tests/test_model_core_vocab_ops.py`
+- `tests/test_model_core_vm.py`
+- `tests/test_research_candidates.py`
+- `tests/test_research_batch_runner.py`
+- `tests/test_dashboard_artifacts.py`
+- `README.md`
+- `CATREADME.md`
+- `FRAMEWORK_UPDATE.md`
+
+### 删除或隔离的旧问题
+- 候选生成不再完全依赖手写公式列表。
+- 非法公式不再只返回布尔失败，可给出 stack underflow、empty formula、multi output stack 等原因。
+- 搜索候选通过 formula hash 去重，避免重复注册同一 canonical formula。
+
+### 新增 A 股平台能力
+- `research.default_candidates()` 扩展到 20 个基础候选，覆盖新增时间序列和横截面算子。
+- `formula_search.generate_initial_population()` 可按 seed 可复现生成合法公式。
+- `formula_search.mutate_formula()` 和 `crossover_formula()` 可生成带 parent hashes 的合法子公式。
+- `python -m formula_search.run_search` 可输出 `search_result.json`、`search_candidates.jsonl`、`search_report.json` 和 `search_report.md`。
+- search runner 复用 batch research / gate / composite 流程，可直接生成 approved factors 和 composite factor。
+
+### 测试结果
+- `uv run pytest tests/test_model_core_vocab_ops.py tests/test_model_core_vm.py tests/test_formula_search_generator.py tests/test_formula_search_mutation.py tests/test_formula_search_runner.py tests/test_formula_search_cli.py tests/test_formula_search_no_old_terms.py tests/test_research_candidates.py tests/test_research_batch_runner.py tests/test_dashboard_artifacts.py`：通过，32 passed。
+- `uv run pytest`：通过，170 passed。
+- `uv run python -m data_pipeline.run_pipeline --sync --provider sample --data-dir /tmp/auto-alpha-formula-search/data --validate --mode overwrite --index-codes 000300.SH --pretty`：通过，写出 8 类数据集，quality report 无 error / warning。
+- `uv run python -m universe.run_universe --data-dir /tmp/auto-alpha-formula-search/data --as-of-date 20240104 --universe-name csi300_sample --use-index-members --index-code 000300.SH --min-listed-days 0 --min-amount 0 --pretty`：通过，基于 `000300.SH` 最新成分选出 3 个 sample 成员。
+- `uv run python -m formula_search.run_search --data-dir /tmp/auto-alpha-formula-search/data --universe-name csi300_sample --factor-store-dir /tmp/auto-alpha-formula-search/store --report-dir /tmp/auto-alpha-formula-search/reports --output-dir /tmp/auto-alpha-formula-search/search --seed 42 --population-size 12 --generations 2 --max-formula-len 8 --max-complexity 24 --max-lookback 10 --factor-transform winsorize_zscore --enable-gate --top-k 5 --composite-method rank_average --correlation-threshold 0.99 --min-coverage 0.5 --pretty`：通过，两代共评估 19 个候选，生成 10 个 approved factor 和 composite factor。
+- `uv run python -m backtest.run_backtest --data-dir /tmp/auto-alpha-formula-search/data --factor-store-dir /tmp/auto-alpha-formula-search/store --output-dir /tmp/auto-alpha-formula-search/backtest --latest-approved --factor-type composite --top-n 2 --max-weight 0.10 --pretty`：通过，选中 search 生成的最新 approved composite factor 并生成回测。
+- `uv run python -m strategy_manager.runner --data-dir /tmp/auto-alpha-formula-search/data --factor-store-dir /tmp/auto-alpha-formula-search/store --output-dir /tmp/auto-alpha-formula-search/orders --latest-approved --factor-type composite --top-n 2 --max-weight 0.10 --portfolio-value 1000000 --pretty`：通过，选中 search 生成的最新 approved composite factor 并生成目标持仓、订单和 paper fills。
+
+### 后续待办
+- 将公式搜索扩展为 neural-guided search 和更大规模候选池。
+- 增加更多 A 股特色算子、行业/风格风险暴露控制和复杂度惩罚策略。
+- dashboard 增加 search generation 对比、公式树展示和候选演化路径。

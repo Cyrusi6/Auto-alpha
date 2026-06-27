@@ -46,3 +46,23 @@ def test_validate_and_describe():
     assert vm.validate(formula) is True
     assert vm.validate([FORMULA_VOCAB.encode_name("RET_1D"), FORMULA_VOCAB.encode_name("ADD")]) is False
     assert vm.describe(formula) == ["RET_1D", "DELAY1"]
+
+
+def test_validate_with_reason_and_formula_metadata():
+    vm = StackVM()
+    formula = [
+        FORMULA_VOCAB.encode_name("RET_1D"),
+        FORMULA_VOCAB.encode_name("RET_5D"),
+        FORMULA_VOCAB.encode_name("TS_CORR10"),
+    ]
+
+    assert vm.validate_with_reason(formula) == (True, "ok")
+    assert vm.validate_with_reason([])[1] == "empty formula"
+    assert "stack underflow" in vm.validate_with_reason([FORMULA_VOCAB.encode_name("ADD")])[1]
+    assert "multi output stack" in vm.validate_with_reason(
+        [FORMULA_VOCAB.encode_name("RET_1D"), FORMULA_VOCAB.encode_name("RET_5D")]
+    )[1]
+    assert vm.formula_lookback(formula) == 10
+    assert vm.formula_complexity(formula) > len(formula)
+    assert vm.canonical_formula(formula) == ["RET_1D", "RET_5D", "TS_CORR10"]
+    assert "lookback=10" in vm.explain_formula(formula)

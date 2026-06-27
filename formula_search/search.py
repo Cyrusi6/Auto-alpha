@@ -1,0 +1,253 @@
+"""Search-style batch factor research runner."""
+
+from __future__ import annotations
+
+import json
+import random
+from dataclasses import asdict
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from factor_store import LocalFactorStore
+from model_core.data_loader import AShareDataLoader
+from research import BatchFactorResearchRunner, BatchResearchConfig
+from research.candidates import from_formula_search_candidates
+from research.composite import build_composite_factor_matrix, register_composite_factor, select_approved_factors
+
+from .generator import generate_initial_population
+from .models import FormulaCandidate, FormulaSearchConfig, FormulaSearchResult
+from .mutation import crossover_formula, mutate_formula
+from .report import write_search_report
+
+
+class FormulaSearchRunner:
+    def __init__(
+        self,
+        search_config: FormulaSearchConfig,
+        data_dir: str,
+        universe_name: str | None,
+        universe_file: str | None,
+        factor_store_dir: str,
+        report_dir: str,
+        output_dir: str,
+        factor_transform: str = "raw",
+        enable_gate: bool = True,
+        correlation_threshold: float = 0.95,
+        min_coverage: float = 0.8,
+        composite_method: str = "rank_average",
+        train_ratio: float = 0.6,
+        valid_ratio: float = 0.2,
+        continue_on_error: bool = True,
+    ):
+        self.search_config = search_config
+        self.data_dir = data_dir
+        self.universe_name = universe_name
+        self.universe_file = universe_file
+        self.factor_store_dir = factor_store_dir
+        self.report_dir = report_dir
+        self.output_dir = Path(output_dir)
+        self.factor_transform = factor_transform
+        self.enable_gate = enable_gate
+        self.correlation_threshold = correlation_threshold
+        self.min_coverage = min_coverage
+        self.composite_method = composite_method
+        self.train_ratio = train_ratio
+        self.valid_ratio = valid_ratio
+        self.continue_on_error = continue_on_error
+        self.rng = random.Random(search_config.seed)
+
+    def run(self) -> FormulaSearchResult:
+        created_at = _utc_now()
+        search_id = _make_search_id(created_at, self.search_config.seed)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        population = generate_initial_population(self.search_config)
+        generated: dict[str, FormulaCandidate] = {candidate.formula_hash: candidate for candidate in population}
+        evaluated_hashes: set[str] = set()
+        generation_summaries: list[dict[str, Any]] = []
+        all_results: list[dict[str, Any]] = []
+
+        for generation in range(max(self.search_config.generations, 0)):
+            batch_candidates = [candidate for candidate in population if candidate.formula_hash not in evaluated_hashes]
+            batch_size = self.search_config.candidate_batch_size or self.search_config.population_size
+            batch_candidates = batch_candidates[: max(batch_size, 0)]
+            for candidate in batch_candidates:
+                evaluated_hashes.add(candidate.formula_hash)
+            batch_result = self._run_generation_batch(search_id, generation, batch_candidates)
+            result_payloads = [result.to_dict() for result in batch_result.results]
+            all_results.extend(result_payloads)
+            generation_summaries.append(
+                {
+                    "generation": generation,
+                    "candidates": len(batch_candidates),
+                    "approved": len(batch_result.approved_factor_ids),
+                    "rejected": len(batch_result.rejected_factor_ids),
+                    "skipped": sum(1 for item in batch_result.results if item.status == "skipped_existing"),
+                    "errors": sum(1 for item in batch_result.results if item.status == "error"),
+                    "batch_id": batch_result.batch_id,
+                }
+            )
+
+            elites = self._select_elites(batch_result.results, generated)
+            population = self._next_population(elites or population, generated)
+
+        composite_info = self._register_composite(search_id, created_at)
+        approved_factor_ids = _unique(
+            str(item.get("factor_id"))
+            for item in all_results
+            if item.get("factor_id") and item.get("status") == "approved"
+        )
+        best = sorted(all_results, key=lambda item: float(item.get("score", 0.0) or 0.0), reverse=True)[: self.search_config.top_k]
+        paths = {
+            "search_result_path": str(self.output_dir / "search_result.json"),
+            "search_candidates_path": str(self.output_dir / "search_candidates.jsonl"),
+            "search_report_json_path": str(self.output_dir / "search_report.json"),
+            "search_report_md_path": str(self.output_dir / "search_report.md"),
+        }
+        result = FormulaSearchResult(
+            search_id=search_id,
+            generations=generation_summaries,
+            candidates_generated=len(generated),
+            candidates_valid=sum(1 for candidate in generated.values() if candidate.validation_reason == "ok"),
+            candidates_evaluated=len(all_results),
+            approved_factor_ids=approved_factor_ids,
+            composite_factor_id=composite_info.get("factor_id") if composite_info else None,
+            best_candidates=best,
+            paths=paths,
+            config=asdict(self.search_config)
+            | {
+                "data_dir": self.data_dir,
+                "universe_name": self.universe_name,
+                "universe_file": self.universe_file,
+                "factor_store_dir": self.factor_store_dir,
+                "report_dir": self.report_dir,
+                "output_dir": str(self.output_dir),
+                "factor_transform": self.factor_transform,
+                "enable_gate": self.enable_gate,
+                "correlation_threshold": self.correlation_threshold,
+                "min_coverage": self.min_coverage,
+                "composite_method": self.composite_method,
+            },
+        )
+        self._write_outputs(result, generated)
+        write_search_report(result, self.output_dir)
+        return result
+
+    def _run_generation_batch(self, search_id: str, generation: int, candidates: list[FormulaCandidate]):
+        config = BatchResearchConfig(
+            data_dir=self.data_dir,
+            universe_name=self.universe_name,
+            universe_file=self.universe_file,
+            factor_store_dir=self.factor_store_dir,
+            report_dir=self.report_dir,
+            output_dir=str(self.output_dir / f"generation_{generation}"),
+            factor_transform=self.factor_transform,
+            enable_gate=self.enable_gate,
+            correlation_threshold=self.correlation_threshold,
+            min_coverage=self.min_coverage,
+            top_k=self.search_config.top_k,
+            composite_method=self.composite_method,
+            train_ratio=self.train_ratio,
+            valid_ratio=self.valid_ratio,
+            continue_on_error=self.continue_on_error,
+            disable_composite=True,
+            batch_id=f"{search_id}_gen_{generation}",
+            search_id=search_id,
+        )
+        return BatchFactorResearchRunner(config=config, candidates=from_formula_search_candidates(candidates)).run()
+
+    def _select_elites(self, results, generated: dict[str, FormulaCandidate]) -> list[FormulaCandidate]:
+        ranked = sorted(results, key=lambda item: item.score, reverse=True)
+        elites: list[FormulaCandidate] = []
+        for result in ranked:
+            candidate_hash = result.candidate.formula_hash
+            if candidate_hash and candidate_hash in generated:
+                elites.append(generated[candidate_hash])
+            if len(elites) >= max(self.search_config.elite_size, 1):
+                break
+        return elites
+
+    def _next_population(
+        self,
+        elites: list[FormulaCandidate],
+        generated: dict[str, FormulaCandidate],
+    ) -> list[FormulaCandidate]:
+        next_population = list(elites[: max(self.search_config.elite_size, 1)])
+        attempts = 0
+        while len(next_population) < self.search_config.population_size and attempts < self.search_config.population_size * 100:
+            attempts += 1
+            if len(elites) >= 2 and self.rng.random() < self.search_config.crossover_rate:
+                left, right = self.rng.sample(elites, 2)
+                child = crossover_formula(left, right, self.rng, self.search_config)
+            else:
+                parent = self.rng.choice(elites)
+                child = mutate_formula(parent, self.rng, self.search_config)
+            if child.formula_hash in generated:
+                continue
+            generated[child.formula_hash] = child
+            next_population.append(child)
+        return next_population
+
+    def _register_composite(self, search_id: str, created_at: str) -> dict[str, Any] | None:
+        store = LocalFactorStore(self.factor_store_dir)
+        factor_ids = select_approved_factors(
+            store,
+            max_factors=max(self.search_config.top_k, 0),
+            max_pairwise_corr=self.correlation_threshold,
+        )
+        if not factor_ids:
+            return None
+        loader = AShareDataLoader(
+            data_dir=self.data_dir,
+            device="cpu",
+            universe_name=self.universe_name,
+            universe_file=self.universe_file,
+        ).load_data()
+        values = build_composite_factor_matrix(
+            store,
+            factor_ids,
+            loader.ts_codes,
+            loader.trade_dates,
+            method=self.composite_method,
+        )
+        return register_composite_factor(
+            store,
+            factor_ids,
+            loader.ts_codes,
+            loader.trade_dates,
+            values,
+            method=self.composite_method,
+            batch_id=search_id,
+            created_at=created_at,
+        )
+
+    def _write_outputs(self, result: FormulaSearchResult, generated: dict[str, FormulaCandidate]) -> None:
+        (self.output_dir / "search_result.json").write_text(
+            json.dumps(result.to_dict(), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        with (self.output_dir / "search_candidates.jsonl").open("w", encoding="utf-8") as handle:
+            for candidate in generated.values():
+                handle.write(json.dumps(candidate.to_dict(), ensure_ascii=False, sort_keys=True))
+                handle.write("\n")
+
+
+def _utc_now() -> str:
+    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+
+def _make_search_id(created_at: str, seed: int) -> str:
+    safe = "".join(char if char.isalnum() else "_" for char in created_at).strip("_")
+    return f"search_{seed}_{safe}"
+
+
+def _unique(values) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result

@@ -1,7 +1,7 @@
 """Batch A-share factor research orchestration."""
 
 from .batch_runner import BatchFactorResearchRunner
-from .candidates import default_candidates, load_candidates_json, save_candidates_json
+from .candidates import default_candidates, from_formula_search_candidates, load_candidates_json, save_candidates_json
 from .composite import (
     build_composite_factor_matrix,
     register_composite_factor,
@@ -18,6 +18,7 @@ __all__ = [
     "FactorCandidate",
     "build_composite_factor_matrix",
     "default_candidates",
+    "from_formula_search_candidates",
     "load_candidates_json",
     "register_composite_factor",
     "save_candidates_json",

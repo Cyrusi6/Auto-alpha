@@ -12,6 +12,13 @@ class FactorCandidate:
     formula_tokens: list[int]
     formula_names: list[str]
     description: str | None = None
+    formula_hash: str | None = None
+    complexity: int | None = None
+    lookback: int | None = None
+    source: str | None = None
+    parent_hashes: list[str] | None = None
+    generation: int | None = None
+    validation_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -35,6 +42,8 @@ class BatchResearchConfig:
     valid_ratio: float = 0.2
     continue_on_error: bool = True
     disable_composite: bool = False
+    batch_id: str | None = None
+    search_id: str | None = None
 
 
 @dataclass(frozen=True)

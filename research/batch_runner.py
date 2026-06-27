@@ -51,7 +51,7 @@ class BatchFactorResearchRunner:
 
     def run(self) -> BatchResearchResult:
         created_at = _utc_now()
-        batch_id = _make_batch_id(created_at)
+        batch_id = self.config.batch_id or _make_batch_id(created_at)
         output_dir = Path(self.config.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         self.loader.load_data()
@@ -125,6 +125,7 @@ class BatchFactorResearchRunner:
             feature_version=FEATURE_VERSION,
             operator_version=OPERATOR_VERSION,
         )
+        formula_hash = candidate.formula_hash or formula_hash
         existing = self.store.find_factor_by_hash(formula_hash)
         if existing is not None:
             return CandidateRunResult(
@@ -178,7 +179,7 @@ class BatchFactorResearchRunner:
             formula_hash=formula_hash,
             feature_version=FEATURE_VERSION,
             operator_version=OPERATOR_VERSION,
-            lookback_days=_estimate_lookback_days(candidate.formula_names),
+            lookback_days=int(candidate.lookback or _estimate_lookback_days(candidate.formula_names)),
             created_at=created_at,
             status=research.status,
             description=candidate.description,
@@ -188,6 +189,12 @@ class BatchFactorResearchRunner:
             gate_reasons=gate_reasons or None,
             metadata={
                 "candidate_name": candidate.name,
+                "formula_complexity": candidate.complexity,
+                "formula_lookback": candidate.lookback,
+                "formula_source": candidate.source,
+                "parent_hashes": candidate.parent_hashes,
+                "generation": candidate.generation,
+                "search_id": self.config.search_id,
                 "max_abs_correlation": float(research.max_abs_correlation),
                 "similar_factors": research.similar_factors,
                 "gate_decision": gate_payload,

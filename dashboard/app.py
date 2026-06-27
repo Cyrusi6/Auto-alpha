@@ -112,6 +112,8 @@ def render_app(config: DashboardConfig | None = None) -> None:
         markdown = service.load_factor_report_markdown()
         batch_report = service.load_batch_report_json()
         batch_markdown = service.load_batch_report_markdown()
+        search_report = service.load_search_report_json()
+        search_markdown = service.load_search_report_markdown()
         if report:
             st.subheader("Factor Report")
             st.plotly_chart(plot_factor_split_metrics(report.get("metrics_by_split", {})), use_container_width=True)
@@ -134,6 +136,21 @@ def render_app(config: DashboardConfig | None = None) -> None:
             st.info("No batch_report.json found.")
         if batch_markdown:
             st.markdown(batch_markdown)
+        st.subheader("Formula Search")
+        if search_report:
+            st.json(
+                {
+                    "search_id": search_report.get("search_id"),
+                    "composite_factor_id": search_report.get("composite_factor_id"),
+                    "candidates_generated": search_report.get("candidates_generated"),
+                    "candidates_evaluated": search_report.get("candidates_evaluated"),
+                    "generations": search_report.get("generations"),
+                }
+            )
+        else:
+            st.info("No search_report.json found.")
+        if search_markdown:
+            st.markdown(search_markdown)
 
     with backtest_tab:
         result = service.load_backtest_result()

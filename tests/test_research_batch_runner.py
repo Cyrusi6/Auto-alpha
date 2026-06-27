@@ -59,6 +59,10 @@ def test_batch_runner_generates_reports_and_skips_duplicate_hashes(tmp_path):
     assert (tmp_path / "batch" / "batch_results.jsonl").exists()
     assert (tmp_path / "batch" / "batch_report.json").exists()
     assert (tmp_path / "batch" / "batch_report.md").exists()
+    markdown = (tmp_path / "batch" / "batch_report.md").read_text(encoding="utf-8")
+    assert "complexity" in markdown
+    assert "lookback" in markdown
+    assert "generation" in markdown
     assert first.results
     assert any(result.status in {"approved", "rejected"} for result in first.results)
     assert first.composite_factor_id is None or first.composite_factor_id.startswith("factor_")
@@ -67,6 +71,10 @@ def test_batch_runner_generates_reports_and_skips_duplicate_hashes(tmp_path):
 
     payload = json.loads((tmp_path / "batch" / "batch_result.json").read_text(encoding="utf-8"))
     assert payload["batch_id"].startswith("batch_")
+    record = store.load_factors()[0]
+    assert "formula_complexity" in record.metadata
+    assert "formula_lookback" in record.metadata
+    assert "formula_source" in record.metadata
 
 
 def test_batch_runner_continues_after_bad_candidate(tmp_path):

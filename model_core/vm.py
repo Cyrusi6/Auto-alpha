@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from .ops import OPS_CONFIG
+from .ops import OPS_CONFIG, operator_complexity, operator_lookback
 from .vocab import FORMULA_VOCAB
 
 
@@ -18,19 +18,62 @@ class StackVM:
         return FORMULA_VOCAB.decode_tokens([int(token) for token in formula_tokens])
 
     def validate(self, formula_tokens: list[int]) -> bool:
+        return self.validate_with_reason(formula_tokens)[0]
+
+    def validate_with_reason(self, formula_tokens: list[int]) -> tuple[bool, str]:
+        if not formula_tokens:
+            return False, "empty formula"
         depth = 0
-        for token in formula_tokens:
+        for index, token in enumerate(formula_tokens):
             token = int(token)
             if 0 <= token < self.feat_offset:
                 depth += 1
             elif token in self.arity_map:
                 arity = self.arity_map[token]
                 if depth < arity:
-                    return False
+                    return False, f"stack underflow at token {index}: {FORMULA_VOCAB.token_name(token)} requires {arity}"
                 depth = depth - arity + 1
             else:
-                return False
-        return depth == 1
+                return False, f"unknown token at position {index}: {token}"
+        if depth != 1:
+            return False, f"multi output stack: final depth is {depth}"
+        return True, "ok"
+
+    def formula_complexity(self, formula_tokens: list[int]) -> int:
+        complexity = len(formula_tokens)
+        for token in formula_tokens:
+            token = int(token)
+            if token in self.arity_map:
+                complexity += operator_complexity(token, self.feat_offset)
+        return int(complexity)
+
+    def formula_lookback(self, formula_tokens: list[int]) -> int:
+        lookback = 1
+        for token in formula_tokens:
+            token = int(token)
+            if token in self.arity_map:
+                lookback = max(lookback, operator_lookback(token, self.feat_offset))
+        return int(lookback)
+
+    def canonical_formula(self, formula_tokens: list[int]) -> list[str]:
+        names: list[str] = []
+        for token in formula_tokens:
+            token = int(token)
+            if 0 <= token < FORMULA_VOCAB.size:
+                names.append(FORMULA_VOCAB.token_name(token))
+            else:
+                names.append(f"<unknown:{token}>")
+        return names
+
+    def explain_formula(self, formula_tokens: list[int]) -> str:
+        valid, reason = self.validate_with_reason(formula_tokens)
+        names = self.canonical_formula(formula_tokens) if formula_tokens else []
+        return (
+            f"formula={' '.join(names) or '<empty>'}; "
+            f"valid={valid}; reason={reason}; "
+            f"lookback={self.formula_lookback(formula_tokens)}; "
+            f"complexity={self.formula_complexity(formula_tokens)}"
+        )
 
     def execute(self, formula_tokens: list[int], feat_tensor: torch.Tensor) -> torch.Tensor | None:
         stack: list[torch.Tensor] = []

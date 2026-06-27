@@ -4,41 +4,69 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
+from factor_store import stable_formula_hash
 from model_core.vm import StackVM
 from model_core.vocab import FORMULA_VOCAB
 
 from .models import FactorCandidate
 
 
+FEATURE_VERSION = "ashare_features_v1"
+OPERATOR_VERSION = "ashare_ops_v1"
+
+
 def default_candidates() -> list[FactorCandidate]:
-    enc = FORMULA_VOCAB.encode_name
     specs = [
         ("ret_1d", ["RET_1D"], "One-day return signal."),
         ("ret_5d", ["RET_5D"], "Five-day return signal."),
         ("turnover_rate", ["TURNOVER_RATE"], "Turnover signal."),
+        ("volume_ratio", ["VOLUME_RATIO"], "Volume ratio signal."),
         ("log_amount", ["LOG_AMOUNT"], "Trading amount signal."),
         ("log_mkt_cap", ["LOG_MKT_CAP"], "Market capitalization signal."),
         ("pb", ["PB"], "Book-to-price valuation signal."),
         ("pe_ttm", ["PE_TTM"], "Trailing earnings valuation signal."),
         ("roe", ["ROE"], "Return on equity signal."),
         ("revenue_yoy", ["REVENUE_YOY"], "Revenue growth signal."),
+        ("rank_roe", ["ROE", "CS_RANK"], "Cross-sectional rank of profitability."),
+        ("zscore_ret_1d", ["RET_1D", "CS_ZSCORE"], "Cross-sectional return z-score."),
+        ("mean5_ret_1d", ["RET_1D", "TS_MEAN5"], "Five-day mean return."),
+        ("rank5_ret_1d", ["RET_1D", "TS_RANK5"], "Five-day time-series return rank."),
+        ("delta5_amount", ["LOG_AMOUNT", "DELTA5"], "Five-day amount change."),
+        ("corr5_ret_turnover", ["RET_1D", "TURNOVER_RATE", "TS_CORR5"], "Return and turnover rolling correlation."),
         ("ret_1d_plus_roe", ["RET_1D", "ROE", "ADD"], "Return plus profitability."),
         ("ret_5d_minus_pb", ["RET_5D", "PB", "SUB"], "Momentum minus valuation."),
-        ("rank_roe", ["ROE", "CS_RANK"], "Cross-sectional rank of profitability."),
+        ("roe_minus_pb", ["ROE", "PB", "SUB", "CS_RANK"], "Ranked profitability minus valuation."),
+        ("growth_quality", ["REVENUE_YOY", "ROE", "ADD", "CS_ZSCORE"], "Growth plus profitability quality."),
     ]
-    candidates = [
-        FactorCandidate(
-            name=name,
-            formula_tokens=[enc(token_name) for token_name in formula_names],
-            formula_names=formula_names,
-            description=description,
-        )
-        for name, formula_names, description in specs
-    ]
+    candidates = [_make_candidate(name, names, description, source="default", generation=0) for name, names, description in specs]
     _validate_candidates(candidates)
     return candidates
+
+
+def from_formula_search_candidates(candidates: Iterable[object]) -> list[FactorCandidate]:
+    converted: list[FactorCandidate] = []
+    for idx, candidate in enumerate(candidates):
+        formula_tokens = [int(token) for token in getattr(candidate, "formula_tokens")]
+        formula_names = list(getattr(candidate, "formula_names"))
+        converted.append(
+            _make_candidate(
+                name=f"search_{idx}_{getattr(candidate, 'formula_hash', '')[:8]}",
+                formula_names=formula_names,
+                description=f"Search generated formula {idx}",
+                formula_tokens=formula_tokens,
+                formula_hash=getattr(candidate, "formula_hash", None),
+                complexity=getattr(candidate, "complexity", None),
+                lookback=getattr(candidate, "lookback", None),
+                source=getattr(candidate, "source", "search"),
+                parent_hashes=getattr(candidate, "parent_hashes", None),
+                generation=getattr(candidate, "generation", None),
+                validation_reason=getattr(candidate, "validation_reason", None),
+            )
+        )
+    _validate_candidates(converted)
+    return converted
 
 
 def load_candidates_json(path: str | Path) -> list[FactorCandidate]:
@@ -90,11 +118,53 @@ def _candidate_from_payload(payload: Any) -> FactorCandidate:
         except (IndexError, ValueError) as exc:
             raise ValueError(f"candidate {name} has invalid token id") from exc
 
-    return FactorCandidate(
+    return _make_candidate(
         name=name,
-        formula_tokens=formula_tokens,
         formula_names=formula_names,
         description=payload.get("description"),
+        formula_tokens=formula_tokens,
+        formula_hash=payload.get("formula_hash"),
+        complexity=payload.get("complexity"),
+        lookback=payload.get("lookback"),
+        source=payload.get("source"),
+        parent_hashes=payload.get("parent_hashes"),
+        generation=payload.get("generation"),
+        validation_reason=payload.get("validation_reason"),
+    )
+
+
+def _make_candidate(
+    name: str,
+    formula_names: list[str],
+    description: str | None = None,
+    formula_tokens: list[int] | None = None,
+    formula_hash: str | None = None,
+    complexity: int | None = None,
+    lookback: int | None = None,
+    source: str | None = None,
+    parent_hashes: list[str] | None = None,
+    generation: int | None = None,
+    validation_reason: str | None = None,
+) -> FactorCandidate:
+    vm = StackVM()
+    tokens = formula_tokens or [FORMULA_VOCAB.encode_name(name) for name in formula_names]
+    names = FORMULA_VOCAB.decode_tokens(tokens)
+    valid, reason = vm.validate_with_reason(tokens)
+    if not valid:
+        validation_reason = validation_reason or reason
+    return FactorCandidate(
+        name=name,
+        formula_tokens=[int(token) for token in tokens],
+        formula_names=names,
+        description=description,
+        formula_hash=formula_hash
+        or stable_formula_hash([int(token) for token in tokens], names, FEATURE_VERSION, OPERATOR_VERSION),
+        complexity=int(complexity) if complexity is not None else vm.formula_complexity(tokens),
+        lookback=int(lookback) if lookback is not None else vm.formula_lookback(tokens),
+        source=source,
+        parent_hashes=parent_hashes,
+        generation=generation,
+        validation_reason=validation_reason or reason,
     )
 
 
@@ -107,5 +177,6 @@ def _validate_candidates(candidates: list[FactorCandidate]) -> None:
         decoded = FORMULA_VOCAB.decode_tokens([int(token) for token in candidate.formula_tokens])
         if decoded != candidate.formula_names:
             raise ValueError(f"candidate {candidate.name} formula_names do not match formula_tokens")
-        if not vm.validate(candidate.formula_tokens):
-            raise ValueError(f"candidate {candidate.name} has invalid formula arity")
+        valid, reason = vm.validate_with_reason(candidate.formula_tokens)
+        if not valid:
+            raise ValueError(f"candidate {candidate.name} has invalid formula arity: {reason}")
