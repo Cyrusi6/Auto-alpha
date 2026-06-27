@@ -27,10 +27,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--orders-dir")
     parser.add_argument("--as-of-date", default="20240104")
     parser.add_argument("--factor-transform", default="winsorize_zscore")
+    parser.add_argument("--search-mode", choices=["random", "neural", "hybrid"], default="random")
     parser.add_argument("--search-seed", type=int, default=42)
     parser.add_argument("--search-population-size", type=int, default=12)
     parser.add_argument("--search-generations", type=int, default=2)
     parser.add_argument("--search-max-candidates", type=int)
+    parser.add_argument("--neural-warmup-steps", type=int, default=1)
+    parser.add_argument("--neural-policy-steps", type=int, default=1)
+    parser.add_argument("--neural-checkpoint")
+    parser.add_argument("--hybrid-neural-ratio", type=float, default=0.5)
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--composite-method", default="rank_average")
     parser.add_argument("--portfolio-method", choices=["equal_weight", "risk_aware"], default="equal_weight")
@@ -87,10 +92,15 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
         provider=args.provider,
         as_of_date=args.as_of_date,
         factor_transform=args.factor_transform,
+        search_mode=args.search_mode,
         search_seed=args.search_seed,
         search_population_size=args.search_population_size,
         search_generations=args.search_generations,
         search_max_candidates=args.search_max_candidates,
+        neural_warmup_steps=args.neural_warmup_steps,
+        neural_policy_steps=args.neural_policy_steps,
+        neural_checkpoint=args.neural_checkpoint,
+        hybrid_neural_ratio=args.hybrid_neural_ratio,
         top_k=args.top_k,
         composite_method=args.composite_method,
         portfolio_method=args.portfolio_method,

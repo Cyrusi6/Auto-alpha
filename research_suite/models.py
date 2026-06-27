@@ -35,9 +35,14 @@ class ResearchSuiteConfig:
     as_of_date: str = "20240104"
     factor_transform: str = "winsorize_zscore"
     search_seed: int = 42
+    search_mode: str = "random"
     search_population_size: int = 12
     search_generations: int = 2
     search_max_candidates: int | None = None
+    neural_warmup_steps: int = 1
+    neural_policy_steps: int = 1
+    neural_checkpoint: str | None = None
+    hybrid_neural_ratio: float = 0.5
     top_k: int = 5
     composite_method: str = "rank_average"
     portfolio_method: str = "equal_weight"

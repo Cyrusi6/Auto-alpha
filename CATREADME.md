@@ -61,6 +61,8 @@ Planned sync splits large daily datasets by date windows and splits index consti
 
 `formula_search/` adds local formula discovery. It uses StackVM metadata to generate legal RPN formulas, estimate arity/lookback/complexity, mutate formulas, cross over parent formulas, remove duplicate hashes, and run multi-generation search through the same batch research pipeline.
 
+`neural_search/` adds a lightweight neural-guided formula search path. It uses AlphaGPT with supervised warm-start sequences from the factor store, default candidates, and seed formulas; a StackVM-aware action mask prevents underflow during sampling; policy steps convert research outcomes into rewards; checkpoints and training reports are written as local artifacts.
+
 `research_suite/` orchestrates the complete local workflow. It can run data sync, universe construction, formula search, backtest, paper orders, walk-forward robustness, promotion, suite report writing, and artifact catalog generation in one command.
 
 ## Risk Model And Portfolio Optimization
@@ -105,6 +107,15 @@ Formula search writes:
 - `search_report.json`
 - `search_report.md`
 
+Neural search writes:
+
+- `neural_search_result.json`
+- `neural_training_history.jsonl`
+- `neural_search_report.md`
+- `checkpoints/checkpoint_<phase>_<step>.pt`
+
+`formula_search.run_search --search-mode neural` delegates to neural search. `--search-mode hybrid` runs the neural branch and the random/mutation/crossover branch together, then records neural metadata and checkpoint paths in the search result. `research_suite.run_suite --search-mode neural|hybrid` uses the same path in the one-click workflow.
+
 Composite factor records use `factor_type=composite` and store component factor ids in metadata.
 
 Promotion can update a passing composite factor to `status=production_candidate`. The promotion decision is stored as JSON and also merged into factor metadata.
@@ -137,7 +148,7 @@ With `--portfolio-method risk_aware`, target positions include optimized weight,
 
 ## Dashboard
 
-`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, factor store, factor reports, batch reports, search reports, suite reports, artifact catalog, promotion decisions, risk reports, optimization results, backtest outputs, target positions, orders, and paper fills. Missing artifacts produce empty states instead of errors.
+`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, factor store, factor reports, batch reports, search reports, neural search reports, neural training history, checkpoint lists, suite reports, artifact catalog, promotion decisions, risk reports, optimization results, backtest outputs, target positions, orders, and paper fills. Missing artifacts produce empty states instead of errors.
 
 ## Research Suite Outputs
 
@@ -154,4 +165,4 @@ The artifact catalog indexes data manifest, quality report, pipeline state, univ
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton. Risk model and portfolio optimization now have a basic benchmark-aware local implementation. Real Tushare token and quota validation, full-market performance testing, cross-source data checks, Barra-like multi-factor risk, more robust covariance estimation, a production optimizer, neural-guided formula search, richer walk-forward policies, human promotion review, more stable neural training, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, and broker connectivity are future work.
+The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton. Risk model and portfolio optimization now have a basic benchmark-aware local implementation. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Real Tushare token and quota validation, full-market performance testing, cross-source data checks, Barra-like multi-factor risk, more robust covariance estimation, a production optimizer, stronger reinforcement learning, offline pretraining, richer walk-forward policies, human promotion review, broader neural training stability validation, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, and broker connectivity are future work.

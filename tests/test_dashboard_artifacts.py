@@ -172,6 +172,37 @@ def test_dashboard_service_reads_search_report(tmp_path):
     assert "Formula Search" in service.load_search_report_markdown()
 
 
+def test_dashboard_service_reads_neural_search_artifacts(tmp_path):
+    report_dir = tmp_path / "reports"
+    neural_dir = tmp_path / "search" / "neural"
+    checkpoint_dir = neural_dir / "checkpoints"
+    checkpoint_dir.mkdir(parents=True)
+    (neural_dir / "neural_search_result.json").write_text(
+        '{"search_id":"neural_test","training_history":[],"checkpoint_paths":[]}',
+        encoding="utf-8",
+    )
+    (neural_dir / "neural_training_history.jsonl").write_text(
+        '{"step":0,"phase":"policy","loss":1.0,"avg_reward":0.1}\n',
+        encoding="utf-8",
+    )
+    (neural_dir / "neural_search_report.md").write_text("# Neural Formula Search Report", encoding="utf-8")
+    (checkpoint_dir / "checkpoint_policy_0.pt").write_bytes(b"checkpoint")
+    service = AshareDashboardService(
+        DashboardConfig(
+            data_dir=tmp_path / "data",
+            factor_store_dir=tmp_path / "store",
+            report_dir=report_dir,
+            backtest_dir=tmp_path / "backtest",
+            orders_dir=tmp_path / "orders",
+        )
+    )
+
+    assert service.load_neural_search_result()["search_id"] == "neural_test"
+    assert not service.load_neural_training_history().empty
+    assert "Neural Formula Search" in service.load_neural_search_report_markdown()
+    assert not service.load_neural_checkpoints().empty
+
+
 def test_dashboard_service_reads_suite_artifacts(tmp_path):
     suite_dir = tmp_path / "suite"
     suite_dir.mkdir(parents=True)

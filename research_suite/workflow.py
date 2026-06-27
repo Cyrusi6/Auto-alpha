@@ -168,6 +168,8 @@ class ResearchSuiteRunner:
             [
                 "--data-dir",
                 self.config.data_dir,
+                "--search-mode",
+                self.config.search_mode,
                 "--universe-name",
                 self.config.universe_name,
                 "--factor-store-dir",
@@ -190,6 +192,12 @@ class ResearchSuiteRunner:
                 "10",
                 "--candidate-batch-size",
                 str(self.config.search_max_candidates or self.config.search_population_size),
+                "--neural-warmup-steps",
+                str(self.config.neural_warmup_steps),
+                "--neural-policy-steps",
+                str(self.config.neural_policy_steps),
+                "--hybrid-neural-ratio",
+                str(self.config.hybrid_neural_ratio),
                 "--factor-transform",
                 self.config.factor_transform,
                 "--enable-gate",
@@ -201,18 +209,46 @@ class ResearchSuiteRunner:
                 "0.99",
                 "--min-coverage",
                 "0.5",
-            ],
+            ]
+            + (["--neural-checkpoint", self.config.neural_checkpoint] if self.config.neural_checkpoint else []),
         )
         paths = payload.get("paths", {}) if isinstance(payload.get("paths"), dict) else {}
         output_paths = {
-            "search_result": paths.get("search_result_path", str(Path(self.config.output_dir) / "search" / "search_result.json")),
-            "search_candidates": paths.get("search_candidates_path", str(Path(self.config.output_dir) / "search" / "search_candidates.jsonl")),
-            "search_report": paths.get("search_report_json_path", str(Path(self.config.output_dir) / "search" / "search_report.json")),
-            "search_report_markdown": paths.get("search_report_md_path", str(Path(self.config.output_dir) / "search" / "search_report.md")),
             "factors": str(Path(self.config.factor_store_dir) / "factors.jsonl"),
             "experiments": str(Path(self.config.factor_store_dir) / "experiments.jsonl"),
         }
+        if self.config.search_mode == "neural":
+            output_paths.update(
+                {
+                    "neural_search_result": paths.get("neural_search_result_path", str(Path(self.config.output_dir) / "search" / "neural_search_result.json")),
+                    "neural_training_history": paths.get("neural_training_history_path", str(Path(self.config.output_dir) / "search" / "neural_training_history.jsonl")),
+                    "neural_search_report": paths.get("neural_search_report_path", str(Path(self.config.output_dir) / "search" / "neural_search_report.md")),
+                    "neural_checkpoint_dir": paths.get("checkpoint_dir", str(Path(self.config.output_dir) / "search" / "checkpoints")),
+                }
+            )
+        else:
+            output_paths.update(
+                {
+                    "search_result": paths.get("search_result_path", str(Path(self.config.output_dir) / "search" / "search_result.json")),
+                    "search_candidates": paths.get("search_candidates_path", str(Path(self.config.output_dir) / "search" / "search_candidates.jsonl")),
+                    "search_report": paths.get("search_report_json_path", str(Path(self.config.output_dir) / "search" / "search_report.json")),
+                    "search_report_markdown": paths.get("search_report_md_path", str(Path(self.config.output_dir) / "search" / "search_report.md")),
+                }
+            )
+            neural_metadata = payload.get("neural_metadata") if isinstance(payload.get("neural_metadata"), dict) else {}
+            neural_paths = neural_metadata.get("paths") if isinstance(neural_metadata.get("paths"), dict) else {}
+            if neural_paths:
+                output_paths.update(
+                    {
+                        "neural_search_result": neural_paths.get("neural_search_result_path", ""),
+                        "neural_training_history": neural_paths.get("neural_training_history_path", ""),
+                        "neural_search_report": neural_paths.get("neural_search_report_path", ""),
+                        "neural_checkpoint_dir": neural_paths.get("checkpoint_dir", ""),
+                    }
+                )
         for name, path in output_paths.items():
+            if not path:
+                continue
             kind = "markdown" if path.endswith(".md") else ("jsonl" if path.endswith(".jsonl") else "json")
             self.catalog = register_artifact(self.catalog, name, path, kind, "formula_search")
         self.selected_factor_id = _select_latest_composite(self.config.factor_store_dir)

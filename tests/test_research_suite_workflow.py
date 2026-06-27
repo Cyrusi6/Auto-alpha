@@ -60,3 +60,25 @@ def test_research_suite_workflow_records_failed_stage(tmp_path):
     assert result.stages[0].status == "failed"
     assert result.stages[0].error
     assert (tmp_path / "suite" / "suite_result.json").exists()
+
+
+def test_research_suite_workflow_supports_hybrid_search(tmp_path):
+    config = _suite_config(
+        tmp_path,
+        search_mode="hybrid",
+        search_population_size=4,
+        search_generations=1,
+        search_max_candidates=2,
+        neural_warmup_steps=1,
+        neural_policy_steps=1,
+        top_k=2,
+        skip_orders=True,
+        promote_latest_composite=False,
+    )
+    result = ResearchSuiteRunner(config).run()
+    formula_stage = next(stage for stage in result.stages if stage.name == "formula_search")
+
+    assert result.status == "success"
+    assert formula_stage.summary["search_mode"] == "hybrid"
+    assert "neural_search_result" in formula_stage.output_paths
+    assert (Path(formula_stage.output_paths["neural_search_result"])).exists()

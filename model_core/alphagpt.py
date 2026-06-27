@@ -1,3 +1,8 @@
+import json
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -269,3 +274,61 @@ class AlphaGPT(nn.Module):
         value = self.head_critic(last_emb)
         
         return logits, value, task_probs
+
+    @torch.no_grad()
+    def sample_next(
+        self,
+        prefix_tokens: list[int],
+        mask: torch.Tensor | None = None,
+        temperature: float = 1.0,
+        rng: torch.Generator | None = None,
+    ) -> int:
+        """Sample the next token from a prefix with an optional action mask."""
+        device = next(self.parameters()).device
+        if not prefix_tokens:
+            logits = torch.zeros(self.vocab_size, dtype=torch.float32, device=device)
+        else:
+            idx = torch.tensor([prefix_tokens], dtype=torch.long, device=device)
+            logits, _value, _task_probs = self(idx)
+            logits = logits[0]
+        if mask is not None:
+            mask = mask.to(device=device, dtype=torch.bool)
+            logits = logits.masked_fill(~mask, -1e9)
+        scaled = logits / max(float(temperature), 1e-6)
+        probs = F.softmax(scaled, dim=-1)
+        if float(probs.sum().item()) <= 0.0:
+            allowed = torch.nonzero(mask, as_tuple=False).flatten() if mask is not None else torch.arange(self.vocab_size, device=device)
+            return int(allowed[0].item())
+        return int(torch.multinomial(probs, num_samples=1, generator=rng).item())
+
+    def save_checkpoint(self, path: str | Path, metadata: dict[str, Any] | None = None) -> Path:
+        """Save model weights and JSON-serializable metadata."""
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "model_state_dict": self.state_dict(),
+            "metadata": metadata or {},
+            "vocab_size": self.vocab_size,
+            "created_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        }
+        json.dumps(payload["metadata"], ensure_ascii=False)
+        torch.save(payload, output_path)
+        return output_path
+
+    @classmethod
+    def load_checkpoint(cls, path: str | Path, device: torch.device | str | None = None) -> tuple["AlphaGPT", dict[str, Any]]:
+        """Load an AlphaGPT checkpoint and return the model plus metadata."""
+        target_device = torch.device(device) if device is not None else ModelConfig.DEVICE
+        payload = torch.load(Path(path), map_location=target_device)
+        model = cls().to(target_device)
+        if int(payload.get("vocab_size", model.vocab_size)) != model.vocab_size:
+            raise ValueError("checkpoint vocab_size does not match current formula vocabulary")
+        model.load_state_dict(payload["model_state_dict"])
+        metadata = dict(payload.get("metadata") or {})
+        metadata["created_at"] = payload.get("created_at")
+        metadata["vocab_size"] = payload.get("vocab_size")
+        return model, metadata
+
+
+def count_parameters(model: nn.Module) -> int:
+    return int(sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad))

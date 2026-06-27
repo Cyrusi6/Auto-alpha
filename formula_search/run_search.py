@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
 from factor_engine import SUPPORTED_TRANSFORMS
+from neural_search.models import NeuralSearchConfig
+from neural_search.trainer import NeuralFormulaTrainer
 from research.composite import COMPOSITE_METHODS
 
 from .models import FormulaSearchConfig
@@ -14,6 +17,7 @@ from .search import FormulaSearchRunner
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run local formula search for A-share factors.")
+    parser.add_argument("--search-mode", choices=["random", "neural", "hybrid"], default="random")
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--universe-name")
     parser.add_argument("--universe-file")
@@ -30,6 +34,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--crossover-rate", type=float, default=0.3)
     parser.add_argument("--elite-size", type=int, default=5)
     parser.add_argument("--candidate-batch-size", type=int)
+    parser.add_argument("--neural-warmup-steps", type=int, default=1)
+    parser.add_argument("--neural-policy-steps", type=int, default=1)
+    parser.add_argument("--neural-checkpoint")
+    parser.add_argument("--hybrid-neural-ratio", type=float, default=0.5)
     parser.add_argument("--factor-transform", default="raw", choices=sorted(SUPPORTED_TRANSFORMS))
     parser.add_argument("--enable-gate", action="store_true")
     parser.add_argument("--disable-gate", action="store_true")
@@ -58,7 +66,20 @@ def main(argv: list[str] | None = None) -> int:
         elite_size=args.elite_size,
         top_k=args.top_k,
         candidate_batch_size=args.candidate_batch_size,
+        search_mode=args.search_mode,
+        neural_warmup_steps=args.neural_warmup_steps,
+        neural_policy_steps=args.neural_policy_steps,
+        neural_checkpoint=args.neural_checkpoint,
+        hybrid_neural_ratio=args.hybrid_neural_ratio,
     )
+    if args.search_mode == "neural":
+        result = _run_neural(args)
+        print(json.dumps(result, ensure_ascii=False, indent=2 if args.pretty else None))
+        return 0
+    if args.search_mode == "hybrid":
+        result = _run_hybrid(args, search_config)
+        print(json.dumps(result, ensure_ascii=False, indent=2 if args.pretty else None))
+        return 0
     result = FormulaSearchRunner(
         search_config=search_config,
         data_dir=args.data_dir,
@@ -78,6 +99,101 @@ def main(argv: list[str] | None = None) -> int:
     ).run()
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))
     return 0
+
+
+def _run_neural(args: argparse.Namespace) -> dict[str, object]:
+    result = NeuralFormulaTrainer(
+        config=_neural_config_from_args(args),
+        data_dir=args.data_dir,
+        universe_name=args.universe_name,
+        universe_file=args.universe_file,
+        factor_store_dir=args.factor_store_dir,
+        report_dir=args.report_dir,
+        output_dir=args.output_dir,
+        correlation_threshold=args.correlation_threshold,
+        min_coverage=args.min_coverage,
+    ).train()
+    payload = result.to_dict()
+    payload["search_mode"] = "neural"
+    return payload
+
+
+def _run_hybrid(args: argparse.Namespace, search_config: FormulaSearchConfig) -> dict[str, object]:
+    output_dir = Path(args.output_dir)
+    neural_output = output_dir / "neural"
+    neural_result = NeuralFormulaTrainer(
+        config=_neural_config_from_args(args),
+        data_dir=args.data_dir,
+        universe_name=args.universe_name,
+        universe_file=args.universe_file,
+        factor_store_dir=args.factor_store_dir,
+        report_dir=args.report_dir,
+        output_dir=str(neural_output),
+        correlation_threshold=args.correlation_threshold,
+        min_coverage=args.min_coverage,
+    ).train()
+    random_result = FormulaSearchRunner(
+        search_config=search_config,
+        data_dir=args.data_dir,
+        universe_name=args.universe_name,
+        universe_file=args.universe_file,
+        factor_store_dir=args.factor_store_dir,
+        report_dir=args.report_dir,
+        output_dir=args.output_dir,
+        factor_transform=args.factor_transform,
+        enable_gate=args.enable_gate and not args.disable_gate,
+        correlation_threshold=args.correlation_threshold,
+        min_coverage=args.min_coverage,
+        composite_method=args.composite_method,
+        train_ratio=args.train_ratio,
+        valid_ratio=args.valid_ratio,
+        continue_on_error=args.continue_on_error,
+    ).run()
+    payload = random_result.to_dict()
+    neural_payload = neural_result.to_dict()
+    payload["search_mode"] = "hybrid"
+    payload["neural_metadata"] = {
+        "search_id": neural_payload["search_id"],
+        "approved_factor_ids": neural_payload["approved_factor_ids"],
+        "composite_factor_id": neural_payload["composite_factor_id"],
+        "checkpoint_paths": neural_payload["checkpoint_paths"],
+        "paths": neural_payload["paths"],
+        "hybrid_neural_ratio": args.hybrid_neural_ratio,
+    }
+    payload["approved_factor_ids"] = _unique(payload.get("approved_factor_ids", []) + neural_payload["approved_factor_ids"])
+    if neural_payload.get("composite_factor_id"):
+        payload["composite_factor_id"] = neural_payload["composite_factor_id"]
+    (output_dir / "search_result.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return payload
+
+
+def _neural_config_from_args(args: argparse.Namespace) -> NeuralSearchConfig:
+    return NeuralSearchConfig(
+        seed=args.seed,
+        max_formula_len=args.max_formula_len,
+        warmup_steps=args.neural_warmup_steps,
+        policy_steps=args.neural_policy_steps,
+        batch_size=max(1, min(args.population_size, 8)),
+        samples_per_step=max(1, int(args.population_size * max(0.0, min(args.hybrid_neural_ratio, 1.0)))),
+        max_complexity=args.max_complexity,
+        max_lookback=args.max_lookback,
+        resume_checkpoint=args.neural_checkpoint,
+        factor_transform=args.factor_transform,
+        enable_gate=args.enable_gate and not args.disable_gate,
+        top_k=args.top_k,
+        composite_method=args.composite_method,
+    )
+
+
+def _unique(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
 
 
 if __name__ == "__main__":

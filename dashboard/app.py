@@ -128,6 +128,10 @@ def render_app(config: DashboardConfig | None = None) -> None:
         batch_markdown = service.load_batch_report_markdown()
         search_report = service.load_search_report_json()
         search_markdown = service.load_search_report_markdown()
+        neural_result = service.load_neural_search_result()
+        neural_history = service.load_neural_training_history()
+        neural_markdown = service.load_neural_search_report_markdown()
+        neural_checkpoints = service.load_neural_checkpoints()
         suite_result = service.load_suite_result()
         suite_markdown = service.load_suite_report_markdown()
         artifact_catalog = service.load_artifact_catalog()
@@ -169,6 +173,24 @@ def render_app(config: DashboardConfig | None = None) -> None:
             st.info("No search_report.json found.")
         if search_markdown:
             st.markdown(search_markdown)
+        st.subheader("Neural Search")
+        if neural_result:
+            st.json(
+                {
+                    "search_id": neural_result.get("search_id"),
+                    "candidates_evaluated": neural_result.get("candidates_evaluated"),
+                    "approved_factor_ids": neural_result.get("approved_factor_ids", []),
+                    "composite_factor_id": neural_result.get("composite_factor_id"),
+                    "checkpoint_paths": neural_result.get("checkpoint_paths", []),
+                    "best_formulas": neural_result.get("best_formulas", [])[:5],
+                }
+            )
+        else:
+            st.info("No neural_search_result.json found.")
+        _show_dataframe_or_empty("Neural Training History", neural_history)
+        _show_dataframe_or_empty("Neural Checkpoints", neural_checkpoints)
+        if neural_markdown:
+            st.markdown(neural_markdown)
         st.subheader("Research Suite")
         if suite_result:
             st.json(

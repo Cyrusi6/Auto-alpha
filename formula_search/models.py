@@ -35,6 +35,11 @@ class FormulaSearchConfig:
     elite_size: int = 5
     top_k: int = 5
     candidate_batch_size: int | None = None
+    search_mode: str = "random"
+    neural_warmup_steps: int = 1
+    neural_policy_steps: int = 1
+    neural_checkpoint: str | None = None
+    hybrid_neural_ratio: float = 0.5
 
 
 @dataclass(frozen=True)

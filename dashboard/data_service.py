@@ -152,6 +152,35 @@ class AshareDashboardService:
                 return path.read_text(encoding="utf-8")
         return ""
 
+    def load_neural_search_result(self) -> dict[str, Any]:
+        for path in self._neural_artifact_candidates("neural_search_result.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_neural_training_history(self) -> pd.DataFrame:
+        for path in self._neural_artifact_candidates("neural_training_history.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_neural_search_report_markdown(self) -> str:
+        for path in self._neural_artifact_candidates("neural_search_report.md"):
+            if path.exists():
+                return path.read_text(encoding="utf-8")
+        return ""
+
+    def load_neural_checkpoints(self) -> pd.DataFrame:
+        records: list[dict[str, Any]] = []
+        for directory in self._neural_checkpoint_candidates():
+            if not directory.exists() or not directory.is_dir():
+                continue
+            for path in sorted(directory.glob("*.pt")):
+                records.append({"path": str(path), "name": path.name, "size_bytes": path.stat().st_size})
+        return pd.DataFrame(records)
+
     def load_suite_result(self) -> dict[str, Any]:
         return self._read_json(self.config.report_dir.parent / "suite" / "suite_result.json")
 
@@ -214,6 +243,28 @@ class AshareDashboardService:
 
     def load_paper_fills(self) -> pd.DataFrame:
         return self._read_jsonl(self.config.orders_dir / "paper_fills.jsonl")
+
+    def _neural_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.report_dir / filename,
+            root / "neural" / filename,
+            root / "search" / filename,
+            root / "search" / "neural" / filename,
+            root / "suite" / "search" / filename,
+            root / "suite" / "search" / "neural" / filename,
+        ]
+
+    def _neural_checkpoint_candidates(self) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.report_dir / "checkpoints",
+            root / "neural" / "checkpoints",
+            root / "search" / "checkpoints",
+            root / "search" / "neural" / "checkpoints",
+            root / "suite" / "search" / "checkpoints",
+            root / "suite" / "search" / "neural" / "checkpoints",
+        ]
 
     @staticmethod
     def _read_json(path: Path) -> dict[str, Any]:

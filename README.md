@@ -14,6 +14,7 @@ The current implementation is local-first. It uses deterministic sample data and
 - `evaluation/`: Time-series sample split, split-level metrics, and factor reports.
 - `research/`: Batch candidate execution, factor ranking, composite factor construction, and batch research reports.
 - `formula_search/`: Formula metadata, random generation, mutation, crossover, multi-generation search, and search reports.
+- `neural_search/`: AlphaGPT warm-start training, action-mask constrained formula sampling, lightweight policy search, checkpointing, and neural search reports.
 - `research_suite/`: One-click orchestration, walk-forward robustness, production-candidate promotion, and artifact catalog.
 - `risk_model/`: Security exposures, portfolio/benchmark active exposures, covariance, risk constraints, and risk reports.
 - `portfolio_optimizer/`: Deterministic long-only benchmark-aware portfolio optimizer.
@@ -42,10 +43,13 @@ uv run python -m research_suite.run_suite \
   --orders-dir /tmp/auto-alpha-demo/orders \
   --as-of-date 20240104 \
   --factor-transform winsorize_zscore \
+  --search-mode hybrid \
   --search-seed 42 \
   --search-population-size 12 \
   --search-generations 2 \
   --search-max-candidates 8 \
+  --neural-warmup-steps 1 \
+  --neural-policy-steps 1 \
   --top-k 5 \
   --composite-method rank_average \
   --promote-latest-composite \
@@ -129,6 +133,30 @@ The formula DSL exposes operator arity, lookback, and complexity metadata. Stack
 
 Search-style research is available through `python -m formula_search.run_search`. It generates legal RPN formulas, mutates and crosses over formulas across generations, filters duplicate hashes, calls the same batch research gate/composite path, and writes `search_result.json`, `search_candidates.jsonl`, `search_report.json`, and `search_report.md`. Backtest and strategy CLIs can select the newest approved composite factor with `--latest-approved --factor-type composite`.
 
+Neural-guided research is available through `python -m neural_search.run_neural_search`. It trains AlphaGPT with supervised warm-start sequences, samples formulas through a StackVM-aware action mask, updates policy parameters from research rewards, writes checkpoints, and produces `neural_search_result.json`, `neural_training_history.jsonl`, and `neural_search_report.md`:
+
+```bash
+uv run python -m neural_search.run_neural_search \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --universe-name csi300_sample \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --report-dir /tmp/auto-alpha-demo/reports \
+  --output-dir /tmp/auto-alpha-demo/neural \
+  --seed 42 \
+  --warmup-steps 2 \
+  --policy-steps 2 \
+  --batch-size 4 \
+  --samples-per-step 4 \
+  --max-formula-len 8 \
+  --factor-transform winsorize_zscore \
+  --enable-gate \
+  --top-k 5 \
+  --composite-method rank_average \
+  --pretty
+```
+
+`formula_search.run_search` supports `--search-mode random|neural|hybrid`. Hybrid mode runs a neural branch and the existing random/mutation/crossover branch against the same factor store, then records neural metadata and checkpoint paths in `search_result.json`. `model_core.engine --train-mode neural` provides a lightweight neural training entry while preserving the existing fixed-candidate engine mode.
+
 The suite runner is available through `python -m research_suite.run_suite`. It orchestrates data sync, universe construction, formula search, composite backtest, paper order export, walk-forward robustness evaluation, promotion decision, suite report, and `artifact_catalog.json`. When promotion passes, the selected composite factor is updated to `production_candidate` in the factor store with the promotion decision in metadata.
 
 Risk-aware portfolio construction is available in the optimizer, backtest, strategy, and suite CLIs:
@@ -177,6 +205,6 @@ Dashboard-specific overrides:
 - Tushare HTTP provider and production sync scaffolding are available; production use still requires valid token, quota/permission verification, full-market performance tests, and more cross-source data checks.
 - Risk model and benchmark-aware portfolio optimization now have a basic local implementation; future work should add Barra-like multi-factor risk, more robust covariance estimation, a production optimizer, and large-scale performance tuning.
 - Local daily simulation supports core A-share constraints; future work should add finer real-world matching and minute-level volume modeling.
-- Local formula search is available; future work should add neural-guided search, more operators, larger-scale performance tuning, and richer stability diagnostics.
+- Local formula search and a first neural-guided policy-search path are available; future work should add stronger reinforcement learning, offline pretraining, more operators, GPU performance tuning, and broader stability validation.
 - One-click research suites now provide local walk-forward and promotion gates; future work should add richer approval policies and human review workflow.
 - Paper order export is local only; no real broker integration is implemented.

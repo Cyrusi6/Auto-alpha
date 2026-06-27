@@ -19,6 +19,8 @@ from factor_store import (
     make_factor_id,
     stable_formula_hash,
 )
+from neural_search.models import NeuralSearchConfig
+from neural_search.trainer import NeuralFormulaTrainer
 
 from .backtest import AShareFactorEvaluator, FactorEvaluationResult
 from .config import ModelConfig
@@ -369,6 +371,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--train-ratio", type=float, default=0.6)
     parser.add_argument("--valid-ratio", type=float, default=0.2)
     parser.add_argument("--pretty", action="store_true")
+    parser.add_argument("--train-mode", choices=["fixed", "neural"], default="fixed")
+    parser.add_argument("--neural-warmup-steps", type=int, default=1)
+    parser.add_argument("--neural-policy-steps", type=int, default=1)
+    parser.add_argument("--neural-samples-per-step", type=int, default=4)
+    parser.add_argument("--neural-checkpoint")
     return parser
 
 
@@ -403,6 +410,30 @@ def main(argv: list[str] | None = None) -> int:
             gate_config=gate_config,
             correlation_threshold=args.correlation_threshold,
         )
+    elif args.train_mode == "neural":
+        neural_config = NeuralSearchConfig(
+            max_formula_len=ModelConfig.MAX_FORMULA_LEN,
+            warmup_steps=args.neural_warmup_steps,
+            policy_steps=args.neural_policy_steps,
+            batch_size=args.batch_size,
+            samples_per_step=args.neural_samples_per_step,
+            resume_checkpoint=args.neural_checkpoint,
+            factor_transform=args.factor_transform,
+            enable_gate=enable_gate,
+            top_k=max(1, args.batch_size),
+        )
+        result = NeuralFormulaTrainer(
+            config=neural_config,
+            data_dir=args.data_dir,
+            universe_name=args.universe_name,
+            universe_file=args.universe_file,
+            factor_store_dir=args.factor_store_dir,
+            report_dir=args.report_dir,
+            output_dir=args.output_dir,
+            correlation_threshold=args.correlation_threshold,
+            min_coverage=args.min_coverage,
+        ).train()
+        payload = result.to_dict() | {"train_mode": "neural"}
     else:
         payload = engine.train(
             steps=args.steps,

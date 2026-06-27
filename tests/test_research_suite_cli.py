@@ -100,3 +100,57 @@ def test_run_suite_write_default_config_and_config_json(tmp_path, capsys):
     assert payload["status"] == "success"
     assert "orders" not in {stage["name"] for stage in payload["stages"]}
     assert "promotion" not in {stage["name"] for stage in payload["stages"]}
+
+
+def test_run_suite_cli_neural_search_mode(tmp_path, capsys):
+    exit_code = run_suite.main(
+        [
+            "--suite-name",
+            "neural_suite",
+            "--provider",
+            "sample",
+            "--data-dir",
+            str(tmp_path / "data"),
+            "--universe-name",
+            "csi300_sample",
+            "--index-code",
+            "000300.SH",
+            "--factor-store-dir",
+            str(tmp_path / "store"),
+            "--report-dir",
+            str(tmp_path / "reports"),
+            "--output-dir",
+            str(tmp_path / "suite"),
+            "--backtest-dir",
+            str(tmp_path / "backtest"),
+            "--orders-dir",
+            str(tmp_path / "orders"),
+            "--as-of-date",
+            "20240104",
+            "--factor-transform",
+            "winsorize_zscore",
+            "--search-mode",
+            "neural",
+            "--search-population-size",
+            "4",
+            "--search-generations",
+            "1",
+            "--search-max-candidates",
+            "2",
+            "--neural-warmup-steps",
+            "1",
+            "--neural-policy-steps",
+            "1",
+            "--top-k",
+            "2",
+            "--skip-orders",
+            "--pretty",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+    formula_stage = next(stage for stage in payload["stages"] if stage["name"] == "formula_search")
+
+    assert exit_code == 0
+    assert payload["status"] == "success"
+    assert formula_stage["summary"]["search_mode"] == "neural"
+    assert (tmp_path / "suite" / "search" / "neural_search_result.json").exists()

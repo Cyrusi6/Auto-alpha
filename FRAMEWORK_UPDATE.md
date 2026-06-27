@@ -918,3 +918,75 @@
 - 增强协方差估计、风险预算、换手预算和组合优化器求解质量。
 - 增加 benchmark 成分变更、权重漂移和交易约束的更真实处理。
 - dashboard 增加风险暴露时间序列、优化前后组合对比和约束诊断明细。
+
+## 2026-06-27 - 任务 017
+
+### 本次变更摘要
+- 整理并增强 `AlphaGPT`，新增 action-mask 采样入口、checkpoint 保存/加载和参数计数工具。
+- 新增 `neural_search/`，支持 warm-start 监督训练、StackVM-aware action mask、policy search、checkpoint、resume 入口和训练报告。
+- 增强 `formula_search.run_search`，支持 `--search-mode random|neural|hybrid`，hybrid 模式记录 neural metadata 和 checkpoint 路径。
+- 增强 `research_suite.run_suite`，支持 neural/hybrid 搜索参数，并把 neural artifacts 纳入 artifact catalog。
+- 增强 `model_core.engine`，新增 `--train-mode neural` 轻量神经训练入口。
+- dashboard Reports tab 可读取 neural search result、training history、checkpoint 列表和 neural report。
+
+### 新增文件
+- `neural_search/__init__.py`
+- `neural_search/models.py`
+- `neural_search/action_mask.py`
+- `neural_search/dataset.py`
+- `neural_search/trainer.py`
+- `neural_search/sampler.py`
+- `neural_search/reward.py`
+- `neural_search/report.py`
+- `neural_search/run_neural_search.py`
+- `tests/test_neural_search_core.py`
+- `tests/test_neural_search_cli.py`
+- `tests/test_formula_search_neural_modes.py`
+- `tests/test_neural_search_no_old_terms.py`
+
+### 修改文件
+- `model_core/alphagpt.py`
+- `model_core/engine.py`
+- `formula_search/models.py`
+- `formula_search/run_search.py`
+- `research_suite/models.py`
+- `research_suite/run_suite.py`
+- `research_suite/workflow.py`
+- `dashboard/data_service.py`
+- `dashboard/app.py`
+- `tests/test_model_core_engine_cli.py`
+- `tests/test_research_suite_workflow.py`
+- `tests/test_research_suite_cli.py`
+- `tests/test_dashboard_artifacts.py`
+- `README.md`
+- `CATREADME.md`
+- `FRAMEWORK_UPDATE.md`
+
+### 删除或隔离的旧问题
+- 因子搜索不再只依赖随机生成、mutation、crossover 和固定候选公式。
+- AlphaGPT 训练入口不再只能作为松散模型组件存在，新增可测试的 checkpoint、采样和轻量 policy-search 路径。
+- one-click suite 不再只能使用 random formula search，可选择 neural 或 hybrid search。
+- neural artifacts 不再脱离 dashboard 和 artifact catalog。
+
+### 新增 A 股平台能力
+- `python -m neural_search.run_neural_search` 可执行本地神经引导公式搜索，写出 `neural_search_result.json`、`neural_training_history.jsonl`、`neural_search_report.md` 和 `checkpoints/`。
+- `build_action_mask()` 根据 StackVM 栈深度约束特征、unary op、binary op 的可选动作，避免采样 stack underflow。
+- `NeuralFormulaTrainer` 支持 supervised warmup、policy search step、reward baseline、entropy bonus、value loss、stable rank 监控和 checkpoint。
+- `formula_search.run_search --search-mode hybrid` 可混合 neural branch 与随机/变异/交叉分支，共用 factor store 并生成 composite factor。
+- `research_suite.run_suite --search-mode neural|hybrid` 可在完整 sample suite 中使用神经/混合搜索，并继续执行 risk-aware backtest、orders、walk-forward 和 promotion。
+- `model_core.engine --train-mode neural` 提供 AlphaGPT 轻量训练入口，保留 fixed 模式兼容。
+
+### 测试结果
+- `uv run pytest tests/test_neural_search_core.py tests/test_neural_search_cli.py tests/test_formula_search_neural_modes.py tests/test_model_core_engine_cli.py tests/test_research_suite_workflow.py tests/test_research_suite_cli.py tests/test_dashboard_artifacts.py tests/test_neural_search_no_old_terms.py`：通过，26 passed。
+- `uv run pytest`：通过，219 passed。
+- `uv run python -m neural_search.run_neural_search --data-dir /tmp/auto-alpha-neural-search/data --universe-name csi300_sample --factor-store-dir /tmp/auto-alpha-neural-search/store --report-dir /tmp/auto-alpha-neural-search/reports --output-dir /tmp/auto-alpha-neural-search/neural --seed 42 --warmup-steps 2 --policy-steps 2 --batch-size 4 --samples-per-step 4 --max-formula-len 8 --max-complexity 24 --max-lookback 10 --factor-transform winsorize_zscore --enable-gate --top-k 5 --composite-method rank_average --pretty`：通过，评估 8 个 neural samples，生成 6 个 approved factors、composite factor `factor_bfac36fbb83ab735` 和 2 个 checkpoints。
+- `uv run python -m formula_search.run_search --search-mode hybrid ...`：通过，评估 19 个候选，生成 hybrid `search_result.json`，包含 neural metadata 和 checkpoint path。
+- `uv run python -m research_suite.run_suite --suite-name neural_suite --search-mode hybrid --portfolio-method risk_aware ...`：通过，全部 stage success，selected factor `factor_c8cb3814b84e9c10` 晋级为 `production_candidate`。
+- `uv run python -m backtest.run_backtest --latest-approved --factor-type composite ...`：通过，选中 neural composite factor `factor_bfac36fbb83ab735`，生成 backtest artifacts。
+- `uv run python -m strategy_manager.runner --latest-approved --factor-type composite ...`：通过，生成 target positions、orders 和 paper fills。
+
+### 后续待办
+- 扩展 AlphaGPT 离线预训练语料、奖励归因和更稳定的 policy gradient 训练。
+- 增加更丰富的 action mask 约束，如复杂度预算、lookback 预算和运算符频率约束的逐步剪枝。
+- 支持 GPU 大批量 neural search、checkpoint resume 的训练历史合并和搜索对比。
+- 将 neural/hybrid 搜索结果接入更细粒度 dashboard 曲线和人工审核视图。
