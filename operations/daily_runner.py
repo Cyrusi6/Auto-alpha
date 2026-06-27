@@ -8,6 +8,15 @@ from pathlib import Path
 from typing import Any
 
 from approval import ApprovalStatus, LocalApprovalStore
+from broker_adapter import (
+    BrokerAdapterConfig,
+    FileInstructionBrokerAdapter,
+    LocalBrokerStore,
+    SimulatedBrokerAdapter,
+    broker_fills_to_execution_fills,
+    build_broker_requests_from_child_orders,
+    write_broker_report,
+)
 from execution import ExecutionOrder, PaperBroker, export_fills_jsonl, export_orders_csv, export_orders_jsonl
 from execution_plan import ChildOrder, ExecutionPlanResult, ExecutionSchedule, ParentOrder, simulate_child_orders, write_execution_plan_report
 from factor_store import LocalFactorStore
@@ -45,6 +54,13 @@ class ProductionDailyRunner:
         execution_plan_dir: str | Path | None = None,
         max_participation: float = 0.10,
         execution_buckets: str | tuple[str, ...] = "open,morning,afternoon,close",
+        broker_adapter: str = "paper",
+        broker_store_dir: str | Path | None = None,
+        broker_outbox_dir: str | Path | None = None,
+        broker_inbox_dir: str | Path | None = None,
+        broker_auto_fill: bool = True,
+        broker_reconcile: bool = False,
+        broker_price_type: str = "MARKET",
     ):
         self.data_dir = Path(data_dir)
         self.factor_store_dir = Path(factor_store_dir)
@@ -69,6 +85,13 @@ class ProductionDailyRunner:
         self.execution_plan_dir = Path(execution_plan_dir) if execution_plan_dir is not None else self.orders_dir / "plan"
         self.max_participation = float(max_participation)
         self.execution_buckets = execution_buckets
+        self.broker_adapter = broker_adapter
+        self.broker_store_dir = Path(broker_store_dir) if broker_store_dir is not None else self.output_dir / "broker"
+        self.broker_outbox_dir = Path(broker_outbox_dir) if broker_outbox_dir is not None else self.broker_store_dir / "outbox"
+        self.broker_inbox_dir = Path(broker_inbox_dir) if broker_inbox_dir is not None else None
+        self.broker_auto_fill = bool(broker_auto_fill)
+        self.broker_reconcile = bool(broker_reconcile)
+        self.broker_price_type = broker_price_type
 
     def run(
         self,
@@ -179,7 +202,25 @@ class ProductionDailyRunner:
         execution_quality: dict[str, Any] = {}
         child_order_count = 0
         plan_paths: dict[str, str] = {}
-        if batch.child_orders:
+        broker_summary: dict[str, Any] = {}
+        broker_paths: dict[str, str] = {}
+        if batch.child_orders and self.broker_adapter != "paper":
+            parent_orders = [ParentOrder(**payload) for payload in batch.parent_orders]
+            child_orders = [ChildOrder(**payload) for payload in batch.child_orders]
+            fills, broker_summary, broker_paths = self._execute_with_broker_adapter(
+                batch=batch,
+                child_orders=child_orders,
+                parent_orders=parent_orders,
+                prices=prices,
+                volumes=volumes,
+                suspended=suspended,
+                limit_up=limit_up,
+                limit_down=limit_down,
+                account=LocalPaperAccount(self.paper_account_dir),
+            )
+            child_order_count = len(child_orders)
+            execution_quality = broker_summary.get("execution_quality", {})
+        elif batch.child_orders:
             parent_orders = [ParentOrder(**payload) for payload in batch.parent_orders]
             child_orders = [ChildOrder(**payload) for payload in batch.child_orders]
             schedule = ExecutionSchedule(
@@ -215,8 +256,11 @@ class ProductionDailyRunner:
         fills_path = self.orders_dir / "paper_fills.jsonl"
         export_fills_jsonl(fills, fills_path)
         account = LocalPaperAccount(self.paper_account_dir)
-        account.apply_child_fills(fills, prices, batch.rebalance_date)
-        state = account.mark_to_market(prices, batch.rebalance_date)
+        if self.broker_adapter == "file" and broker_summary.get("inbox_fills", 0) == 0:
+            state = account.load_state()
+        else:
+            account.apply_child_fills(fills, prices, batch.rebalance_date)
+            state = account.mark_to_market(prices, batch.rebalance_date)
         rejected = sum(1 for fill in fills if fill.status == "REJECTED")
         partial = sum(1 for fill in fills if fill.status == "PARTIAL")
         completed = sum(1 for fill in fills if fill.status in {"FILLED", "PARTIAL"})
@@ -246,24 +290,123 @@ class ProductionDailyRunner:
             "positions_path": str(account.positions_path),
             "account_snapshots_path": str(account.snapshots_path),
             **plan_paths,
+            **broker_paths,
+            "broker_adapter": self.broker_adapter,
+            "broker_batch_id": batch.approval_id if self.broker_adapter != "paper" else "",
+            "broker_store_dir": str(self.broker_store_dir) if self.broker_adapter != "paper" else "",
+            "broker_summary": broker_summary,
+            "idempotent_replay_count": int(broker_summary.get("idempotent_replay_count", 0) or 0),
+            "open_broker_order_count": int(broker_summary.get("open_orders", 0) or 0),
+            "rejected_broker_order_count": int(broker_summary.get("rejected_orders", 0) or 0),
+            "broker_unfilled_value": float(broker_summary.get("unfilled_value", 0.0) or 0.0),
             "account": {
                 "cash": state.cash,
                 "positions": len(state.positions),
                 "performance": compute_account_performance(state),
             },
         }
+        production_status = "broker_exported" if self.broker_adapter == "file" and broker_summary.get("inbox_fills", 0) == 0 else "executed"
         return ProductionRunResult(
             run_id=run_id,
             created_at=created_at,
-            status="executed",
+            status=production_status,
             factor_id=batch.factor_id,
             rebalance_date=batch.rebalance_date,
             approval_id=batch.approval_id,
             approval_status=batch.status,
-            executed=True,
+            executed=production_status == "executed",
             paths=_paths_from_summary(summary),
             summary=summary,
         )
+
+    def _execute_with_broker_adapter(
+        self,
+        *,
+        batch,
+        child_orders: list[ChildOrder],
+        parent_orders: list[ParentOrder],
+        prices: dict[str, float],
+        volumes: dict[str, float],
+        suspended: dict[str, bool],
+        limit_up: dict[str, bool],
+        limit_down: dict[str, bool],
+        account: LocalPaperAccount,
+    ) -> tuple[list[Any], dict[str, Any], dict[str, str]]:
+        requests = build_broker_requests_from_child_orders(
+            child_orders,
+            prices,
+            batch.rebalance_date,
+            batch.approval_id,
+            price_type=self.broker_price_type,
+        )
+        if self.broker_adapter == "simulated":
+            adapter = SimulatedBrokerAdapter(
+                self.broker_store_dir,
+                prices=prices,
+                volumes=volumes,
+                suspended=suspended,
+                limit_up=limit_up,
+                limit_down=limit_down,
+                auto_fill=self.broker_auto_fill,
+            )
+            result = adapter.submit_orders(requests, batch_id=batch.approval_id)
+        elif self.broker_adapter == "file":
+            adapter = FileInstructionBrokerAdapter(
+                self.broker_store_dir,
+                self.broker_outbox_dir,
+                self.broker_inbox_dir,
+                BrokerAdapterConfig(adapter_type="file", price_type=self.broker_price_type),
+            )
+            result = adapter.submit_orders(requests, batch_id=batch.approval_id)
+        else:
+            raise ValueError(f"unsupported broker adapter: {self.broker_adapter}")
+        broker_fills = result.fills
+        fills = broker_fills_to_execution_fills(broker_fills)
+        store = LocalBrokerStore(self.broker_store_dir)
+        account_trades = account.load_state().trade_ledger if self.broker_reconcile else []
+        reconciliation = adapter.reconcile(
+            batch.approval_id,
+            expected_child_orders=[order.to_dict() for order in child_orders],
+            account_trades=account_trades,
+        )
+        broker_report_dir = self.output_dir / "broker"
+        paths = write_broker_report(store, batch.approval_id, reconciliation, broker_report_dir)
+        broker_paths = {key: str(path) for key, path in paths.items()}
+        if self.broker_adapter == "file":
+            manifest = self.broker_outbox_dir / "broker_instruction_manifest.json"
+            summary_path = self.broker_outbox_dir / "broker_batch_summary.json"
+            if manifest.exists():
+                broker_paths["broker_outbox_manifest_path"] = str(manifest)
+            if summary_path.exists():
+                broker_paths["broker_outbox_summary_path"] = str(summary_path)
+        requested = sum(float(order.order_value) for order in child_orders)
+        filled = sum(float(fill.value) for fill in fills if fill.status in {"FILLED", "PARTIAL"})
+        quality = {
+            "parent_order_count": len(parent_orders),
+            "child_order_count": len(child_orders),
+            "filled_child_orders": sum(1 for fill in fills if fill.status == "FILLED"),
+            "partial_child_orders": sum(1 for fill in fills if fill.status == "PARTIAL"),
+            "rejected_child_orders": sum(1 for fill in fills if fill.status == "REJECTED"),
+            "requested_value": float(requested),
+            "filled_value": float(filled),
+            "unfilled_order_value": float(max(requested - filled, 0.0)),
+            "execution_fill_rate": float(filled / requested) if requested > 1e-12 else 0.0,
+        }
+        broker_summary = {
+            **result.summary,
+            "adapter": self.broker_adapter,
+            "batch_id": batch.approval_id,
+            "broker_orders": len(result.orders),
+            "broker_fills": len(result.fills),
+            "inbox_fills": len(result.fills) if self.broker_adapter == "file" else 0,
+            "idempotent_replay_count": result.idempotent_replay_count,
+            "duplicate_request_count": result.duplicate_request_count,
+            "reconciliation": reconciliation.to_dict(),
+            "execution_quality": quality,
+        }
+        if self.broker_adapter == "file" and not fills:
+            broker_summary["status"] = "broker_exported"
+        return fills, broker_summary, broker_paths
 
     def _select_factor_id(self) -> str:
         if self.factor_id:
@@ -303,6 +446,15 @@ def _paths_from_summary(summary: dict[str, Any]) -> dict[str, str]:
         "child_orders_path",
         "child_fills_path",
         "execution_quality_path",
+        "broker_report_path",
+        "broker_report_md_path",
+        "broker_reconciliation_path",
+        "broker_reconciliation_md_path",
+        "broker_orders_path",
+        "broker_events_path",
+        "broker_fills_path",
+        "broker_outbox_manifest_path",
+        "broker_outbox_summary_path",
     ]
     return {key: str(summary[key]) for key in keys if summary.get(key)}
 

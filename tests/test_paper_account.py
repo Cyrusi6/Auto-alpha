@@ -63,5 +63,58 @@ def test_paper_account_reset_apply_fills_and_performance(tmp_path):
     assert state.cash == 100198.0
     assert "000001.SZ" not in state.positions
 
+    replay = account.apply_fills([sell], {"000001.SZ": 12.0}, "20240105")
+    assert replay.cash == state.cash
+
+    oversell = ExecutionFill(
+        trade_date="20240105",
+        ts_code="000001.SZ",
+        side="SELL",
+        price=12.0,
+        shares=200,
+        value=2400.0,
+        cost=1.0,
+        status="FILLED",
+    )
     with pytest.raises(ValueError):
-        account.apply_fills([sell], {"000001.SZ": 12.0}, "20240105")
+        account.apply_fills([oversell], {"000001.SZ": 12.0}, "20240105")
+
+
+def test_paper_account_broker_fill_idempotency(tmp_path):
+    account = LocalPaperAccount(tmp_path)
+    account.reset(100000.0)
+    fill = ExecutionFill(
+        trade_date="20240104",
+        ts_code="000001.SZ",
+        side="BUY",
+        price=10.0,
+        shares=100,
+        value=1000.0,
+        status="FILLED",
+        cost=1.0,
+        broker_order_id="bo_1",
+        broker_fill_id="bf_1",
+        client_order_id="child_1",
+        broker_adapter="simulated",
+        broker_batch_id="batch_1",
+    )
+    rejected = ExecutionFill(
+        trade_date="20240104",
+        ts_code="000001.SZ",
+        side="BUY",
+        price=10.0,
+        shares=0,
+        value=0.0,
+        status="REJECTED",
+        broker_order_id="bo_2",
+        broker_fill_id="bf_2",
+        broker_batch_id="batch_1",
+    )
+
+    first = account.apply_child_fills([fill, rejected], {"000001.SZ": 10.0}, "20240104")
+    second = account.apply_child_fills([fill, rejected], {"000001.SZ": 10.0}, "20240104")
+
+    assert first.cash == second.cash
+    assert second.positions["000001.SZ"].shares == 100
+    assert len(second.trade_ledger) == 2
+    assert second.trade_ledger[0].broker_fill_id == "bf_1"

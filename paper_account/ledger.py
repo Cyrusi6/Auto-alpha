@@ -85,6 +85,7 @@ class LocalPaperAccount:
         cash = float(state.cash)
         cash_ledger = list(state.cash_ledger)
         trade_ledger = list(state.trade_ledger)
+        applied_fill_keys = {_fill_key(entry.to_dict()) for entry in trade_ledger}
         for fill in fills:
             payload = _fill_payload(fill)
             fill_date = str(trade_date or payload.get("trade_date") or "")
@@ -96,6 +97,10 @@ class LocalPaperAccount:
             value = float(payload.get("value") or 0.0)
             cost = float(payload.get("cost") or 0.0)
             reason = str(payload.get("reason") or "")
+            fill_key = _fill_key(payload | {"trade_date": fill_date})
+            if fill_key in applied_fill_keys:
+                continue
+            applied_fill_keys.add(fill_key)
             trade_ledger.append(
                 PaperTradeLedgerEntry(
                     trade_date=fill_date,
@@ -110,6 +115,11 @@ class LocalPaperAccount:
                     parent_order_id=payload.get("parent_order_id"),
                     child_order_id=payload.get("child_order_id"),
                     bucket=payload.get("bucket"),
+                    broker_order_id=payload.get("broker_order_id"),
+                    broker_fill_id=payload.get("broker_fill_id"),
+                    client_order_id=payload.get("client_order_id"),
+                    broker_adapter=payload.get("broker_adapter"),
+                    broker_batch_id=payload.get("broker_batch_id"),
                 )
             )
             if status not in {"FILLED", "PARTIAL"} or shares <= 0:
@@ -251,6 +261,23 @@ def _fill_payload(fill: object) -> dict[str, Any]:
     if isinstance(fill, dict):
         return dict(fill)
     raise TypeError(f"unsupported fill record: {type(fill)!r}")
+
+
+def _fill_key(payload: dict[str, Any]) -> str:
+    broker_fill_id = payload.get("broker_fill_id")
+    if broker_fill_id:
+        return f"broker:{broker_fill_id}"
+    return "fallback:" + "|".join(
+        [
+            str(payload.get("trade_date") or ""),
+            str(payload.get("child_order_id") or ""),
+            str(payload.get("ts_code") or ""),
+            str(payload.get("side") or ""),
+            str(payload.get("shares") or ""),
+            str(payload.get("value") or ""),
+            str(payload.get("status") or ""),
+        ]
+    )
 
 
 def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> Path:

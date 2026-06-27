@@ -313,6 +313,55 @@ class AshareDashboardService:
                 return payload
         return {}
 
+    def load_broker_report(self) -> dict[str, Any]:
+        for path in self._broker_artifact_candidates("broker_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_broker_reconciliation(self) -> dict[str, Any]:
+        for path in self._broker_artifact_candidates("broker_reconciliation.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_broker_orders(self) -> pd.DataFrame:
+        for path in self._broker_artifact_candidates("broker_orders.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_broker_events(self) -> pd.DataFrame:
+        for path in self._broker_artifact_candidates("broker_events.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_broker_fills(self) -> pd.DataFrame:
+        for path in self._broker_artifact_candidates("broker_fills.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_broker_batch_summary(self) -> dict[str, Any]:
+        for path in self._broker_artifact_candidates("broker_batch_summary.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_broker_instruction_manifest(self) -> dict[str, Any]:
+        for path in self._broker_artifact_candidates("broker_instruction_manifest.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
     def load_production_run(self) -> dict[str, Any]:
         for path in self._production_candidates("production_run.json"):
             payload = self._read_json(path)
@@ -518,6 +567,18 @@ class AshareDashboardService:
             root / "orders_capacity" / "plan" / filename,
             root / "daily_orders" / "plan" / filename,
             root / "daily_orders_execute" / "plan" / filename,
+        ]
+
+    def _broker_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.orders_dir / "broker" / filename,
+            self.config.orders_dir / filename,
+            self.config.orders_dir / "outbox" / filename,
+            root / "production_execute" / "broker" / filename,
+            root / "production_execute_replay" / "broker" / filename,
+            root / "broker" / filename,
+            root / "broker_file" / "outbox" / filename,
         ]
 
     @staticmethod

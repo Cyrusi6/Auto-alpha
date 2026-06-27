@@ -277,6 +277,12 @@ def render_app(config: DashboardConfig | None = None) -> None:
         child_orders = service.load_child_orders()
         child_fills = service.load_child_fills()
         execution_quality = service.load_execution_quality()
+        broker_report = service.load_broker_report()
+        broker_reconciliation = service.load_broker_reconciliation()
+        broker_orders = service.load_broker_orders()
+        broker_events = service.load_broker_events()
+        broker_fills = service.load_broker_fills()
+        broker_manifest = service.load_broker_instruction_manifest()
         st.plotly_chart(plot_order_distribution(orders), use_container_width=True)
         st.subheader("Capacity And Execution Quality")
         st.json(
@@ -288,12 +294,25 @@ def render_app(config: DashboardConfig | None = None) -> None:
                 "buckets": (execution_plan.get("schedule") or {}).get("buckets", []) if execution_plan else [],
             }
         )
+        st.subheader("Broker Adapter")
+        broker_status_counts = broker_orders["status"].value_counts().to_dict() if not broker_orders.empty and "status" in broker_orders else {}
+        st.json(
+            {
+                "summary": broker_report.get("summary", {}) if broker_report else {},
+                "status_distribution": broker_status_counts,
+                "reconciliation": broker_reconciliation,
+                "file_manifest": broker_manifest,
+            }
+        )
         _show_dataframe_or_empty("Target Positions", targets)
         _show_dataframe_or_empty("Orders", orders)
         _show_dataframe_or_empty("Parent Orders", parent_orders)
         _show_dataframe_or_empty("Child Orders", child_orders)
         _show_dataframe_or_empty("Paper Fills", fills)
         _show_dataframe_or_empty("Child Fills", child_fills)
+        _show_dataframe_or_empty("Broker Orders", broker_orders)
+        _show_dataframe_or_empty("Broker Fills", broker_fills)
+        _show_dataframe_or_empty("Broker Events", broker_events)
 
     with production_tab:
         production_run = service.load_production_run()
@@ -307,6 +326,8 @@ def render_app(config: DashboardConfig | None = None) -> None:
         monitoring_report = service.load_monitoring_report()
         monitoring_markdown = service.load_monitoring_report_markdown()
         monitoring_alerts = service.load_monitoring_alerts()
+        broker_report = service.load_broker_report()
+        broker_reconciliation = service.load_broker_reconciliation()
         st.subheader("Production Run")
         st.json(
             production_run
@@ -332,6 +353,13 @@ def render_app(config: DashboardConfig | None = None) -> None:
         _show_dataframe_or_empty("Paper Positions", positions)
         _show_dataframe_or_empty("Account Snapshots", snapshots)
         _show_dataframe_or_empty("Trade Ledger", trade_ledger)
+        st.subheader("Broker")
+        st.json(
+            {
+                "broker_summary": broker_report.get("summary", {}) if broker_report else {},
+                "reconciliation": broker_reconciliation,
+            }
+        )
         st.subheader("Monitoring")
         st.json(
             {

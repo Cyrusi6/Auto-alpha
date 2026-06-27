@@ -133,3 +133,86 @@ def test_daily_run_falls_back_to_latest_approved_composite(tmp_path):
 
     assert proposed.status == "pending_approval"
     assert proposed.factor_id == factor_id
+
+
+def test_daily_run_simulated_broker_is_idempotent(tmp_path):
+    data_dir, store_dir, _factor_id = _prepare_data_and_factor(tmp_path)
+    propose_runner = ProductionDailyRunner(
+        data_dir=data_dir,
+        factor_store_dir=store_dir,
+        approval_store_dir=tmp_path / "approvals",
+        paper_account_dir=tmp_path / "account",
+        output_dir=tmp_path / "production",
+        orders_dir=tmp_path / "orders",
+        latest_production=True,
+        rebalance_date="20240104",
+        portfolio_method="risk_aware",
+        index_code="000300.SH",
+        top_n=2,
+        max_weight=0.10,
+        use_factor_risk_model=True,
+        capacity_aware=True,
+    )
+    proposed = propose_runner.run(require_approval=True)
+    LocalApprovalStore(tmp_path / "approvals").approve(proposed.approval_id, reviewer="reviewer")
+    execute_runner = ProductionDailyRunner(
+        data_dir=data_dir,
+        factor_store_dir=store_dir,
+        approval_store_dir=tmp_path / "approvals",
+        paper_account_dir=tmp_path / "account",
+        output_dir=tmp_path / "production_execute",
+        orders_dir=tmp_path / "orders_execute",
+        rebalance_date="20240104",
+        capacity_aware=True,
+        broker_adapter="simulated",
+        broker_store_dir=tmp_path / "broker",
+        broker_reconcile=True,
+    )
+    executed = execute_runner.run(approval_id=proposed.approval_id, execute_approved=True)
+    first_state = json.loads((tmp_path / "account" / "account_state.json").read_text(encoding="utf-8"))
+    replay = execute_runner.run(approval_id=proposed.approval_id, execute_approved=True)
+    second_state = json.loads((tmp_path / "account" / "account_state.json").read_text(encoding="utf-8"))
+
+    assert executed.status == "executed"
+    assert executed.summary["broker_adapter"] == "simulated"
+    assert executed.summary["broker_report_path"]
+    assert replay.summary["idempotent_replay_count"] > 0
+    assert first_state["cash"] == second_state["cash"]
+    assert len(first_state["trade_ledger"]) == len(second_state["trade_ledger"])
+
+
+def test_daily_run_file_broker_exports_without_account_update(tmp_path):
+    data_dir, store_dir, _factor_id = _prepare_data_and_factor(tmp_path)
+    runner = ProductionDailyRunner(
+        data_dir=data_dir,
+        factor_store_dir=store_dir,
+        approval_store_dir=tmp_path / "approvals",
+        paper_account_dir=tmp_path / "account",
+        output_dir=tmp_path / "production",
+        orders_dir=tmp_path / "orders",
+        latest_production=True,
+        rebalance_date="20240104",
+        capacity_aware=True,
+    )
+    proposed = runner.run(require_approval=True)
+    LocalApprovalStore(tmp_path / "approvals").approve(proposed.approval_id, reviewer="reviewer")
+    file_runner = ProductionDailyRunner(
+        data_dir=data_dir,
+        factor_store_dir=store_dir,
+        approval_store_dir=tmp_path / "approvals",
+        paper_account_dir=tmp_path / "account",
+        output_dir=tmp_path / "production_file",
+        orders_dir=tmp_path / "orders_file",
+        rebalance_date="20240104",
+        capacity_aware=True,
+        broker_adapter="file",
+        broker_store_dir=tmp_path / "broker_file",
+        broker_outbox_dir=tmp_path / "broker_file" / "outbox",
+    )
+    result = file_runner.run(approval_id=proposed.approval_id, execute_approved=True)
+    state = json.loads((tmp_path / "account" / "account_state.json").read_text(encoding="utf-8"))
+
+    assert result.status == "broker_exported"
+    assert result.executed is False
+    assert result.summary["broker_outbox_manifest_path"]
+    assert state["cash"] == 1_000_000.0

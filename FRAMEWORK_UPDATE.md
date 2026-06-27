@@ -1309,3 +1309,76 @@
 - 增加更真实的日内成交曲线、分钟级容量、订单簿约束和交易暂停处理。
 - 将 execution plan 与审批 UI 做差异比对，支持审批后订单计划冻结和版本追踪。
 - 增加多日调仓计划、跨日未完成订单滚动和更完整的执行归因。
+
+## 2026-06-27 - 任务 022
+
+### 本次变更摘要
+- 新增 `broker_adapter/`，定义本地 BrokerAdapter 协议、broker order request/record/event/fill、batch summary 和 reconciliation models。
+- 新增 LocalBrokerStore，使用 JSON/JSONL 持久化 `broker_orders.jsonl`、`broker_order_state.json`、`broker_events.jsonl`、`broker_fills.jsonl` 和 `broker_batches.json`。
+- 新增 broker order 状态机，支持 submit、cancel、replace、status、list、fills 和 batch reconciliation，terminal 状态禁止撤单/改单/成交。
+- 新增 `SimulatedBrokerAdapter`，基于 A 股价格、成交量、停牌、涨跌停、整手和成本模型模拟 broker order 生命周期。
+- 新增 `FileInstructionBrokerAdapter`，导出通用 CSV/JSONL/manifest outbox，可从 inbox 导入 status/fills；`qmt_skeleton` 仅是字段映射骨架，不声明真实券商兼容。
+- `operations.run_daily` 新增 `--broker-adapter paper|simulated|file`、broker store/outbox/inbox、auto-fill、reconcile 和 price type 参数。
+- `paper_account` 增加 broker fill idempotency，重复 execute-approved 不重复扣现金或重复增加持仓。
+- monitoring 和 dashboard 增加 broker orders、events、fills、reconciliation、outbox manifest 和 idempotent replay 展示/检查。
+
+### 新增文件
+- `broker_adapter/__init__.py`
+- `broker_adapter/models.py`
+- `broker_adapter/protocol.py`
+- `broker_adapter/state_machine.py`
+- `broker_adapter/store.py`
+- `broker_adapter/converters.py`
+- `broker_adapter/simulated.py`
+- `broker_adapter/file_adapter.py`
+- `broker_adapter/reconciliation.py`
+- `broker_adapter/report.py`
+- `broker_adapter/run_broker.py`
+- `tests/test_broker_adapter_store.py`
+- `tests/test_broker_adapter_simulated_file.py`
+- `tests/test_broker_adapter_no_old_terms.py`
+
+### 修改文件
+- `execution/models.py`
+- `operations/daily_runner.py`
+- `operations/run_daily.py`
+- `paper_account/models.py`
+- `paper_account/ledger.py`
+- `monitoring/checks.py`
+- `monitoring/run_monitor.py`
+- `dashboard/data_service.py`
+- `dashboard/app.py`
+- `README.md`
+- `CATREADME.md`
+- `FRAMEWORK_UPDATE.md`
+- `tests/test_operations_daily_runner.py`
+- `tests/test_paper_account.py`
+- `tests/test_monitoring_reports.py`
+- `tests/test_risk_dashboard_artifacts.py`
+
+### 删除或隔离的旧问题
+- approved child orders 不再只能直接走 execution plan simulator，可显式路由到 simulated broker 或 file instruction adapter。
+- 重复执行同一 approved batch 时，broker submit 和 paper account fill apply 均具备幂等保护。
+- broker order 状态、事件、成交和对账不再散落在 paper fill 文件中，而是独立写入 broker artifacts。
+- 文件指令导出明确为 generic schema / configurable mapping skeleton，不误导为真实 QMT 或券商柜台兼容。
+
+### 新增 A 股平台能力
+- `SimulatedBrokerAdapter`：支持 local submit、auto-fill、cancel、replace、status/list/fills 和 reconcile。
+- `FileInstructionBrokerAdapter`：支持 outbox `broker_orders.csv`、`broker_orders.jsonl`、`broker_instruction_manifest.json` 和 `broker_batch_summary.json`。
+- `broker_adapter.run_broker`：支持 `submit-simulated`、`export-file`、`show-batch`、`list-orders`、`list-fills`、`cancel`、`replace` 和 `reconcile`。
+- `operations.run_daily --broker-adapter simulated`：approved child orders 生成 broker orders/fills/events/reconciliation，并将 broker fills 转为 paper account fills。
+- `operations.run_daily --broker-adapter file`：无 inbox fills 时只导出 outbox，不更新 paper account，production status 为 `broker_exported`。
+- monitoring 新增 broker reconciliation、open orders、rejected orders、idempotency 和 file outbox checks。
+- dashboard Orders / Production 区域展示 broker summary、status distribution、broker fills、broker events 和 reconciliation issues。
+
+### 测试结果
+- `uv run pytest tests/test_broker_adapter_store.py tests/test_broker_adapter_simulated_file.py tests/test_broker_adapter_no_old_terms.py tests/test_operations_daily_runner.py tests/test_paper_account.py tests/test_monitoring_reports.py tests/test_risk_dashboard_artifacts.py`：通过，14 passed。
+- `uv run pytest tests/test_broker_adapter*.py tests/test_operations_daily_runner.py tests/test_paper_account.py tests/test_monitoring_reports.py`：通过，13 passed。
+- `uv run pytest`：通过，259 passed。
+- 端到端 sample smoke：`research_suite.run_suite` 成功生成 production candidate `factor_c8cb3814b84e9c10`；`operations.run_daily --broker-adapter simulated` 成功生成 8 条 broker orders/fills；重复 execute-approved 返回 `idempotent_replay_count=8`；`broker_adapter.run_broker show-batch/reconcile/export-file` 成功；`monitoring.run_monitor` 成功读取 broker checks；`import dashboard.app` 成功。
+
+### 后续待办
+- 引入更完整的 broker order replacement 版本链和撤改单审批流程。
+- 扩展 file adapter 的 schema validation、人工字段映射模板和差异审阅报告。
+- 增加多日 open broker orders 滚动、过期处理和 broker/account 双向对账。
+- 在真实券商接入前完成合规、权限、风控、回滚和人工确认流程设计。

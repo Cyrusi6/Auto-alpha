@@ -9,8 +9,9 @@ This repository is now organized as a local A-share factor research platform. Th
 5. Run the one-click research suite, including walk-forward and promotion.
 6. Run equal-weight or benchmark-aware portfolio simulation.
 7. Estimate capacity, build execution plans, and export target positions plus paper orders.
-8. Run approval-gated daily paper operations.
-9. Review artifacts and monitoring in the dashboard.
+8. Route approved child orders through local paper, simulated broker, or file-instruction broker adapters.
+9. Run approval-gated daily paper operations.
+10. Review artifacts and monitoring in the dashboard.
 
 ## Data Layer
 
@@ -92,6 +93,8 @@ Planned sync splits large daily datasets by date windows and splits index consti
 `capacity_model/` estimates stock and portfolio trading capacity from local amount, volume, turnover, and volatility matrices. It reports amount participation, volume participation, max trade value, max trade shares, estimated impact cost, capacity score, and capacity warnings.
 
 `execution_plan/` converts target orders into parent orders, child orders, bucketed schedules, simulated child fills, and execution quality artifacts. Default buckets are `open`, `morning`, `afternoon`, and `close`.
+
+`broker_adapter/` defines the local broker contract. It stores broker order requests, statuses, events, fills, batch summaries, and reconciliation reports in JSON/JSONL. `SimulatedBrokerAdapter` applies local A-share trading rules to approved child orders and supports idempotent submit, cancel, replace, status, fills, and reconciliation. `FileInstructionBrokerAdapter` writes generic outbox CSV/JSONL/manifest files and can import optional inbox statuses/fills. Its `qmt_skeleton` mode is only a field-mapping skeleton and does not claim real QMT or broker file compatibility.
 
 ## Factor Store And Experiments
 
@@ -184,7 +187,7 @@ Filled and partial fills update cash and positions. Rejected fills are recorded 
 3. If approval is required, write a pending approval batch and stop.
 4. After approval, execute local paper fills, update the paper account, and write `production_run.json` plus `production_run.md`.
 
-Capacity-aware daily runs store parent and child order schedules inside approval batches. Approved child orders are executed by the local simulator and then applied to the paper account ledger with parent order id, child order id, and bucket metadata.
+Capacity-aware daily runs store parent and child order schedules inside approval batches. Approved child orders can keep the default paper simulator path, route through the simulated broker state machine, or export generic file instructions. Broker-enabled runs write `broker_report.json/md`, `broker_orders.jsonl`, `broker_events.jsonl`, `broker_fills.jsonl`, and `broker_reconciliation.json/md`. Repeated execution of the same approved child orders is idempotent at the broker order and paper-account fill layers.
 
 `monitoring/` checks local production artifacts:
 
@@ -200,6 +203,9 @@ Capacity-aware daily runs store parent and child order schedules inside approval
 - execution fill quality
 - unfilled order value
 - impact cost spikes
+- broker reconciliation issues
+- open, rejected, and idempotent replayed broker orders
+- file instruction outbox status
 - rejected and partial fill ratios
 - paper account equity, cash ratio, drawdown, and exposure
 
@@ -224,7 +230,7 @@ It writes `monitoring_report.json`, `monitoring_report.md`, and `alerts.jsonl`.
 
 ## Dashboard
 
-`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, matrix cache metadata, matrix validation reports, benchmark reports, data-source comparison reports, factor store, factor reports, batch reports, search reports, neural search reports, neural training history, checkpoint lists, suite reports, artifact catalog, promotion decisions, risk reports, risk model reports, risk exposures, risk decomposition, return attribution, capacity reports, execution plans, parent orders, child orders, child fills, execution quality, optimization results, backtest outputs, target positions, orders, paper fills, production runs, approvals, paper account state, account ledgers, monitoring reports, and alerts. Missing artifacts produce empty states instead of errors.
+`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, matrix cache metadata, matrix validation reports, benchmark reports, data-source comparison reports, factor store, factor reports, batch reports, search reports, neural search reports, neural training history, checkpoint lists, suite reports, artifact catalog, promotion decisions, risk reports, risk model reports, risk exposures, risk decomposition, return attribution, capacity reports, execution plans, parent orders, child orders, child fills, execution quality, broker reports, broker order states, broker events, broker fills, reconciliation reports, file outbox manifests, optimization results, backtest outputs, target positions, orders, paper fills, production runs, approvals, paper account state, account ledgers, monitoring reports, and alerts. Missing artifacts produce empty states instead of errors.
 
 ## Research Suite Outputs
 
@@ -241,4 +247,4 @@ The artifact catalog indexes data manifest, quality report, pipeline state, univ
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton. Matrix cache, local benchmark, and data-source comparison skeletons are available. Barra-like risk model v1 and benchmark-aware portfolio optimization now have a local implementation. Capacity-aware execution planning and paper child-order simulation are available. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Daily production now has local approvals, paper account ledger, and monitoring reports. Real Tushare token and quota validation, real full-market stress runs, incremental matrix refresh, richer provider comparisons, production Barra definitions, robust full-market covariance calibration, a professional optimizer, stronger reinforcement learning, offline pretraining, richer walk-forward policies, richer approval policies, human review workflow, broader neural training stability validation, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, and broker connectivity are future work.
+The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton. Matrix cache, local benchmark, and data-source comparison skeletons are available. Barra-like risk model v1 and benchmark-aware portfolio optimization now have a local implementation. Capacity-aware execution planning, broker adapter state, file instruction export, and paper child-order simulation are available. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Daily production now has local approvals, paper account ledger, broker reconciliation, and monitoring reports. Real Tushare token and quota validation, real full-market stress runs, incremental matrix refresh, richer provider comparisons, production Barra definitions, robust full-market covariance calibration, a professional optimizer, stronger reinforcement learning, offline pretraining, richer walk-forward policies, richer approval policies, human review workflow, broader neural training stability validation, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, verified broker file mappings, and real broker connectivity are future work.

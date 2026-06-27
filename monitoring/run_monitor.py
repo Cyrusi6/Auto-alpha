@@ -11,6 +11,11 @@ from factor_store import LocalFactorStore
 from .checks import (
     check_active_risk_drift,
     check_attribution_anomaly,
+    check_broker_file_outbox,
+    check_broker_idempotency,
+    check_broker_reconciliation,
+    check_broker_rejected_orders,
+    check_open_broker_orders,
     check_capacity_warnings,
     check_data_freshness,
     check_execution_quality,
@@ -42,6 +47,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--return-attribution-path")
     parser.add_argument("--capacity-report-path")
     parser.add_argument("--execution-quality-path")
+    parser.add_argument("--broker-store-dir")
+    parser.add_argument("--broker-batch-id")
+    parser.add_argument("--broker-reconciliation-path")
+    parser.add_argument("--broker-outbox-manifest-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -63,6 +72,17 @@ def main(argv: list[str] | None = None) -> int:
         ("execution_quality", lambda: check_execution_quality(args.execution_quality_path or _default_plan_path(args.orders_dir, "execution_quality.json"))),
         ("unfilled_orders", lambda: check_unfilled_orders(args.execution_quality_path or _default_plan_path(args.orders_dir, "execution_quality.json"))),
         ("impact_cost_spike", lambda: check_impact_cost_spike(args.capacity_report_path or _default_plan_path(args.orders_dir, "capacity_report.json"))),
+        (
+            "broker_reconciliation",
+            lambda: check_broker_reconciliation(args.broker_reconciliation_path or _default_broker_path(args.orders_dir, "broker_reconciliation.json")),
+        ),
+        ("open_broker_orders", lambda: check_open_broker_orders(args.broker_store_dir or _default_broker_store(args.orders_dir), args.broker_batch_id)),
+        ("broker_rejected_orders", lambda: check_broker_rejected_orders(args.broker_store_dir or _default_broker_store(args.orders_dir), args.broker_batch_id)),
+        ("broker_idempotency", lambda: check_broker_idempotency(args.broker_store_dir or _default_broker_store(args.orders_dir), args.broker_batch_id)),
+        (
+            "broker_file_outbox",
+            lambda: check_broker_file_outbox(args.broker_outbox_manifest_path or _default_broker_outbox_manifest(args.orders_dir)),
+        ),
         ("fill_quality", lambda: check_order_fill_quality(Path(args.orders_dir) / "paper_fills.jsonl")),
         ("paper_account", lambda: check_paper_account(args.paper_account_dir)),
     ]:
@@ -99,6 +119,34 @@ def _default_path(orders_dir: str | Path, filename: str) -> str:
 def _default_plan_path(orders_dir: str | Path, filename: str) -> str:
     root = Path(orders_dir)
     for path in (root / filename, root / "plan" / filename):
+        if path.exists():
+            return str(path)
+    return ""
+
+
+def _default_broker_path(orders_dir: str | Path, filename: str) -> str:
+    root = Path(orders_dir)
+    for path in (root / filename, root / "broker" / filename, root.parent / "production_execute" / "broker" / filename):
+        if path.exists():
+            return str(path)
+    return ""
+
+
+def _default_broker_store(orders_dir: str | Path) -> str:
+    root = Path(orders_dir)
+    for path in (root / "broker", root.parent / "broker"):
+        if (path / "broker_order_state.json").exists():
+            return str(path)
+    return ""
+
+
+def _default_broker_outbox_manifest(orders_dir: str | Path) -> str:
+    root = Path(orders_dir)
+    for path in (
+        root / "broker_instruction_manifest.json",
+        root / "outbox" / "broker_instruction_manifest.json",
+        root.parent / "broker_file" / "outbox" / "broker_instruction_manifest.json",
+    ):
         if path.exists():
             return str(path)
     return ""

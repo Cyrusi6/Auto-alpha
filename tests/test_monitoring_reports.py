@@ -2,6 +2,7 @@ import json
 
 from data_pipeline.ashare import AShareDataConfig, AShareDataManager
 from execution import ExecutionFill, export_fills_jsonl
+from broker_adapter import BrokerOrderRequest, SimulatedBrokerAdapter
 from factor_store import FactorRecord, LocalFactorStore, stable_formula_hash
 from model_core.data_loader import AShareDataLoader
 from monitoring import run_monitor
@@ -84,11 +85,30 @@ def _prepare_monitoring_artifacts(tmp_path):
         '{"execution_fill_rate":0.25,"rejected_child_orders":2,"partial_child_orders":1,"unfilled_order_value":750.0}',
         encoding="utf-8",
     )
-    return data_dir, tmp_path / "store", tmp_path / "account", orders_dir
+    broker_dir = tmp_path / "broker"
+    request = BrokerOrderRequest(
+        client_order_id="child_monitor",
+        batch_id="batch_monitor",
+        trade_date="20240104",
+        ts_code="000001.SZ",
+        side="BUY",
+        shares=100,
+        order_value=1000.0,
+        price=10.0,
+        child_order_id="child_monitor",
+    )
+    broker = SimulatedBrokerAdapter(broker_dir, prices={"000001.SZ": 10.0}, volumes={"000001.SZ": 10_000.0})
+    broker.submit_orders([request], batch_id="batch_monitor")
+    (orders_dir / "broker").mkdir()
+    (orders_dir / "broker" / "broker_reconciliation.json").write_text(
+        '{"batch_id":"batch_monitor","status_mismatch_count":0,"orphan_fills":0,"unfilled_value":0.0,"issues":[]}',
+        encoding="utf-8",
+    )
+    return data_dir, tmp_path / "store", tmp_path / "account", orders_dir, broker_dir
 
 
 def test_monitoring_report_cli_writes_alerts(tmp_path, capsys):
-    data_dir, store_dir, account_dir, orders_dir = _prepare_monitoring_artifacts(tmp_path)
+    data_dir, store_dir, account_dir, orders_dir, broker_dir = _prepare_monitoring_artifacts(tmp_path)
     exit_code = run_monitor.main(
         [
             "--data-dir",
@@ -103,6 +123,10 @@ def test_monitoring_report_cli_writes_alerts(tmp_path, capsys):
             str(tmp_path / "monitoring"),
             "--as-of-date",
             "20240104",
+            "--broker-store-dir",
+            str(broker_dir),
+            "--broker-batch-id",
+            "batch_monitor",
             "--pretty",
         ]
     )
@@ -118,6 +142,9 @@ def test_monitoring_report_cli_writes_alerts(tmp_path, capsys):
     assert payload["checks"]["execution_quality"]["execution_fill_rate"] == 0.25
     assert payload["checks"]["unfilled_orders"]["unfilled_order_value"] == 750.0
     assert payload["checks"]["impact_cost_spike"]["impact_cost_ratio"] == 0.01
+    assert payload["checks"]["broker_reconciliation"]["exists"] is True
+    assert payload["checks"]["open_broker_orders"]["orders"] == 1
+    assert payload["checks"]["broker_idempotency"]["exists"] is True
     assert any(alert["check"] == "fill_quality" for alert in payload["alerts"])
     assert (tmp_path / "monitoring" / "monitoring_report.json").exists()
     assert (tmp_path / "monitoring" / "monitoring_report.md").exists()

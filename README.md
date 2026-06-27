@@ -22,6 +22,7 @@ The current implementation is local-first. It uses deterministic sample data and
 - `backtest/`: Long-only A-share portfolio simulation, market constraints, and benchmark-aware risk mode.
 - `execution/`: Paper broker and order/fill export utilities.
 - `execution_plan/`: Parent-order to child-order slicing, schedule simulation, and execution quality reports.
+- `broker_adapter/`: Local broker contract, simulated broker state machine, file instruction outbox/inbox skeleton, broker events, fills, and reconciliation.
 - `strategy_manager/`: Target position and paper order generation.
 - `approval/`: Local proposed-order batch approval, rejection, expiration, and audit log.
 - `paper_account/`: Persistent local paper cash, positions, trades, snapshots, and performance ledger.
@@ -295,7 +296,14 @@ uv run python -m strategy_manager.runner \
   --pretty
 ```
 
-The capacity layer writes `capacity_report.json/md`; execution planning writes `execution_plan.json/md`, `parent_orders.jsonl`, `child_orders.jsonl`, `child_fills.jsonl`, and `execution_quality.json`. It remains local paper simulation only; no real broker interface is implemented.
+The capacity layer writes `capacity_report.json/md`; execution planning writes `execution_plan.json/md`, `parent_orders.jsonl`, `child_orders.jsonl`, `child_fills.jsonl`, and `execution_quality.json`. It remains local paper simulation only.
+
+`broker_adapter/` adds a local broker contract on top of approved child orders. It supports:
+
+- `simulated`: idempotent broker order submission, local status transitions, broker fills, broker events, cancellation/replacement simulation, and reconciliation.
+- `file`: generic broker instruction outbox with CSV/JSONL/manifest plus optional inbox status/fill import.
+
+The file adapter uses an internal generic schema and optional config-driven `field_mapping`. `schema_name=qmt_skeleton` is only a configurable skeleton for manual mapping review. It does not guarantee compatibility with any real QMT installation or broker desk file format.
 
 Dashboard-specific overrides:
 
@@ -336,6 +344,10 @@ uv run python -m operations.run_daily \
   --index-code 000300.SH \
   --use-factor-risk-model \
   --capacity-aware \
+  --broker-adapter simulated \
+  --broker-store-dir /tmp/auto-alpha-demo/broker \
+  --broker-auto-fill \
+  --broker-reconcile \
   --max-active-style-exposure 1.0 \
   --top-n 2 \
   --max-weight 0.10 \
@@ -378,17 +390,41 @@ uv run python -m monitoring.run_monitor \
   --orders-dir /tmp/auto-alpha-demo/daily_orders_execute \
   --output-dir /tmp/auto-alpha-demo/monitoring \
   --as-of-date 20240104 \
+  --broker-store-dir /tmp/auto-alpha-demo/broker \
+  --broker-batch-id <APPROVAL_ID> \
   --pretty
 ```
 
-Daily production writes `production_run.json/md`; approvals are stored under `approvals/<approval_id>.json` plus `approval_log.jsonl`; the paper account writes `account_state.json`, `positions.jsonl`, `cash_ledger.jsonl`, `trade_ledger.jsonl`, and `account_snapshots.jsonl`; monitoring writes `monitoring_report.json/md` and `alerts.jsonl`.
+Daily production writes `production_run.json/md`; approvals are stored under `approvals/<approval_id>.json` plus `approval_log.jsonl`; the paper account writes `account_state.json`, `positions.jsonl`, `cash_ledger.jsonl`, `trade_ledger.jsonl`, and `account_snapshots.jsonl`; broker-enabled runs write `broker_report.json/md`, `broker_orders.jsonl`, `broker_events.jsonl`, `broker_fills.jsonl`, and `broker_reconciliation.json/md`; monitoring writes `monitoring_report.json/md` and `alerts.jsonl`.
+
+To export generic file instructions without local fills:
+
+```bash
+uv run python -m operations.run_daily \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --approval-store-dir /tmp/auto-alpha-demo/approvals \
+  --paper-account-dir /tmp/auto-alpha-demo/account \
+  --output-dir /tmp/auto-alpha-demo/production_file \
+  --orders-dir /tmp/auto-alpha-demo/daily_orders_file \
+  --approval-id <APPROVAL_ID> \
+  --execute-approved \
+  --rebalance-date 20240104 \
+  --capacity-aware \
+  --broker-adapter file \
+  --broker-store-dir /tmp/auto-alpha-demo/broker_file \
+  --broker-outbox-dir /tmp/auto-alpha-demo/broker_file/outbox \
+  --pretty
+```
+
+Without inbox fills, file-adapter runs only export outbox instructions and do not update the paper account.
 
 ## Current Gaps
 
 - Tushare HTTP provider and production sync scaffolding are available; production use still requires valid token, quota/permission verification, real full-market performance runs, and more data-source comparisons.
 - Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
-- Local daily simulation supports A-share constraints, capacity estimates, impact-cost estimates, child-order scheduling, and paper execution quality reports; future work should add finer real-world matching and minute-level volume modeling.
+- Local daily simulation supports A-share constraints, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, and paper execution quality reports; future work should add finer real-world matching and minute-level volume modeling.
 - Local formula search and a first neural-guided policy-search path are available; future work should add stronger reinforcement learning, offline pretraining, more operators, GPU performance tuning, and broader stability validation.
 - Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.
 - One-click research suites now provide local walk-forward and promotion gates; daily operations now provide local approval, paper account ledger, and monitoring artifacts. Future work should add richer approval policies and human review workflow.
-- Paper order export and account ledger are local only; no real broker integration is implemented.
+- Broker adapter, file instructions, and account ledger are local only. No real broker integration, credential handling, network submission, or verified QMT/broker file compatibility is implemented.

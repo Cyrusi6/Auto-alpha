@@ -33,6 +33,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--execution-plan-dir")
     parser.add_argument("--max-participation", type=float, default=0.10)
     parser.add_argument("--execution-buckets", default="open,morning,afternoon,close")
+    parser.add_argument("--broker-adapter", choices=["paper", "simulated", "file"], default="paper")
+    parser.add_argument("--broker-store-dir")
+    parser.add_argument("--broker-outbox-dir")
+    parser.add_argument("--broker-inbox-dir")
+    parser.add_argument("--broker-auto-fill", action="store_true", default=True)
+    parser.add_argument("--broker-reconcile", action="store_true")
+    parser.add_argument("--broker-price-type", default="MARKET")
     parser.add_argument("--require-approval", action="store_true")
     parser.add_argument("--approval-id")
     parser.add_argument("--execute-approved", action="store_true")
@@ -66,6 +73,13 @@ def main(argv: list[str] | None = None) -> int:
         execution_plan_dir=args.execution_plan_dir,
         max_participation=args.max_participation,
         execution_buckets=args.execution_buckets,
+        broker_adapter=args.broker_adapter,
+        broker_store_dir=args.broker_store_dir,
+        broker_outbox_dir=args.broker_outbox_dir,
+        broker_inbox_dir=args.broker_inbox_dir,
+        broker_auto_fill=args.broker_auto_fill,
+        broker_reconcile=args.broker_reconcile,
+        broker_price_type=args.broker_price_type,
     )
     result = runner.run(
         require_approval=args.require_approval,

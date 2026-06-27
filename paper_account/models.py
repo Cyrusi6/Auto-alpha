@@ -45,6 +45,11 @@ class PaperTradeLedgerEntry:
     parent_order_id: str | None = None
     child_order_id: str | None = None
     bucket: str | None = None
+    broker_order_id: str | None = None
+    broker_fill_id: str | None = None
+    client_order_id: str | None = None
+    broker_adapter: str | None = None
+    broker_batch_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

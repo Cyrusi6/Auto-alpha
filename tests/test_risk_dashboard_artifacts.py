@@ -36,6 +36,24 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
     (orders_plan / "child_orders.jsonl").write_text('{"child_order_id":"child_1"}\n', encoding="utf-8")
     (orders_plan / "child_fills.jsonl").write_text('{"child_order_id":"child_1","status":"FILLED"}\n', encoding="utf-8")
     (orders_plan / "execution_quality.json").write_text('{"execution_fill_rate":0.5}\n', encoding="utf-8")
+    broker_dir = tmp_path / "orders" / "broker"
+    broker_dir.mkdir()
+    (broker_dir / "broker_report.json").write_text(
+        '{"batch_id":"batch_1","summary":{"submitted_orders":1,"filled_orders":1}}',
+        encoding="utf-8",
+    )
+    (broker_dir / "broker_reconciliation.json").write_text(
+        '{"batch_id":"batch_1","orphan_fills":0,"issues":[]}',
+        encoding="utf-8",
+    )
+    (broker_dir / "broker_orders.jsonl").write_text('{"broker_order_id":"bo_1","status":"FILLED"}\n', encoding="utf-8")
+    (broker_dir / "broker_events.jsonl").write_text('{"event_id":"be_1","status":"FILLED"}\n', encoding="utf-8")
+    (broker_dir / "broker_fills.jsonl").write_text('{"broker_fill_id":"bf_1","status":"FILLED"}\n', encoding="utf-8")
+    (tmp_path / "orders" / "outbox").mkdir()
+    (tmp_path / "orders" / "outbox" / "broker_instruction_manifest.json").write_text(
+        '{"batch_id":"batch_1","schema_name":"generic_broker_csv","orders":1}',
+        encoding="utf-8",
+    )
     (tmp_path / "backtest" / "optimization_result.json").write_text(
         '{"factor_id":"factor_x","weights":{"000001.SZ":0.1}}',
         encoding="utf-8",
@@ -61,3 +79,9 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
     assert not service.load_parent_orders().empty
     assert not service.load_child_orders().empty
     assert not service.load_child_fills().empty
+    assert service.load_broker_report()["summary"]["submitted_orders"] == 1
+    assert service.load_broker_reconciliation()["batch_id"] == "batch_1"
+    assert not service.load_broker_orders().empty
+    assert not service.load_broker_events().empty
+    assert not service.load_broker_fills().empty
+    assert service.load_broker_instruction_manifest()["orders"] == 1

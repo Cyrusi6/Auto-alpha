@@ -9,6 +9,7 @@ from typing import Any
 
 from factor_store import LocalFactorStore
 from paper_account import LocalPaperAccount, compute_account_performance
+from broker_adapter import LocalBrokerStore
 
 from .models import MonitoringAlert
 
@@ -208,6 +209,73 @@ def check_impact_cost_spike(capacity_report_path: str | Path | None) -> tuple[di
     if ratio > 0.01:
         alerts.append(MonitoringAlert("warning", "impact_cost_spike", "estimated impact cost ratio is elevated", {"impact_cost_ratio": ratio}))
     return {"exists": bool(payload), "impact_cost_estimate": impact, "impact_cost_ratio": ratio}, alerts
+
+
+def check_broker_reconciliation(reconciliation_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not reconciliation_path:
+        return {"exists": False, "broker_status_mismatch_count": 0, "broker_orphan_fills": 0}, []
+    payload = _read_json(Path(reconciliation_path))
+    status_mismatch = int(payload.get("status_mismatch_count", 0) or 0) if payload else 0
+    orphan_fills = int(payload.get("orphan_fills", 0) or 0) if payload else 0
+    unfilled = float(payload.get("unfilled_value", 0.0) or 0.0) if payload else 0.0
+    alerts = []
+    if status_mismatch:
+        alerts.append(MonitoringAlert("warning", "broker_reconciliation", "broker reconciliation has status mismatches", {"count": status_mismatch}))
+    if orphan_fills:
+        alerts.append(MonitoringAlert("error", "broker_reconciliation", "broker reconciliation has orphan fills", {"orphan_fills": orphan_fills}))
+    return {
+        "exists": bool(payload),
+        "broker_status_mismatch_count": status_mismatch,
+        "broker_orphan_fills": orphan_fills,
+        "broker_unfilled_value": unfilled,
+        "issues": payload.get("issues", []) if payload else [],
+    }, alerts
+
+
+def check_open_broker_orders(broker_store_dir: str | Path | None, broker_batch_id: str | None = None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not broker_store_dir:
+        return {"exists": False, "broker_open_orders": 0}, []
+    store = LocalBrokerStore(broker_store_dir)
+    orders = store.load_orders(batch_id=broker_batch_id)
+    open_orders = [order for order in orders if order.status not in {"FILLED", "REJECTED", "CANCELLED", "EXPIRED"}]
+    alerts = []
+    if open_orders:
+        alerts.append(MonitoringAlert("warning", "open_broker_orders", "broker batch has open orders", {"count": len(open_orders)}))
+    return {"exists": bool(orders), "broker_open_orders": len(open_orders), "orders": len(orders)}, alerts
+
+
+def check_broker_rejected_orders(broker_store_dir: str | Path | None, broker_batch_id: str | None = None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not broker_store_dir:
+        return {"exists": False, "broker_rejected_orders": 0}, []
+    store = LocalBrokerStore(broker_store_dir)
+    rejected = [order for order in store.load_orders(batch_id=broker_batch_id) if order.status == "REJECTED"]
+    alerts = []
+    if rejected:
+        alerts.append(MonitoringAlert("warning", "broker_rejected_orders", "broker batch has rejected orders", {"count": len(rejected)}))
+    return {"exists": bool(rejected), "broker_rejected_orders": len(rejected)}, alerts
+
+
+def check_broker_idempotency(broker_store_dir: str | Path | None, broker_batch_id: str | None = None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not broker_store_dir or not broker_batch_id:
+        return {"exists": False, "idempotent_replay_count": 0}, []
+    store = LocalBrokerStore(broker_store_dir)
+    replay_count = store.replay_count(broker_batch_id)
+    return {"exists": True, "idempotent_replay_count": replay_count}, []
+
+
+def check_broker_file_outbox(outbox_manifest_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not outbox_manifest_path:
+        return {"exists": False, "broker_file_exported_orders": 0}, []
+    payload = _read_json(Path(outbox_manifest_path))
+    orders = int(payload.get("orders", 0) or 0) if payload else 0
+    alerts = []
+    if payload and orders == 0:
+        alerts.append(MonitoringAlert("warning", "broker_file_outbox", "broker file outbox contains no orders"))
+    return {
+        "exists": bool(payload),
+        "broker_file_exported_orders": orders,
+        "schema_name": payload.get("schema_name", "") if payload else "",
+    }, alerts
 
 
 def check_order_fill_quality(fills_path: str | Path) -> tuple[dict[str, Any], list[MonitoringAlert]]:
