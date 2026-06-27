@@ -1,82 +1,100 @@
+"""Local artifact reader for the A-share dashboard."""
+
+from __future__ import annotations
+
 import json
-import os
+from pathlib import Path
+from typing import Any
+
 import pandas as pd
-import sqlalchemy
-from dotenv import load_dotenv
-from solders.pubkey import Pubkey
-from solana.rpc.api import Client
 
-load_dotenv()
+from .config import DashboardConfig
 
-class DashboardService:
-    def __init__(self):
-        db_user = os.getenv("DB_USER", "postgres")
-        db_pass = os.getenv("DB_PASSWORD", "password")
-        db_host = os.getenv("DB_HOST", "localhost")
-        db_name = os.getenv("DB_NAME", "crypto_quant")
-        self.engine = sqlalchemy.create_engine(f"postgresql://{db_user}:{db_pass}@{db_host}:5432/{db_name}")
-        rpc_url = os.getenv("QUICKNODE_RPC_URL", "https://api.mainnet-beta.solana.com")
-        self.rpc = Client(rpc_url)
-        self.wallet_addr = self._get_wallet_address()
 
-    def _get_wallet_address(self):
+class AshareDashboardService:
+    def __init__(self, config: DashboardConfig | None = None):
+        self.config = config or DashboardConfig.from_env()
+
+    def load_manifest(self) -> dict[str, Any]:
+        return self._read_json(self.config.data_dir / "manifest.json")
+
+    def load_dataset(self, name: str, limit: int | None = 200) -> pd.DataFrame:
+        frame = self._read_jsonl(self.config.data_dir / name / "records.jsonl")
+        if limit is not None and len(frame) > limit:
+            return frame.head(limit)
+        return frame
+
+    def load_factors(self) -> pd.DataFrame:
+        return self._read_jsonl(self.config.factor_store_dir / "factors.jsonl")
+
+    def load_experiments(self) -> pd.DataFrame:
+        return self._read_jsonl(self.config.factor_store_dir / "experiments.jsonl")
+
+    def load_latest_factor_metrics(self) -> dict[str, Any]:
+        factors = self.load_factors()
+        if factors.empty:
+            return {}
+        latest = factors.iloc[-1].to_dict()
+        metrics = latest.get("metrics")
+        return metrics if isinstance(metrics, dict) else {}
+
+    def load_factor_report_json(self) -> dict[str, Any]:
+        return self._read_json(self.config.report_dir / "factor_report.json")
+
+    def load_factor_report_markdown(self) -> str:
+        path = self.config.report_dir / "factor_report.md"
+        return path.read_text(encoding="utf-8") if path.exists() else ""
+
+    def load_backtest_result(self) -> dict[str, Any]:
+        return self._read_json(self.config.backtest_dir / "backtest_result.json")
+
+    def load_equity_curve(self) -> pd.DataFrame:
+        return self._read_jsonl(self.config.backtest_dir / "equity_curve.jsonl")
+
+    def load_trades(self) -> pd.DataFrame:
+        return self._read_jsonl(self.config.backtest_dir / "trades.jsonl")
+
+    def load_target_positions(self) -> pd.DataFrame:
+        return self._read_table("target_positions")
+
+    def load_orders(self) -> pd.DataFrame:
+        return self._read_table("orders")
+
+    def load_paper_fills(self) -> pd.DataFrame:
+        return self._read_jsonl(self.config.orders_dir / "paper_fills.jsonl")
+
+    @staticmethod
+    def _read_json(path: Path) -> dict[str, Any]:
+        if not path.exists():
+            return {}
         try:
-            from solders.keypair import Keypair
-            pk_str = os.getenv("SOLANA_PRIVATE_KEY", "")
-            if "[" in pk_str:
-                kp = Keypair.from_bytes(json.loads(pk_str))
-            else:
-                kp = Keypair.from_base58_string(pk_str)
-            return str(kp.pubkey())
-        except Exception:
-            return "Unknown"
+            return json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
 
-    def get_wallet_balance(self):
-        try:
-            resp = self.rpc.get_balance(Pubkey.from_string(self.wallet_addr))
-            return resp.value / 1e9
-        except Exception as e:
-            return 0.0
-
-    def load_portfolio(self):
-        try:
-            with open("portfolio_state.json", "r") as f:
-                data = json.load(f)
-                if not data: return pd.DataFrame()
-                
-                df = pd.DataFrame(data.values())
-                # 计算当前预估 PnL
-                if 'highest_price' in df.columns and 'entry_price' in df.columns:
-                    df['pnl_pct'] = (df['highest_price'] - df['entry_price']) / df['entry_price']
-                return df
-        except FileNotFoundError:
+    @staticmethod
+    def _read_jsonl(path: Path) -> pd.DataFrame:
+        if not path.exists():
             return pd.DataFrame()
+        records = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return pd.DataFrame(records)
 
-    def load_strategy_info(self):
-        try:
-            with open("best_meme_strategy.json", "r") as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return {"formula": "Not Trained Yet"}
+    def _read_table(self, stem: str) -> pd.DataFrame:
+        jsonl_path = self.config.orders_dir / f"{stem}.jsonl"
+        csv_path = self.config.orders_dir / f"{stem}.csv"
+        frame = self._read_jsonl(jsonl_path)
+        if not frame.empty:
+            return frame
+        if csv_path.exists():
+            return pd.read_csv(csv_path)
+        return pd.DataFrame()
 
-    def get_market_overview(self, limit=50):
-        query = f"""
-        SELECT t.symbol, o.address, o.close, o.volume, o.liquidity, o.fdv, o.time
-        FROM ohlcv o
-        JOIN tokens t ON o.address = t.address
-        WHERE o.time = (SELECT MAX(time) FROM ohlcv)
-        ORDER BY o.liquidity DESC
-        LIMIT {limit}
-        """
-        try:
-            return pd.read_sql(query, self.engine)
-        except Exception:
-            return pd.DataFrame()
-    
-    def get_recent_logs(self, n=50):
-        log_file = "strategy.log"
-        if not os.path.exists(log_file): return []
-        
-        with open(log_file, "r") as f:
-            lines = f.readlines()
-            return lines[-n:]
+
+DashboardService = AshareDashboardService

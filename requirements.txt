@@ -1,49 +1,16 @@
-# AlphaGPT - Python Dependencies
-# Python 3.10+ required (recommended: 3.11)
-#
-# Installation:
-#   pip3 install -r requirements.txt
-#   # Or use: pip install -r requirements.txt (if pip points to Python 3)
-#
-# For experimental scripts (times.py, lord/experiment.py):
-#   pip3 install -r requirements-optional.txt
-#   # Or use: pip install -r requirements-optional.txt (if pip points to Python 3)
+# Auto-alpha core dependencies
+# Python 3.11 is recommended.
 
-# ===== Core Dependencies (Required for main pipeline) =====
+# Deep learning and numerical computing
+torch>=2.0.0
+numpy>=1.24.0
 
-# Deep Learning & Numerical Computing
-torch>=2.0.0          # PyTorch for model training and inference
-numpy>=1.24.0         # Numerical operations
+# Local data processing
+pandas>=2.0.0
 
-# Data Processing & Database
-pandas>=2.0.0         # Data manipulation and analysis
-sqlalchemy>=2.0.0     # Database ORM (PostgreSQL)
-asyncpg>=0.28.0       # Async PostgreSQL driver
+# Dashboard and visualization
+streamlit>=1.28.0
+plotly>=5.17.0
 
-# Async HTTP & Network
-aiohttp>=3.9.0        # Async HTTP client (for Birdeye/Jupiter APIs)
-
-# Environment & Configuration
-python-dotenv>=1.0.0  # Load .env files
-
-# Logging & Progress
-loguru>=0.7.0         # Structured logging
-tqdm>=4.66.0          # Progress bars
-
-# Solana Blockchain Integration
-# Note: Install solders first, then solana (as recommended by solana-py)
-solders>=0.18.0       # Solana Rust bindings (install first)
-solana>=0.30.0        # Solana Python SDK
-base58>=2.1.0         # Base58 encoding for Solana addresses
-
-# Dashboard & Visualization
-streamlit>=1.28.0     # Web dashboard framework
-plotly>=5.17.0        # Interactive charts
-
-# PostgreSQL
-psycopg2-binary>=2.9.10
-
-# ===== Optional Dependencies (For experimental scripts) =====
-# See requirements-optional.txt for:
-#   - matplotlib, seaborn (for lord/experiment.py visualization)
-#   - tushare (for times.py Chinese stock market data)
+# Research progress display
+tqdm>=4.66.0

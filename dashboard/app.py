@@ -1,111 +1,119 @@
+"""Streamlit entry point for the A-share factor research dashboard."""
+
+from __future__ import annotations
+
+import json
+
 import streamlit as st
-import pandas as pd
-import time
-from data_service import DashboardService
-from visualizer import plot_pnl_distribution, plot_market_scatter
 
-st.set_page_config(
-    page_title="MemeAlpha Commander",
-    page_icon="🐕",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+try:
+    from .config import DashboardConfig
+    from .data_service import AshareDashboardService
+    from .visualizer import (
+        plot_backtest_metrics,
+        plot_equity_curve,
+        plot_factor_split_metrics,
+        plot_order_distribution,
+    )
+except ImportError:  # pragma: no cover - streamlit script execution
+    from config import DashboardConfig
+    from data_service import AshareDashboardService
+    from visualizer import (
+        plot_backtest_metrics,
+        plot_equity_curve,
+        plot_factor_split_metrics,
+        plot_order_distribution,
+    )
 
-st.markdown("""
-<style>
-    .metric-card {
-        background-color: #1E1E1E;
-        padding: 15px;
-        border-radius: 10px;
-        border: 1px solid #333;
-    }
-    .stDataFrame { border: none; }
-</style>
-""", unsafe_allow_html=True)
 
-@st.cache_resource
-def get_service():
-    return DashboardService()
-
-svc = get_service()
-
-st.sidebar.title("MemeAlpha Bot")
-st.sidebar.markdown("---")
-
-with st.sidebar:
-    st.subheader("Wallet Status")
-    bal = svc.get_wallet_balance()
-    st.metric("SOL Balance", f"{bal:.4f} SOL")
-    
-    st.markdown("---")
-    st.subheader("Control Panel")
-    if st.button("Refresh Data"):
-        st.rerun()
-        
-    if st.button("EMERGENCY STOP", type="primary"):
-        with open("STOP_SIGNAL", "w") as f:
-            f.write("STOP")
-        st.error("STOP SIGNAL SENT, Process will terminate on next cycle.")
-
-col1, col2, col3, col4 = st.columns(4)
-portfolio_df = svc.load_portfolio()
-market_df = svc.get_market_overview()
-strategy_data = svc.load_strategy_info()
-
-open_positions = len(portfolio_df)
-total_invested = portfolio_df['initial_cost_sol'].sum() if not portfolio_df.empty else 0.0
-
-with col1:
-    st.metric("Open Positions", f"{open_positions} / 5")
-with col2:
-    st.metric("Total Invested", f"{total_invested:.2f} SOL")
-with col3:
-    if not portfolio_df.empty:
-        current_val = (portfolio_df['amount_held'] * portfolio_df['highest_price']).sum()
-        pnl_sol = current_val - total_invested
-        st.metric("Unrealized PnL (Est)", f"{pnl_sol:+.3f} SOL", delta_color="normal")
+def _show_dataframe_or_empty(title: str, frame) -> None:
+    st.subheader(title)
+    if frame.empty:
+        st.info("No local artifact found.")
     else:
-        st.metric("Unrealized PnL", "0.00 SOL")
-with col4:
-    st.metric("Active Strategy", "AlphaGPT-v1", help=str(strategy_data))
+        st.dataframe(frame, use_container_width=True, hide_index=True)
 
-tab1, tab2, tab3 = st.tabs(["Portfolio", "Market Scanner", "Logs"])
 
-with tab1:
-    st.subheader("Active Holdings")
-    if not portfolio_df.empty:
-        # Display Table
-        display_cols = ['symbol', 'entry_price', 'highest_price', 'amount_held', 'pnl_pct', 'is_moonbag']
-        
-        # Format for display
-        show_df = portfolio_df[display_cols].copy()
-        show_df['pnl_pct'] = show_df['pnl_pct'].apply(lambda x: f"{x:.2%}")
-        show_df['entry_price'] = show_df['entry_price'].apply(lambda x: f"{x:.6f}")
-        
-        st.dataframe(show_df, use_container_width=True, hide_index=True)
-        
-        # Display Chart
-        st.plotly_chart(plot_pnl_distribution(portfolio_df), use_container_width=True)
-    else:
-        st.info("No active positions. The bot is scanning...")
+def render_app(config: DashboardConfig | None = None) -> None:
+    st.set_page_config(page_title="A-Share Factor Research", layout="wide")
+    service = AshareDashboardService(config)
 
-with tab2:
-    st.subheader("Top Opportunities (DB Snapshot)")
-    if not market_df.empty:
-        st.plotly_chart(plot_market_scatter(market_df), use_container_width=True)
-        st.dataframe(market_df, use_container_width=True)
-    else:
-        st.warning("No market data found in DB. Is the Data Pipeline running?")
+    st.title("A-Share Factor Research Platform")
+    st.caption("Local artifacts only: data, factor store, reports, portfolio simulation, and paper orders.")
 
-with tab3:
-    st.subheader("System Logs (Tail 20)")
-    logs = svc.get_recent_logs(20)
-    if logs:
-        st.code("".join(logs), language="text")
-    else:
-        st.caption("No logs found or log file path incorrect.")
+    with st.sidebar:
+        st.header("Artifact Paths")
+        st.code(
+            "\n".join(
+                [
+                    f"data_dir={service.config.data_dir}",
+                    f"factor_store_dir={service.config.factor_store_dir}",
+                    f"report_dir={service.config.report_dir}",
+                    f"backtest_dir={service.config.backtest_dir}",
+                    f"orders_dir={service.config.orders_dir}",
+                ]
+            ),
+            language="text",
+        )
+        if st.button("Refresh"):
+            st.rerun()
 
-time.sleep(1) 
-if st.checkbox("Auto-Refresh (30s)", value=True):
-    time.sleep(30)
-    st.rerun()
+    data_tab, factor_tab, report_tab, backtest_tab, orders_tab = st.tabs(
+        ["Data", "Factors", "Reports", "Backtest", "Orders"]
+    )
+
+    with data_tab:
+        manifest = service.load_manifest()
+        st.subheader("Manifest")
+        st.json(manifest if manifest else {"status": "No manifest found"})
+        col1, col2 = st.columns(2)
+        with col1:
+            _show_dataframe_or_empty("Securities", service.load_dataset("securities"))
+        with col2:
+            _show_dataframe_or_empty("Daily Bars", service.load_dataset("daily_bars"))
+
+    with factor_tab:
+        factors = service.load_factors()
+        experiments = service.load_experiments()
+        _show_dataframe_or_empty("Factors", factors)
+        _show_dataframe_or_empty("Experiments", experiments)
+        latest_metrics = service.load_latest_factor_metrics()
+        st.subheader("Latest Factor Metrics")
+        st.json(latest_metrics if latest_metrics else {"status": "No factor metrics found"})
+
+    with report_tab:
+        report = service.load_factor_report_json()
+        markdown = service.load_factor_report_markdown()
+        if report:
+            st.plotly_chart(plot_factor_split_metrics(report.get("metrics_by_split", {})), use_container_width=True)
+            st.json(report)
+        else:
+            st.info("No factor_report.json found.")
+        if markdown:
+            st.markdown(markdown)
+
+    with backtest_tab:
+        result = service.load_backtest_result()
+        equity_curve = service.load_equity_curve()
+        trades = service.load_trades()
+        metrics = result.get("metrics", {}) if result else {}
+        st.plotly_chart(plot_backtest_metrics(metrics), use_container_width=True)
+        st.plotly_chart(plot_equity_curve(equity_curve), use_container_width=True)
+        _show_dataframe_or_empty("Trades", trades)
+
+    with orders_tab:
+        targets = service.load_target_positions()
+        orders = service.load_orders()
+        fills = service.load_paper_fills()
+        st.plotly_chart(plot_order_distribution(orders), use_container_width=True)
+        _show_dataframe_or_empty("Target Positions", targets)
+        _show_dataframe_or_empty("Orders", orders)
+        _show_dataframe_or_empty("Paper Fills", fills)
+
+
+def main() -> None:
+    render_app()
+
+
+if __name__ == "__main__":
+    main()

@@ -295,3 +295,49 @@
 - 接入真实 Tushare provider 并扩展停复牌、涨跌停、成交约束。
 - 增加行业/市值中性化和更完整的组合回测。
 - 清理旧依赖和仍未迁移的文档描述。
+
+## 2026-06-27 - 任务 007
+
+### 本次变更摘要
+- 将 `dashboard/` 重构为 A 股因子研究本地 artifact 看板。
+- 重写 `README.md` 和 `CATREADME.md`，对齐当前 A 股平台架构和 sample quickstart。
+- 清理 `pyproject.toml`、`requirements.txt` 和 `uv.lock` 中不再需要的旧依赖。
+- 新增 dashboard artifact、visualizer、app import、文档和依赖扫描测试。
+
+### 新增文件
+- `dashboard/config.py`
+- `tests/test_dashboard_artifacts.py`
+- `tests/test_dashboard_docs_dependencies.py`
+
+### 修改文件
+- `dashboard/app.py`
+- `dashboard/data_service.py`
+- `dashboard/visualizer.py`
+- `README.md`
+- `CATREADME.md`
+- `pyproject.toml`
+- `requirements.txt`
+- `uv.lock`
+- `FRAMEWORK_UPDATE.md`
+
+### 删除或隔离的旧问题
+- dashboard 不再访问数据库、链上服务、私钥或外部网络。
+- dashboard import 不触发训练、数据同步或外部连接。
+- 项目主文档不再描述旧业务主流程。
+- 主依赖中移除不再使用的旧网络、数据库和链上 SDK。
+
+### 新增 A 股平台能力
+- `DashboardConfig` 统一读取本地 artifact 路径。
+- `AshareDashboardService` 可读取 data、factor store、report、backtest、orders 和 paper fills。
+- `dashboard.visualizer` 提供 equity curve、backtest metrics、split metrics 和 order distribution 图。
+- Streamlit 页面包含 Data、Factors、Reports、Backtest、Orders 五个 tab，缺少 artifact 时展示空状态。
+
+### 测试结果
+- `uv run pytest`：通过，83 passed。
+- 文档和 dashboard 目标文件扫描不含旧业务词。
+- `pyproject.toml`、`requirements.txt`、`uv.lock` 扫描不含已移除依赖。
+
+### 后续待办
+- 为 dashboard 增加因子对比、参数过滤和多实验选择。
+- 接入真实 Tushare provider 后补充数据质量和覆盖率面板。
+- 继续收敛可选研究脚本和依赖边界。
