@@ -579,3 +579,73 @@
 - 将日频约束撮合扩展到更精细的盘口、分钟级成交量和真实滑点模型。
 - 完善指数成分历史变更、复权校验和停复牌连续性检查。
 - 增加更多指数股票池模板和真实券商接口前的人工复核流程。
+
+## 2026-06-27 - 任务 012
+
+### 本次变更摘要
+- 新增 `research/` 批量因子研发编排层，支持默认候选公式、JSON 候选、批量 VM 执行、transform、gate、correlation check、注册和 batch report。
+- 增强 `factor_store`，支持 composite factor 兼容字段、按 formula hash 查找、状态更新和 factor values 矩阵加载。
+- 增强 `factor_engine.correlation`，新增相关性矩阵和 pairwise correlation table。
+- 新增 composite factor 构建与注册，支持 `equal_weight`、`score_weighted`、`rank_average`。
+- 增强 `backtest.run_backtest` 和 `strategy_manager.runner`，支持 `--latest-approved` 与 `--factor-type single|composite|any`。
+- 增强 dashboard，展示 factor type、batch id、component factors，并可读取 batch research report。
+
+### 新增文件
+- `research/__init__.py`
+- `research/models.py`
+- `research/candidates.py`
+- `research/batch_runner.py`
+- `research/composite.py`
+- `research/report.py`
+- `research/run_batch.py`
+- `tests/test_research_candidates.py`
+- `tests/test_research_batch_runner.py`
+- `tests/test_research_composite.py`
+- `tests/test_research_composite_cli_integration.py`
+- `tests/test_research_run_batch_cli.py`
+- `tests/test_research_no_old_terms.py`
+- `tests/test_factor_store_batch_compatibility.py`
+
+### 修改文件
+- `factor_store/models.py`
+- `factor_store/storage.py`
+- `factor_engine/__init__.py`
+- `factor_engine/correlation.py`
+- `model_core/engine.py`
+- `backtest/__init__.py`
+- `backtest/io.py`
+- `backtest/run_backtest.py`
+- `strategy_manager/runner.py`
+- `dashboard/data_service.py`
+- `dashboard/app.py`
+- `tests/test_factor_engine_correlation.py`
+- `tests/test_dashboard_artifacts.py`
+- `README.md`
+- `CATREADME.md`
+- `FRAMEWORK_UPDATE.md`
+
+### 删除或隔离的旧问题
+- 批量实验不再重复注册相同公式 hash 的候选因子。
+- 回测和订单生成不再只能默认选择最新因子，可显式选择最新 approved composite factor。
+- dashboard 兼容旧 factor records 缺少 batch/composite metadata 的情况。
+
+### 新增 A 股平台能力
+- `research.default_candidates()` 提供 12 个基础 A 股候选公式。
+- `python -m research.run_batch` 可生成 `batch_result.json`、`batch_results.jsonl`、`batch_report.json` 和 `batch_report.md`。
+- composite factor 作为 `factor_type=composite` 写入 factor store，并保存 component factor ids。
+- `backtest.run_backtest --latest-approved --factor-type composite` 可直接回测最新 approved composite factor。
+- `strategy_manager.runner --latest-approved --factor-type composite` 可直接用 composite factor 生成目标持仓、订单和 paper fills。
+
+### 测试结果
+- `uv run pytest tests/test_research_candidates.py tests/test_research_batch_runner.py tests/test_research_composite.py tests/test_research_composite_cli_integration.py tests/test_research_run_batch_cli.py tests/test_factor_store_batch_compatibility.py tests/test_factor_engine_correlation.py tests/test_dashboard_artifacts.py tests/test_backtest_cli.py tests/test_strategy_runner_ashare.py`：通过，23 passed。
+- `uv run pytest`：通过，157 passed。
+- `uv run python -m data_pipeline.run_pipeline --sync --provider sample --data-dir /tmp/auto-alpha-batch-research/data --validate --mode overwrite --index-codes 000300.SH --pretty`：通过，写出 8 类数据集，quality report 无 error / warning。
+- `uv run python -m universe.run_universe --data-dir /tmp/auto-alpha-batch-research/data --as-of-date 20240104 --universe-name csi300_sample --use-index-members --index-code 000300.SH --min-listed-days 0 --min-amount 0 --pretty`：通过，基于 `000300.SH` 最新成分选出 3 个 sample 成员。
+- `uv run python -m research.run_batch --data-dir /tmp/auto-alpha-batch-research/data --universe-name csi300_sample --factor-store-dir /tmp/auto-alpha-batch-research/store --report-dir /tmp/auto-alpha-batch-research/reports --output-dir /tmp/auto-alpha-batch-research/batch --factor-transform winsorize_zscore --enable-gate --top-k 5 --max-candidates 8 --composite-method rank_average --correlation-threshold 0.99 --min-coverage 0.5 --pretty`：通过，8 个候选中 6 个 approved、2 个 rejected，并生成 composite factor。
+- `uv run python -m backtest.run_backtest --data-dir /tmp/auto-alpha-batch-research/data --factor-store-dir /tmp/auto-alpha-batch-research/store --output-dir /tmp/auto-alpha-batch-research/backtest --latest-approved --factor-type composite --top-n 2 --max-weight 0.10 --pretty`：通过，选中最新 approved composite factor 并生成组合回测。
+- `uv run python -m strategy_manager.runner --data-dir /tmp/auto-alpha-batch-research/data --factor-store-dir /tmp/auto-alpha-batch-research/store --output-dir /tmp/auto-alpha-batch-research/orders --latest-approved --factor-type composite --top-n 2 --max-weight 0.10 --portfolio-value 1000000 --pretty`：通过，选中最新 approved composite factor 并生成目标持仓、订单和 paper fills。
+
+### 后续待办
+- 扩展候选公式来源，包括配置化公式库、搜索器输出和训练生成公式。
+- 增强 composite factor 的权重优化、稳定性分析和样本外衰减监控。
+- dashboard 增加 batch 间对比、相关性热力图和 composite component drill-down。

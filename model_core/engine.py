@@ -247,6 +247,7 @@ class FactorMiningEngine:
                 "universe_name": self.universe_name,
                 "universe_file": str(self.universe_file) if self.universe_file is not None else None,
             },
+            factor_type="single",
         )
         experiment_record = ExperimentRecord(
             experiment_id=experiment_id,

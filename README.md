@@ -12,6 +12,7 @@ The current implementation is local-first. It uses deterministic sample data and
 - `factor_engine/`: Cross-sectional preprocessing, market-cap and industry neutralization, correlation checks, and factor admission gate.
 - `factor_store/`: Local factor registry, experiment registry, factor value storage, and stable factor identifiers.
 - `evaluation/`: Time-series sample split, split-level metrics, and factor reports.
+- `research/`: Batch candidate execution, factor ranking, composite factor construction, and batch research reports.
 - `backtest/`: Long-only A-share portfolio simulation and backtest CLI.
 - `execution/`: Paper broker and order/fill export utilities.
 - `strategy_manager/`: Target position and paper order generation.
@@ -51,16 +52,17 @@ uv run python -m universe.run_universe \
   --min-amount 0 \
   --pretty
 
-uv run python -m model_core.engine \
-  --dry-run \
-  --register \
+uv run python -m research.run_batch \
   --data-dir /tmp/auto-alpha-demo/data \
   --universe-name csi300_sample \
-  --output-dir /tmp/auto-alpha-demo/out \
   --factor-store-dir /tmp/auto-alpha-demo/store \
   --report-dir /tmp/auto-alpha-demo/reports \
-  --factor-transform neutralize_industry_size \
+  --output-dir /tmp/auto-alpha-demo/batch \
+  --factor-transform winsorize_zscore \
   --enable-gate \
+  --top-k 5 \
+  --max-candidates 8 \
+  --composite-method rank_average \
   --correlation-threshold 0.99 \
   --min-coverage 0.5 \
   --pretty
@@ -69,6 +71,8 @@ uv run python -m backtest.run_backtest \
   --data-dir /tmp/auto-alpha-demo/data \
   --factor-store-dir /tmp/auto-alpha-demo/store \
   --output-dir /tmp/auto-alpha-demo/backtest \
+  --latest-approved \
+  --factor-type composite \
   --top-n 2 \
   --max-weight 0.10 \
   --pretty
@@ -77,6 +81,8 @@ uv run python -m strategy_manager.runner \
   --data-dir /tmp/auto-alpha-demo/data \
   --factor-store-dir /tmp/auto-alpha-demo/store \
   --output-dir /tmp/auto-alpha-demo/orders \
+  --latest-approved \
+  --factor-type composite \
   --top-n 2 \
   --max-weight 0.10 \
   --portfolio-value 1000000 \
@@ -117,6 +123,8 @@ Market constraint datasets include `daily_limits`, `adjustment_factors`, and `in
 
 The factor engine can be constrained to a local universe with `--universe-name` or `--universe-file`. `--factor-transform` supports `raw`, `winsorize`, `zscore`, `winsorize_zscore`, `neutralize_market_cap`, `neutralize_industry`, and `neutralize_industry_size`. Passing `--enable-gate` records coverage, turnover, split metrics, correlation checks, gate status, and transform metadata in the factor store and report.
 
+Batch research is available through `python -m research.run_batch`. The default candidate set includes at least 12 reproducible formula factors such as `RET_1D`, `RET_5D`, valuation, profitability, growth, and simple combined expressions. A batch run executes candidates through StackVM, applies the selected transform and gate, skips existing formula hashes, writes per-factor reports, ranks candidates, and can register a composite factor with `equal_weight`, `score_weighted`, or `rank_average`. Backtest and strategy CLIs can select the newest approved composite factor with `--latest-approved --factor-type composite`.
+
 Dashboard-specific overrides:
 
 - `ASHARE_DASHBOARD_DATA_DIR`
@@ -130,4 +138,5 @@ Dashboard-specific overrides:
 - Tushare HTTP provider is available, but production use still requires valid token, quota, richer data quality rules, and a fuller incremental sync strategy.
 - Industry and market-cap neutralization now have a basic cross-sectional implementation; future work should expand this into a fuller risk model and finer industry classification.
 - Local daily simulation supports core A-share constraints; future work should add finer real-world matching, minute-level liquidity, and richer risk models.
+- Batch research and composite factors are local and deterministic; future work should add stronger formula search, more stable neural training, and large-scale performance tuning.
 - Paper order export is local only; no real broker integration is implemented.

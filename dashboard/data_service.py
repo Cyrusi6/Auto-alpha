@@ -41,11 +41,16 @@ class AshareDashboardService:
             metadata = metadata if isinstance(metadata, dict) else {}
             similar = metadata.get("similar_factors")
             similar = similar if isinstance(similar, list) else []
+            components = row.get("parent_factor_ids") or metadata.get("component_factor_ids") or []
+            components = components if isinstance(components, list) else []
             gate_reasons = row.get("gate_reasons")
             gate_reasons = gate_reasons if isinstance(gate_reasons, list) else []
             records.append(
                 {
                     "factor_id": row.get("factor_id"),
+                    "factor_type": row.get("factor_type") or "single",
+                    "batch_id": row.get("batch_id") or metadata.get("batch_id") or "",
+                    "component_factor_ids": ", ".join(str(item) for item in components),
                     "status": row.get("status") or "candidate",
                     "transform_method": row.get("transform_method") or "raw",
                     "gate_status": row.get("gate_status") or "",
@@ -80,6 +85,21 @@ class AshareDashboardService:
     def load_factor_report_markdown(self) -> str:
         path = self.config.report_dir / "factor_report.md"
         return path.read_text(encoding="utf-8") if path.exists() else ""
+
+    def load_batch_report_json(self) -> dict[str, Any]:
+        return self._read_json(self.config.report_dir / "batch_report.json") or self._read_json(
+            self.config.report_dir.parent / "batch" / "batch_report.json"
+        )
+
+    def load_batch_report_markdown(self) -> str:
+        candidates = [
+            self.config.report_dir / "batch_report.md",
+            self.config.report_dir.parent / "batch" / "batch_report.md",
+        ]
+        for path in candidates:
+            if path.exists():
+                return path.read_text(encoding="utf-8")
+        return ""
 
     def load_backtest_result(self) -> dict[str, Any]:
         return self._read_json(self.config.backtest_dir / "backtest_result.json")

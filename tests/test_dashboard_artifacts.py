@@ -89,7 +89,16 @@ def test_dashboard_service_reads_local_artifacts(tmp_path, capsys):
     assert not service.load_factors().empty
     overview = service.load_factor_overview()
     assert not overview.empty
-    assert {"status", "transform_method", "gate_status", "max_abs_correlation", "similar_factors"} <= set(overview.columns)
+    assert {
+        "status",
+        "transform_method",
+        "gate_status",
+        "max_abs_correlation",
+        "similar_factors",
+        "factor_type",
+        "batch_id",
+        "component_factor_ids",
+    } <= set(overview.columns)
     assert not service.load_experiments().empty
     assert service.load_factor_report_json()["factor_id"].startswith("factor_")
     assert service.load_backtest_result()["metrics"]
@@ -111,6 +120,29 @@ def test_dashboard_visualizers_return_plotly_figures(tmp_path, capsys):
         go.Figure,
     )
     assert isinstance(plot_order_distribution(service.load_orders()), go.Figure)
+
+
+def test_dashboard_service_reads_batch_report(tmp_path):
+    report_dir = tmp_path / "reports"
+    batch_dir = tmp_path / "batch"
+    batch_dir.mkdir(parents=True)
+    (batch_dir / "batch_report.json").write_text(
+        '{"batch_id":"batch_test","summary":{"total_candidates":1}}',
+        encoding="utf-8",
+    )
+    (batch_dir / "batch_report.md").write_text("# Batch Research Report", encoding="utf-8")
+    service = AshareDashboardService(
+        DashboardConfig(
+            data_dir=tmp_path / "data",
+            factor_store_dir=tmp_path / "store",
+            report_dir=report_dir,
+            backtest_dir=tmp_path / "backtest",
+            orders_dir=tmp_path / "orders",
+        )
+    )
+
+    assert service.load_batch_report_json()["batch_id"] == "batch_test"
+    assert "Batch Research" in service.load_batch_report_markdown()
 
 
 def test_dashboard_app_import_has_no_external_side_effects():

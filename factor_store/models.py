@@ -22,6 +22,9 @@ class FactorRecord:
     gate_status: str | None = None
     gate_reasons: list[str] | None = None
     metadata: dict[str, object] | None = None
+    parent_factor_ids: list[str] | None = None
+    factor_type: str | None = None
+    batch_id: str | None = None
 
 
 @dataclass(frozen=True)

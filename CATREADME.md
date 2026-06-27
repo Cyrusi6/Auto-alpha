@@ -5,9 +5,10 @@ This repository is now organized as a local A-share factor research platform. Th
 1. Prepare A-share data artifacts.
 2. Build feature tensors and evaluate formula factors.
 3. Register factors and experiments.
-4. Run portfolio simulation.
-5. Export target positions and paper orders.
-6. Review artifacts in the dashboard.
+4. Run batch research and build composite factors.
+5. Run portfolio simulation.
+6. Export target positions and paper orders.
+7. Review artifacts in the dashboard.
 
 ## Data Layer
 
@@ -48,6 +49,8 @@ Append mode merges incoming records by dataset primary key. The quality report c
 
 `factor_engine/` adds cross-sectional preprocessing, basic market-cap and industry neutralization, factor correlation checks, and admission gates. The engine can register transformed factor outputs into the factor store with gate metadata and similar-factor information.
 
+`research/` orchestrates batch factor experiments. It loads default or JSON-defined candidate formulas, executes StackVM, applies transforms and gates, skips duplicate formula hashes, writes per-factor reports, ranks candidates, and can register a composite factor. Composite methods include equal weight, score weight, and rank average.
+
 ## Factor Store And Experiments
 
 `factor_store/` persists:
@@ -58,9 +61,18 @@ Append mode merges incoming records by dataset primary key. The quality report c
 
 `evaluation/` provides train/valid/test splitting, split-level metrics, and factor reports in JSON and Markdown. Reports render metric columns dynamically and include transform, gate, status, and correlation metadata when available.
 
+Batch research writes:
+
+- `batch_result.json`
+- `batch_results.jsonl`
+- `batch_report.json`
+- `batch_report.md`
+
+Composite factor records use `factor_type=composite` and store component factor ids in metadata.
+
 ## Portfolio Simulation
 
-`backtest/` reads factor values, builds long-only target weights, estimates local trading costs, and writes:
+`backtest/` reads single or composite factor values, builds long-only target weights, estimates local trading costs, and writes:
 
 - `backtest_result.json`
 - `equity_curve.jsonl`
@@ -82,8 +94,8 @@ Returns are based on `adjusted_close`; simulated fills use raw `close`. The simu
 
 ## Dashboard
 
-`dashboard/` is a Streamlit artifact viewer. It reads local data, factor store, reports, backtest outputs, target positions, orders, and paper fills. Missing artifacts produce empty states instead of errors.
+`dashboard/` is a Streamlit artifact viewer. It reads local data, factor store, factor reports, batch reports, backtest outputs, target positions, orders, and paper fills. Missing artifacts produce empty states instead of errors.
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Production-grade Tushare incremental sync, finer matching realism, minute-level liquidity, fuller risk-model neutralization, finer industry classification, and broker connectivity are future work.
+The platform is local-first and deterministic by default. Production-grade Tushare incremental sync, stronger formula search, more stable neural training, finer matching realism, minute-level liquidity, fuller risk-model neutralization, finer industry classification, large-scale performance tuning, and broker connectivity are future work.

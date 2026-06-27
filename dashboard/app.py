@@ -110,13 +110,30 @@ def render_app(config: DashboardConfig | None = None) -> None:
     with report_tab:
         report = service.load_factor_report_json()
         markdown = service.load_factor_report_markdown()
+        batch_report = service.load_batch_report_json()
+        batch_markdown = service.load_batch_report_markdown()
         if report:
+            st.subheader("Factor Report")
             st.plotly_chart(plot_factor_split_metrics(report.get("metrics_by_split", {})), use_container_width=True)
             st.json(report)
         else:
             st.info("No factor_report.json found.")
         if markdown:
             st.markdown(markdown)
+        st.subheader("Batch Research")
+        if batch_report:
+            st.json(
+                {
+                    "batch_id": batch_report.get("batch_id"),
+                    "created_at": batch_report.get("created_at"),
+                    "composite_factor_id": batch_report.get("composite_factor_id"),
+                    "summary": batch_report.get("summary"),
+                }
+            )
+        else:
+            st.info("No batch_report.json found.")
+        if batch_markdown:
+            st.markdown(batch_markdown)
 
     with backtest_tab:
         result = service.load_backtest_result()

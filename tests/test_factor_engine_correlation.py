@@ -2,9 +2,11 @@ import torch
 
 from factor_engine.correlation import (
     factor_correlation,
+    factor_correlation_matrix,
     find_similar_factors,
     load_existing_factor_matrices,
     max_abs_correlation,
+    pairwise_correlation_table,
 )
 from factor_store import FactorRecord, LocalFactorStore
 
@@ -24,6 +26,21 @@ def test_max_abs_correlation_returns_largest_absolute_value():
     same = candidate.clone()
 
     assert max_abs_correlation(candidate, [unrelated, same]) > 0.99
+
+
+def test_correlation_matrix_and_pairwise_table_are_serializable():
+    matrices = {
+        "factor_a": torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
+        "factor_b": torch.tensor([[2.0, 4.0], [6.0, 8.0]]),
+        "factor_c": torch.tensor([[4.0, 3.0], [2.0, 1.0]]),
+    }
+
+    matrix = factor_correlation_matrix(matrices)
+    table = pairwise_correlation_table(matrices)
+
+    assert matrix["factor_a"]["factor_b"] > 0.99
+    assert matrix["factor_a"]["factor_c"] < -0.99
+    assert table[0]["abs_correlation"] > 0.99
 
 
 def test_load_existing_factor_matrices_aligns_store_values(tmp_path):

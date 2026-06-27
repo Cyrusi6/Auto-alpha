@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from backtest import build_long_only_targets, factor_values_to_matrix, select_factor_id
+from backtest import build_long_only_targets, describe_factor, factor_values_to_matrix, select_factor_id
 from execution import PaperBroker, export_orders_csv, export_orders_jsonl
 from factor_store import LocalFactorStore
 from model_core.data_loader import AShareDataLoader
@@ -27,6 +27,8 @@ class AShareStrategyRunner:
         factor_id: str | None = None,
         rebalance_date: str | None = None,
         portfolio_value: float = 1_000_000.0,
+        latest_approved: bool = False,
+        factor_type: str = "any",
     ):
         self.data_dir = Path(data_dir)
         self.factor_store_dir = Path(factor_store_dir)
@@ -36,13 +38,22 @@ class AShareStrategyRunner:
         self.factor_id = factor_id
         self.rebalance_date = rebalance_date
         self.portfolio_value = float(portfolio_value)
+        self.latest_approved = bool(latest_approved)
+        self.factor_type = factor_type
         self.loader: AShareDataLoader | None = None
         self.selected_factor_id: str | None = None
+        self.selected_factor_meta: dict[str, object] = {}
 
     def build_target_book(self) -> StrategyTargetBook:
         self.loader = AShareDataLoader(data_dir=self.data_dir, device="cpu").load_data()
         store = LocalFactorStore(self.factor_store_dir)
-        self.selected_factor_id = select_factor_id(store, self.factor_id)
+        self.selected_factor_id = select_factor_id(
+            store,
+            self.factor_id,
+            latest_approved=self.latest_approved,
+            factor_type=self.factor_type,
+        )
+        self.selected_factor_meta = describe_factor(store, self.selected_factor_id)
         records = store.load_factor_values(self.selected_factor_id)
         factor_matrix = factor_values_to_matrix(records, self.loader.ts_codes, self.loader.trade_dates)
         trade_date = self.rebalance_date or self.loader.trade_dates[-1]
@@ -102,6 +113,8 @@ class AShareStrategyRunner:
 
         return {
             "factor_id": self.selected_factor_id,
+            "factor_type": self.selected_factor_meta.get("factor_type"),
+            "component_factor_ids": self.selected_factor_meta.get("component_factor_ids", []),
             "rebalance_date": target_book.trade_date,
             "n_targets": len(target_book.targets),
             "n_orders": len(orders),
@@ -125,6 +138,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--factor-store-dir", default=str(defaults.factor_store_dir))
     parser.add_argument("--output-dir", default=str(defaults.output_dir))
     parser.add_argument("--factor-id")
+    parser.add_argument("--latest-approved", action="store_true")
+    parser.add_argument("--factor-type", choices=["single", "composite", "any"], default="any")
     parser.add_argument("--rebalance-date", default=defaults.rebalance_date)
     parser.add_argument("--top-n", type=int, default=defaults.top_n)
     parser.add_argument("--max-weight", type=float, default=defaults.max_weight)
@@ -144,6 +159,8 @@ def main(argv: list[str] | None = None) -> int:
         factor_id=args.factor_id,
         rebalance_date=args.rebalance_date,
         portfolio_value=args.portfolio_value,
+        latest_approved=args.latest_approved,
+        factor_type=args.factor_type,
     ).generate_orders()
     print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0

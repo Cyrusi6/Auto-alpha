@@ -32,6 +32,46 @@ def max_abs_correlation(candidate: torch.Tensor, existing_matrices: list[torch.T
     return float(max(abs(factor_correlation(candidate, matrix)) for matrix in existing_matrices))
 
 
+def factor_correlation_matrix(
+    factor_matrices: dict[str, torch.Tensor] | list[torch.Tensor],
+    factor_ids: list[str] | None = None,
+) -> dict[str, dict[str, float]]:
+    if isinstance(factor_matrices, dict):
+        ids = list(factor_matrices.keys())
+        matrices = [factor_matrices[factor_id] for factor_id in ids]
+    else:
+        matrices = list(factor_matrices)
+        ids = factor_ids or [f"factor_{idx}" for idx in range(len(matrices))]
+    result: dict[str, dict[str, float]] = {}
+    for row_id, row_matrix in zip(ids, matrices):
+        result[row_id] = {}
+        for col_id, col_matrix in zip(ids, matrices):
+            result[row_id][col_id] = float(factor_correlation(row_matrix, col_matrix))
+    return result
+
+
+def pairwise_correlation_table(
+    factor_matrices: dict[str, torch.Tensor] | list[torch.Tensor],
+    factor_ids: list[str] | None = None,
+) -> list[dict[str, float | str]]:
+    matrix = factor_correlation_matrix(factor_matrices, factor_ids)
+    ids = list(matrix.keys())
+    rows: list[dict[str, float | str]] = []
+    for left_idx, left_id in enumerate(ids):
+        for right_id in ids[left_idx + 1 :]:
+            corr = float(matrix[left_id][right_id])
+            rows.append(
+                {
+                    "factor_id_1": left_id,
+                    "factor_id_2": right_id,
+                    "correlation": corr,
+                    "abs_correlation": abs(corr),
+                }
+            )
+    rows.sort(key=lambda row: float(row["abs_correlation"]), reverse=True)
+    return rows
+
+
 def load_existing_factor_matrices(
     store: LocalFactorStore,
     factor_ids: list[str],

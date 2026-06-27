@@ -8,6 +8,8 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
+import torch
+
 from .models import ExperimentRecord, FactorRecord, FactorValueRecord, StorageResult
 
 
@@ -64,6 +66,73 @@ class LocalFactorStore:
         path = self.values_dir / f"{factor_id}.jsonl"
         return [FactorValueRecord(**payload) for payload in self._read_jsonl(path)]
 
+    def find_factor_by_hash(self, formula_hash: str) -> FactorRecord | None:
+        for record in self.load_factors():
+            if record.formula_hash == formula_hash:
+                return record
+        return None
+
+    def update_factor_status(self, factor_id: str, status: str, reason: str | None = None) -> StorageResult:
+        records = self.load_factors()
+        updated: list[FactorRecord] = []
+        count = 0
+        for record in records:
+            if record.factor_id != factor_id:
+                updated.append(record)
+                continue
+            reasons = list(record.gate_reasons or [])
+            if reason:
+                reasons.append(reason)
+            updated.append(
+                FactorRecord(
+                    factor_id=record.factor_id,
+                    formula=record.formula,
+                    formula_tokens=record.formula_tokens,
+                    formula_hash=record.formula_hash,
+                    feature_version=record.feature_version,
+                    operator_version=record.operator_version,
+                    lookback_days=record.lookback_days,
+                    created_at=record.created_at,
+                    status=status,
+                    description=record.description,
+                    metrics=record.metrics,
+                    transform_method=record.transform_method,
+                    gate_status=record.gate_status,
+                    gate_reasons=reasons or None,
+                    metadata=record.metadata,
+                    parent_factor_ids=record.parent_factor_ids,
+                    factor_type=record.factor_type,
+                    batch_id=record.batch_id,
+                )
+            )
+            count += 1
+
+        self.root_dir.mkdir(parents=True, exist_ok=True)
+        with self.factor_path.open("w", encoding="utf-8") as handle:
+            for record in updated:
+                handle.write(json.dumps(asdict(record), ensure_ascii=False, sort_keys=True))
+                handle.write("\n")
+        return StorageResult(path=str(self.factor_path), records=count)
+
+    def load_factor_values_matrix(
+        self,
+        factor_id: str,
+        ts_codes: list[str],
+        trade_dates: list[str],
+        device: torch.device | str | None = None,
+    ) -> torch.Tensor:
+        target_device = torch.device(device) if device is not None else None
+        matrix = torch.zeros((len(ts_codes), len(trade_dates)), dtype=torch.float32, device=target_device)
+        stock_index = {ts_code: idx for idx, ts_code in enumerate(ts_codes)}
+        date_index = {trade_date: idx for idx, trade_date in enumerate(trade_dates)}
+        for record in self.load_factor_values(factor_id):
+            stock_idx = stock_index.get(record.ts_code)
+            date_idx = date_index.get(record.trade_date)
+            if stock_idx is None or date_idx is None or record.value is None:
+                continue
+            matrix[stock_idx, date_idx] = float(record.value)
+        return matrix
+
     @staticmethod
     def _append_jsonl(path: Path, record: object) -> None:
         with path.open("a", encoding="utf-8") as handle:
@@ -91,6 +160,9 @@ class LocalFactorStore:
         normalized.setdefault("gate_status", None)
         normalized.setdefault("gate_reasons", None)
         normalized.setdefault("metadata", None)
+        normalized.setdefault("parent_factor_ids", None)
+        normalized.setdefault("factor_type", None)
+        normalized.setdefault("batch_id", None)
         return normalized
 
     @staticmethod
