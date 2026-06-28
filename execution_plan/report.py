@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from artifact_schema.writer import write_json_artifact, write_jsonl_artifact
+
 from .models import ExecutionPlanResult
 
 
@@ -20,14 +22,11 @@ def write_execution_plan_report(result: ExecutionPlanResult, output_dir: str | P
         "execution_quality_path": root / "execution_quality.json",
     }
     payload = result.to_dict()
-    paths["execution_plan_path"].write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
-    paths["execution_quality_path"].write_text(
-        json.dumps(result.quality.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    _write_jsonl(paths["parent_orders_path"], [order.to_dict() for order in result.schedule.parent_orders])
-    _write_jsonl(paths["child_orders_path"], [order.to_dict() for order in result.schedule.child_orders])
-    _write_jsonl(paths["child_fills_path"], [_payload(fill) for fill in result.fills])
+    write_json_artifact(paths["execution_plan_path"], payload, artifact_type="execution_plan", producer="execution_plan")
+    write_json_artifact(paths["execution_quality_path"], result.quality.to_dict(), artifact_type="execution_quality", producer="execution_plan")
+    write_jsonl_artifact(paths["parent_orders_path"], [order.to_dict() for order in result.schedule.parent_orders], artifact_type="parent_orders", producer="execution_plan")
+    write_jsonl_artifact(paths["child_orders_path"], [order.to_dict() for order in result.schedule.child_orders], artifact_type="child_orders", producer="execution_plan")
+    write_jsonl_artifact(paths["child_fills_path"], [_payload(fill) for fill in result.fills], artifact_type="child_fills", producer="execution_plan")
     paths["execution_plan_md_path"].write_text(_markdown(payload), encoding="utf-8")
     return paths
 

@@ -22,6 +22,9 @@ class DashboardConfig:
     benchmark_dir: Path = Path("artifacts/benchmark")
     cross_source_dir: Path = Path("artifacts/cross_source")
     data_source_smoke_dir: Path = Path("artifacts/data_source_smoke")
+    schema_validation_dir: Path = Path("artifacts/schema_validation")
+    release_dir: Path = Path("artifacts/release")
+    ci_dir: Path = Path(".ci_artifacts")
 
     @classmethod
     def from_env(cls) -> "DashboardConfig":
@@ -43,4 +46,7 @@ class DashboardConfig:
             benchmark_dir=Path(os.getenv("ASHARE_DASHBOARD_BENCHMARK_DIR") or "artifacts/benchmark"),
             cross_source_dir=Path(os.getenv("ASHARE_DASHBOARD_CROSS_SOURCE_DIR") or "artifacts/cross_source"),
             data_source_smoke_dir=Path(os.getenv("ASHARE_DASHBOARD_DATA_SOURCE_SMOKE_DIR") or "artifacts/data_source_smoke"),
+            schema_validation_dir=Path(os.getenv("ASHARE_DASHBOARD_SCHEMA_VALIDATION_DIR") or "artifacts/schema_validation"),
+            release_dir=Path(os.getenv("ASHARE_DASHBOARD_RELEASE_DIR") or "artifacts/release"),
+            ci_dir=Path(os.getenv("ASHARE_DASHBOARD_CI_DIR") or ".ci_artifacts"),
         )

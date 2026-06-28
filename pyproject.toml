@@ -20,5 +20,96 @@ research = [
     "tushare>=1.2.89",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=9.0.0",
+]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
 [tool.uv]
-package = false
+package = true
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "approval",
+    "artifact_schema",
+    "backtest",
+    "broker_adapter",
+    "capacity_model",
+    "ci",
+    "cross_source_checks",
+    "dashboard",
+    "data_pipeline",
+    "data_source_validation",
+    "evaluation",
+    "execution",
+    "execution_plan",
+    "factor_engine",
+    "factor_store",
+    "formula_search",
+    "matrix_store",
+    "model_core",
+    "monitoring",
+    "neural_search",
+    "operations",
+    "paper_account",
+    "performance_benchmark",
+    "portfolio_optimizer",
+    "release_manager",
+    "research",
+    "research_suite",
+    "risk_model",
+    "strategy_manager",
+    "universe",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "approval",
+    "artifact_schema",
+    "backtest",
+    "broker_adapter",
+    "capacity_model",
+    "ci",
+    "cross_source_checks",
+    "dashboard",
+    "data_pipeline",
+    "data_source_validation",
+    "evaluation",
+    "execution",
+    "execution_plan",
+    "factor_engine",
+    "factor_store",
+    "formula_search",
+    "matrix_store",
+    "model_core",
+    "monitoring",
+    "neural_search",
+    "operations",
+    "paper_account",
+    "performance_benchmark",
+    "portfolio_optimizer",
+    "release_manager",
+    "research",
+    "research_suite",
+    "risk_model",
+    "strategy_manager",
+    "universe",
+    "README.md",
+    "CATREADME.md",
+    "FRAMEWORK_UPDATE.md",
+    "pyproject.toml",
+    "requirements.txt",
+    "requirements-optional.txt",
+    "environment.yml",
+]
+exclude = [
+    "assets",
+    "paper",
+    "lord",
+    "tests",
+    "times.py",
+]

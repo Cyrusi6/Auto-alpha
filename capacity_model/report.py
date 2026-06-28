@@ -6,6 +6,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from artifact_schema.writer import write_json_artifact
+
 from .models import CapacityConfig, CapacityReport, PortfolioCapacity
 
 
@@ -29,7 +31,7 @@ def write_capacity_report(report: CapacityReport, output_dir: str | Path) -> tup
     json_path = root / "capacity_report.json"
     md_path = root / "capacity_report.md"
     payload = report.to_dict()
-    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    write_json_artifact(json_path, payload, artifact_type="capacity_report", producer="capacity_model")
     md_path.write_text(_markdown(payload), encoding="utf-8")
     return json_path, md_path
 

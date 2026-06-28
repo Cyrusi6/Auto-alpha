@@ -1,0 +1,66 @@
+name: Manual Tushare Online Smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tushare-online-smoke:
+    runs-on: ubuntu-latest
+    env:
+      RUN_TUSHARE_ONLINE_SMOKE: "1"
+      TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run gated online smoke
+        run: |
+          if [ -z "${TUSHARE_TOKEN}" ]; then
+            uv run python -m data_source_validation.run_smoke \
+              --provider tushare \
+              --data-dir .ci_artifacts/tushare_online/data \
+              --output-dir .ci_artifacts/tushare_online/report \
+              --start-date 20240102 \
+              --end-date 20240104 \
+              --datasets securities,trade_calendar \
+              --pretty
+          else
+            uv run python -m data_source_validation.run_smoke \
+              --provider tushare \
+              --allow-network \
+              --require-token \
+              --data-dir .ci_artifacts/tushare_online/data \
+              --output-dir .ci_artifacts/tushare_online/report \
+              --start-date 20240102 \
+              --end-date 20240104 \
+              --datasets securities,trade_calendar,daily_bars,daily_basic,daily_limits,adjustment_factors,index_members \
+              --index-codes 000300.SH \
+              --chunk-days 1 \
+              --max-requests 20 \
+              --cache \
+              --audit \
+              --validate \
+              --stats \
+              --pretty
+          fi
+
+      - name: Upload online smoke artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tushare-online-smoke-artifacts
+          path: .ci_artifacts/tushare_online

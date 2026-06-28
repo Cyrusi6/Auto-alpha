@@ -420,6 +420,14 @@ def render_app(config: DashboardConfig | None = None) -> None:
         benchmark_markdown = service.load_benchmark_report_markdown()
         cross_source_report = service.load_cross_source_report()
         cross_source_markdown = service.load_cross_source_report_markdown()
+        artifact_validation = service.load_artifact_validation_report()
+        artifact_manifest = service.load_artifact_schema_manifest()
+        release_gate = service.load_release_gate_report()
+        release_manifest = service.load_release_manifest()
+        dependency_inventory = service.load_dependency_inventory()
+        module_inventory = service.load_module_inventory()
+        cli_inventory = service.load_cli_inventory()
+        ci_report = service.load_ci_report()
 
         st.subheader("Matrix Cache")
         if matrix_metadata:
@@ -486,6 +494,24 @@ def render_app(config: DashboardConfig | None = None) -> None:
             st.info("No cross_source_report.json found.")
         if cross_source_markdown:
             st.markdown(cross_source_markdown)
+
+        st.subheader("Release And Artifact Schema")
+        st.json(
+            {
+                "schema_errors": artifact_validation.get("error_count", 0) if artifact_validation else 0,
+                "schema_warnings": artifact_validation.get("warning_count", 0) if artifact_validation else 0,
+                "legacy_artifacts": artifact_validation.get("legacy_artifact_count", 0) if artifact_validation else 0,
+                "schema_manifest_entries": len(artifact_manifest.get("entries", [])) if artifact_manifest else 0,
+                "release_gate_status": release_gate.get("status", "") if release_gate else "",
+                "release_gate_errors": release_gate.get("error_count", 0) if release_gate else 0,
+                "build_artifacts": len(release_manifest.get("build_artifacts", [])) if release_manifest else 0,
+                "dependency_files": len(dependency_inventory.get("files", [])) if dependency_inventory else 0,
+                "platform_modules": len(module_inventory.get("modules", [])) if module_inventory else 0,
+                "cli_entries": len(cli_inventory.get("entries", [])) if cli_inventory else 0,
+                "ci_status": ci_report.get("status", "") if ci_report else "",
+                "ci_commands": len(ci_report.get("commands", [])) if ci_report else 0,
+            }
+        )
 
 
 def main() -> None:

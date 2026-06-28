@@ -6,6 +6,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from artifact_schema.writer import write_json_artifact, write_jsonl_artifact
+
 from .models import MonitoringAlert, MonitoringReport
 
 
@@ -25,12 +27,9 @@ def write_monitoring_report(report: MonitoringReport, output_dir: str | Path) ->
     md_path = root / "monitoring_report.md"
     alerts_path = root / "alerts.jsonl"
     payload = report.to_dict()
-    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    write_json_artifact(json_path, payload, artifact_type="monitoring_report", producer="monitoring")
     md_path.write_text(_render_markdown(payload), encoding="utf-8")
-    with alerts_path.open("w", encoding="utf-8") as handle:
-        for alert in payload["alerts"]:
-            handle.write(json.dumps(alert, ensure_ascii=False, sort_keys=True))
-            handle.write("\n")
+    write_jsonl_artifact(alerts_path, payload["alerts"], artifact_type="alerts", producer="monitoring")
     return json_path, md_path, alerts_path
 
 

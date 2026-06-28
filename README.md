@@ -8,6 +8,7 @@ The current implementation is local-first. It uses deterministic sample data and
 
 - `data_pipeline/`: A-share data configuration, sample and Tushare HTTP providers, market constraint datasets, sync planning, response cache, request audit, local JSONL storage, data quality checks, sync state, and data sync CLI.
 - `data_source_validation/`: Offline and gated-online provider readiness, Tushare permission/rate/field diagnostics, incremental recovery smoke, field coverage, audit summary, and baseline comparison reports.
+- `artifact_schema/`: Artifact type registry, schema versioning, checksum manifests, JSON/JSONL validation, and legacy-compatible artifact scanning.
 - `universe/`: Local A-share universe construction from governed data artifacts.
 - `model_core/`: A-share feature engineering, formula vocabulary, DSL operators, StackVM execution, factor evaluation, and mining engine.
 - `factor_engine/`: Cross-sectional preprocessing, market-cap and industry neutralization, correlation checks, and factor admission gate.
@@ -29,6 +30,8 @@ The current implementation is local-first. It uses deterministic sample data and
 - `paper_account/`: Persistent local paper cash, positions, trades, snapshots, and performance ledger.
 - `operations/`: Daily production run orchestration from production factor to proposed orders, approval-gated execution, account update, and production report.
 - `monitoring/`: Local production checks for data freshness, quality, factor drift, fill quality, account performance, and alerts.
+- `release_manager/`: Local release manifest, dependency/module/CLI inventory, package build summary, release gate report, and release notes draft.
+- `ci/`: Offline local CI runner shared by developers and GitHub Actions.
 - `matrix_store/`: Governed JSONL to numpy matrix cache builder, reader, and validator for faster local loading.
 - `performance_benchmark/`: Lightweight local benchmark runner for data loading, formula execution, research batches, formula search, and portfolio simulation.
 - `cross_source_checks/`: Local dataset comparison reports across data directories or snapshots.
@@ -304,7 +307,7 @@ uv run python -m backtest.run_backtest \
   --pretty
 ```
 
-Barra-like risk model v1 adds style factors (`size`, `value`, `momentum`, `volatility`, `liquidity`, `quality`, `growth`), industry one-hot exposures, cross-sectional factor return estimates, factor covariance, specific risk, portfolio/active risk decomposition, and return attribution. Enable it with `--use-factor-risk-model`; backtests can also use `--attribution` and write `risk_exposures.jsonl`, `risk_decomposition.jsonl`, `return_attribution.jsonl`, and `risk_model_report.json/md`.
+Barra-like risk model v1 adds style factors (`size`, `value`, `momentum`, `volatility`, `trading_activity`, `quality`, `growth`), industry one-hot exposures, cross-sectional factor return estimates, factor covariance, specific risk, portfolio/active risk decomposition, and return attribution. Enable it with `--use-factor-risk-model`; backtests can also use `--attribution` and write `risk_exposures.jsonl`, `risk_decomposition.jsonl`, `return_attribution.jsonl`, and `risk_model_report.json/md`.
 
 `strategy_manager.runner` and `research_suite.run_suite` accept the same `--portfolio-method risk_aware`, `--index-code`, `--risk-aversion`, `--turnover-penalty`, `--max-turnover`, `--max-industry-active-weight`, `--max-tracking-error`, `--use-factor-risk-model`, `--max-style-exposure`, and `--max-active-style-exposure` controls. Risk-aware artifacts include `optimization_result.json`, `risk_report.json` or `risk_model_report.json`, and Markdown reports; target positions include optimized, benchmark, and active weights.
 
@@ -365,6 +368,9 @@ Dashboard-specific overrides:
 - `ASHARE_DASHBOARD_MATRIX_CACHE_DIR`
 - `ASHARE_DASHBOARD_BENCHMARK_DIR`
 - `ASHARE_DASHBOARD_CROSS_SOURCE_DIR`
+- `ASHARE_DASHBOARD_SCHEMA_VALIDATION_DIR`
+- `ASHARE_DASHBOARD_RELEASE_DIR`
+- `ASHARE_DASHBOARD_CI_DIR`
 
 ## Daily Production Operations
 
@@ -464,6 +470,52 @@ uv run python -m operations.run_daily \
 ```
 
 Without inbox fills, file-adapter runs only export outbox instructions and do not update the paper account.
+
+## Artifact Schema, Release Gate, And CI
+
+Core JSON reports now carry `artifact_type`, `schema_version`, `producer`, `created_at`, and `artifact_metadata`. JSONL business records remain unchanged; schema metadata is written through sidecars or manifests so dataclass loaders and dashboards can read old and new artifacts. Legacy artifacts without schema metadata validate in compatible mode with warnings rather than destructive rewrites.
+
+Validate artifacts and build a schema manifest:
+
+```bash
+uv run python -m artifact_schema.run_validate \
+  --artifact-dir /tmp/auto-alpha-demo/production_execute \
+  --artifact-dir /tmp/auto-alpha-demo/broker \
+  --output-dir /tmp/auto-alpha-demo/schema_validation \
+  --write-manifest \
+  --pretty
+```
+
+Run the local release gate and build a package:
+
+```bash
+uv run python -m release_manager.run_release \
+  --release-name local_release \
+  --output-dir /tmp/auto-alpha-demo/release \
+  --artifact-dir /tmp/auto-alpha-demo/schema_validation \
+  --run-build \
+  --run-import-smoke \
+  --run-dashboard-import \
+  --run-schema-validation \
+  --pretty
+
+uv build
+```
+
+Run the shared local CI runner:
+
+```bash
+uv run python -m ci.run_local_ci --quick --output-dir .ci_artifacts --pretty
+uv run python -m ci.run_local_ci --full --output-dir .ci_artifacts/full --pretty --skip-pytest
+```
+
+GitHub Actions are split by boundary:
+
+- `.github/workflows/ci.yml`: default offline CI on push, pull request, and manual dispatch. It does not use Tushare secrets and does not pass `--allow-network`.
+- `.github/workflows/release-smoke.yml`: manual offline release smoke with local CI, release gate, build, and pytest.
+- `.github/workflows/tushare-online-smoke.yml`: manual gated real Tushare smoke. It uses `secrets.TUSHARE_TOKEN` only when manually dispatched and writes skipped diagnostics if the secret is absent.
+
+The package build uses hatchling and includes only A-share platform modules. It excludes tests, assets, paper material, experiments, and standalone non-platform files from the wheel/sdist.
 
 ## Current Gaps
 

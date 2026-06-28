@@ -70,6 +70,26 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
     (smoke_dir / "incremental_recovery_report.json").write_text('{"ok":true}', encoding="utf-8")
     (smoke_dir / "baseline_compare_summary.json").write_text('{"compared":true,"difference_count":0}', encoding="utf-8")
     (smoke_dir / "dataset_contracts.json").write_text('{"datasets":[{"dataset":"daily_bars"}]}', encoding="utf-8")
+    schema_dir = tmp_path / "schema_validation"
+    schema_dir.mkdir()
+    (schema_dir / "artifact_validation_report.json").write_text(
+        '{"error_count":0,"warning_count":1,"legacy_artifact_count":1,"unknown_artifact_count":0,"results":[]}',
+        encoding="utf-8",
+    )
+    (schema_dir / "artifact_schema_manifest.json").write_text('{"entries":[{"artifact_type":"monitoring_report"}]}', encoding="utf-8")
+    release_dir = tmp_path / "release"
+    release_dir.mkdir()
+    (release_dir / "release_gate_report.json").write_text('{"status":"passed","error_count":0,"warning_count":0,"checks":[]}', encoding="utf-8")
+    (release_dir / "release_manifest.json").write_text(
+        '{"release_name":"r1","build_artifacts":[{"path":"dist/a.whl"}]}',
+        encoding="utf-8",
+    )
+    (release_dir / "dependency_inventory.json").write_text('{"files":[{"path":"pyproject.toml"}]}', encoding="utf-8")
+    (release_dir / "module_inventory.json").write_text('{"modules":[{"module":"data_pipeline"}]}', encoding="utf-8")
+    (release_dir / "cli_inventory.json").write_text('{"entries":[{"module":"data_pipeline.run_pipeline"}]}', encoding="utf-8")
+    ci_dir = tmp_path / "ci"
+    ci_dir.mkdir()
+    (ci_dir / "ci_report.json").write_text('{"status":"passed","commands":[{"name":"import_smoke"}]}', encoding="utf-8")
     service = AshareDashboardService(
         DashboardConfig(
             data_dir=tmp_path / "data",
@@ -78,6 +98,9 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
             backtest_dir=tmp_path / "backtest",
             orders_dir=tmp_path / "orders",
             data_source_smoke_dir=smoke_dir,
+            schema_validation_dir=schema_dir,
+            release_dir=release_dir,
+            ci_dir=ci_dir,
         )
     )
 
@@ -105,3 +128,11 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
     assert service.load_incremental_recovery_report()["ok"] is True
     assert service.load_baseline_compare_summary()["difference_count"] == 0
     assert service.load_dataset_contracts()["datasets"][0]["dataset"] == "daily_bars"
+    assert service.load_artifact_validation_report()["warning_count"] == 1
+    assert len(service.load_artifact_schema_manifest()["entries"]) == 1
+    assert service.load_release_gate_report()["status"] == "passed"
+    assert service.load_release_manifest()["release_name"] == "r1"
+    assert service.load_dependency_inventory()["files"][0]["path"] == "pyproject.toml"
+    assert service.load_module_inventory()["modules"][0]["module"] == "data_pipeline"
+    assert service.load_cli_inventory()["entries"][0]["module"] == "data_pipeline.run_pipeline"
+    assert service.load_ci_report()["status"] == "passed"

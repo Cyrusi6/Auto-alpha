@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from artifact_schema.writer import write_json_artifact
+
 from .contracts import DATASET_CONTRACTS
 from .models import DataSourceSmokeReport, IncrementalRecoveryResult
 
@@ -24,14 +26,14 @@ def write_data_source_smoke_report(report: DataSourceSmokeReport, output_dir: st
         "baseline_compare_summary_path": root / "baseline_compare_summary.json",
         "dataset_contracts_path": root / "dataset_contracts.json",
     }
-    _write_json(paths["data_source_smoke_report_path"], payload)
+    _write_json(paths["data_source_smoke_report_path"], payload, "data_source_smoke_report")
     paths["data_source_smoke_report_md_path"].write_text(_render_smoke_markdown(payload), encoding="utf-8")
-    _write_json(paths["provider_probe_path"], {"probes": payload.get("provider_probe", [])})
-    _write_json(paths["field_coverage_path"], {"datasets": payload.get("field_coverage", [])})
-    _write_json(paths["audit_summary_path"], payload.get("audit_summary", {}))
-    _write_json(paths["incremental_recovery_report_path"], payload.get("incremental_recovery", {}) or {})
-    _write_json(paths["baseline_compare_summary_path"], payload.get("baseline_compare", {}) or {})
-    _write_json(paths["dataset_contracts_path"], {"datasets": [contract.to_dict() for contract in DATASET_CONTRACTS.values()]})
+    _write_json(paths["provider_probe_path"], {"probes": payload.get("provider_probe", [])}, "provider_probe")
+    _write_json(paths["field_coverage_path"], {"datasets": payload.get("field_coverage", [])}, "field_coverage")
+    _write_json(paths["audit_summary_path"], payload.get("audit_summary", {}) or {}, "audit_summary")
+    _write_json(paths["incremental_recovery_report_path"], payload.get("incremental_recovery", {}) or {}, "incremental_recovery_report")
+    _write_json(paths["baseline_compare_summary_path"], payload.get("baseline_compare", {}) or {}, "baseline_compare_summary")
+    _write_json(paths["dataset_contracts_path"], {"datasets": [contract.to_dict() for contract in DATASET_CONTRACTS.values()]}, "dataset_contracts")
     return {name: str(path) for name, path in paths.items()}
 
 
@@ -41,7 +43,7 @@ def write_incremental_recovery_report(result: IncrementalRecoveryResult, output_
     json_path = root / "incremental_recovery_report.json"
     md_path = root / "incremental_recovery_report.md"
     payload = result.to_dict()
-    _write_json(json_path, payload)
+    _write_json(json_path, payload, "incremental_recovery_report")
     lines = [
         "# Incremental Recovery Report",
         "",
@@ -60,7 +62,10 @@ def write_incremental_recovery_report(result: IncrementalRecoveryResult, output_
     return json_path, md_path
 
 
-def _write_json(path: Path, payload: Any) -> None:
+def _write_json(path: Path, payload: Any, artifact_type: str) -> None:
+    if isinstance(payload, dict):
+        write_json_artifact(path, payload, artifact_type=artifact_type, producer="data_source_validation")
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
 

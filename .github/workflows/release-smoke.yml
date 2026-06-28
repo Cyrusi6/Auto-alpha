@@ -1,0 +1,56 @@
+name: Manual Release Smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RUN_TUSHARE_ONLINE_SMOKE: "0"
+  TUSHARE_TOKEN: ""
+
+jobs:
+  release-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run full local CI
+        run: uv run python -m ci.run_local_ci --full --output-dir .ci_artifacts/full --pretty --skip-pytest
+
+      - name: Run release gate
+        run: >
+          uv run python -m release_manager.run_release
+          --release-name manual_release_smoke
+          --output-dir .ci_artifacts/release
+          --artifact-dir .ci_artifacts/full
+          --run-build
+          --run-import-smoke
+          --run-dashboard-import
+          --run-schema-validation
+          --pretty
+
+      - name: Run pytest
+        run: uv run pytest
+
+      - name: Upload release smoke artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-smoke-artifacts
+          path: |
+            .ci_artifacts
+            dist

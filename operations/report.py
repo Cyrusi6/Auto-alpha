@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from artifact_schema.writer import write_json_artifact
+
 from .models import ProductionRunResult
 
 
@@ -14,7 +16,7 @@ def write_production_run_report(result: ProductionRunResult, output_dir: str | P
     json_path = root / "production_run.json"
     md_path = root / "production_run.md"
     payload = result.to_dict()
-    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    write_json_artifact(json_path, payload, artifact_type="production_run", producer="operations")
     md_path.write_text(_render_markdown(payload), encoding="utf-8")
     return json_path, md_path
 

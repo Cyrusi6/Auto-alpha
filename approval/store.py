@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from artifact_schema.writer import write_json_artifact
+
 from .models import ApprovalBatch, ApprovalDecision, ApprovalOrder, ApprovalStatus
 
 
@@ -20,7 +22,7 @@ class LocalApprovalStore:
     def save_batch(self, batch: ApprovalBatch) -> Path:
         self.approvals_dir.mkdir(parents=True, exist_ok=True)
         path = self._batch_path(batch.approval_id)
-        path.write_text(json.dumps(batch.to_dict(), ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        write_json_artifact(path, batch.to_dict(), artifact_type="approval_batch", producer="approval")
         self._append_log("save", batch.approval_id, batch.status, {"factor_id": batch.factor_id})
         return path
 
@@ -86,10 +88,7 @@ class LocalApprovalStore:
 
     def _write_batch(self, batch: ApprovalBatch) -> None:
         self.approvals_dir.mkdir(parents=True, exist_ok=True)
-        self._batch_path(batch.approval_id).write_text(
-            json.dumps(batch.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
+        write_json_artifact(self._batch_path(batch.approval_id), batch.to_dict(), artifact_type="approval_batch", producer="approval")
 
     def _batch_path(self, approval_id: str) -> Path:
         return self.approvals_dir / f"{approval_id}.json"

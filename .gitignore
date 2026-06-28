@@ -46,6 +46,7 @@ ENV/
 
 # Testing
 .pytest_cache/
+.ci_artifacts/
 .coverage
 htmlcov/
 .tox/

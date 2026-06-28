@@ -104,11 +104,25 @@ def _prepare_monitoring_artifacts(tmp_path):
         '{"batch_id":"batch_monitor","status_mismatch_count":0,"orphan_fills":0,"unfilled_value":0.0,"issues":[]}',
         encoding="utf-8",
     )
-    return data_dir, tmp_path / "store", tmp_path / "account", orders_dir, broker_dir
+    release_dir = tmp_path / "release"
+    release_dir.mkdir()
+    (release_dir / "artifact_validation_report.json").write_text(
+        '{"error_count":0,"warning_count":1,"legacy_artifact_count":1,"unknown_artifact_count":0,"results":[]}',
+        encoding="utf-8",
+    )
+    (release_dir / "release_gate_report.json").write_text(
+        '{"status":"passed","error_count":0,"warning_count":0,"checks":[{"name":"git_clean_check","status":"passed"}]}',
+        encoding="utf-8",
+    )
+    (release_dir / "release_manifest.json").write_text(
+        '{"release_name":"unit","build_artifacts":[{"path":"dist/auto_alpha.whl"}]}',
+        encoding="utf-8",
+    )
+    return data_dir, tmp_path / "store", tmp_path / "account", orders_dir, broker_dir, release_dir
 
 
 def test_monitoring_report_cli_writes_alerts(tmp_path, capsys):
-    data_dir, store_dir, account_dir, orders_dir, broker_dir = _prepare_monitoring_artifacts(tmp_path)
+    data_dir, store_dir, account_dir, orders_dir, broker_dir, release_dir = _prepare_monitoring_artifacts(tmp_path)
     exit_code = run_monitor.main(
         [
             "--data-dir",
@@ -127,6 +141,12 @@ def test_monitoring_report_cli_writes_alerts(tmp_path, capsys):
             str(broker_dir),
             "--broker-batch-id",
             "batch_monitor",
+            "--artifact-validation-report-path",
+            str(release_dir / "artifact_validation_report.json"),
+            "--release-gate-report-path",
+            str(release_dir / "release_gate_report.json"),
+            "--release-manifest-path",
+            str(release_dir / "release_manifest.json"),
             "--pretty",
         ]
     )
@@ -145,6 +165,9 @@ def test_monitoring_report_cli_writes_alerts(tmp_path, capsys):
     assert payload["checks"]["broker_reconciliation"]["exists"] is True
     assert payload["checks"]["open_broker_orders"]["orders"] == 1
     assert payload["checks"]["broker_idempotency"]["exists"] is True
+    assert payload["checks"]["artifact_schema_validation"]["artifact_schema_warning_count"] == 1
+    assert payload["checks"]["release_gate"]["release_gate_status"] == "passed"
+    assert payload["checks"]["package_build_artifacts"]["package_build_status"] == "passed"
     assert any(alert["check"] == "fill_quality" for alert in payload["alerts"])
     assert (tmp_path / "monitoring" / "monitoring_report.json").exists()
     assert (tmp_path / "monitoring" / "monitoring_report.md").exists()
@@ -165,7 +188,7 @@ def test_monitoring_quality_error_produces_error_alert(tmp_path):
 
 
 def test_monitoring_reads_data_source_smoke_artifacts(tmp_path, capsys):
-    data_dir, store_dir, account_dir, orders_dir, broker_dir = _prepare_monitoring_artifacts(tmp_path)
+    data_dir, store_dir, account_dir, orders_dir, broker_dir, _release_dir = _prepare_monitoring_artifacts(tmp_path)
     smoke_dir = tmp_path / "smoke"
     smoke_dir.mkdir()
     smoke_report = {

@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
 
+from artifact_schema.writer import write_json_artifact, write_jsonl_artifact
+
 from .models import (
     BrokerAdapterConfig,
     BrokerFillRecord,
@@ -165,10 +167,13 @@ class FileInstructionBrokerAdapter:
         jsonl_path = self.outbox_dir / "broker_orders.jsonl"
         csv_path = self.outbox_dir / "broker_orders.csv"
         manifest_path = self.outbox_dir / "broker_instruction_manifest.json"
-        with jsonl_path.open("w", encoding="utf-8") as handle:
-            for row in rows:
-                handle.write(json.dumps(_mapped(row, self.config.field_mapping), ensure_ascii=False, sort_keys=True))
-                handle.write("\n")
+        write_jsonl_artifact(
+            jsonl_path,
+            [_mapped(row, self.config.field_mapping) for row in rows],
+            artifact_type="broker_orders",
+            producer="broker_adapter",
+            extra={"schema_name": self.config.schema_name},
+        )
         with csv_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=[self.config.field_mapping.get(field, field) for field in INTERNAL_FIELDS])
             writer.writeheader()
@@ -184,7 +189,7 @@ class FileInstructionBrokerAdapter:
             "field_mapping": self.config.field_mapping,
             "notice": "generic file instruction skeleton; validate field mapping manually before any external use",
         }
-        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        write_json_artifact(manifest_path, manifest, artifact_type="broker_instruction_manifest", producer="broker_adapter")
         summary_path = self.outbox_dir / "broker_batch_summary.json"
         summary_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
         return manifest_path

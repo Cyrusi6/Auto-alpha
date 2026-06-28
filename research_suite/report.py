@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from artifact_schema.writer import write_json_artifact
+
 from .models import PromotionDecision, ResearchSuiteResult
 
 
@@ -13,7 +15,7 @@ def write_suite_report(result: ResearchSuiteResult, output_dir: str | Path) -> t
     output_path.mkdir(parents=True, exist_ok=True)
     json_path = output_path / "suite_result.json"
     md_path = output_path / "suite_report.md"
-    json_path.write_text(json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+    write_json_artifact(json_path, result.to_dict(), artifact_type="research_suite_result", producer="research_suite")
     md_path.write_text(_render_markdown(result), encoding="utf-8")
     return json_path, md_path
 
@@ -23,7 +25,7 @@ def write_promotion_decision(decision: PromotionDecision | None, output_dir: str
     output_path.mkdir(parents=True, exist_ok=True)
     path = output_path / "promotion_decision.json"
     payload = decision.to_dict() if decision is not None else {}
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_json_artifact(path, payload, artifact_type="promotion_decision", producer="research_suite")
     return path
 
 

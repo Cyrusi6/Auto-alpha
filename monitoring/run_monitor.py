@@ -10,6 +10,7 @@ from factor_store import LocalFactorStore
 
 from .checks import (
     check_active_risk_drift,
+    check_artifact_schema_validation,
     check_attribution_anomaly,
     check_broker_file_outbox,
     check_broker_idempotency,
@@ -28,8 +29,10 @@ from .checks import (
     check_impact_cost_spike,
     check_order_fill_quality,
     check_paper_account,
+    check_package_build_artifacts,
     check_provider_readiness,
     check_quality_report,
+    check_release_gate,
     check_risk_report,
     check_style_exposure_drift,
     check_unfilled_orders,
@@ -60,6 +63,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--field-coverage-path")
     parser.add_argument("--audit-summary-path")
     parser.add_argument("--baseline-compare-path")
+    parser.add_argument("--artifact-validation-report-path")
+    parser.add_argument("--release-gate-report-path")
+    parser.add_argument("--release-manifest-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -97,6 +103,9 @@ def main(argv: list[str] | None = None) -> int:
         ("field_coverage", lambda: check_field_coverage(args.field_coverage_path)),
         ("data_source_audit", lambda: check_data_source_audit(args.audit_summary_path)),
         ("baseline_compare", lambda: check_baseline_compare(args.baseline_compare_path)),
+        ("artifact_schema_validation", lambda: check_artifact_schema_validation(args.artifact_validation_report_path)),
+        ("release_gate", lambda: check_release_gate(args.release_gate_report_path)),
+        ("package_build_artifacts", lambda: check_package_build_artifacts(args.release_manifest_path)),
         ("fill_quality", lambda: check_order_fill_quality(Path(args.orders_dir) / "paper_fills.jsonl")),
         ("paper_account", lambda: check_paper_account(args.paper_account_dir)),
     ]:

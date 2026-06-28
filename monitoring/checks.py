@@ -376,6 +376,68 @@ def check_baseline_compare(baseline_compare_path: str | Path | None) -> tuple[di
     }, alerts
 
 
+def check_artifact_schema_validation(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not report_path:
+        return {"exists": False, "artifact_schema_error_count": 0, "artifact_schema_warning_count": 0}, []
+    payload = _read_json(Path(report_path))
+    errors = int(payload.get("error_count", 0) or 0) if payload else 0
+    warnings = int(payload.get("warning_count", 0) or 0) if payload else 0
+    unknown = int(payload.get("unknown_artifact_count", 0) or 0) if payload else 0
+    legacy = int(payload.get("legacy_artifact_count", 0) or 0) if payload else 0
+    alerts = []
+    if errors:
+        alerts.append(MonitoringAlert("error", "artifact_schema_validation", "artifact schema validation has errors", {"error_count": errors}))
+    elif warnings:
+        alerts.append(MonitoringAlert("warning", "artifact_schema_validation", "artifact schema validation has warnings", {"warning_count": warnings}))
+    return {
+        "exists": bool(payload),
+        "artifact_schema_error_count": errors,
+        "artifact_schema_warning_count": warnings,
+        "unknown_artifact_count": unknown,
+        "legacy_artifact_count": legacy,
+    }, alerts
+
+
+def check_release_gate(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not report_path:
+        return {"exists": False, "release_gate_status": ""}, []
+    payload = _read_json(Path(report_path))
+    status = str(payload.get("status") or "")
+    checks = payload.get("checks", []) if payload else []
+    dirty = any(check.get("name") == "git_clean_check" and check.get("status") == "warning" for check in checks if isinstance(check, dict))
+    errors = int(payload.get("error_count", 0) or 0) if payload else 0
+    warnings = int(payload.get("warning_count", 0) or 0) if payload else 0
+    alerts = []
+    if status == "failed" or errors:
+        alerts.append(MonitoringAlert("error", "release_gate", "release gate failed", {"error_count": errors}))
+    elif warnings:
+        alerts.append(MonitoringAlert("warning", "release_gate", "release gate has warnings", {"warning_count": warnings}))
+    return {
+        "exists": bool(payload),
+        "release_gate_status": status,
+        "release_gate_errors": errors,
+        "release_gate_warnings": warnings,
+        "release_dirty_worktree": dirty,
+    }, alerts
+
+
+def check_package_build_artifacts(manifest_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not manifest_path:
+        return {"exists": False, "package_build_status": "missing", "build_artifacts": 0}, []
+    payload = _read_json(Path(manifest_path))
+    build_artifacts = payload.get("build_artifacts", []) if payload else []
+    status = "passed" if build_artifacts else "missing"
+    alerts = []
+    if payload and not build_artifacts:
+        alerts.append(MonitoringAlert("warning", "package_build_artifacts", "release manifest has no build artifacts"))
+    return {
+        "exists": bool(payload),
+        "package_build_status": status,
+        "build_artifacts": len(build_artifacts),
+        "release_name": payload.get("release_name", "") if payload else "",
+    }, alerts
+
+
 def check_order_fill_quality(fills_path: str | Path) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     fills = _read_jsonl(Path(fills_path))
     total = len(fills)

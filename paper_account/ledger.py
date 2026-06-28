@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
 
+from artifact_schema.writer import write_json_artifact
+
 from .models import (
     PaperAccountSnapshot,
     PaperAccountState,
@@ -47,7 +49,7 @@ class LocalPaperAccount:
             updated_at=_utc_now(),
         )
         self.root_dir.mkdir(parents=True, exist_ok=True)
-        self.state_path.write_text(json.dumps(updated.to_dict(), ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        write_json_artifact(self.state_path, updated.to_dict(), artifact_type="paper_account_state", producer="paper_account")
         self.export_positions(updated)
         self.export_snapshots(updated)
         self.export_trade_ledger(updated)

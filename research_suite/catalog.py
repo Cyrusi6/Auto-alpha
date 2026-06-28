@@ -7,6 +7,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from artifact_schema.writer import write_json_artifact
+
 from .models import ArtifactCatalog, ArtifactEntry
 
 
@@ -27,7 +29,7 @@ def write_artifact_catalog(catalog: ArtifactCatalog, output_dir: str | Path) -> 
     output_path.mkdir(parents=True, exist_ok=True)
     json_path = output_path / "artifact_catalog.json"
     md_path = output_path / "artifact_catalog.md"
-    json_path.write_text(json.dumps(catalog.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+    write_json_artifact(json_path, catalog.to_dict(), artifact_type="artifact_catalog", producer="research_suite")
     md_path.write_text(_render_markdown(catalog), encoding="utf-8")
     return json_path, md_path
 

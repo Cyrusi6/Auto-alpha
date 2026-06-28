@@ -530,6 +530,62 @@ class AshareDashboardService:
                 return payload
         return {}
 
+    def load_artifact_validation_report(self) -> dict[str, Any]:
+        for path in self._schema_artifact_candidates("artifact_validation_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_artifact_schema_manifest(self) -> dict[str, Any]:
+        for path in self._schema_artifact_candidates("artifact_schema_manifest.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_release_gate_report(self) -> dict[str, Any]:
+        for path in self._release_artifact_candidates("release_gate_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_release_manifest(self) -> dict[str, Any]:
+        for path in self._release_artifact_candidates("release_manifest.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_dependency_inventory(self) -> dict[str, Any]:
+        for path in self._release_artifact_candidates("dependency_inventory.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_module_inventory(self) -> dict[str, Any]:
+        for path in self._release_artifact_candidates("module_inventory.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_cli_inventory(self) -> dict[str, Any]:
+        for path in self._release_artifact_candidates("cli_inventory.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_ci_report(self) -> dict[str, Any]:
+        for path in self._ci_artifact_candidates("ci_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
     def _neural_artifact_candidates(self, filename: str) -> list[Path]:
         root = self.config.report_dir.parent
         return [
@@ -604,6 +660,32 @@ class AshareDashboardService:
             root / "sample_smoke" / filename,
             root / "fake_tushare_smoke" / filename,
             root / "real_tushare_smoke" / filename,
+        ]
+
+    def _schema_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.schema_validation_dir / filename,
+            root / "schema_validation" / filename,
+            root / "schema" / filename,
+            self.config.ci_dir / "schema" / filename,
+            self.config.release_dir / filename,
+        ]
+
+    def _release_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.release_dir / filename,
+            root / "release" / filename,
+            self.config.ci_dir / "release" / filename,
+        ]
+
+    def _ci_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.ci_dir / filename,
+            root / "local_ci" / filename,
+            root / "ci" / filename,
         ]
 
     def _risk_artifact_candidates(self, filename: str) -> list[Path]:

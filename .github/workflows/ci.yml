@@ -1,0 +1,53 @@
+name: Offline CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RUN_TUSHARE_ONLINE_SMOKE: "0"
+  TUSHARE_TOKEN: ""
+
+jobs:
+  offline-ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run local quick CI
+        run: uv run python -m ci.run_local_ci --quick --output-dir .ci_artifacts --pretty
+
+      - name: Run pytest
+        run: uv run pytest
+
+      - name: Build package
+        run: uv build
+
+      - name: Validate CI artifacts
+        run: uv run python -m artifact_schema.run_validate --artifact-dir .ci_artifacts --output-dir .ci_artifacts/schema --write-manifest --pretty
+
+      - name: Upload CI artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offline-ci-artifacts
+          path: |
+            .ci_artifacts
+            dist

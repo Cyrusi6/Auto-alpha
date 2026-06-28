@@ -1444,3 +1444,37 @@
 - 扩展数据源 contract 到后续新增接口，加入更严格的字段类型和业务范围校验。
 - 增加跨 provider 的真实 baseline 策略和生产阈值配置。
 - 将 online smoke 结果纳入人工上线审批清单和 dashboard 生产状态页。
+
+## 2026-06-28 - 任务 024
+
+### 本次变更摘要
+- 新增 `artifact_schema/`，提供 artifact type registry、schema versioning、JSON/JSONL validator、checksum manifest、legacy-compatible validation 和 `artifact_schema.run_validate` CLI。
+- 核心近期 artifact writer 接入 schema metadata：data source smoke、capacity report、execution plan、broker report、monitoring report、research suite catalog/report、production run、approval batch 和 paper account state。
+- JSON report 顶层写入 `artifact_type`、`schema_version`、`producer`、`created_at` 和 `artifact_metadata`；JSONL 默认保持业务行不变，通过 sidecar/manifest 记录 schema。
+- 新增 `release_manager/`，生成 dependency/module/CLI inventory、release manifest、release gate report 和 release notes draft；支持本地 import smoke、dashboard import、schema validation、package build 和可选 pytest。
+- 新增 `ci/` 本地离线 CI runner，quick 模式跑 import smoke、offline data-source smoke、schema validation 和 release dry-run。
+- 新增 GitHub Actions：默认离线 `ci.yml`、手动离线 `release-smoke.yml`、手动 gated `tushare-online-smoke.yml`。
+- `pyproject.toml` 切换为 hatchling 可构建包配置，wheel/sdist 仅包含 A 股平台模块，排除 tests、assets、paper、lord 和 `times.py`。
+- monitoring 和 dashboard 增加 artifact schema validation、release gate、release manifest、dependency/module/CLI inventory 和 local CI report 读取展示。
+
+### 新增文件
+- `artifact_schema/`
+- `release_manager/`
+- `ci/`
+- `.github/workflows/ci.yml`
+- `.github/workflows/release-smoke.yml`
+- `.github/workflows/tushare-online-smoke.yml`
+- `tests/test_artifact_schema.py`
+- `tests/test_release_manager.py`
+- `tests/test_ci_local.py`
+
+### 新增 A 股平台能力
+- `python -m artifact_schema.run_validate`：扫描 artifact dirs / suite artifact catalog，输出 schema validation report、issues JSONL 和 checksum manifest。
+- `python -m release_manager.run_release`：生成 release manifest、dependency inventory、module inventory、CLI inventory、release gate report 和 release notes draft；默认不联网。
+- `python -m ci.run_local_ci --quick`：本地离线 CI smoke，与默认 GitHub CI 共享验证边界。
+- `uv build`：本地生成 A 股平台 wheel/sdist。
+
+### 后续待办
+- 扩展 schema registry 到更多历史 artifacts，并逐步提高 strict validation 覆盖率。
+- 为 release gate 增加更细的 artifact lineage、schema migration 和 wheel 安装 smoke。
+- 在真实发布流程中补充签名、版本号策略、变更日志生成和人工审批。

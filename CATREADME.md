@@ -74,7 +74,7 @@ Planned sync splits large daily datasets by date windows and splits index consti
 `risk_model/` builds local A-share risk views from the loaded data artifacts:
 
 - stock-level industry, size, volatility, and beta exposures
-- Barra-like style factors: size, value, momentum, volatility, liquidity, quality, and growth
+- Barra-like style factors: size, value, momentum, volatility, trading activity, quality, and growth
 - industry one-hot factor exposures
 - cross-sectional factor return estimates, factor covariance, and specific risk
 - portfolio and benchmark industry weights
@@ -232,9 +232,34 @@ It writes `monitoring_report.json`, `monitoring_report.md`, and `alerts.jsonl`.
 
 Data-source smoke writes `data_source_smoke_report.json/md`, `provider_probe.json`, `field_coverage.json`, `audit_summary.json`, `incremental_recovery_report.json`, `baseline_compare_summary.json`, and `dataset_contracts.json`. Default tests use sample and fake Tushare clients only; a real Tushare token is used only when an operator explicitly passes `--allow-network --require-token`.
 
+## Release And Artifact Governance
+
+`artifact_schema/` defines a local schema registry for platform artifacts. JSON reports can carry top-level `artifact_type`, `schema_version`, `producer`, `created_at`, and `artifact_metadata`. JSONL rows keep their business schema stable; schema details are captured through sidecars and manifests. Legacy unversioned artifacts are validated in compatible mode with warnings.
+
+`artifact_schema.run_validate` scans artifact directories and suite catalogs, validates known JSON/JSONL files, writes `artifact_validation_report.json/md`, `artifact_validation_issues.jsonl`, and optionally `artifact_schema_manifest.json/md` with size, sha256, inferred artifact type, schema version, compatibility mode, and JSONL record counts.
+
+`release_manager/` builds the local release view:
+
+- `dependency_inventory.json`
+- `module_inventory.json`
+- `cli_inventory.json`
+- `release_manifest.json/md`
+- `release_gate_report.json/md`
+- `release_notes_draft.md`
+
+Release gates are local by default: import smoke, dashboard import, artifact schema validation, package build, optional pytest, token redaction checks, and a governed-module old-term scan. Skipped online Tushare checks are not release failures. `uv build` now produces a local wheel and sdist with only A-share platform packages included.
+
+`ci/` provides `python -m ci.run_local_ci --quick|--full`. Quick mode runs import smoke, offline data-source smoke, artifact schema validation, and release dry-run. Full mode can add suite smoke, package build, and optional pytest.
+
+GitHub Actions are split by risk boundary:
+
+- `ci.yml`: offline default push/pull-request CI, no real Tushare network.
+- `release-smoke.yml`: manual offline release gate and package build.
+- `tushare-online-smoke.yml`: manual gated real Tushare smoke, using `secrets.TUSHARE_TOKEN` only when explicitly dispatched.
+
 ## Dashboard
 
-`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, data-source smoke reports, provider probes, field coverage, audit summaries, incremental recovery reports, baseline summaries, matrix cache metadata, matrix validation reports, benchmark reports, data-source comparison reports, factor store, factor reports, batch reports, search reports, neural search reports, neural training history, checkpoint lists, suite reports, artifact catalog, promotion decisions, risk reports, risk model reports, risk exposures, risk decomposition, return attribution, capacity reports, execution plans, parent orders, child orders, child fills, execution quality, broker reports, broker order states, broker events, broker fills, reconciliation reports, file outbox manifests, optimization results, backtest outputs, target positions, orders, paper fills, production runs, approvals, paper account state, account ledgers, monitoring reports, and alerts. Missing artifacts produce empty states instead of errors.
+`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, data-source smoke reports, provider probes, field coverage, audit summaries, incremental recovery reports, baseline summaries, matrix cache metadata, matrix validation reports, benchmark reports, data-source comparison reports, factor store, factor reports, batch reports, search reports, neural search reports, neural training history, checkpoint lists, suite reports, artifact catalog, promotion decisions, risk reports, risk model reports, risk exposures, risk decomposition, return attribution, capacity reports, execution plans, parent orders, child orders, child fills, execution quality, broker reports, broker order states, broker events, broker fills, reconciliation reports, file outbox manifests, optimization results, backtest outputs, target positions, orders, paper fills, production runs, approvals, paper account state, account ledgers, monitoring reports, artifact schema validation reports, release gate reports, release manifests, dependency/module/CLI inventories, local CI reports, and alerts. Missing artifacts produce empty states instead of errors.
 
 ## Research Suite Outputs
 
@@ -251,4 +276,4 @@ The artifact catalog indexes data manifest, quality report, pipeline state, univ
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton plus a data-source smoke validator for offline fake Tushare scenarios and gated real-token diagnostics. Matrix cache, local benchmark, and data-source comparison skeletons are available. Barra-like risk model v1 and benchmark-aware portfolio optimization now have a local implementation. Capacity-aware execution planning, broker adapter state, file instruction export, and paper child-order simulation are available. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Daily production now has local approvals, paper account ledger, broker reconciliation, and monitoring reports. Real full-market token/quota operation, full-market stress runs, incremental matrix refresh, richer provider comparisons, production Barra definitions, robust full-market covariance calibration, a professional optimizer, stronger reinforcement learning, offline pretraining, richer walk-forward policies, richer approval policies, human review workflow, broader neural training stability validation, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, verified broker file mappings, and real broker connectivity are future work.
+The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton plus a data-source smoke validator for offline fake Tushare scenarios and gated real-token diagnostics. Artifact schema versioning, release gate reports, local CI, and package build artifacts are available. Matrix cache, local benchmark, and data-source comparison skeletons are available. Barra-like risk model v1 and benchmark-aware portfolio optimization now have a local implementation. Capacity-aware execution planning, broker adapter state, file instruction export, and paper child-order simulation are available. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Daily production now has local approvals, paper account ledger, broker reconciliation, and monitoring reports. Real full-market token/quota operation, full-market stress runs, incremental matrix refresh, richer provider comparisons, production Barra definitions, robust full-market covariance calibration, a professional optimizer, stronger reinforcement learning, offline pretraining, richer walk-forward policies, richer approval policies, human review workflow, broader neural training stability validation, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, verified broker file mappings, and real broker connectivity are future work.

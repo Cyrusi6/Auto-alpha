@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from artifact_schema.writer import write_json_artifact, write_jsonl_artifact
+
 from .models import BrokerReconciliationReport
 from .store import LocalBrokerStore
 
@@ -39,12 +41,12 @@ def write_broker_report(
         "broker_reconciliation_path": root / "broker_reconciliation.json",
         "broker_reconciliation_md_path": root / "broker_reconciliation.md",
     }
-    paths["broker_report_path"].write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
-    _write_jsonl(paths["broker_orders_path"], orders)
-    _write_jsonl(paths["broker_events_path"], events)
-    _write_jsonl(paths["broker_fills_path"], fills)
+    write_json_artifact(paths["broker_report_path"], report, artifact_type="broker_report", producer="broker_adapter")
+    write_jsonl_artifact(paths["broker_orders_path"], orders, artifact_type="broker_orders", producer="broker_adapter")
+    write_jsonl_artifact(paths["broker_events_path"], events, artifact_type="broker_events", producer="broker_adapter")
+    write_jsonl_artifact(paths["broker_fills_path"], fills, artifact_type="broker_fills", producer="broker_adapter")
     recon_payload = reconciliation.to_dict() if reconciliation else {}
-    paths["broker_reconciliation_path"].write_text(json.dumps(recon_payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    write_json_artifact(paths["broker_reconciliation_path"], recon_payload, artifact_type="broker_reconciliation", producer="broker_adapter")
     paths["broker_report_md_path"].write_text(_markdown_report(report), encoding="utf-8")
     paths["broker_reconciliation_md_path"].write_text(_markdown_reconciliation(recon_payload), encoding="utf-8")
     return paths
