@@ -70,6 +70,10 @@ class AShareStrategyRunner:
         propose_only: bool = False,
         require_approval: bool = False,
         approval_store_dir: str | Path | None = None,
+        point_in_time: bool = False,
+        feature_cutoff_mode: str = "same_day_after_close",
+        min_listing_days: int = 0,
+        exclude_st: bool = False,
     ):
         self.data_dir = Path(data_dir)
         self.factor_store_dir = Path(factor_store_dir)
@@ -102,6 +106,10 @@ class AShareStrategyRunner:
         self.propose_only = bool(propose_only)
         self.require_approval = bool(require_approval)
         self.approval_store_dir = Path(approval_store_dir) if approval_store_dir is not None else None
+        self.point_in_time = bool(point_in_time)
+        self.feature_cutoff_mode = feature_cutoff_mode
+        self.min_listing_days = int(min_listing_days)
+        self.exclude_st = bool(exclude_st)
         self.loader: AShareDataLoader | None = None
         self.selected_factor_id: str | None = None
         self.selected_factor_meta: dict[str, object] = {}
@@ -111,7 +119,14 @@ class AShareStrategyRunner:
     def build_target_book(self) -> StrategyTargetBook:
         if self.portfolio_method not in {"equal_weight", "risk_aware"}:
             raise ValueError("portfolio_method must be equal_weight or risk_aware")
-        self.loader = AShareDataLoader(data_dir=self.data_dir, device="cpu").load_data()
+        self.loader = AShareDataLoader(
+            data_dir=self.data_dir,
+            device="cpu",
+            point_in_time=self.point_in_time,
+            feature_cutoff_mode=self.feature_cutoff_mode,
+            min_listing_days=self.min_listing_days,
+            exclude_st=self.exclude_st,
+        ).load_data()
         store = LocalFactorStore(self.factor_store_dir)
         self.selected_factor_id = select_factor_id(
             store,
@@ -368,6 +383,8 @@ class AShareStrategyRunner:
             "child_orders_path": execution_paths.get("child_orders_path"),
             "child_fills_path": execution_paths.get("child_fills_path"),
             "execution_quality_path": execution_paths.get("execution_quality_path"),
+            "point_in_time": self.point_in_time,
+            "feature_cutoff_mode": self.feature_cutoff_mode,
         }
 
     def _build_execution_plan(self, orders, trade_date: str) -> tuple[ExecutionPlanResult, dict[str, object], dict[str, str]]:
@@ -433,6 +450,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--propose-only", action="store_true")
     parser.add_argument("--require-approval", action="store_true")
     parser.add_argument("--approval-store-dir")
+    parser.add_argument("--point-in-time", action="store_true")
+    parser.add_argument("--feature-cutoff-mode", default="same_day_after_close")
+    parser.add_argument("--min-listing-days", type=int, default=0)
+    parser.add_argument("--exclude-st", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -471,6 +492,10 @@ def main(argv: list[str] | None = None) -> int:
         propose_only=args.propose_only,
         require_approval=args.require_approval,
         approval_store_dir=args.approval_store_dir,
+        point_in_time=args.point_in_time,
+        feature_cutoff_mode=args.feature_cutoff_mode,
+        min_listing_days=args.min_listing_days,
+        exclude_st=args.exclude_st,
     ).generate_orders()
     print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0

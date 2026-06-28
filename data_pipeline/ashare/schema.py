@@ -16,6 +16,9 @@ class Security:
     industry: str | None = None
     board: str | None = None
     is_st: bool = False
+    list_status: str | None = None
+    area: str | None = None
+    raw_name: str | None = None
 
 
 @dataclass(frozen=True)

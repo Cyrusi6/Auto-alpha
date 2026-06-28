@@ -42,7 +42,7 @@ def build_universe_from_storage(
             members.append(member)
 
     members.sort(key=lambda item: item.ts_code)
-    output_path, summary_path = _write_universe(
+    output_path, summary_path, pit_summary_path = _write_universe(
         storage.data_dir,
         config,
         members,
@@ -63,6 +63,7 @@ def build_universe_from_storage(
         source="index_members" if config.use_index_members else "securities",
         index_code=config.index_code,
         latest_index_trade_date=latest_index_trade_date,
+        pit_summary_path=str(pit_summary_path) if pit_summary_path else None,
     )
 
 
@@ -77,7 +78,7 @@ def _build_member_candidate(
         rejected["invalid_ts_code"] += 1
         return None
 
-    if bool(security.get("is_st", False)):
+    if (config.exclude_st or not config.point_in_time) and bool(security.get("is_st", False)):
         rejected["st_security"] += 1
         return None
 
@@ -89,6 +90,9 @@ def _build_member_candidate(
     delist_date = security.get("delist_date")
     if delist_date not in {None, ""} and str(delist_date) <= config.as_of_date:
         rejected["delisted"] += 1
+        return None
+    if config.point_in_time and str(security.get("list_status") or "L").upper() == "P":
+        rejected["paused"] += 1
         return None
 
     exchange = str(security.get("exchange") or "")
@@ -129,6 +133,8 @@ def _build_member_candidate(
         amount=amount,
         industry=None if security.get("industry") in {None, ""} else str(security.get("industry")),
         board=board,
+        is_active=True,
+        exclusion_reason=None,
     )
 
 
@@ -177,7 +183,7 @@ def _write_universe(
     rejected: Counter[str],
     source: str,
     latest_index_trade_date: str | None,
-) -> tuple[Path, Path]:
+) -> tuple[Path, Path, Path | None]:
     output_dir = data_dir / "universe"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{config.universe_name}.jsonl"
@@ -203,7 +209,29 @@ def _write_universe(
         json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True),
         encoding="utf-8",
     )
-    return output_path, summary_path
+    pit_summary_path = None
+    if config.point_in_time:
+        pit_summary_path = output_dir / f"{config.universe_name}_pit_summary.json"
+        pit_payload = {
+            "universe_name": config.universe_name,
+            "as_of_date": config.as_of_date,
+            "point_in_time": True,
+            "min_listing_days": config.min_listing_days,
+            "exclude_st": config.exclude_st,
+            "selected": len(members),
+            "active_universe_coverage": len(members) / total_candidates if total_candidates else 0.0,
+            "rejected": dict(sorted(rejected.items())),
+            "active_mask_path": config.active_mask_path,
+        }
+        pit_summary_path.write_text(json.dumps(pit_payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        (output_dir / f"{config.universe_name}_pit_summary.md").write_text(
+            "# Universe PIT Summary\n\n"
+            f"- point_in_time: `{pit_payload['point_in_time']}`\n"
+            f"- active_universe_coverage: `{pit_payload['active_universe_coverage']}`\n"
+            f"- selected: `{pit_payload['selected']}`\n",
+            encoding="utf-8",
+        )
+    return output_path, summary_path, pit_summary_path
 
 
 def _date_diff_days(start_date: str, end_date: str) -> int:

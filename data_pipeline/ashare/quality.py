@@ -155,6 +155,17 @@ def _validate_securities(records: Sequence[dict[str, Any]], issues: list[DataQua
         key = str(record.get("ts_code", ""))
         _require_ts_code("securities", key, issues)
         _require_date("securities", "list_date", record.get("list_date"), issues, key)
+        list_status = record.get("list_status")
+        if list_status not in {None, "", "L", "D", "P"}:
+            issues.append(
+                DataQualityIssue(
+                    dataset="securities",
+                    severity="warning",
+                    code="invalid_list_status",
+                    message="list_status should be one of L, D, P when present",
+                    key=key,
+                )
+            )
         delist_date = record.get("delist_date")
         if delist_date not in {None, ""}:
             _require_date("securities", "delist_date", delist_date, issues, key)

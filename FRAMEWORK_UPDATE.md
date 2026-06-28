@@ -1542,3 +1542,30 @@
 - 扩展 lifecycle policy 到更多生产指标，例如长期漂移、真实成交质量、回撤恢复和人工复审 SLA。
 - 增加更细的 model deployment environment 管理、跨环境 promotion，以及外部审批系统对接。
 - 为 model registry 增加 schema migration、版本 diff 和更完整的 lineage 可视化。
+
+## 2026-06-28 - 任务 027
+
+### 本次变更摘要
+- 新增 `point_in_time/`，提供 A 股 dataset availability contracts、security lifecycle、active security mask、PIT validation report 和 survivorship bias report。
+- 新增 `leakage_audit/`，提供公式静态扫描、factor values 审计、truncation consistency、backtest leakage 和 survivorship audit。
+- `data_pipeline` securities schema/provider/config 支持 `list_status`、`delist_date`、`area`、`raw_name` 以及 `--security-list-statuses L,D,P`。
+- `AShareDataLoader`、`matrix_store`、`universe`、`research`、`formula_search`、`backtest`、`strategy_manager`、`operations` 和 `research_suite` 增加 opt-in `--point-in-time` / `--feature-cutoff-mode` / leakage audit 参数。
+- `factor_lifecycle` health/review、monitoring、dashboard、artifact schema、release inventory、local CI 和 packaging 接入 PIT/leakage artifacts。
+
+### 新增文件
+- `point_in_time/`
+- `leakage_audit/`
+- `tests/test_point_in_time.py`
+- `tests/test_leakage_audit.py`
+- `tests/test_pit_leakage_integration.py`
+
+### 新增 A 股平台能力
+- `python -m point_in_time.run_pit validate`：生成 PIT 合同、manifest、security lifecycle、active mask 和 survivorship report。
+- `python -m leakage_audit.run_audit`：执行公式、因子值、截断一致性和回测 artifact 的未来函数审计。
+- `python -m research_suite.run_suite --point-in-time --run-pit-validation --run-leakage-audit`：在一键研究套件中串联 PIT 验证、泄漏审计、模型注册和生命周期 review。
+- `python -m backtest.run_backtest --point-in-time --run-leakage-audit`：在回测输出中记录 active universe coverage、inactive order、signal lag 和 leakage gate。
+
+### 后续待办
+- 引入历史 ST 状态、真实暂停上市历史、指数成分公告日/生效日字段和更严格复权因子 as-of 策略。
+- 将 truncation consistency 从持久化 artifact 检查升级为公式重算对比，并覆盖更多 batch/neural search 场景。
+- 为生产模型审批增加更细的 PIT policy、人工复核 SLA 和跨数据源 survivorship 对照。

@@ -23,6 +23,11 @@ class LifecyclePolicy:
     require_data_source_ok: bool = False
     require_backtest_metrics: bool = False
     require_review_approval_for_activation: bool = True
+    require_point_in_time_passed: bool = False
+    require_leakage_audit_passed: bool = False
+    max_leakage_blocker_count: int = 0
+    max_pit_blocker_count: int = 0
+    max_survivorship_warning_count: int = 999
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -72,6 +77,8 @@ class ModelReviewPackage:
     health_checks: list[dict[str, Any]]
     lifecycle_decision: dict[str, Any]
     reviewer_checklist: list[dict[str, Any]]
+    pit_summary: dict[str, Any] = field(default_factory=dict)
+    leakage_summary: dict[str, Any] = field(default_factory=dict)
     lineage_graph_path: str | None = None
 
     def to_dict(self) -> dict[str, Any]:

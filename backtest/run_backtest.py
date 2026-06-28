@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 from dataclasses import asdict
 from pathlib import Path
@@ -66,6 +68,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--impact-power", type=float, default=0.5)
     parser.add_argument("--execution-buckets", default="open,morning,afternoon,close")
     parser.add_argument("--execution-plan-dir")
+    parser.add_argument("--point-in-time", action="store_true")
+    parser.add_argument("--feature-cutoff-mode", default="same_day_after_close")
+    parser.add_argument("--signal-lag-days", type=int, default=0)
+    parser.add_argument("--min-listing-days", type=int, default=0)
+    parser.add_argument("--exclude-st", action="store_true")
+    parser.add_argument("--active-mask-path")
+    parser.add_argument("--run-leakage-audit", action="store_true")
+    parser.add_argument("--leakage-audit-dir")
+    parser.add_argument("--fail-on-leakage-blocker", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -73,7 +84,15 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     output_dir = Path(args.output_dir)
-    loader = AShareDataLoader(data_dir=args.data_dir, device="cpu").load_data()
+    loader = AShareDataLoader(
+        data_dir=args.data_dir,
+        device="cpu",
+        point_in_time=args.point_in_time,
+        feature_cutoff_mode=args.feature_cutoff_mode,
+        min_listing_days=args.min_listing_days,
+        exclude_st=args.exclude_st,
+        active_security_mask_path=args.active_mask_path,
+    ).load_data()
     store = LocalFactorStore(args.factor_store_dir)
     factor_id = select_factor_id(
         store,
@@ -112,6 +131,10 @@ def main(argv: list[str] | None = None) -> int:
         execution_buckets=tuple(item.strip() for item in args.execution_buckets.split(",") if item.strip()),
     )
     result = simulator.simulate(factors, loader)
+    result.metrics["signal_lag_days"] = float(args.signal_lag_days)
+    if args.point_in_time and "active_mask" in loader.raw_data_cache:
+        active_mask = loader.raw_data_cache["active_mask"]
+        result.metrics["active_universe_coverage"] = float(active_mask.mean().item()) if active_mask.numel() else 0.0
 
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "backtest_result.json").write_text(
@@ -183,6 +206,54 @@ def main(argv: list[str] | None = None) -> int:
             capacity_report_path = str(capacity_json)
             capacity_report_md_path = str(capacity_md)
 
+    leakage_paths: dict[str, str | None] = {
+        "leakage_audit_report_path": None,
+        "truncation_consistency_report_path": None,
+    }
+    leakage_gate_status = "not_run"
+    if args.run_leakage_audit:
+        from leakage_audit.run_audit import main as leakage_audit_main
+
+        leakage_dir = Path(args.leakage_audit_dir) if args.leakage_audit_dir else output_dir / "leakage_audit"
+        audit_argv = [
+            "--data-dir",
+            args.data_dir,
+            "--factor-store-dir",
+            args.factor_store_dir,
+            "--factor-id",
+            factor_id,
+            "--backtest-result-path",
+            str(output_dir / "backtest_result.json"),
+            "--output-dir",
+            str(leakage_dir),
+            "--as-of-date",
+            loader.trade_dates[-1],
+            "--cutoff-date",
+            loader.trade_dates[-1],
+            "--run-static-scan",
+            "--run-truncation-test",
+        ]
+        if args.point_in_time:
+            audit_argv.extend(["--point-in-time", "--feature-cutoff-mode", args.feature_cutoff_mode])
+        if args.fail_on_leakage_blocker:
+            audit_argv.append("--fail-on-blocker")
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            exit_code = leakage_audit_main(audit_argv)
+        if exit_code != 0:
+            return exit_code
+        report_path = leakage_dir / "leakage_audit_report.json"
+        leakage_paths = {
+            "leakage_audit_report_path": str(report_path),
+            "truncation_consistency_report_path": str(leakage_dir / "truncation_consistency_report.json"),
+        }
+        if report_path.exists():
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+            leakage_gate_status = str(payload.get("leakage_gate_status") or payload.get("status") or "unknown")
+            result.metrics["leakage_warning_count"] = float(payload.get("warning_count", 0) or 0)
+            result.metrics["leakage_blocker_count"] = float(payload.get("blocker_count", 0) or 0)
+            (output_dir / "backtest_result.json").write_text(json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+
     summary = {
         "factor_id": factor_id,
         "factor_type": factor_meta["factor_type"],
@@ -200,6 +271,11 @@ def main(argv: list[str] | None = None) -> int:
         "return_attribution_path": str(return_attribution_path) if return_attribution_path else None,
         "capacity_report_path": capacity_report_path,
         "capacity_report_md_path": capacity_report_md_path,
+        "point_in_time": bool(args.point_in_time),
+        "feature_cutoff_mode": args.feature_cutoff_mode,
+        "signal_lag_days": args.signal_lag_days,
+        "leakage_gate_status": leakage_gate_status,
+        **leakage_paths,
         **execution_plan_paths,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))

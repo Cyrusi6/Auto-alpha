@@ -39,6 +39,7 @@ from .checks import (
     check_order_fill_quality,
     check_paper_account,
     check_package_build_artifacts,
+    check_point_in_time_validation,
     check_provider_readiness,
     check_quality_report,
     check_release_gate,
@@ -46,6 +47,11 @@ from .checks import (
     check_pending_model_reviews,
     check_quarantined_or_paused_model_usage,
     check_style_exposure_drift,
+    check_survivorship_bias,
+    check_leakage_audit,
+    check_truncation_consistency,
+    check_active_universe_coverage,
+    check_feature_cutoff_policy,
     check_unfilled_orders,
 )
 from .report import build_monitoring_report, write_monitoring_report
@@ -86,6 +92,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--factor-lifecycle-report-path")
     parser.add_argument("--model-review-package-path")
     parser.add_argument("--model-lineage-graph-path")
+    parser.add_argument("--pit-validation-report-path")
+    parser.add_argument("--survivorship-report-path")
+    parser.add_argument("--leakage-audit-report-path")
+    parser.add_argument("--truncation-consistency-report-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -137,6 +147,12 @@ def main(argv: list[str] | None = None) -> int:
         ("model_lineage_completeness", lambda: check_model_lineage_completeness(args.model_lineage_graph_path)),
         ("model_rollback_state", lambda: check_model_rollback_state(args.model_registry_dir)),
         ("quarantined_or_paused_model_usage", lambda: check_quarantined_or_paused_model_usage(args.model_registry_dir)),
+        ("point_in_time_validation", lambda: check_point_in_time_validation(args.pit_validation_report_path)),
+        ("survivorship_bias", lambda: check_survivorship_bias(args.survivorship_report_path)),
+        ("leakage_audit", lambda: check_leakage_audit(args.leakage_audit_report_path)),
+        ("truncation_consistency", lambda: check_truncation_consistency(args.truncation_consistency_report_path)),
+        ("active_universe_coverage", lambda: check_active_universe_coverage(args.pit_validation_report_path)),
+        ("feature_cutoff_policy", lambda: check_feature_cutoff_policy(args.pit_validation_report_path)),
         ("fill_quality", lambda: check_order_fill_quality(Path(args.orders_dir) / "paper_fills.jsonl")),
         ("paper_account", lambda: check_paper_account(args.paper_account_dir)),
     ]:

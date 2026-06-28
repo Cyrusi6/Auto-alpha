@@ -50,6 +50,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--adjust", help="Override the configured adjustment mode.")
     parser.add_argument("--universe", help="Override the configured universe.")
     parser.add_argument("--index-codes", help="Comma-separated index codes for index_members sync.")
+    parser.add_argument("--security-list-statuses", help="Comma-separated Tushare stock_basic list_status values, e.g. L,D,P.")
     parser.add_argument("--chunk-days", type=int, default=30, help="Date chunk size for planned sync jobs.")
     parser.add_argument(
         "--datasets",
@@ -193,6 +194,10 @@ def _config_from_args(args: argparse.Namespace) -> AShareDataConfig:
         overrides["universe"] = args.universe
     if args.index_codes is not None:
         overrides["index_codes"] = tuple(item.strip() for item in args.index_codes.split(",") if item.strip())
+    if args.security_list_statuses is not None:
+        overrides["security_list_statuses"] = tuple(
+            item.strip().upper() for item in args.security_list_statuses.split(",") if item.strip()
+        )
 
     return replace(config, **overrides)
 

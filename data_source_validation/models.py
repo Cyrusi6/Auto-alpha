@@ -212,6 +212,17 @@ class DataSourceSmokeReport:
         for item in self.diagnostics:
             key = item.diagnostic_code or item.status
             diagnostic_counts[key] = diagnostic_counts.get(key, 0) + 1
+        securities_distribution = {}
+        delisted_count = 0
+        missing_delist = 0
+        current_only = False
+        if isinstance(self.stats_summary, dict):
+            raw_distribution = self.stats_summary.get("securities_list_status_distribution")
+            if isinstance(raw_distribution, dict):
+                securities_distribution = {str(key): int(value) for key, value in raw_distribution.items()}
+            delisted_count = int(self.stats_summary.get("delisted_security_count", 0) or 0)
+            missing_delist = int(self.stats_summary.get("missing_delist_date_count", 0) or 0)
+            current_only = bool(self.stats_summary.get("current_only_security_master_warning", False))
         return {
             "provider": self.provider,
             "status": self.status,
@@ -227,4 +238,8 @@ class DataSourceSmokeReport:
             "stats_summary": self.stats_summary,
             "config": self.config.to_dict(),
             "paths": self.paths,
+            "securities_list_status_distribution": securities_distribution,
+            "delisted_security_count": delisted_count,
+            "missing_delist_date_count": missing_delist,
+            "current_only_security_master_warning": current_only,
         }

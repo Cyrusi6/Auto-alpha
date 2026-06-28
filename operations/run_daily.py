@@ -52,6 +52,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--require-approval", action="store_true")
     parser.add_argument("--approval-id")
     parser.add_argument("--execute-approved", action="store_true")
+    parser.add_argument("--point-in-time", action="store_true")
+    parser.add_argument("--feature-cutoff-mode", default="same_day_after_close")
+    parser.add_argument("--min-listing-days", type=int, default=0)
+    parser.add_argument("--exclude-st", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -98,6 +102,10 @@ def main(argv: list[str] | None = None) -> int:
         model_environment=args.model_environment,
         block_paused_model=args.block_paused_model,
         block_quarantined_model=args.block_quarantined_model,
+        point_in_time=args.point_in_time,
+        feature_cutoff_mode=args.feature_cutoff_mode,
+        min_listing_days=args.min_listing_days,
+        exclude_st=args.exclude_st,
     )
     result = runner.run(
         require_approval=args.require_approval,

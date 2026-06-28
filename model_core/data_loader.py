@@ -21,6 +21,14 @@ class AShareDataLoader:
         universe_name: str | None = None,
         matrix_cache_dir: str | Path | None = None,
         use_matrix_cache: bool = False,
+        point_in_time: bool = False,
+        as_of_date: str | None = None,
+        feature_cutoff_mode: str = "same_day_after_close",
+        min_listing_days: int = 0,
+        exclude_st: bool = False,
+        active_security_mask_path: str | Path | None = None,
+        allow_inactive_securities: bool = True,
+        leakage_guard: bool = False,
     ):
         self.data_dir = Path(data_dir) if data_dir is not None else Path(ModelConfig.DATA_DIR)
         self.device = torch.device(device) if device is not None else ModelConfig.DEVICE
@@ -28,6 +36,14 @@ class AShareDataLoader:
         self.universe_name = universe_name
         self.matrix_cache_dir = Path(matrix_cache_dir) if matrix_cache_dir is not None else self.data_dir / "matrix_cache"
         self.use_matrix_cache = bool(use_matrix_cache)
+        self.point_in_time = bool(point_in_time)
+        self.as_of_date = as_of_date
+        self.feature_cutoff_mode = feature_cutoff_mode
+        self.min_listing_days = int(min_listing_days)
+        self.exclude_st = bool(exclude_st)
+        self.active_security_mask_path = Path(active_security_mask_path) if active_security_mask_path is not None else None
+        self.allow_inactive_securities = bool(allow_inactive_securities)
+        self.leakage_guard = bool(leakage_guard)
         self.ts_codes: list[str] = []
         self.trade_dates: list[str] = []
         self.security_metadata: dict[str, dict[str, object]] = {}
@@ -112,6 +128,8 @@ class AShareDataLoader:
         self.industry_codes = self._build_industry_codes()
         self.raw_data_cache["industry_codes"] = self.industry_codes
         self.raw_data_cache["industry_code_matrix"] = self.industry_codes.unsqueeze(1).expand(-1, len(self.trade_dates))
+        if self.point_in_time:
+            self._attach_point_in_time_masks(securities)
         self.feat_tensor = AShareFeatureEngineer.compute_features(self.raw_data_cache)
         self.target_ret = self._compute_target_ret(self.raw_data_cache["adjusted_close"])
         return self
@@ -164,6 +182,8 @@ class AShareDataLoader:
             self.raw_data_cache["industry_codes"] = self.industry_codes
         if "industry_code_matrix" not in self.raw_data_cache:
             self.raw_data_cache["industry_code_matrix"] = self.industry_codes.unsqueeze(1).expand(-1, len(self.trade_dates))
+        if self.point_in_time and not {"active_mask", "listing_age_days", "pit_available_mask"} <= set(self.raw_data_cache):
+            self._attach_point_in_time_masks(None)
 
         self.feat_tensor = AShareFeatureEngineer.compute_features(self.raw_data_cache)
         self.target_ret = self._compute_target_ret(self.raw_data_cache["adjusted_close"])
@@ -281,6 +301,58 @@ class AShareDataLoader:
         mapping = {industry: idx for idx, industry in enumerate(sorted(set(industries)))}
         values = [mapping[industry] for industry in industries]
         return torch.tensor(values, dtype=torch.long, device=self.device)
+
+    def _attach_point_in_time_masks(self, securities: list[dict[str, object]] | None) -> None:
+        active_mask, listing_age = self._build_or_load_active_mask(securities)
+        self.raw_data_cache["active_mask"] = active_mask
+        self.raw_data_cache["listing_age_days"] = listing_age
+        base_available = active_mask.clone()
+        if "close" in self.raw_data_cache:
+            base_available = base_available * (self.raw_data_cache["close"] > 0).to(dtype=torch.float32)
+        if self.feature_cutoff_mode in {"next_trade_day_open", "previous_trade_day_close"} and base_available.shape[1] > 0:
+            cutoff = torch.zeros_like(base_available)
+            cutoff[:, 1:] = base_available[:, :-1]
+            base_available = cutoff
+        self.raw_data_cache["pit_available_mask"] = base_available
+        if not self.allow_inactive_securities:
+            for key, value in list(self.raw_data_cache.items()):
+                if value.shape == active_mask.shape and key not in {"listing_age_days"}:
+                    self.raw_data_cache[key] = value * active_mask
+
+    def _build_or_load_active_mask(self, securities: list[dict[str, object]] | None) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.active_security_mask_path is not None and self.active_security_mask_path.exists():
+            records = [
+                json.loads(line)
+                for line in self.active_security_mask_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+        else:
+            if securities is None:
+                securities = [dict(self.security_metadata.get(ts_code, {"ts_code": ts_code})) for ts_code in self.ts_codes]
+            from point_in_time.security_master import build_active_security_mask, build_security_lifecycle
+
+            lifecycle = build_security_lifecycle(securities)
+            records = [
+                item.to_dict()
+                for item in build_active_security_mask(
+                    lifecycle,
+                    self.trade_dates,
+                    min_listing_days=self.min_listing_days,
+                    exclude_st=self.exclude_st,
+                )
+            ]
+        stock_index = {ts_code: idx for idx, ts_code in enumerate(self.ts_codes)}
+        date_index = {trade_date: idx for idx, trade_date in enumerate(self.trade_dates)}
+        active = torch.zeros((len(self.ts_codes), len(self.trade_dates)), dtype=torch.float32, device=self.device)
+        age = torch.zeros_like(active)
+        for record in records:
+            si = stock_index.get(str(record.get("ts_code")))
+            di = date_index.get(str(record.get("trade_date")))
+            if si is None or di is None:
+                continue
+            active[si, di] = 1.0 if record.get("is_active") else 0.0
+            age[si, di] = float(record.get("listing_age_days", 0) or 0)
+        return active, age
 
     @staticmethod
     def _compute_target_ret(close: torch.Tensor) -> torch.Tensor:

@@ -94,6 +94,16 @@ class ResearchSuiteConfig:
     require_model_approval: bool = False
     model_lifecycle_policy_path: str | None = None
     model_approval_store_dir: str | None = None
+    point_in_time: bool = False
+    feature_cutoff_mode: str = "same_day_after_close"
+    min_listing_days: int = 0
+    exclude_st: bool = False
+    run_pit_validation: bool = False
+    pit_output_dir: str | None = None
+    run_leakage_audit: bool = False
+    leakage_audit_dir: str | None = None
+    fail_on_pit_blocker: bool = False
+    fail_on_leakage_blocker: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

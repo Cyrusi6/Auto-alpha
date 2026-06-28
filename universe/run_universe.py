@@ -26,6 +26,11 @@ def main(argv: list[str] | None = None) -> int:
             boards=_parse_csv(args.boards),
             index_code=args.index_code,
             use_index_members=args.use_index_members,
+            point_in_time=args.point_in_time,
+            min_listing_days=args.min_listing_days,
+            exclude_st=args.exclude_st,
+            include_delisted_history=args.include_delisted_history,
+            active_mask_path=args.active_mask_path,
         )
         result = build_universe_from_storage(LocalAshareStorage(args.data_dir), config)
     except SystemExit as exc:
@@ -45,11 +50,16 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--as-of-date", required=True)
     parser.add_argument("--universe-name", required=True)
     parser.add_argument("--min-listed-days", type=int, default=60)
+    parser.add_argument("--min-listing-days", type=int, default=0)
     parser.add_argument("--min-amount", type=float, default=0.0)
     parser.add_argument("--exchanges", help="Optional comma-separated exchange filter.")
     parser.add_argument("--boards", help="Optional comma-separated board filter.")
     parser.add_argument("--index-code")
     parser.add_argument("--use-index-members", action="store_true")
+    parser.add_argument("--point-in-time", action="store_true")
+    parser.add_argument("--exclude-st", action="store_true")
+    parser.add_argument("--include-delisted-history", action="store_true")
+    parser.add_argument("--active-mask-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 

@@ -108,6 +108,31 @@ def _artifact_checks(paths: dict[str, str], policy: LifecyclePolicy) -> list[Fac
         checks.append(FactorHealthCheck("backtest_metrics", "error", False, message="backtest metrics required but missing"))
     else:
         checks.append(FactorHealthCheck("backtest_metrics", "info", True, message="backtest metrics not provided"))
+    pit = _read_json(paths.get("pit_validation_report_path") or paths.get("pit_validation_report"))
+    if pit:
+        blockers = int(pit.get("blocker_count", 0) or 0)
+        passed = blockers <= policy.max_pit_blocker_count and (not policy.require_point_in_time_passed or str(pit.get("status")) in {"passed", "warning"})
+        checks.append(_check("point_in_time_blockers", passed, blockers, policy.max_pit_blocker_count, "error"))
+    elif policy.require_point_in_time_passed:
+        checks.append(FactorHealthCheck("point_in_time_validation", "error", False, message="PIT validation report required but missing"))
+    else:
+        checks.append(FactorHealthCheck("point_in_time_validation", "info", True, message="PIT validation report not provided"))
+    survivorship = _read_json(paths.get("survivorship_report_path") or paths.get("survivorship_report"))
+    if survivorship:
+        warnings = int(survivorship.get("warning_count", 0) or 0)
+        checks.append(_check("survivorship_warnings", warnings <= policy.max_survivorship_warning_count, warnings, policy.max_survivorship_warning_count, "warning"))
+    leakage = _read_json(paths.get("leakage_audit_report_path") or paths.get("leakage_audit_report"))
+    if leakage:
+        blockers = int(leakage.get("blocker_count", 0) or 0)
+        passed = blockers <= policy.max_leakage_blocker_count and (not policy.require_leakage_audit_passed or str(leakage.get("leakage_gate_status") or leakage.get("status")) in {"passed", "warning"})
+        checks.append(_check("leakage_blockers", passed, blockers, policy.max_leakage_blocker_count, "error"))
+    elif policy.require_leakage_audit_passed:
+        checks.append(FactorHealthCheck("leakage_audit", "error", False, message="leakage audit report required but missing"))
+    else:
+        checks.append(FactorHealthCheck("leakage_audit", "info", True, message="leakage audit report not provided"))
+    truncation = _read_json(paths.get("truncation_consistency_report_path") or paths.get("truncation_consistency_report"))
+    if truncation:
+        checks.append(_check("truncation_consistency", bool(truncation.get("passed", True)), truncation.get("max_abs_diff", 0.0), "passed", "error"))
     return checks
 
 

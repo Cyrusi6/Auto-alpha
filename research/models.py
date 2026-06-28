@@ -52,6 +52,13 @@ class BatchResearchConfig:
     batch_eval_device: str = "auto"
     use_eval_cache: bool = False
     eval_cache_dir: str | None = None
+    point_in_time: bool = False
+    feature_cutoff_mode: str = "same_day_after_close"
+    min_listing_days: int = 0
+    exclude_st: bool = False
+    run_leakage_audit: bool = False
+    leakage_audit_dir: str | None = None
+    fail_on_leakage_blocker: bool = False
 
 
 @dataclass(frozen=True)

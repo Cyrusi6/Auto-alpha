@@ -26,6 +26,9 @@ class SampleAShareDataProvider:
                 list_date="19910403",
                 industry="银行",
                 board="主板",
+                list_status="L",
+                area="深圳",
+                raw_name="平安银行",
             ),
             Security(
                 ts_code="600000.SH",
@@ -35,6 +38,9 @@ class SampleAShareDataProvider:
                 list_date="19991110",
                 industry="银行",
                 board="主板",
+                list_status="L",
+                area="上海",
+                raw_name="浦发银行",
             ),
             Security(
                 ts_code="830000.BJ",
@@ -44,6 +50,9 @@ class SampleAShareDataProvider:
                 list_date="20220104",
                 industry="工业",
                 board="北交所",
+                list_status="L",
+                area="北京",
+                raw_name="北证样例",
             ),
         ]
 

@@ -189,6 +189,19 @@ def render_app(config: DashboardConfig | None = None) -> None:
         health_checks = service.load_factor_health_checks()
         lifecycle_decisions = service.load_lifecycle_decisions()
         review_package = service.load_model_review_package()
+        pit_report = service.load_pit_validation_report()
+        pit_manifest = service.load_pit_dataset_manifest()
+        pit_contracts = service.load_pit_dataset_contracts()
+        lifecycle_rows = service.load_security_lifecycle()
+        active_mask = service.load_active_security_mask()
+        survivorship_report = service.load_survivorship_bias_report()
+        leakage_report = service.load_leakage_audit_report()
+        leakage_issues = service.load_leakage_issues()
+        formula_leakage_scan = service.load_formula_leakage_scan()
+        truncation_report = service.load_truncation_consistency_report()
+        factor_value_leakage = service.load_factor_value_leakage_report()
+        backtest_leakage = service.load_backtest_leakage_report()
+        universe_pit_summary = service.load_universe_pit_summary()
         suite_result = service.load_suite_result()
         suite_markdown = service.load_suite_report_markdown()
         artifact_catalog = service.load_artifact_catalog()
@@ -302,6 +315,32 @@ def render_app(config: DashboardConfig | None = None) -> None:
         )
         _show_dataframe_or_empty("Factor Health Checks", health_checks)
         _show_dataframe_or_empty("Lifecycle Decisions", lifecycle_decisions)
+        st.subheader("Point-In-Time And Leakage Governance")
+        st.json(
+            {
+                "pit_status": pit_report.get("status", "") if pit_report else "",
+                "pit_blocker_count": pit_report.get("blocker_count", 0) if pit_report else 0,
+                "pit_warning_count": pit_report.get("warning_count", 0) if pit_report else 0,
+                "active_universe_coverage": pit_report.get("active_universe_coverage", 0.0) if pit_report else 0.0,
+                "pit_contracts": len(pit_contracts.get("datasets", [])) if pit_contracts else 0,
+                "pit_manifest_datasets": len(pit_manifest.get("datasets", [])) if pit_manifest else 0,
+                "security_lifecycle_rows": len(lifecycle_rows),
+                "active_mask_rows": len(active_mask),
+                "current_only_security_master": survivorship_report.get("current_only_security_master") if survivorship_report else None,
+                "survivorship_warning_count": survivorship_report.get("warning_count", 0) if survivorship_report else 0,
+                "leakage_status": leakage_report.get("status", "") if leakage_report else "",
+                "leakage_gate_status": leakage_report.get("leakage_gate_status", "") if leakage_report else "",
+                "leakage_blocker_count": leakage_report.get("blocker_count", 0) if leakage_report else 0,
+                "leakage_warning_count": leakage_report.get("warning_count", 0) if leakage_report else 0,
+                "formula_scan_blocked": formula_leakage_scan.get("blocked_formula_count", 0) if formula_leakage_scan else 0,
+                "truncation_passed": truncation_report.get("passed") if truncation_report else None,
+                "truncation_max_abs_diff": truncation_report.get("max_abs_diff", 0.0) if truncation_report else 0.0,
+                "factor_future_date_count": factor_value_leakage.get("future_date_count", 0) if factor_value_leakage else 0,
+                "backtest_leakage_gate": backtest_leakage.get("leakage_gate_status", "") if backtest_leakage else "",
+                "universe_pit_summary": universe_pit_summary,
+            }
+        )
+        _show_dataframe_or_empty("Leakage Issues", leakage_issues)
         st.subheader("Research Suite")
         if suite_result:
             st.json(

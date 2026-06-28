@@ -36,6 +36,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--continue-on-error", action="store_true")
     parser.add_argument("--train-ratio", type=float, default=0.6)
     parser.add_argument("--valid-ratio", type=float, default=0.2)
+    parser.add_argument("--point-in-time", action="store_true")
+    parser.add_argument("--feature-cutoff-mode", default="same_day_after_close")
+    parser.add_argument("--min-listing-days", type=int, default=0)
+    parser.add_argument("--exclude-st", action="store_true")
+    parser.add_argument("--run-leakage-audit", action="store_true")
+    parser.add_argument("--leakage-audit-dir")
+    parser.add_argument("--fail-on-leakage-blocker", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -65,6 +72,13 @@ def main(argv: list[str] | None = None) -> int:
         valid_ratio=args.valid_ratio,
         continue_on_error=args.continue_on_error,
         disable_composite=args.disable_composite,
+        point_in_time=args.point_in_time,
+        feature_cutoff_mode=args.feature_cutoff_mode,
+        min_listing_days=args.min_listing_days,
+        exclude_st=args.exclude_st,
+        run_leakage_audit=args.run_leakage_audit,
+        leakage_audit_dir=args.leakage_audit_dir,
+        fail_on_leakage_blocker=args.fail_on_leakage_blocker,
     )
     result = BatchFactorResearchRunner(config=config, candidates=candidates).run()
     payload = result.to_dict()

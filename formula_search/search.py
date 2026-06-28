@@ -47,6 +47,13 @@ class FormulaSearchRunner:
         batch_eval_device: str = "auto",
         use_eval_cache: bool = False,
         eval_cache_dir: str | None = None,
+        point_in_time: bool = False,
+        feature_cutoff_mode: str = "same_day_after_close",
+        min_listing_days: int = 0,
+        exclude_st: bool = False,
+        run_leakage_audit: bool = False,
+        leakage_audit_dir: str | None = None,
+        fail_on_leakage_blocker: bool = False,
     ):
         self.search_config = search_config
         self.data_dir = data_dir
@@ -71,6 +78,13 @@ class FormulaSearchRunner:
         self.batch_eval_device = batch_eval_device
         self.use_eval_cache = bool(use_eval_cache)
         self.eval_cache_dir = eval_cache_dir
+        self.point_in_time = bool(point_in_time)
+        self.feature_cutoff_mode = feature_cutoff_mode
+        self.min_listing_days = int(min_listing_days)
+        self.exclude_st = bool(exclude_st)
+        self.run_leakage_audit = bool(run_leakage_audit)
+        self.leakage_audit_dir = leakage_audit_dir
+        self.fail_on_leakage_blocker = bool(fail_on_leakage_blocker)
         self.rng = random.Random(search_config.seed)
 
     def run(self) -> FormulaSearchResult:
@@ -147,6 +161,11 @@ class FormulaSearchRunner:
                 "matrix_cache_dir": self.matrix_cache_dir,
                 "use_matrix_cache": self.use_matrix_cache,
                 "use_batch_eval": self.use_batch_eval,
+                "point_in_time": self.point_in_time,
+                "feature_cutoff_mode": self.feature_cutoff_mode,
+                "min_listing_days": self.min_listing_days,
+                "exclude_st": self.exclude_st,
+                "run_leakage_audit": self.run_leakage_audit,
             },
         )
         self._write_outputs(result, generated)
@@ -185,6 +204,17 @@ class FormulaSearchRunner:
             batch_eval_device=self.batch_eval_device,
             use_eval_cache=self.use_eval_cache,
             eval_cache_dir=self.eval_cache_dir,
+            point_in_time=self.point_in_time,
+            feature_cutoff_mode=self.feature_cutoff_mode,
+            min_listing_days=self.min_listing_days,
+            exclude_st=self.exclude_st,
+            run_leakage_audit=self.run_leakage_audit,
+            leakage_audit_dir=(
+                str(Path(self.leakage_audit_dir) / f"generation_{generation}")
+                if self.leakage_audit_dir
+                else None
+            ),
+            fail_on_leakage_blocker=self.fail_on_leakage_blocker,
         )
         return BatchFactorResearchRunner(config=config, candidates=from_formula_search_candidates(candidates)).run()
 
@@ -236,6 +266,10 @@ class FormulaSearchRunner:
             universe_file=self.universe_file,
             matrix_cache_dir=self.matrix_cache_dir,
             use_matrix_cache=self.use_matrix_cache,
+            point_in_time=self.point_in_time,
+            feature_cutoff_mode=self.feature_cutoff_mode,
+            min_listing_days=self.min_listing_days,
+            exclude_st=self.exclude_st,
         ).load_data()
         values = build_composite_factor_matrix(
             store,

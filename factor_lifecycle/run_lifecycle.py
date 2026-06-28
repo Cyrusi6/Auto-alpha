@@ -47,6 +47,10 @@ def _build_parser() -> argparse.ArgumentParser:
         cmd.add_argument("--artifact-validation-report-path")
         cmd.add_argument("--data-source-smoke-report-path")
         cmd.add_argument("--release-gate-report-path")
+        cmd.add_argument("--pit-validation-report-path")
+        cmd.add_argument("--survivorship-report-path")
+        cmd.add_argument("--leakage-audit-report-path")
+        cmd.add_argument("--truncation-consistency-report-path")
         cmd.add_argument("--create-review-package", action="store_true")
         cmd.add_argument("--propose-activation", action="store_true")
         cmd.add_argument("--require-approval", action="store_true")
@@ -115,6 +119,10 @@ def _evaluate(args, registry, store, factor, model):
         "artifact_validation_report": args.artifact_validation_report_path,
         "data_source_smoke_report": args.data_source_smoke_report_path,
         "release_gate_report": args.release_gate_report_path,
+        "pit_validation_report": args.pit_validation_report_path,
+        "survivorship_report": args.survivorship_report_path,
+        "leakage_audit_report": args.leakage_audit_report_path,
+        "truncation_consistency_report": args.truncation_consistency_report_path,
     }
     metrics, checks = evaluate_factor_health(loader, store, factor.factor_id, args.as_of_date, policy, artifact_paths)
     current_status = model.lifecycle_status if model else factor.status

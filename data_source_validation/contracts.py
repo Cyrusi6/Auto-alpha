@@ -24,8 +24,8 @@ DATASET_CONTRACTS: dict[str, DatasetContract] = {
     "securities": DatasetContract(
         dataset="securities",
         api_name="stock_basic",
-        request_fields=["ts_code", "symbol", "name", "exchange", "list_date", "industry", "market"],
-        local_fields=["ts_code", "symbol", "name", "exchange", "list_date", "industry", "board", "is_st"],
+        request_fields=["ts_code", "symbol", "name", "exchange", "list_date", "delist_date", "industry", "market", "list_status", "area"],
+        local_fields=["ts_code", "symbol", "name", "exchange", "list_date", "delist_date", "industry", "board", "is_st", "list_status", "area", "raw_name"],
         primary_key=list(DATASET_PRIMARY_KEYS["securities"]),
     ),
     "trade_calendar": DatasetContract(

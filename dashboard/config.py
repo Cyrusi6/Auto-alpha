@@ -30,6 +30,8 @@ class DashboardConfig:
     pretrain_dir: Path = Path("artifacts/alphagpt_pretrain")
     model_registry_dir: Path = Path("artifacts/model_registry")
     model_lifecycle_dir: Path = Path("artifacts/model_lifecycle")
+    pit_dir: Path = Path("artifacts/point_in_time")
+    leakage_dir: Path = Path("artifacts/leakage_audit")
 
     @classmethod
     def from_env(cls) -> "DashboardConfig":
@@ -59,4 +61,6 @@ class DashboardConfig:
             pretrain_dir=Path(os.getenv("ASHARE_DASHBOARD_PRETRAIN_DIR") or "artifacts/alphagpt_pretrain"),
             model_registry_dir=Path(os.getenv("ASHARE_DASHBOARD_MODEL_REGISTRY_DIR") or "artifacts/model_registry"),
             model_lifecycle_dir=Path(os.getenv("ASHARE_DASHBOARD_MODEL_LIFECYCLE_DIR") or "artifacts/model_lifecycle"),
+            pit_dir=Path(os.getenv("ASHARE_DASHBOARD_PIT_DIR") or "artifacts/point_in_time"),
+            leakage_dir=Path(os.getenv("ASHARE_DASHBOARD_LEAKAGE_DIR") or "artifacts/leakage_audit"),
         )

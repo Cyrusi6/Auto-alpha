@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import contextlib
+import io
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -47,6 +49,10 @@ class BatchFactorResearchRunner:
             universe_file=config.universe_file,
             matrix_cache_dir=config.matrix_cache_dir,
             use_matrix_cache=config.use_matrix_cache,
+            point_in_time=config.point_in_time,
+            feature_cutoff_mode=config.feature_cutoff_mode,
+            min_listing_days=config.min_listing_days,
+            exclude_st=config.exclude_st,
         )
         self.vm = StackVM()
         self.evaluator = AShareFactorEvaluator()
@@ -93,14 +99,15 @@ class BatchFactorResearchRunner:
         composite_info: dict[str, Any] | None = None
         if not self.config.disable_composite:
             composite_info = self._build_composite(batch_id, created_at)
+        leakage_summary, leakage_paths = self._run_leakage_audit_if_requested(output_dir)
 
         paths = {
             "batch_result_path": str(output_dir / "batch_result.json"),
             "batch_results_path": str(output_dir / "batch_results.jsonl"),
             "batch_report_json_path": str(output_dir / "batch_report.json"),
             "batch_report_md_path": str(output_dir / "batch_report.md"),
-        }
-        summary = self._summary(results, composite_info)
+        } | leakage_paths
+        summary = self._summary(results, composite_info) | {"leakage_audit": leakage_summary}
         batch_result = BatchResearchResult(
             batch_id=batch_id,
             created_at=created_at,
@@ -113,6 +120,8 @@ class BatchFactorResearchRunner:
         )
         self._write_outputs(batch_result)
         write_batch_report(batch_result, output_dir)
+        if self.config.fail_on_leakage_blocker and int(leakage_summary.get("blocker_count", 0) or 0) > 0:
+            raise RuntimeError("leakage audit found blocker issues")
         return batch_result
 
     def _run_with_batch_eval(self, batch_id: str, created_at: str, output_dir: Path) -> BatchResearchResult:
@@ -181,6 +190,10 @@ class BatchFactorResearchRunner:
             universe_file=self.config.universe_file,
             matrix_cache_dir=self.config.matrix_cache_dir,
             use_matrix_cache=self.config.use_matrix_cache,
+            point_in_time=self.config.point_in_time,
+            feature_cutoff_mode=self.config.feature_cutoff_mode,
+            min_listing_days=self.config.min_listing_days,
+            exclude_st=self.config.exclude_st,
         )
         self.loader.load_data()
         composite_info = None if self.config.disable_composite else self._build_composite(batch_id, created_at)
@@ -296,6 +309,10 @@ class BatchFactorResearchRunner:
                 "batch_id": batch_id,
                 "universe_name": self.config.universe_name,
                 "universe_file": self.config.universe_file,
+                "point_in_time": self.config.point_in_time,
+                "feature_cutoff_mode": self.config.feature_cutoff_mode,
+                "pit_contract_version": "1.0" if self.config.point_in_time else None,
+                "active_mask_applied": self.config.point_in_time,
             },
             factor_type="single",
             batch_id=batch_id,
@@ -399,6 +416,46 @@ class BatchFactorResearchRunner:
             for item in result.results:
                 handle.write(json.dumps(item.to_dict(), ensure_ascii=False, sort_keys=True))
                 handle.write("\n")
+
+    def _run_leakage_audit_if_requested(self, output_dir: Path) -> tuple[dict[str, Any], dict[str, str]]:
+        if not self.config.run_leakage_audit:
+            return {}, {}
+        from leakage_audit.run_audit import main as leakage_main
+
+        audit_dir = Path(self.config.leakage_audit_dir) if self.config.leakage_audit_dir else output_dir / "leakage_audit"
+        argv = [
+            "--data-dir",
+            self.config.data_dir,
+            "--factor-store-dir",
+            self.config.factor_store_dir,
+            "--output-dir",
+            str(audit_dir),
+            "--cutoff-date",
+            self.loader.trade_dates[-1] if self.loader.trade_dates else "",
+            "--max-formulas",
+            "5",
+            "--run-static-scan",
+            "--run-truncation-test",
+        ]
+        if self.config.point_in_time:
+            argv.extend(
+                [
+                    "--point-in-time",
+                    "--feature-cutoff-mode",
+                    self.config.feature_cutoff_mode,
+                    "--min-listing-days",
+                    str(self.config.min_listing_days),
+                ]
+            )
+            if self.config.exclude_st:
+                argv.append("--exclude-st")
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            rc = leakage_main(argv)
+        report_path = audit_dir / "leakage_audit_report.json"
+        payload = json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else {"return_code": rc}
+        paths = payload.get("paths", {}) if isinstance(payload.get("paths"), dict) else {}
+        return payload, {name: str(path) for name, path in paths.items()}
 
     @staticmethod
     def _summary(results: list[CandidateRunResult], composite_info: dict[str, Any] | None) -> dict[str, Any]:

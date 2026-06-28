@@ -35,10 +35,12 @@ PLATFORM_MODULES = [
     "operations",
     "paper_account",
     "performance_benchmark",
+    "point_in_time",
     "portfolio_optimizer",
     "research",
     "research_suite",
     "risk_model",
+    "leakage_audit",
     "strategy_manager",
     "universe",
 ]

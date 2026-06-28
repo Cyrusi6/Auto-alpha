@@ -160,6 +160,7 @@ def run_data_source_smoke(
     field_coverage = analyze_field_coverage(config.data_dir, selected)
     quality_summary = _read_json(storage.data_dir / "quality_report.json")
     stats_summary = _read_json(storage.data_dir / "dataset_stats.json")
+    securities_summary = _securities_status_summary(storage)
     audit_summary = summarize_api_audit(storage.data_dir / "api_audit.jsonl")
     incremental: IncrementalRecoveryResult | None = None
     if run_incremental_recovery and _can_run_incremental(config, fake_tushare_scenario, allow_network, run_online_incremental):
@@ -201,7 +202,7 @@ def run_data_source_smoke(
         incremental_recovery=incremental,
         baseline_compare=baseline,
         quality_summary=quality_summary,
-        stats_summary=stats_summary,
+        stats_summary={**stats_summary, **securities_summary},
         config=smoke_config,
     )
     paths = write_data_source_smoke_report(report, root)
@@ -311,3 +312,23 @@ def _read_json(path: Path) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return {}
+
+
+def _securities_status_summary(storage: LocalAshareStorage) -> dict[str, object]:
+    records = storage.read_dataset("securities")
+    distribution: dict[str, int] = {}
+    delisted = 0
+    missing_delist = 0
+    for record in records:
+        status = str(record.get("list_status") or "unknown").upper()
+        distribution[status] = distribution.get(status, 0) + 1
+        if status == "D":
+            delisted += 1
+            if record.get("delist_date") in {None, ""}:
+                missing_delist += 1
+    return {
+        "securities_list_status_distribution": distribution,
+        "delisted_security_count": delisted,
+        "missing_delist_date_count": missing_delist,
+        "current_only_security_master_warning": bool(records and set(distribution) <= {"L", "UNKNOWN"}),
+    }

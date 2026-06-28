@@ -82,6 +82,9 @@ def _rows_for_api(api_name: str) -> list[dict[str, Any]]:
                 "list_date": "19910403",
                 "industry": "银行",
                 "market": "主板",
+                "delist_date": None,
+                "list_status": "L",
+                "area": "深圳",
             }
         ],
         "trade_cal": [

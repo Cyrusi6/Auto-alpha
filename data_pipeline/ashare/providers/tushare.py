@@ -48,18 +48,25 @@ class TushareAShareDataProvider:
         return fetcher(job_config)
 
     def fetch_securities(self, config: AShareDataConfig) -> list[Security]:
-        rows = self._post(
-            config,
-            "stock_basic",
-            params={"list_status": "L"},
-            fields="ts_code,symbol,name,exchange,list_date,industry,market",
-        )
+        rows: list[dict[str, Any]] = []
+        for list_status in config.security_list_statuses:
+            for row in self._post(
+                config,
+                "stock_basic",
+                params={"list_status": list_status},
+                fields="ts_code,symbol,name,exchange,list_date,delist_date,industry,market,list_status,area",
+            ):
+                payload = dict(row)
+                payload.setdefault("list_status", list_status)
+                rows.append(payload)
         records: list[Security] = []
+        seen: set[str] = set()
         for row in rows:
             ts_code = _text(row.get("ts_code"))
             list_date = _text(row.get("list_date"))
-            if not is_valid_ts_code(ts_code) or not is_valid_yyyymmdd(list_date):
+            if ts_code in seen or not is_valid_ts_code(ts_code) or not is_valid_yyyymmdd(list_date):
                 continue
+            seen.add(ts_code)
             name = _text(row.get("name"))
             records.append(
                 Security(
@@ -68,9 +75,13 @@ class TushareAShareDataProvider:
                     name=name,
                     exchange=_text(row.get("exchange")),
                     list_date=list_date,
+                    delist_date=_valid_optional_date(row.get("delist_date")),
                     industry=_optional_text(row.get("industry")),
                     board=_optional_text(row.get("market")),
                     is_st=_is_st_name(name),
+                    list_status=_optional_text(row.get("list_status")) or _optional_text(row.get("list_statuses")),
+                    area=_optional_text(row.get("area")),
+                    raw_name=name,
                 )
             )
         return records

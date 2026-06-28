@@ -248,6 +248,14 @@ It writes `monitoring_report.json`, `monitoring_report.md`, and `alerts.jsonl`.
 
 Data-source smoke writes `data_source_smoke_report.json/md`, `provider_probe.json`, `field_coverage.json`, `audit_summary.json`, `incremental_recovery_report.json`, `baseline_compare_summary.json`, and `dataset_contracts.json`. Default tests use sample and fake Tushare clients only; a real Tushare token is used only when an operator explicitly passes `--allow-network --require-token`.
 
+## Point-In-Time And Leakage Governance
+
+`point_in_time/` owns the as-of data governance layer. It defines availability contracts for current local datasets, builds `security_lifecycle.jsonl`, produces `active_security_mask.jsonl`, validates financial announcement dates, flags current-only security masters, and writes PIT plus survivorship reports. Daily end-of-day fields are explicitly governed by `feature_cutoff_mode`; `next_trade_day_open` prevents same-day after-close features from being considered available for same-day open decisions.
+
+`leakage_audit/` is the future-data audit layer. It scans formula DSL tokens, checks factor values against `as_of_date` and active security masks, runs a small truncation consistency check, inspects backtest artifacts for signal/execution timing warnings, and writes structured leakage reports. Formula search, batch research, backtest, research suite, lifecycle review, monitoring, dashboard, schema validation, release inventory, and local CI can all read these artifacts.
+
+Tushare security sync now supports configurable `L,D,P` stock status requests through `ASHARE_SECURITY_LIST_STATUSES` or `--security-list-statuses`. Sample data stays deterministic and local; a current-only security master is warning-level by default so historical tests and demos remain stable.
+
 ## Formula Corpus And Offline Pretraining
 
 `formula_corpus/` turns local research artifacts into reusable AlphaGPT training data. It reads default candidates, seed formulas, factor store records, search outputs, neural outputs, batch reports, and suite catalogs; validates each formula with StackVM; deduplicates by stable formula hash; and writes corpus records, next-token sequence records, preference pairs, stats, and a human-readable report.

@@ -18,6 +18,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--universe-file")
     parser.add_argument("--fields")
     parser.add_argument("--validate", action="store_true")
+    parser.add_argument("--point-in-time", action="store_true")
+    parser.add_argument("--feature-cutoff-mode", default="same_day_after_close")
+    parser.add_argument("--min-listing-days", type=int, default=0)
+    parser.add_argument("--exclude-st", action="store_true")
+    parser.add_argument("--active-mask-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -31,6 +36,11 @@ def main(argv: list[str] | None = None) -> int:
         universe_name=args.universe_name,
         universe_file=args.universe_file,
         fields=fields,
+        point_in_time=args.point_in_time,
+        feature_cutoff_mode=args.feature_cutoff_mode,
+        min_listing_days=args.min_listing_days,
+        exclude_st=args.exclude_st,
+        active_mask_path=args.active_mask_path,
     )
     if args.validate:
         report = validate_matrix_cache(result.cache_dir)

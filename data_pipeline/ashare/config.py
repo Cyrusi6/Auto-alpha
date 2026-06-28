@@ -24,6 +24,7 @@ class AShareDataConfig:
     adjust: str = "qfq"
     universe: str = "all_a"
     index_codes: tuple[str, ...] = ("000300.SH",)
+    security_list_statuses: tuple[str, ...] = ("L",)
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "AShareDataConfig":
@@ -48,6 +49,7 @@ class AShareDataConfig:
             adjust=(env.get("ASHARE_ADJUST", "qfq")).lower(),
             universe=env.get("ASHARE_UNIVERSE", "all_a"),
             index_codes=_parse_csv_tuple(env.get("ASHARE_INDEX_CODES")) or ("000300.SH",),
+            security_list_statuses=_parse_csv_tuple(env.get("ASHARE_SECURITY_LIST_STATUSES")) or ("L",),
         )
 
     def __post_init__(self) -> None:
@@ -76,6 +78,13 @@ class AShareDataConfig:
         object.__setattr__(self, "index_codes", tuple(str(code).strip() for code in self.index_codes if str(code).strip()))
         if not self.index_codes:
             raise ValueError("index_codes must include at least one index code")
+        statuses = tuple(str(status).strip().upper() for status in self.security_list_statuses if str(status).strip())
+        if not statuses:
+            raise ValueError("security_list_statuses must include at least one status")
+        unsupported = sorted(set(statuses) - {"L", "D", "P"})
+        if unsupported:
+            raise ValueError(f"security_list_statuses only supports L,D,P: {', '.join(unsupported)}")
+        object.__setattr__(self, "security_list_statuses", statuses)
 
     @staticmethod
     def _coerce_positive_int(value: int | str, field_name: str) -> int:

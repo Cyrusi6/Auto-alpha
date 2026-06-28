@@ -41,6 +41,9 @@ DEFAULT_MATRIX_FIELDS = (
     "is_suspended",
     "industry_codes",
     "index_member_matrix",
+    "active_mask",
+    "listing_age_days",
+    "pit_available_mask",
 )
 
 
@@ -50,6 +53,11 @@ def build_matrix_cache(
     universe_file: str | Path | None = None,
     universe_name: str | None = None,
     fields: Iterable[str] | None = None,
+    point_in_time: bool = False,
+    feature_cutoff_mode: str = "same_day_after_close",
+    min_listing_days: int = 0,
+    exclude_st: bool = False,
+    active_mask_path: str | Path | None = None,
 ) -> MatrixCacheBuildResult:
     """Build a deterministic local matrix cache from JSONL datasets."""
 
@@ -70,6 +78,11 @@ def build_matrix_cache(
         device="cpu",
         universe_file=universe_file,
         universe_name=effective_universe_name,
+        point_in_time=point_in_time,
+        feature_cutoff_mode=feature_cutoff_mode,
+        min_listing_days=min_listing_days,
+        exclude_st=exclude_st,
+        active_security_mask_path=active_mask_path,
     ).load_data()
 
     raw = dict(loader.raw_data_cache)
@@ -129,6 +142,12 @@ def build_matrix_cache(
         "effective_universe_name": effective_universe_name,
         "universe_missing_fallback": universe_missing_fallback,
         "security_metadata": loader.security_metadata,
+        "point_in_time": bool(point_in_time),
+        "feature_cutoff_mode": feature_cutoff_mode,
+        "active_mask_included": all(field in requested_fields for field in ("active_mask", "pit_available_mask")),
+        "min_listing_days": int(min_listing_days),
+        "exclude_st": bool(exclude_st),
+        "pit_contract_version": "1.0",
     }
     metadata_path = cache_dir / "metadata.json"
     metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")

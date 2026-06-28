@@ -32,9 +32,14 @@ def validate_matrix_cache(cache_dir: str | Path) -> MatrixValidationReport:
             errors.append("metadata n_stocks does not match ts_codes")
         if int(metadata.get("n_dates", n_dates)) != n_dates:
             errors.append("metadata n_dates does not match trade_dates")
-        missing = sorted(set(DEFAULT_MATRIX_FIELDS) - set(fields))
+        required = set(DEFAULT_MATRIX_FIELDS)
+        if not metadata.get("point_in_time"):
+            required -= {"active_mask", "listing_age_days", "pit_available_mask"}
+        missing = sorted(required - set(fields))
         if missing:
             errors.append(f"missing required matrix fields: {', '.join(missing)}")
+        if metadata.get("point_in_time") and not metadata.get("active_mask_included"):
+            warnings.append("point_in_time metadata is enabled but active_mask_included is false")
         for field in fields:
             try:
                 array = reader.load_field(field)

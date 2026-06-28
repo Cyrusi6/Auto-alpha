@@ -16,6 +16,8 @@ def build_model_review_package(
     promotion_decision: dict | None = None,
     lineage_graph_path: str | None = None,
 ) -> ModelReviewPackage:
+    pit_summary = _summary_from_checks(health_checks, "point_in_time")
+    leakage_summary = _summary_from_checks(health_checks, "leakage")
     return ModelReviewPackage(
         model_version_id=model_version.model_version_id if model_version else None,
         factor_id=factor_record.factor_id,
@@ -35,6 +37,17 @@ def build_model_review_package(
             {"item": "risk_and_capacity_reviewed", "required": True, "checked": False},
             {"item": "broker_or_paper_execution_reviewed", "required": False, "checked": False},
             {"item": "rollback_plan_reviewed", "required": True, "checked": False},
+            {"item": "point_in_time_and_leakage_reviewed", "required": True, "checked": False},
         ],
+        pit_summary=pit_summary,
+        leakage_summary=leakage_summary,
         lineage_graph_path=lineage_graph_path,
     )
+
+
+def _summary_from_checks(checks: list[dict], prefix: str) -> dict:
+    selected = [check for check in checks if str(check.get("name", "")).startswith(prefix) or prefix in str(check.get("name", ""))]
+    return {
+        "checks": selected,
+        "passed": all(bool(check.get("passed", True)) for check in selected) if selected else None,
+    }

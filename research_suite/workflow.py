@@ -23,6 +23,8 @@ from neural_search.run_pretrain import main as run_pretrain_main
 from performance_benchmark.run_benchmark import main as run_benchmark_main
 from strategy_manager import runner as strategy_runner
 from universe import run_universe
+from leakage_audit.run_audit import main as run_leakage_audit_main
+from point_in_time.run_pit import main as run_pit_main
 
 from .catalog import register_artifact, write_artifact_catalog
 from .models import ArtifactCatalog, PromotionConfig, ResearchSuiteConfig, ResearchSuiteResult, SuiteStageResult
@@ -42,6 +44,8 @@ class ResearchSuiteRunner:
         self.backtest_summary: dict[str, Any] = {}
         self.model_version_id: str | None = None
         self.model_lifecycle_summary: dict[str, Any] = {}
+        self.pit_summary: dict[str, Any] = {}
+        self.leakage_summary: dict[str, Any] = {}
 
     def run(self) -> ResearchSuiteResult:
         started_at = _utc_now()
@@ -51,6 +55,8 @@ class ResearchSuiteRunner:
                 self._append_stage("data_sync", self._stage_data_sync)
             if not self.config.skip_universe:
                 self._append_stage("universe", self._stage_universe)
+            if self.config.run_pit_validation:
+                self._append_stage("pit_validation", self._stage_pit_validation)
             if self.config.build_matrix_cache:
                 self._append_stage("matrix_cache", self._stage_matrix_cache)
             if self.config.benchmark:
@@ -63,6 +69,8 @@ class ResearchSuiteRunner:
                 self._append_stage("formula_batch_eval", self._stage_formula_batch_eval)
             self._append_stage("formula_search", self._stage_formula_search)
             self._append_stage("backtest", self._stage_backtest)
+            if self.config.run_leakage_audit:
+                self._append_stage("leakage_audit", self._stage_leakage_audit)
             if not self.config.skip_orders:
                 self._append_stage("orders", self._stage_orders)
             self._append_stage("walk_forward", self._stage_walk_forward)
@@ -104,6 +112,14 @@ class ResearchSuiteRunner:
                 "model_lifecycle_report_path": self.model_lifecycle_summary.get("factor_lifecycle_report_path"),
                 "model_approval_id": self.model_lifecycle_summary.get("approval_id"),
                 "model_recommended_action": self.model_lifecycle_summary.get("recommended_action"),
+                "point_in_time_enabled": self.config.point_in_time,
+                "pit_blocker_count": self.pit_summary.get("blocker_count", 0),
+                "pit_warning_count": self.pit_summary.get("warning_count", 0),
+                "leakage_blocker_count": self.leakage_summary.get("blocker_count", 0),
+                "leakage_warning_count": self.leakage_summary.get("warning_count", 0),
+                "truncation_consistency_passed": (self.leakage_summary.get("truncation_consistency") or {}).get("passed"),
+                "survivorship_warning_count": (self.pit_summary.get("survivorship") or {}).get("warning_count", 0),
+                "active_universe_coverage": self.pit_summary.get("active_universe_coverage", 0.0),
             },
         )
         suite_json, suite_md = write_suite_report(result, self.output_dir)
@@ -167,9 +183,7 @@ class ResearchSuiteRunner:
         return payload, output_paths
 
     def _stage_universe(self) -> tuple[dict[str, Any], dict[str, str]]:
-        payload = _run_json_main(
-            run_universe.main,
-            [
+        argv = [
                 "--data-dir",
                 self.config.data_dir,
                 "--as-of-date",
@@ -183,21 +197,56 @@ class ResearchSuiteRunner:
                 "0",
                 "--min-amount",
                 "0",
-            ],
-        )
+            ]
+        if self.config.point_in_time:
+            argv.extend(["--point-in-time", "--min-listing-days", str(self.config.min_listing_days)])
+            if self.config.exclude_st:
+                argv.append("--exclude-st")
+        payload = _run_json_main(run_universe.main, argv)
         output_paths = {
             "universe": str(payload.get("output_path", "")),
             "universe_summary": str(payload.get("summary_path", "")),
         }
+        if payload.get("pit_summary_path"):
+            output_paths["universe_pit_summary"] = str(payload.get("pit_summary_path"))
         for name, path in output_paths.items():
             self.catalog = register_artifact(self.catalog, name, path, "jsonl" if name == "universe" else "json", "universe")
         return payload, output_paths
 
+    def _stage_pit_validation(self) -> tuple[dict[str, Any], dict[str, str]]:
+        pit_dir = self._pit_dir()
+        argv = [
+            "validate",
+            "--data-dir",
+            self.config.data_dir,
+            "--output-dir",
+            str(pit_dir),
+            "--as-of-date",
+            self.config.as_of_date,
+            "--start-date",
+            "20240102",
+            "--end-date",
+            self.config.as_of_date,
+            "--feature-cutoff-mode",
+            self.config.feature_cutoff_mode,
+            "--min-listing-days",
+            str(self.config.min_listing_days),
+        ]
+        if self.config.exclude_st:
+            argv.append("--exclude-st")
+        if self.config.fail_on_pit_blocker:
+            argv.append("--fail-on-blocker")
+        payload = _run_json_main(run_pit_main, argv)
+        self.pit_summary = payload
+        paths = payload.get("paths", {}) if isinstance(payload.get("paths"), dict) else {}
+        output_paths = {name: str(path) for name, path in paths.items()}
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name.replace("_path", ""), path, _artifact_kind(path), "pit_validation")
+        return payload, output_paths
+
     def _stage_matrix_cache(self) -> tuple[dict[str, Any], dict[str, str]]:
         cache_dir = self._matrix_cache_dir()
-        payload = _run_json_main(
-            run_build_matrix_main,
-            [
+        argv = [
                 "--data-dir",
                 self.config.data_dir,
                 "--output-dir",
@@ -205,8 +254,23 @@ class ResearchSuiteRunner:
                 "--universe-name",
                 self.config.universe_name,
                 "--validate",
-            ],
-        )
+            ]
+        if self.config.point_in_time:
+            argv.extend(
+                [
+                    "--point-in-time",
+                    "--feature-cutoff-mode",
+                    self.config.feature_cutoff_mode,
+                    "--min-listing-days",
+                    str(self.config.min_listing_days),
+                ]
+            )
+            if self.config.exclude_st:
+                argv.append("--exclude-st")
+            active_mask = self._pit_dir() / "active_security_mask.jsonl"
+            if active_mask.exists():
+                argv.extend(["--active-mask-path", str(active_mask)])
+        payload = _run_json_main(run_build_matrix_main, argv)
         output_paths = {
             "matrix_metadata": str(cache_dir / "metadata.json"),
             "matrix_fields": str(cache_dir / "fields.json"),
@@ -398,6 +462,18 @@ class ResearchSuiteRunner:
             ]
             + (["--corpus-sequence-path", str(self._formula_corpus_dir() / "formula_sequences.jsonl")] if (self._formula_corpus_dir() / "formula_sequences.jsonl").exists() else [])
             + (["--matrix-cache-dir", str(self._matrix_cache_dir()), "--use-matrix-cache"] if self.config.use_matrix_cache else [])
+            + (
+                [
+                    "--point-in-time",
+                    "--feature-cutoff-mode",
+                    self.config.feature_cutoff_mode,
+                    "--min-listing-days",
+                    str(self.config.min_listing_days),
+                ]
+                + (["--exclude-st"] if self.config.exclude_st else [])
+                if self.config.point_in_time
+                else []
+            )
             + (["--use-batch-eval", "--batch-eval-output-dir", str(self._batch_eval_dir()), "--batch-eval-chunk-size", str(self.config.batch_eval_chunk_size), "--batch-eval-device", self.config.batch_eval_device] if self.config.use_batch_eval else [])
             + (["--use-eval-cache"] + (["--eval-cache-dir", self.config.eval_cache_dir] if self.config.eval_cache_dir else []) if self.config.use_eval_cache else [])
             + (
@@ -496,6 +572,24 @@ class ResearchSuiteRunner:
             argv.extend(["--max-active-style-exposure", str(self.config.max_active_style_exposure)])
         if self.config.max_factor_risk_contribution is not None:
             argv.extend(["--max-factor-risk-contribution", str(self.config.max_factor_risk_contribution)])
+        if self.config.point_in_time:
+            argv.extend(
+                [
+                    "--point-in-time",
+                    "--feature-cutoff-mode",
+                    self.config.feature_cutoff_mode,
+                    "--signal-lag-days",
+                    "1",
+                    "--min-listing-days",
+                    str(self.config.min_listing_days),
+                ]
+            )
+            if self.config.exclude_st:
+                argv.append("--exclude-st")
+        if self.config.run_leakage_audit:
+            argv.extend(["--run-leakage-audit", "--leakage-audit-dir", str(self._backtest_leakage_dir())])
+            if self.config.fail_on_leakage_blocker:
+                argv.append("--fail-on-leakage-blocker")
 
         payload = _run_json_main(run_backtest.main, argv)
         self.backtest_summary = payload
@@ -517,12 +611,52 @@ class ResearchSuiteRunner:
             output_paths["risk_decomposition"] = str(payload["risk_decomposition_path"])
         if payload.get("return_attribution_path"):
             output_paths["return_attribution"] = str(payload["return_attribution_path"])
+        if payload.get("leakage_audit_report_path"):
+            output_paths["backtest_leakage_audit_report"] = str(payload["leakage_audit_report_path"])
+        if payload.get("truncation_consistency_report_path"):
+            output_paths["backtest_truncation_consistency"] = str(payload["truncation_consistency_report_path"])
         if self.selected_factor_id:
             output_paths["selected_factor_values"] = str(
                 Path(self.config.factor_store_dir) / "factor_values" / f"{self.selected_factor_id}.jsonl"
             )
         for name, path in output_paths.items():
             self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "backtest")
+        return payload, output_paths
+
+    def _stage_leakage_audit(self) -> tuple[dict[str, Any], dict[str, str]]:
+        leakage_dir = self._leakage_dir()
+        argv = [
+            "--data-dir",
+            self.config.data_dir,
+            "--factor-store-dir",
+            self.config.factor_store_dir,
+            "--output-dir",
+            str(leakage_dir),
+            "--as-of-date",
+            self.config.as_of_date,
+            "--cutoff-date",
+            self.config.as_of_date,
+            "--universe-name",
+            self.config.universe_name,
+            "--run-static-scan",
+            "--run-truncation-test",
+            "--max-formulas",
+            str(self.config.search_max_candidates or 5),
+            "--backtest-result-path",
+            str(Path(self.config.backtest_dir) / "backtest_result.json"),
+        ]
+        if self.config.point_in_time:
+            argv.extend(["--point-in-time", "--feature-cutoff-mode", self.config.feature_cutoff_mode])
+            if self.config.exclude_st:
+                argv.append("--exclude-st")
+        if self.config.fail_on_leakage_blocker:
+            argv.append("--fail-on-blocker")
+        payload = _run_json_main(run_leakage_audit_main, argv)
+        self.leakage_summary = payload
+        paths = payload.get("paths", {}) if isinstance(payload.get("paths"), dict) else {}
+        output_paths = {name: str(path) for name, path in paths.items()}
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name.replace("_path", ""), path, _artifact_kind(path), "leakage_audit")
         return payload, output_paths
 
     def _stage_orders(self) -> tuple[dict[str, Any], dict[str, str]]:
@@ -565,6 +699,18 @@ class ResearchSuiteRunner:
             argv.extend(["--max-style-exposure", str(self.config.max_style_exposure)])
         if self.config.max_active_style_exposure is not None:
             argv.extend(["--max-active-style-exposure", str(self.config.max_active_style_exposure)])
+        if self.config.point_in_time:
+            argv.extend(
+                [
+                    "--point-in-time",
+                    "--feature-cutoff-mode",
+                    self.config.feature_cutoff_mode,
+                    "--min-listing-days",
+                    str(self.config.min_listing_days),
+                ]
+            )
+            if self.config.exclude_st:
+                argv.append("--exclude-st")
 
         payload = _run_json_main(strategy_runner.main, argv)
         output_paths = {
@@ -589,6 +735,10 @@ class ResearchSuiteRunner:
             universe_name=self.config.universe_name,
             matrix_cache_dir=self._matrix_cache_dir(),
             use_matrix_cache=self.config.use_matrix_cache,
+            point_in_time=self.config.point_in_time,
+            feature_cutoff_mode=self.config.feature_cutoff_mode,
+            min_listing_days=self.config.min_listing_days,
+            exclude_st=self.config.exclude_st,
         ).load_data()
         store = LocalFactorStore(self.config.factor_store_dir)
         windows = build_walk_forward_windows(
@@ -650,7 +800,14 @@ class ResearchSuiteRunner:
             model_kind=ModelKind.composite_factor,
             source_artifacts=source_artifacts,
             metrics=factor.metrics,
-            metadata={"suite_name": self.config.suite_name, "promotion_decision": self.promotion_decision.to_dict() if self.promotion_decision else {}},
+            metadata={
+                "suite_name": self.config.suite_name,
+                "promotion_decision": self.promotion_decision.to_dict() if self.promotion_decision else {},
+                "point_in_time": self.config.point_in_time,
+                "feature_cutoff_mode": self.config.feature_cutoff_mode,
+                "pit_summary": self.pit_summary,
+                "leakage_summary": self.leakage_summary,
+            },
             lifecycle_status=lifecycle_status,
         )
         self.model_version_id = model.model_version_id
@@ -697,6 +854,18 @@ class ResearchSuiteRunner:
             str(Path(self.config.output_dir) / "artifact_catalog.json"),
             "--create-review-package",
         ]
+        pit_report = self._pit_dir() / "pit_validation_report.json"
+        survivorship_report = self._pit_dir() / "survivorship_bias_report.json"
+        leakage_report = self._leakage_dir() / "leakage_audit_report.json"
+        truncation_report = self._leakage_dir() / "truncation_consistency_report.json"
+        if pit_report.exists():
+            argv.extend(["--pit-validation-report-path", str(pit_report)])
+        if survivorship_report.exists():
+            argv.extend(["--survivorship-report-path", str(survivorship_report)])
+        if leakage_report.exists():
+            argv.extend(["--leakage-audit-report-path", str(leakage_report)])
+        if truncation_report.exists():
+            argv.extend(["--truncation-consistency-report-path", str(truncation_report)])
         if self.config.model_lifecycle_policy_path:
             argv.extend(["--policy-path", self.config.model_lifecycle_policy_path])
         if self.config.require_model_approval:
@@ -746,6 +915,15 @@ class ResearchSuiteRunner:
 
     def _model_approval_store_dir(self) -> Path:
         return Path(self.config.model_approval_store_dir) if self.config.model_approval_store_dir else Path(self.config.output_dir).parent / "approvals"
+
+    def _pit_dir(self) -> Path:
+        return Path(self.config.pit_output_dir) if self.config.pit_output_dir else Path(self.config.output_dir) / "pit"
+
+    def _leakage_dir(self) -> Path:
+        return Path(self.config.leakage_audit_dir) if self.config.leakage_audit_dir else Path(self.config.output_dir) / "leakage_audit"
+
+    def _backtest_leakage_dir(self) -> Path:
+        return Path(self.config.backtest_dir) / "leakage_audit"
 
 
 def _run_json_main(main_func: Callable[[list[str] | None], int], argv: list[str]) -> dict[str, Any]:

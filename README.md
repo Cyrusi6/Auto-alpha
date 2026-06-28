@@ -629,6 +629,48 @@ uv run python -m neural_search.run_pretrain \
 --use-matrix-cache
 ```
 
+## Point-In-Time And Leakage Governance
+
+`point_in_time/` defines dataset availability contracts, security lifecycle records, active security masks, survivorship-bias reports, and PIT validation reports. It treats financial features as available only after `announce_date`; daily bars, daily basic, daily limits, and adjustment factors are marked as after-close or weak PIT contracts depending on `--feature-cutoff-mode`.
+
+Build PIT artifacts locally:
+
+```bash
+uv run python -m point_in_time.run_pit validate \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --output-dir /tmp/auto-alpha-demo/pit \
+  --start-date 20240102 \
+  --end-date 20240104 \
+  --as-of-date 20240104 \
+  --feature-cutoff-mode next_trade_day_open \
+  --pretty
+```
+
+`leakage_audit/` scans DSL formulas, factor values, truncation consistency, backtest artifacts, and survivorship status for future-data leakage. It writes `leakage_audit_report.json/md`, `leakage_issues.jsonl`, formula scan, truncation, factor-value, and backtest leakage reports.
+
+```bash
+uv run python -m leakage_audit.run_audit \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --output-dir /tmp/auto-alpha-demo/leakage \
+  --as-of-date 20240104 \
+  --cutoff-date 20240104 \
+  --point-in-time \
+  --feature-cutoff-mode next_trade_day_open \
+  --run-static-scan \
+  --run-truncation-test \
+  --pretty
+```
+
+Strict PIT governance is opt-in. Existing loaders and backtests keep their prior default behavior unless `--point-in-time` or `--run-leakage-audit` is passed. When enabled, `AShareDataLoader` exposes `active_mask`, `listing_age_days`, and `pit_available_mask`; matrix cache can persist those fields; universe, research, formula search, research suite, backtest, operations, lifecycle review, monitoring, dashboard, schema validation, release inventory, and local CI can consume the PIT/leakage artifacts.
+
+Current PIT boundaries:
+
+- `financial_features` use `announce_date <= trade_date`.
+- Daily close and daily basic availability depends on `feature_cutoff_mode`; `next_trade_day_open` marks same-day end-of-day data unavailable for same-day opening decisions.
+- `securities` can request `L,D,P` via `--security-list-statuses L,D,P`; if only `L` is present, reports show a current-only security-master warning rather than failing by default.
+- `adjustment_factors` and `index_members` are included in contracts but require human review for production-grade as-of semantics.
+
 ## Current Gaps
 
 - Tushare HTTP provider, production sync scaffolding, offline fake smoke, gated online smoke, permission/rate diagnostics, audit summary, incremental recovery checks, and baseline comparison are available; production use still requires real token/quota operation, real full-market performance runs, and more provider pairs.

@@ -42,6 +42,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--corpus-path")
     parser.add_argument("--matrix-cache-dir")
     parser.add_argument("--use-matrix-cache", action="store_true")
+    parser.add_argument("--point-in-time", action="store_true")
+    parser.add_argument("--feature-cutoff-mode", default="same_day_after_close")
+    parser.add_argument("--min-listing-days", type=int, default=0)
+    parser.add_argument("--exclude-st", action="store_true")
+    parser.add_argument("--run-leakage-audit", action="store_true")
+    parser.add_argument("--leakage-audit-dir")
+    parser.add_argument("--fail-on-leakage-blocker", action="store_true")
     parser.add_argument("--use-batch-eval", action="store_true")
     parser.add_argument("--batch-eval-output-dir", "--batch-eval-dir", dest="batch_eval_output_dir")
     parser.add_argument("--batch-eval-chunk-size", type=int, default=32)
@@ -84,10 +91,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.search_mode == "neural":
         result = _run_neural(args)
+        _attach_pit_metadata(result, args)
         print(json.dumps(result, ensure_ascii=False, indent=2 if args.pretty else None))
         return 0
     if args.search_mode == "hybrid":
         result = _run_hybrid(args, search_config)
+        _attach_pit_metadata(result, args)
         print(json.dumps(result, ensure_ascii=False, indent=2 if args.pretty else None))
         return 0
     result = FormulaSearchRunner(
@@ -114,8 +123,17 @@ def main(argv: list[str] | None = None) -> int:
         batch_eval_device=args.batch_eval_device,
         use_eval_cache=args.use_eval_cache,
         eval_cache_dir=args.eval_cache_dir,
+        point_in_time=args.point_in_time,
+        feature_cutoff_mode=args.feature_cutoff_mode,
+        min_listing_days=args.min_listing_days,
+        exclude_st=args.exclude_st,
+        run_leakage_audit=args.run_leakage_audit,
+        leakage_audit_dir=args.leakage_audit_dir,
+        fail_on_leakage_blocker=args.fail_on_leakage_blocker,
     ).run()
-    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))
+    payload = result.to_dict()
+    _attach_pit_metadata(payload, args)
+    print(json.dumps(payload, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0
 
 
@@ -174,6 +192,13 @@ def _run_hybrid(args: argparse.Namespace, search_config: FormulaSearchConfig) ->
         batch_eval_device=args.batch_eval_device,
         use_eval_cache=args.use_eval_cache,
         eval_cache_dir=args.eval_cache_dir,
+        point_in_time=args.point_in_time,
+        feature_cutoff_mode=args.feature_cutoff_mode,
+        min_listing_days=args.min_listing_days,
+        exclude_st=args.exclude_st,
+        run_leakage_audit=args.run_leakage_audit,
+        leakage_audit_dir=args.leakage_audit_dir,
+        fail_on_leakage_blocker=args.fail_on_leakage_blocker,
     ).run()
     payload = random_result.to_dict()
     neural_payload = neural_result.to_dict()
@@ -237,6 +262,16 @@ def _sequence_path_from_corpus(corpus_path: str | None) -> str | None:
     path = Path(corpus_path)
     sibling = path.parent / "formula_sequences.jsonl"
     return str(sibling if sibling.exists() else path)
+
+
+def _attach_pit_metadata(payload: dict[str, object], args: argparse.Namespace) -> None:
+    payload["point_in_time"] = bool(args.point_in_time)
+    payload["feature_cutoff_mode"] = args.feature_cutoff_mode
+    payload["min_listing_days"] = int(args.min_listing_days)
+    payload["exclude_st"] = bool(args.exclude_st)
+    payload["leakage_audit_requested"] = bool(args.run_leakage_audit)
+    if args.leakage_audit_dir:
+        payload["leakage_audit_dir"] = args.leakage_audit_dir
 
 
 if __name__ == "__main__":

@@ -72,6 +72,10 @@ class ProductionDailyRunner:
         model_environment: str = "paper",
         block_paused_model: bool = True,
         block_quarantined_model: bool = True,
+        point_in_time: bool = False,
+        feature_cutoff_mode: str = "same_day_after_close",
+        min_listing_days: int = 0,
+        exclude_st: bool = False,
     ):
         self.data_dir = Path(data_dir)
         self.factor_store_dir = Path(factor_store_dir)
@@ -112,6 +116,10 @@ class ProductionDailyRunner:
         self.model_environment = model_environment
         self.block_paused_model = bool(block_paused_model)
         self.block_quarantined_model = bool(block_quarantined_model)
+        self.point_in_time = bool(point_in_time)
+        self.feature_cutoff_mode = feature_cutoff_mode
+        self.min_listing_days = int(min_listing_days)
+        self.exclude_st = bool(exclude_st)
         self._model_context: dict[str, Any] = {}
 
     def run(
@@ -173,6 +181,10 @@ class ProductionDailyRunner:
             propose_only=require_approval,
             require_approval=require_approval,
             approval_store_dir=self.approval_store_dir if require_approval else None,
+            point_in_time=self.point_in_time,
+            feature_cutoff_mode=self.feature_cutoff_mode,
+            min_listing_days=self.min_listing_days,
+            exclude_st=self.exclude_st,
         ).generate_orders()
         if not require_approval:
             fills = _read_jsonl(Path(str(summary.get("fills_path"))))
@@ -208,7 +220,14 @@ class ProductionDailyRunner:
         if batch.status != ApprovalStatus.approved:
             raise ValueError(f"approval batch must be approved before execution: {approval_id} is {batch.status}")
         self._validate_approval_model_context(batch)
-        loader = AShareDataLoader(data_dir=self.data_dir, device="cpu").load_data()
+        loader = AShareDataLoader(
+            data_dir=self.data_dir,
+            device="cpu",
+            point_in_time=self.point_in_time,
+            feature_cutoff_mode=self.feature_cutoff_mode,
+            min_listing_days=self.min_listing_days,
+            exclude_st=self.exclude_st,
+        ).load_data()
         prices, volumes, suspended, limit_up, limit_down = _market_context(loader, batch.rebalance_date)
         orders = [
             ExecutionOrder(
@@ -324,6 +343,8 @@ class ProductionDailyRunner:
             "open_broker_order_count": int(broker_summary.get("open_orders", 0) or 0),
             "rejected_broker_order_count": int(broker_summary.get("rejected_orders", 0) or 0),
             "broker_unfilled_value": float(broker_summary.get("unfilled_value", 0.0) or 0.0),
+            "point_in_time": self.point_in_time,
+            "feature_cutoff_mode": self.feature_cutoff_mode,
             "account": {
                 "cash": state.cash,
                 "positions": len(state.positions),

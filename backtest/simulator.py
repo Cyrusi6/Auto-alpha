@@ -115,6 +115,7 @@ class AShareBacktestSimulator:
         is_suspended = loader.raw_data_cache.get("is_suspended", torch.zeros_like(close)).detach().cpu()
         limit_up = loader.raw_data_cache.get("limit_up_flag", torch.zeros_like(close)).detach().cpu()
         limit_down = loader.raw_data_cache.get("limit_down_flag", torch.zeros_like(close)).detach().cpu()
+        active_mask = loader.raw_data_cache.get("active_mask", torch.ones_like(close)).detach().cpu()
         target_ret = loader.target_ret.detach().cpu()
         if self.portfolio_method == "equal_weight":
             targets_by_date = build_long_only_targets(
@@ -217,6 +218,7 @@ class AShareBacktestSimulator:
             else:
                 desired_weights = target_weights[:, date_idx].clone()
             desired_weights = torch.clamp(desired_weights, 0.0, self.max_weight)
+            desired_weights = desired_weights * active_mask[:, date_idx]
             deltas = desired_weights - current_weights
             day_cost = 0.0
             day_traded_value = 0.0
@@ -262,10 +264,13 @@ class AShareBacktestSimulator:
                     continue
                 side = "BUY" if delta > 0 else "SELL"
                 price = float(close[stock_idx, date_idx].item())
+                active = bool(active_mask[stock_idx, date_idx].item() > 0.5)
                 suspended = bool(is_suspended[stock_idx, date_idx].item() > 0.5)
                 is_limit_up = bool(limit_up[stock_idx, date_idx].item() > 0.5)
                 is_limit_down = bool(limit_down[stock_idx, date_idx].item() > 0.5)
-                if side == "BUY":
+                if not active:
+                    allowed, reason = False, "inactive_security"
+                elif side == "BUY":
                     allowed, reason = self.trading_rules.can_buy(price, suspended, is_limit_up)
                 else:
                     allowed, reason = self.trading_rules.can_sell(price, suspended, is_limit_down)
@@ -382,6 +387,23 @@ class AShareBacktestSimulator:
             if abs(delta) <= 1e-9:
                 continue
             side = "BUY" if delta > 0 else "SELL"
+            active_mask = loader.raw_data_cache.get("active_mask")
+            if active_mask is not None and float(active_mask.detach().cpu()[stock_idx, date_idx].item()) <= 0.5:
+                fills = [
+                    TradeFill(
+                        trade_date=trade_date,
+                        ts_code=loader.ts_codes[stock_idx],
+                        side=side,
+                        price=0.0,
+                        shares=0,
+                        value=0.0,
+                        cost=0.0,
+                        status="REJECTED",
+                        allowed=False,
+                        reason="inactive_security",
+                    )
+                ]
+                return current_weights.clone(), 0.0, 0.0, fills
             if side == "SELL":
                 buy_index = first_buy_index.get(stock_idx, -1)
                 if buy_index >= 0 and not self.trading_rules.is_t_plus_one_sell_allowed(buy_index, date_idx):
@@ -487,8 +509,9 @@ class AShareBacktestSimulator:
         constraint_rejects = sum(
             1
             for fill in fills
-            if fill.status == "REJECTED" and fill.reason in {"suspended", "limit_up", "limit_down", "t_plus_one", "volume_limit"}
+            if fill.status == "REJECTED" and fill.reason in {"suspended", "limit_up", "limit_down", "t_plus_one", "volume_limit", "inactive_security"}
         )
+        inactive = sum(1 for fill in fills if fill.reason == "inactive_security")
         exposure_values = [
             snapshot.positions_value / snapshot.equity if snapshot.equity > 0 else 0.0
             for snapshot in snapshots
@@ -508,6 +531,13 @@ class AShareBacktestSimulator:
             "constraint_reject_rate": float(constraint_rejects / len(fills) if fills else 0.0),
             "avg_exposure": float(avg_exposure),
             "cash_drag": float(1.0 - avg_exposure),
+            "inactive_security_order_count": float(inactive),
+            "inactive_security_order_value": float(sum(fill.value for fill in fills if fill.reason == "inactive_security")),
+            "pit_filtered_security_count": float(inactive),
+            "active_universe_coverage": 1.0,
+            "signal_lag_days": 0.0,
+            "leakage_warning_count": 0.0,
+            "leakage_blocker_count": 0.0,
         }
 
 

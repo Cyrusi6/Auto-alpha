@@ -86,6 +86,16 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--require-model-approval", action="store_true")
     parser.add_argument("--model-lifecycle-policy-path")
     parser.add_argument("--model-approval-store-dir")
+    parser.add_argument("--point-in-time", action="store_true")
+    parser.add_argument("--feature-cutoff-mode", default="same_day_after_close")
+    parser.add_argument("--min-listing-days", type=int, default=0)
+    parser.add_argument("--exclude-st", action="store_true")
+    parser.add_argument("--run-pit-validation", action="store_true")
+    parser.add_argument("--pit-output-dir")
+    parser.add_argument("--run-leakage-audit", action="store_true")
+    parser.add_argument("--leakage-audit-dir")
+    parser.add_argument("--fail-on-pit-blocker", action="store_true")
+    parser.add_argument("--fail-on-leakage-blocker", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -186,6 +196,16 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
         require_model_approval=args.require_model_approval,
         model_lifecycle_policy_path=args.model_lifecycle_policy_path,
         model_approval_store_dir=args.model_approval_store_dir,
+        point_in_time=args.point_in_time,
+        feature_cutoff_mode=args.feature_cutoff_mode,
+        min_listing_days=args.min_listing_days,
+        exclude_st=args.exclude_st,
+        run_pit_validation=args.run_pit_validation,
+        pit_output_dir=args.pit_output_dir,
+        run_leakage_audit=args.run_leakage_audit,
+        leakage_audit_dir=args.leakage_audit_dir,
+        fail_on_pit_blocker=args.fail_on_pit_blocker,
+        fail_on_leakage_blocker=args.fail_on_leakage_blocker,
     )
 
 

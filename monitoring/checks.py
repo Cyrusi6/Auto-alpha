@@ -633,6 +633,83 @@ def check_paper_account(account_dir: str | Path) -> tuple[dict[str, Any], list[M
     }, alerts
 
 
+def check_point_in_time_validation(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    blockers = int(payload.get("blocker_count", 0) or 0) if payload else 0
+    warnings = int(payload.get("warning_count", 0) or 0) if payload else 0
+    alerts = []
+    if blockers:
+        alerts.append(MonitoringAlert("error", "point_in_time_validation", "PIT validation has blockers", {"blocker_count": blockers}))
+    elif warnings:
+        alerts.append(MonitoringAlert("warning", "point_in_time_validation", "PIT validation has warnings", {"warning_count": warnings}))
+    return {
+        "exists": bool(payload),
+        "pit_blocker_count": blockers,
+        "pit_warning_count": warnings,
+        "status": payload.get("status", "") if payload else "",
+        "active_universe_coverage": float(payload.get("active_universe_coverage", 0.0) or 0.0) if payload else 0.0,
+    }, alerts
+
+
+def check_survivorship_bias(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    current_only = bool(payload.get("current_only_security_master", False)) if payload else False
+    warnings = int(payload.get("warning_count", 0) or 0) if payload else 0
+    alerts = [MonitoringAlert("warning", "survivorship_bias", "security master appears current-only")] if current_only else []
+    return {
+        "exists": bool(payload),
+        "current_only_security_master": current_only,
+        "survivorship_warning_count": warnings,
+        "delisted_count": int(payload.get("delisted_count", 0) or 0) if payload else 0,
+        "paused_count": int(payload.get("paused_count", 0) or 0) if payload else 0,
+    }, alerts
+
+
+def check_leakage_audit(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    blockers = int(payload.get("blocker_count", 0) or 0) if payload else 0
+    warnings = int(payload.get("warning_count", 0) or 0) if payload else 0
+    alerts = []
+    if blockers:
+        alerts.append(MonitoringAlert("error", "leakage_audit", "leakage audit has blockers", {"blocker_count": blockers}))
+    elif warnings:
+        alerts.append(MonitoringAlert("warning", "leakage_audit", "leakage audit has warnings", {"warning_count": warnings}))
+    return {
+        "exists": bool(payload),
+        "leakage_blocker_count": blockers,
+        "leakage_warning_count": warnings,
+        "leakage_gate_status": payload.get("leakage_gate_status", "") if payload else "",
+    }, alerts
+
+
+def check_truncation_consistency(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    if not payload:
+        return {"exists": False, "truncation_consistency_passed": None, "truncation_max_abs_diff": 0.0}, []
+    passed = bool(payload.get("passed", True)) if payload else False
+    max_diff = float(payload.get("max_abs_diff", 0.0) or 0.0) if payload else 0.0
+    alerts = [] if passed else [MonitoringAlert("error", "truncation_consistency", "truncation consistency failed", {"max_abs_diff": max_diff})]
+    return {"exists": bool(payload), "truncation_consistency_passed": passed, "truncation_max_abs_diff": max_diff}, alerts
+
+
+def check_active_universe_coverage(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    coverage = float(payload.get("active_universe_coverage", 0.0) or 0.0) if payload else 0.0
+    alerts = []
+    if payload and coverage <= 0:
+        alerts.append(MonitoringAlert("error", "active_universe_coverage", "active universe coverage is zero"))
+    return {"exists": bool(payload), "active_universe_coverage": coverage}, alerts
+
+
+def check_feature_cutoff_policy(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    mode = str(payload.get("feature_cutoff_mode") or "") if payload else ""
+    alerts = []
+    if payload and mode == "same_day_after_close":
+        alerts.append(MonitoringAlert("info", "feature_cutoff_policy", "same_day_after_close mode requires execution timing review"))
+    return {"exists": bool(payload), "feature_cutoff_mode": mode}, alerts
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}

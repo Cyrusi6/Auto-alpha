@@ -698,6 +698,97 @@ class AshareDashboardService:
                 return payload
         return {}
 
+    def load_pit_validation_report(self) -> dict[str, Any]:
+        for path in self._pit_artifact_candidates("pit_validation_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_pit_dataset_manifest(self) -> dict[str, Any]:
+        for path in self._pit_artifact_candidates("pit_dataset_manifest.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_pit_dataset_contracts(self) -> dict[str, Any]:
+        for path in self._pit_artifact_candidates("pit_dataset_contracts.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_security_lifecycle(self) -> pd.DataFrame:
+        for path in self._pit_artifact_candidates("security_lifecycle.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_active_security_mask(self) -> pd.DataFrame:
+        for path in self._pit_artifact_candidates("active_security_mask.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_survivorship_bias_report(self) -> dict[str, Any]:
+        for path in self._pit_artifact_candidates("survivorship_bias_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_universe_pit_summary(self) -> dict[str, Any]:
+        for path in self._pit_artifact_candidates("universe_pit_summary.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_leakage_audit_report(self) -> dict[str, Any]:
+        for path in self._leakage_artifact_candidates("leakage_audit_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_leakage_issues(self) -> pd.DataFrame:
+        for path in self._leakage_artifact_candidates("leakage_issues.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_formula_leakage_scan(self) -> dict[str, Any]:
+        for path in self._leakage_artifact_candidates("formula_leakage_scan.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_truncation_consistency_report(self) -> dict[str, Any]:
+        for path in self._leakage_artifact_candidates("truncation_consistency_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_factor_value_leakage_report(self) -> dict[str, Any]:
+        for path in self._leakage_artifact_candidates("factor_value_leakage_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_backtest_leakage_report(self) -> dict[str, Any]:
+        for path in self._leakage_artifact_candidates("backtest_leakage_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
     def _neural_artifact_candidates(self, filename: str) -> list[Path]:
         root = self.config.report_dir.parent
         return [
@@ -764,6 +855,28 @@ class AshareDashboardService:
             self.config.model_lifecycle_dir / filename,
             root / "model_lifecycle" / filename,
             root / "suite" / "model_lifecycle" / filename,
+        ]
+
+    def _pit_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.pit_dir / filename,
+            root / "pit" / filename,
+            root / "pit_mask" / filename,
+            root / "suite_pit" / filename,
+            root / "suite" / "point_in_time" / filename,
+            root / "data" / "universe" / filename,
+        ]
+
+    def _leakage_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.leakage_dir / filename,
+            root / "leakage" / filename,
+            root / "suite_leakage" / filename,
+            root / "backtest_leakage" / filename,
+            root / "suite" / "leakage_audit" / filename,
+            self.config.backtest_dir / "leakage_audit" / filename,
         ]
 
     def _production_candidates(self, filename: str) -> list[Path]:

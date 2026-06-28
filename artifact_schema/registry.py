@@ -101,6 +101,19 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
     "factor_health_checks": _definition("factor_health_checks", ["name", "severity", "passed"], ["factor_health_checks.jsonl"], kind="jsonl", allow_empty=True),
     "lifecycle_decisions": _definition("lifecycle_decisions", ["factor_id", "recommended_action"], ["lifecycle_decisions.jsonl"], kind="jsonl", allow_empty=True),
     "model_review_package": _definition("model_review_package", ["factor_id", "lifecycle_status", "health_checks"], ["model_review_package.json"]),
+    "pit_dataset_contracts": _definition("pit_dataset_contracts", ["datasets"], ["pit_dataset_contracts.json"]),
+    "pit_dataset_manifest": _definition("pit_dataset_manifest", ["data_dir", "datasets"], ["pit_dataset_manifest.json"]),
+    "pit_validation_report": _definition("pit_validation_report", ["blocker_count", "warning_count", "issues"], ["pit_validation_report.json"]),
+    "security_lifecycle": _definition("security_lifecycle", ["ts_code", "list_date", "list_status"], ["security_lifecycle.jsonl"], kind="jsonl", allow_empty=True),
+    "active_security_mask": _definition("active_security_mask", ["ts_code", "trade_date", "is_active"], ["active_security_mask.jsonl"], kind="jsonl", allow_empty=True),
+    "survivorship_bias_report": _definition("survivorship_bias_report", ["current_only_security_master", "warnings"], ["survivorship_bias_report.json"]),
+    "universe_pit_summary": _definition("universe_pit_summary", ["universe_name", "as_of_date"], ["universe_pit_summary.json", "*_pit_summary.json"]),
+    "leakage_audit_report": _definition("leakage_audit_report", ["blocker_count", "warning_count", "issues"], ["leakage_audit_report.json"]),
+    "leakage_issues": _definition("leakage_issues", ["severity", "code", "message"], ["leakage_issues.jsonl"], kind="jsonl", allow_empty=True),
+    "formula_leakage_scan": _definition("formula_leakage_scan", ["scanned_formula_count", "blocked_formula_count"], ["formula_leakage_scan.json"]),
+    "truncation_consistency_report": _definition("truncation_consistency_report", ["passed", "max_abs_diff"], ["truncation_consistency_report.json"]),
+    "factor_value_leakage_report": _definition("factor_value_leakage_report", ["checked_records", "future_date_count"], ["factor_value_leakage_report.json"]),
+    "backtest_leakage_report": _definition("backtest_leakage_report", ["checked", "leakage_gate_status"], ["backtest_leakage_report.json"]),
 }
 
 
