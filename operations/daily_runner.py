@@ -87,6 +87,16 @@ class ProductionDailyRunner:
         corporate_action_application_date_mode: str = "pay_date",
         corporate_action_cash_field: str = "cash_div",
         reconcile_adjustment_factors: bool = False,
+        settlement_aware: bool = False,
+        settlement_dir: str | Path | None = None,
+        settlement_profile: str = "cn_ashare_paper_default",
+        cost_basis_method: str = "average",
+        settle_before_trading: bool = False,
+        settle_through_date: str | None = None,
+        enforce_available_cash: bool = False,
+        enforce_available_shares: bool = False,
+        allow_unsettled_cash_for_buy: bool = False,
+        allow_unsettled_shares_for_sell: bool = False,
     ):
         self.data_dir = Path(data_dir)
         self.factor_store_dir = Path(factor_store_dir)
@@ -139,6 +149,16 @@ class ProductionDailyRunner:
         self.corporate_action_application_date_mode = corporate_action_application_date_mode
         self.corporate_action_cash_field = corporate_action_cash_field
         self.reconcile_adjustment_factors = bool(reconcile_adjustment_factors)
+        self.settlement_aware = bool(settlement_aware)
+        self.settlement_dir = Path(settlement_dir) if settlement_dir is not None else self.output_dir / "settlement"
+        self.settlement_profile = settlement_profile
+        self.cost_basis_method = cost_basis_method
+        self.settle_before_trading = bool(settle_before_trading)
+        self.settle_through_date = settle_through_date
+        self.enforce_available_cash = bool(enforce_available_cash)
+        self.enforce_available_shares = bool(enforce_available_shares)
+        self.allow_unsettled_cash_for_buy = bool(allow_unsettled_cash_for_buy)
+        self.allow_unsettled_shares_for_sell = bool(allow_unsettled_shares_for_sell)
         self._model_context: dict[str, Any] = {}
 
     def run(
@@ -176,6 +196,8 @@ class ProductionDailyRunner:
 
     def _propose(self, run_id: str, created_at: str, require_approval: bool) -> ProductionRunResult:
         factor_id = self._select_factor_id()
+        if self.settlement_aware and self.settle_before_trading and self.rebalance_date:
+            LocalPaperAccount(self.paper_account_dir).settle(self.rebalance_date, profile=self.settlement_profile)
         summary = AShareStrategyRunner(
             data_dir=self.data_dir,
             factor_store_dir=self.factor_store_dir,
@@ -208,6 +230,12 @@ class ProductionDailyRunner:
             corporate_action_dir=self._corporate_action_dir(),
             target_return_mode=self.target_return_mode,
             corporate_action_cash_field=self.corporate_action_cash_field,
+            settlement_aware=self.settlement_aware,
+            settlement_profile=self.settlement_profile,
+            settlement_dir=self.settlement_dir,
+            paper_account_dir=self.paper_account_dir,
+            enforce_available_cash=self.enforce_available_cash,
+            enforce_available_shares=self.enforce_available_shares,
         ).generate_orders()
         if self.apply_corporate_actions:
             prices = _prices_for_date(
@@ -229,8 +257,22 @@ class ProductionDailyRunner:
                 target_return_mode=self.target_return_mode,
                 cash_field=self.corporate_action_cash_field,
             )
-            account_state = LocalPaperAccount(self.paper_account_dir).apply_fills(fills, prices, str(summary["rebalance_date"]))
+            if self.settlement_aware:
+                account_state = LocalPaperAccount(self.paper_account_dir).apply_fills_settlement_aware(
+                    fills,
+                    data_dir=self.data_dir,
+                    trade_date=str(summary["rebalance_date"]),
+                    profile=self.settlement_profile,
+                    prices=prices,
+                    cost_basis_method=self.cost_basis_method,
+                )
+                if self.settle_through_date:
+                    account_state = LocalPaperAccount(self.paper_account_dir).settle(self.settle_through_date, prices=prices, profile=self.settlement_profile)
+            else:
+                account_state = LocalPaperAccount(self.paper_account_dir).apply_fills(fills, prices, str(summary["rebalance_date"]))
             account_state = LocalPaperAccount(self.paper_account_dir).mark_to_market(prices, str(summary["rebalance_date"]))
+            if self.settlement_aware:
+                summary.update(self._write_settlement_artifacts(account_state, str(summary["rebalance_date"])))
             summary["account"] = {
                 "cash": account_state.cash,
                 "positions": len(account_state.positions),
@@ -344,14 +386,30 @@ class ProductionDailyRunner:
         fills_path = self.orders_dir / "paper_fills.jsonl"
         export_fills_jsonl(fills, fills_path)
         account = LocalPaperAccount(self.paper_account_dir)
+        if self.settlement_aware and self.settle_before_trading:
+            account.settle(batch.rebalance_date, prices=prices, profile=self.settlement_profile)
         if self.broker_adapter == "file" and broker_summary.get("inbox_fills", 0) == 0:
             state = account.load_state()
         else:
-            account.apply_child_fills(fills, prices, batch.rebalance_date)
+            if self.settlement_aware:
+                state = account.apply_child_fills(
+                    fills,
+                    prices,
+                    batch.rebalance_date,
+                    settlement_aware=True,
+                    data_dir=self.data_dir,
+                    profile=self.settlement_profile,
+                    cost_basis_method=self.cost_basis_method,
+                )
+                settle_date = self.settle_through_date or batch.rebalance_date
+                state = account.settle(settle_date, prices=prices, profile=self.settlement_profile)
+            else:
+                state = account.apply_child_fills(fills, prices, batch.rebalance_date)
             corporate_summary = {}
             if self.apply_corporate_actions:
                 corporate_summary = self._apply_corporate_actions(batch.rebalance_date, prices)
             state = account.mark_to_market(prices, batch.rebalance_date)
+        settlement_summary = self._write_settlement_artifacts(state, batch.rebalance_date) if self.settlement_aware else {}
         rejected = sum(1 for fill in fills if fill.status == "REJECTED")
         partial = sum(1 for fill in fills if fill.status == "PARTIAL")
         completed = sum(1 for fill in fills if fill.status in {"FILLED", "PARTIAL"})
@@ -390,6 +448,10 @@ class ProductionDailyRunner:
             "open_broker_order_count": int(broker_summary.get("open_orders", 0) or 0),
             "rejected_broker_order_count": int(broker_summary.get("rejected_orders", 0) or 0),
             "broker_unfilled_value": float(broker_summary.get("unfilled_value", 0.0) or 0.0),
+            "settlement_aware": self.settlement_aware,
+            "settlement_profile": self.settlement_profile,
+            "cost_basis_method": self.cost_basis_method,
+            **settlement_summary,
             "point_in_time": self.point_in_time,
             "feature_cutoff_mode": self.feature_cutoff_mode,
             "account": {
@@ -657,6 +719,39 @@ class ProductionDailyRunner:
     def _corporate_action_dir(self) -> Path:
         return self.corporate_action_dir or self.corporate_action_output_dir
 
+    def _write_settlement_artifacts(self, state, as_of_date: str) -> dict[str, Any]:
+        if not self.settlement_aware:
+            return {}
+        from settlement_engine.report import write_settlement_report
+
+        paths = write_settlement_report(state, self.settlement_dir, as_of_date, profile_name=self.settlement_profile)
+        reconciliation_path = paths.get("account_reconciliation_report_path")
+        reconciliation_errors = 0
+        nav_difference = 0.0
+        if reconciliation_path and Path(reconciliation_path).exists():
+            payload = json.loads(Path(reconciliation_path).read_text(encoding="utf-8"))
+            reconciliation_errors = int(payload.get("error_count", 0) or 0)
+            nav_difference = float(payload.get("nav_difference", 0.0) or 0.0)
+        return {
+            "settlement_dir": str(self.settlement_dir),
+            "settlement_report_path": paths.get("settlement_report_path"),
+            "settlement_report_md_path": paths.get("settlement_report_md_path"),
+            "settlement_events_path": paths.get("settlement_events_path"),
+            "cash_buckets_path": paths.get("cash_buckets_path"),
+            "position_lots_path": paths.get("position_lots_path"),
+            "position_availability_path": paths.get("position_availability_path"),
+            "realized_pnl_path": paths.get("realized_pnl_path"),
+            "account_nav_path": paths.get("account_nav_path"),
+            "account_performance_report_path": paths.get("account_performance_report_path"),
+            "account_reconciliation_report_path": paths.get("account_reconciliation_report_path"),
+            "fee_tax_report_path": paths.get("fee_tax_report_path"),
+            "settlement_reconciliation_error_count": reconciliation_errors,
+            "settlement_nav_difference": nav_difference,
+            "pending_settlement_event_count": sum(1 for event in state.settlement_events if event.get("status") == "pending"),
+            "failed_settlement_event_count": sum(1 for event in state.settlement_events if event.get("status") == "failed"),
+            "realized_pnl": sum(float(record.get("realized_pnl", 0.0) or 0.0) for record in state.realized_pnl_ledger),
+        }
+
 
 def _paths_from_summary(summary: dict[str, Any]) -> dict[str, str]:
     keys = [
@@ -696,6 +791,17 @@ def _paths_from_summary(summary: dict[str, Any]) -> dict[str, str]:
         "adjustment_reconciliation_path",
         "corporate_action_ledger_path",
         "cash_ledger_path",
+        "settlement_report_path",
+        "settlement_report_md_path",
+        "settlement_events_path",
+        "cash_buckets_path",
+        "position_lots_path",
+        "position_availability_path",
+        "realized_pnl_path",
+        "account_nav_path",
+        "account_performance_report_path",
+        "account_reconciliation_report_path",
+        "fee_tax_report_path",
     ]
     return {key: str(summary[key]) for key in keys if summary.get(key)}
 

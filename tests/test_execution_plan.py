@@ -51,3 +51,5 @@ def test_child_order_simulator_rejects_limit_up_sample(tmp_path):
 
     assert any(fill.status in {"FILLED", "PARTIAL", "REJECTED"} for fill in simulated.fills)
     assert all(fill.child_order_id for fill in simulated.fills)
+    assert all(hasattr(fill, "commission") for fill in simulated.fills)
+    assert all(fill.cost_breakdown is not None for fill in simulated.fills)

@@ -114,6 +114,10 @@ class ResearchSuiteConfig:
     corporate_action_application_date_mode: str = "pay_date"
     reconcile_adjustment_factors: bool = False
     fail_on_corporate_action_error: bool = False
+    settlement_aware: bool = False
+    settlement_dir: str | None = None
+    settlement_profile: str = "cn_ashare_paper_default"
+    cost_basis_method: str = "average"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

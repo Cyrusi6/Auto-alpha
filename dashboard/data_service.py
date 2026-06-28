@@ -435,6 +435,76 @@ class AshareDashboardService:
                 return payload
         return {}
 
+    def load_settlement_report(self) -> dict[str, Any]:
+        for path in self._settlement_candidates("settlement_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_settlement_events(self) -> pd.DataFrame:
+        for path in self._settlement_candidates("settlement_events.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_cash_buckets(self) -> pd.DataFrame:
+        for path in self._settlement_candidates("cash_buckets.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_position_lots(self) -> pd.DataFrame:
+        for path in self._settlement_candidates("position_lots.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_position_availability(self) -> pd.DataFrame:
+        for path in self._settlement_candidates("position_availability.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_realized_pnl(self) -> pd.DataFrame:
+        for path in self._settlement_candidates("realized_pnl.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_account_nav(self) -> pd.DataFrame:
+        for path in self._settlement_candidates("account_nav.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_account_reconciliation_report(self) -> dict[str, Any]:
+        for path in self._settlement_candidates("account_reconciliation_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_account_performance_report(self) -> dict[str, Any]:
+        for path in self._settlement_candidates("account_performance_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_fee_tax_report(self) -> dict[str, Any]:
+        for path in self._settlement_candidates("fee_tax_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
     def load_paper_positions(self) -> pd.DataFrame:
         for path in self._account_candidates("positions.jsonl"):
             frame = self._read_jsonl(path)
@@ -936,6 +1006,24 @@ class AshareDashboardService:
     def _account_candidates(self, filename: str) -> list[Path]:
         root = self.config.report_dir.parent
         return [self.config.paper_account_dir / filename, root / "account" / filename]
+
+    def _settlement_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.paper_account_dir / filename,
+            self.config.paper_account_dir / "settlement" / filename,
+            self.config.backtest_dir / "settlement" / filename,
+            self.config.backtest_dir / filename,
+            self.config.orders_dir / "settlement" / filename,
+            self.config.orders_dir / filename,
+            root / "settlement" / filename,
+            root / "settlement" / "backtest" / filename,
+            root / "settlement" / "orders" / filename,
+            root / "production" / "settlement" / filename,
+            root / "production_execute" / "settlement" / filename,
+            root / "production_execute_replay" / "settlement" / filename,
+            root / "account" / filename,
+        ]
 
     def _monitoring_candidates(self, filename: str) -> list[Path]:
         root = self.config.report_dir.parent

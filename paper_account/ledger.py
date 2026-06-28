@@ -31,6 +31,13 @@ class LocalPaperAccount:
         self.snapshots_path = self.root_dir / "account_snapshots.jsonl"
         self.corporate_action_ledger_path = self.root_dir / "corporate_action_ledger.jsonl"
         self.settlement_ledger_path = self.root_dir / "settlement_ledger.jsonl"
+        self.position_lots_path = self.root_dir / "position_lots.jsonl"
+        self.settlement_events_path = self.root_dir / "settlement_events.jsonl"
+        self.cash_buckets_path = self.root_dir / "cash_buckets.jsonl"
+        self.position_availability_path = self.root_dir / "position_availability.jsonl"
+        self.realized_pnl_path = self.root_dir / "realized_pnl.jsonl"
+        self.account_nav_path = self.root_dir / "account_nav.jsonl"
+        self.account_performance_report_path = self.root_dir / "account_performance_report.json"
 
     def load_state(self) -> PaperAccountState:
         if not self.state_path.exists():
@@ -52,6 +59,15 @@ class LocalPaperAccount:
             settlement_ledger=state.settlement_ledger,
             snapshots=state.snapshots,
             updated_at=_utc_now(),
+            available_cash=float(state.cash if state.available_cash is None else state.available_cash),
+            withdrawable_cash=float(state.cash if state.withdrawable_cash is None else state.withdrawable_cash),
+            frozen_cash=float(state.frozen_cash),
+            unsettled_receivable=float(state.unsettled_receivable),
+            unsettled_payable=float(state.unsettled_payable),
+            position_lots=state.position_lots,
+            settlement_events=state.settlement_events or state.settlement_ledger,
+            realized_pnl_ledger=state.realized_pnl_ledger,
+            account_nav=state.account_nav,
         )
         self.root_dir.mkdir(parents=True, exist_ok=True)
         write_json_artifact(self.state_path, updated.to_dict(), artifact_type="paper_account_state", producer="paper_account")
@@ -60,6 +76,7 @@ class LocalPaperAccount:
         self.export_trade_ledger(updated)
         self.export_corporate_action_ledger(updated)
         self.export_settlement_ledger(updated)
+        self.export_settlement_artifacts(updated)
         self._export_cash_ledger(updated)
         return updated
 
@@ -79,6 +96,8 @@ class LocalPaperAccount:
                     reason="reset",
                 )
             ],
+            available_cash=cash,
+            withdrawable_cash=cash,
             updated_at=_utc_now(),
         )
         return self.save_state(state)
@@ -129,6 +148,13 @@ class LocalPaperAccount:
                     client_order_id=payload.get("client_order_id"),
                     broker_adapter=payload.get("broker_adapter"),
                     broker_batch_id=payload.get("broker_batch_id"),
+                    commission=float(payload.get("commission") or 0.0),
+                    stamp_duty=float(payload.get("stamp_duty") or 0.0),
+                    transfer_fee=float(payload.get("transfer_fee") or 0.0),
+                    slippage=float(payload.get("slippage") or 0.0),
+                    market_impact=float(payload.get("market_impact") or 0.0),
+                    other_fee=float(payload.get("other_fee") or 0.0),
+                    cost_breakdown=dict(payload.get("cost_breakdown") or {}),
                 )
             )
             if status not in {"FILLED", "PARTIAL"} or shares <= 0:
@@ -170,6 +196,15 @@ class LocalPaperAccount:
             corporate_action_ledger=state.corporate_action_ledger,
             settlement_ledger=state.settlement_ledger,
             snapshots=state.snapshots,
+            available_cash=float(cash),
+            withdrawable_cash=float(cash),
+            frozen_cash=state.frozen_cash,
+            unsettled_receivable=state.unsettled_receivable,
+            unsettled_payable=state.unsettled_payable,
+            position_lots=state.position_lots,
+            settlement_events=state.settlement_events,
+            realized_pnl_ledger=state.realized_pnl_ledger,
+            account_nav=state.account_nav,
             updated_at=_utc_now(),
         )
         if prices:
@@ -181,8 +216,133 @@ class LocalPaperAccount:
         child_fills: Sequence[object],
         prices: dict[str, float] | None = None,
         trade_date: str | None = None,
+        settlement_aware: bool = False,
+        data_dir: str | Path | None = None,
+        profile: str = "cn_ashare_paper_default",
+        cost_basis_method: str = "average",
     ) -> PaperAccountState:
+        if settlement_aware:
+            if data_dir is None:
+                raise ValueError("settlement-aware child fills require data_dir")
+            return self.apply_fills_settlement_aware(
+                child_fills,
+                data_dir=data_dir,
+                trade_date=trade_date or "",
+                profile=profile,
+                prices=prices,
+                cost_basis_method=cost_basis_method,
+            )
         return self.apply_fills(child_fills, prices=prices, trade_date=trade_date)
+
+    def apply_fills_settlement_aware(
+        self,
+        fills: Sequence[object],
+        data_dir: str | Path,
+        trade_date: str,
+        profile: str = "cn_ashare_paper_default",
+        prices: dict[str, float] | None = None,
+        cost_basis_method: str = "average",
+    ) -> PaperAccountState:
+        from settlement_engine import SettlementCalendar, build_settlement_events_from_fills, load_settlement_profile, apply_settlement_events
+
+        settlement_profile = load_settlement_profile(profile, cost_basis_method=cost_basis_method)
+        calendar = SettlementCalendar.from_data_dir(data_dir)
+        events = build_settlement_events_from_fills(
+            fills,
+            trade_date=trade_date,
+            profile=settlement_profile,
+            calendar=calendar,
+            account_id=self.account_id,
+        )
+        state = self._append_trade_ledger_only(self.load_state(), fills, trade_date)
+        updated = apply_settlement_events(state, events, trade_date, prices=prices, profile=settlement_profile)
+        return self.save_state(updated)
+
+    def _append_trade_ledger_only(
+        self,
+        state: PaperAccountState,
+        fills: Sequence[object],
+        trade_date: str,
+    ) -> PaperAccountState:
+        trade_ledger = list(state.trade_ledger)
+        applied_fill_keys = {_fill_key(entry.to_dict()) for entry in trade_ledger}
+        for fill in fills:
+            payload = _fill_payload(fill)
+            fill_date = str(payload.get("trade_date") or trade_date)
+            fill_key = _fill_key(payload | {"trade_date": fill_date})
+            if fill_key in applied_fill_keys:
+                continue
+            applied_fill_keys.add(fill_key)
+            trade_ledger.append(
+                PaperTradeLedgerEntry(
+                    trade_date=fill_date,
+                    ts_code=str(payload.get("ts_code") or ""),
+                    side=str(payload.get("side") or "").upper(),
+                    price=float(payload.get("price") or 0.0),
+                    shares=int(payload.get("shares") or 0),
+                    value=float(payload.get("value") or 0.0),
+                    cost=float(payload.get("cost") or 0.0),
+                    status=str(payload.get("status") or ""),
+                    reason=str(payload.get("reason") or ""),
+                    parent_order_id=payload.get("parent_order_id"),
+                    child_order_id=payload.get("child_order_id"),
+                    bucket=payload.get("bucket"),
+                    broker_order_id=payload.get("broker_order_id"),
+                    broker_fill_id=payload.get("broker_fill_id"),
+                    client_order_id=payload.get("client_order_id"),
+                    broker_adapter=payload.get("broker_adapter"),
+                    broker_batch_id=payload.get("broker_batch_id"),
+                    commission=float(payload.get("commission") or 0.0),
+                    stamp_duty=float(payload.get("stamp_duty") or 0.0),
+                    transfer_fee=float(payload.get("transfer_fee") or 0.0),
+                    slippage=float(payload.get("slippage") or 0.0),
+                    market_impact=float(payload.get("market_impact") or 0.0),
+                    other_fee=float(payload.get("other_fee") or 0.0),
+                    cost_breakdown=dict(payload.get("cost_breakdown") or {}),
+                )
+            )
+        return PaperAccountState(
+            account_id=state.account_id,
+            initial_cash=state.initial_cash,
+            cash=state.cash,
+            positions=state.positions,
+            cash_ledger=state.cash_ledger,
+            trade_ledger=trade_ledger,
+            corporate_action_ledger=state.corporate_action_ledger,
+            settlement_ledger=state.settlement_ledger,
+            snapshots=state.snapshots,
+            updated_at=state.updated_at,
+            available_cash=state.available_cash,
+            withdrawable_cash=state.withdrawable_cash,
+            frozen_cash=state.frozen_cash,
+            unsettled_receivable=state.unsettled_receivable,
+            unsettled_payable=state.unsettled_payable,
+            position_lots=state.position_lots,
+            settlement_events=state.settlement_events,
+            realized_pnl_ledger=state.realized_pnl_ledger,
+            account_nav=state.account_nav,
+        )
+
+    def settle(
+        self,
+        as_of_date: str,
+        prices: dict[str, float] | None = None,
+        profile: str = "cn_ashare_paper_default",
+    ) -> PaperAccountState:
+        from settlement_engine import load_settlement_profile, settle_pending_events
+
+        updated = settle_pending_events(self.load_state(), as_of_date, prices=prices, profile=load_settlement_profile(profile))
+        return self.save_state(updated)
+
+    def precheck_orders(self, orders: Sequence[object], prices: dict[str, float] | None = None, profile: str = "cn_ashare_paper_default") -> dict[str, Any]:
+        from settlement_engine import load_settlement_profile, precheck_orders_against_availability
+
+        return precheck_orders_against_availability(self.load_state(), orders, prices=prices, profile=load_settlement_profile(profile))
+
+    def reconcile(self, as_of_date: str) -> dict[str, Any]:
+        from settlement_engine.reconciliation import reconcile_account_state
+
+        return reconcile_account_state(self.load_state(), as_of_date=as_of_date).to_dict()
 
     def mark_to_market(self, prices: dict[str, float], trade_date: str) -> PaperAccountState:
         state = self._mark_positions(self.load_state(), prices)
@@ -211,6 +371,15 @@ class LocalPaperAccount:
             corporate_action_ledger=state.corporate_action_ledger,
             settlement_ledger=state.settlement_ledger,
             snapshots=state.snapshots + [snapshot],
+            available_cash=state.available_cash,
+            withdrawable_cash=state.withdrawable_cash,
+            frozen_cash=state.frozen_cash,
+            unsettled_receivable=state.unsettled_receivable,
+            unsettled_payable=state.unsettled_payable,
+            position_lots=state.position_lots,
+            settlement_events=state.settlement_events,
+            realized_pnl_ledger=state.realized_pnl_ledger,
+            account_nav=state.account_nav,
             updated_at=_utc_now(),
         )
         return self.save_state(updated)
@@ -234,6 +403,18 @@ class LocalPaperAccount:
     def export_settlement_ledger(self, state: PaperAccountState | None = None) -> Path:
         state = state or self.load_state()
         return _write_jsonl(self.settlement_ledger_path, [dict(entry) for entry in state.settlement_ledger])
+
+    def export_settlement_artifacts(self, state: PaperAccountState | None = None) -> None:
+        state = state or self.load_state()
+        _write_jsonl(self.position_lots_path, [dict(entry) for entry in state.position_lots])
+        _write_jsonl(self.settlement_events_path, [dict(entry) for entry in (state.settlement_events or state.settlement_ledger)])
+        _write_jsonl(self.realized_pnl_path, [dict(entry) for entry in state.realized_pnl_ledger])
+        _write_jsonl(self.account_nav_path, [dict(entry) for entry in state.account_nav])
+        from settlement_engine import update_cash_buckets, update_position_availability
+
+        date = _latest_date(state)
+        _write_jsonl(self.cash_buckets_path, [update_cash_buckets(state, date).to_dict()])
+        _write_jsonl(self.position_availability_path, [entry.to_dict() for entry in update_position_availability(state, date)])
 
     def apply_corporate_actions(
         self,
@@ -279,15 +460,25 @@ class LocalPaperAccount:
             corporate_action_ledger=state.corporate_action_ledger,
             settlement_ledger=state.settlement_ledger,
             snapshots=state.snapshots,
+            available_cash=state.available_cash,
+            withdrawable_cash=state.withdrawable_cash,
+            frozen_cash=state.frozen_cash,
+            unsettled_receivable=state.unsettled_receivable,
+            unsettled_payable=state.unsettled_payable,
+            position_lots=state.position_lots,
+            settlement_events=state.settlement_events,
+            realized_pnl_ledger=state.realized_pnl_ledger,
+            account_nav=state.account_nav,
             updated_at=state.updated_at,
         )
 
 
 def _state_from_payload(payload: dict[str, Any]) -> PaperAccountState:
+    cash = float(payload.get("cash") or 0.0)
     return PaperAccountState(
         account_id=str(payload.get("account_id") or "paper_ashare"),
         initial_cash=float(payload.get("initial_cash") or 0.0),
-        cash=float(payload.get("cash") or 0.0),
+        cash=cash,
         positions={key: PaperPosition(**value) for key, value in dict(payload.get("positions") or {}).items()},
         cash_ledger=[PaperCashLedgerEntry(**entry) for entry in payload.get("cash_ledger", [])],
         trade_ledger=[PaperTradeLedgerEntry(**entry) for entry in payload.get("trade_ledger", [])],
@@ -295,6 +486,15 @@ def _state_from_payload(payload: dict[str, Any]) -> PaperAccountState:
         settlement_ledger=[dict(entry) for entry in payload.get("settlement_ledger", [])],
         snapshots=[PaperAccountSnapshot(**entry) for entry in payload.get("snapshots", [])],
         updated_at=payload.get("updated_at"),
+        available_cash=float(payload.get("available_cash", cash) if payload.get("available_cash", cash) is not None else cash),
+        withdrawable_cash=float(payload.get("withdrawable_cash", cash) if payload.get("withdrawable_cash", cash) is not None else cash),
+        frozen_cash=float(payload.get("frozen_cash") or 0.0),
+        unsettled_receivable=float(payload.get("unsettled_receivable") or 0.0),
+        unsettled_payable=float(payload.get("unsettled_payable") or 0.0),
+        position_lots=[dict(entry) for entry in payload.get("position_lots", [])],
+        settlement_events=[dict(entry) for entry in payload.get("settlement_events", payload.get("settlement_ledger", []))],
+        realized_pnl_ledger=[dict(entry) for entry in payload.get("realized_pnl_ledger", [])],
+        account_nav=[dict(entry) for entry in payload.get("account_nav", [])],
     )
 
 
@@ -330,6 +530,15 @@ def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> Path:
             handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True))
             handle.write("\n")
     return path
+
+
+def _latest_date(state: PaperAccountState) -> str:
+    if state.snapshots:
+        return state.snapshots[-1].trade_date
+    for ledger in (state.trade_ledger, state.cash_ledger):
+        if ledger:
+            return str(getattr(ledger[-1], "trade_date", "INIT") or "INIT")
+    return "INIT"
 
 
 def _utc_now() -> str:

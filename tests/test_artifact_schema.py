@@ -103,3 +103,40 @@ def test_run_validate_cli_scans_dirs_and_catalog(tmp_path, capsys):
     assert payload["artifact_count"] >= 2
     assert (tmp_path / "schema" / "artifact_validation_report.json").exists()
     assert (tmp_path / "schema" / "artifact_schema_manifest.json").exists()
+
+
+def test_settlement_artifacts_are_registered(tmp_path):
+    settlement_report = tmp_path / "settlement_report.json"
+    write_json_artifact(
+        settlement_report,
+        {
+            "account_id": "paper_ashare",
+            "as_of_date": "20240104",
+            "settlement_aware": True,
+            "settlement_profile": "cn_ashare_paper_default",
+            "pending_settlement_event_count": 0,
+            "failed_settlement_event_count": 0,
+            "cash_buckets": {},
+            "position_count": 0,
+            "position_lot_count": 0,
+            "realized_pnl": 0.0,
+            "unrealized_pnl": 0.0,
+            "nav_difference": 0.0,
+            "fee_tax_total": 0.0,
+            "reconciliation_error_count": 0,
+        },
+        artifact_type="settlement_report",
+        producer="test",
+    )
+    settlement_events = tmp_path / "settlement_events.jsonl"
+    write_jsonl_artifact(
+        settlement_events,
+        [{"settlement_event_id": "se_1", "account_id": "paper_ashare", "status": "pending", "event_type": "trade_buy_cash"}],
+        artifact_type="settlement_events",
+        producer="test",
+    )
+
+    assert validate_artifact(settlement_report, strict=True).valid is True
+    assert validate_artifact(settlement_events, strict=True).valid is True
+    manifest = build_artifact_manifest([settlement_report, settlement_events], root_dir=tmp_path)
+    assert {entry.artifact_type for entry in manifest.entries} == {"settlement_report", "settlement_events"}

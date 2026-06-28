@@ -55,6 +55,11 @@ def _build_parser() -> argparse.ArgumentParser:
         cmd.add_argument("--total-return-report-path")
         cmd.add_argument("--adjustment-reconciliation-path")
         cmd.add_argument("--corporate-action-validation-path")
+        cmd.add_argument("--settlement-report-path")
+        cmd.add_argument("--account-reconciliation-report-path")
+        cmd.add_argument("--account-performance-report-path")
+        cmd.add_argument("--cash-buckets-path")
+        cmd.add_argument("--realized-pnl-path")
         cmd.add_argument("--create-review-package", action="store_true")
         cmd.add_argument("--propose-activation", action="store_true")
         cmd.add_argument("--require-approval", action="store_true")
@@ -131,6 +136,11 @@ def _evaluate(args, registry, store, factor, model):
         "total_return_report": args.total_return_report_path,
         "adjustment_reconciliation": args.adjustment_reconciliation_path,
         "corporate_action_validation": args.corporate_action_validation_path,
+        "settlement_report": args.settlement_report_path,
+        "account_reconciliation_report": args.account_reconciliation_report_path,
+        "account_performance_report": args.account_performance_report_path,
+        "cash_buckets": args.cash_buckets_path,
+        "realized_pnl": args.realized_pnl_path,
     }
     metrics, checks = evaluate_factor_health(loader, store, factor.factor_id, args.as_of_date, policy, artifact_paths)
     current_status = model.lifecycle_status if model else factor.status

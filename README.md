@@ -29,7 +29,8 @@ The current implementation is local-first. It uses deterministic sample data and
 - `broker_adapter/`: Local broker contract, simulated broker state machine, file instruction outbox/inbox skeleton, broker events, fills, and reconciliation.
 - `strategy_manager/`: Target position and paper order generation.
 - `approval/`: Local proposed-order batch approval, rejection, expiration, and audit log.
-- `paper_account/`: Persistent local paper cash, positions, trades, snapshots, and performance ledger.
+- `settlement_engine/`: Local paper settlement profiles, settlement events, cash/share availability, position lots, fee/tax breakdown, realized PnL, NAV, and account reconciliation.
+- `paper_account/`: Persistent local paper cash, positions, trades, settlement artifacts, snapshots, and performance ledger.
 - `operations/`: Daily production run orchestration from production factor to proposed orders, approval-gated execution, account update, and production report.
 - `monitoring/`: Local production checks for data freshness, quality, factor drift, fill quality, account performance, and alerts.
 - `release_manager/`: Local release manifest, dependency/module/CLI inventory, package build summary, release gate report, and release notes draft.
@@ -211,6 +212,37 @@ uv run python -m paper_account.run_account \
   --trade-date 20240104 \
   --pretty
 ```
+
+Settlement-aware paper accounting is available through `settlement_engine/` and the settlement-aware `paper_account` methods. It models local paper settlement events for trade fills and corporate actions, tracks `available_cash`, `withdrawable_cash`, `frozen_cash`, `unsettled_receivable`, `unsettled_payable`, available shares, position lots, realized/unrealized PnL, NAV, and fee/tax breakdown. Profiles are configurable local assumptions:
+
+- `cn_ashare_paper_default`: local A-share paper assumption with T+1 share availability and conservative sell cash timing.
+- `conservative_t_plus_one_cash`: more conservative cash usability/withdrawal lag.
+- `immediate_legacy`: old immediate accounting behavior for compatibility tests.
+
+These profiles are local paper accounting approximations, not broker clearing interfaces or tax advice.
+
+```bash
+uv run python -m settlement_engine.run_settlement \
+  apply-fills \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --account-dir /tmp/auto-alpha-demo/account \
+  --settlement-dir /tmp/auto-alpha-demo/settlement \
+  --fills-path /tmp/auto-alpha-demo/sample_fills.jsonl \
+  --trade-date 20240102 \
+  --profile cn_ashare_paper_default \
+  --cost-basis-method fifo \
+  --pretty
+
+uv run python -m settlement_engine.run_settlement \
+  settle \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --account-dir /tmp/auto-alpha-demo/account \
+  --settlement-dir /tmp/auto-alpha-demo/settlement \
+  --as-of-date 20240104 \
+  --pretty
+```
+
+Settlement reports write `settlement_report.json/md`, `settlement_events.jsonl`, `cash_buckets.jsonl`, `position_lots.jsonl`, `position_availability.jsonl`, `realized_pnl.jsonl`, `account_nav.jsonl`, `account_performance_report.json`, `account_reconciliation_report.json`, and `fee_tax_report.json`.
 
 Build a matrix cache after governed data and universe are available:
 
@@ -470,6 +502,13 @@ uv run python -m operations.run_daily \
   --broker-store-dir /tmp/auto-alpha-demo/broker \
   --broker-auto-fill \
   --broker-reconcile \
+  --settlement-aware \
+  --settlement-dir /tmp/auto-alpha-demo/settlement \
+  --settlement-profile cn_ashare_paper_default \
+  --cost-basis-method fifo \
+  --settle-before-trading \
+  --enforce-available-cash \
+  --enforce-available-shares \
   --max-active-style-exposure 1.0 \
   --top-n 2 \
   --max-weight 0.10 \
@@ -509,6 +548,15 @@ uv run python -m operations.run_daily \
   --use-model-registry \
   --model-registry-dir /tmp/auto-alpha-demo/model_registry \
   --require-active-model \
+  --settlement-aware \
+  --settlement-dir /tmp/auto-alpha-demo/settlement \
+  --settlement-profile cn_ashare_paper_default \
+  --cost-basis-method fifo \
+  --settle-through-date 20240104 \
+  --broker-adapter simulated \
+  --broker-store-dir /tmp/auto-alpha-demo/broker \
+  --broker-auto-fill \
+  --broker-reconcile \
   --pretty
 
 uv run python -m monitoring.run_monitor \
@@ -523,10 +571,19 @@ uv run python -m monitoring.run_monitor \
   --model-registry-dir /tmp/auto-alpha-demo/model_registry \
   --factor-lifecycle-report-path /tmp/auto-alpha-demo/model_lifecycle/factor_lifecycle_report.json \
   --model-lineage-graph-path /tmp/auto-alpha-demo/model_registry/model_lineage_graph.json \
+  --settlement-report-path /tmp/auto-alpha-demo/settlement/settlement_report.json \
+  --settlement-events-path /tmp/auto-alpha-demo/settlement/settlement_events.jsonl \
+  --cash-buckets-path /tmp/auto-alpha-demo/settlement/cash_buckets.jsonl \
+  --position-lots-path /tmp/auto-alpha-demo/settlement/position_lots.jsonl \
+  --position-availability-path /tmp/auto-alpha-demo/settlement/position_availability.jsonl \
+  --realized-pnl-path /tmp/auto-alpha-demo/settlement/realized_pnl.jsonl \
+  --account-nav-path /tmp/auto-alpha-demo/settlement/account_nav.jsonl \
+  --account-reconciliation-report-path /tmp/auto-alpha-demo/settlement/account_reconciliation_report.json \
+  --fee-tax-report-path /tmp/auto-alpha-demo/settlement/fee_tax_report.json \
   --pretty
 ```
 
-Daily production writes `production_run.json/md`; approvals are stored under `approvals/<approval_id>.json` plus `approval_log.jsonl`; the paper account writes `account_state.json`, `positions.jsonl`, `cash_ledger.jsonl`, `trade_ledger.jsonl`, and `account_snapshots.jsonl`; broker-enabled runs write `broker_report.json/md`, `broker_orders.jsonl`, `broker_events.jsonl`, `broker_fills.jsonl`, and `broker_reconciliation.json/md`; model-governed runs record model version/deployment context; monitoring writes `monitoring_report.json/md` and `alerts.jsonl`.
+Daily production writes `production_run.json/md`; approvals are stored under `approvals/<approval_id>.json` plus `approval_log.jsonl`; the paper account writes `account_state.json`, `positions.jsonl`, `cash_ledger.jsonl`, `trade_ledger.jsonl`, settlement artifacts, and `account_snapshots.jsonl`; broker-enabled runs write `broker_report.json/md`, `broker_orders.jsonl`, `broker_events.jsonl`, `broker_fills.jsonl`, and `broker_reconciliation.json/md`; model-governed runs record model version/deployment context; monitoring writes `monitoring_report.json/md` and `alerts.jsonl`.
 
 To export generic file instructions without local fills:
 
@@ -699,8 +756,8 @@ Current PIT boundaries:
 
 - Tushare HTTP provider, production sync scaffolding, offline fake smoke, gated online smoke, permission/rate diagnostics, audit summary, incremental recovery checks, and baseline comparison are available; production use still requires real token/quota operation, real full-market performance runs, and more provider pairs.
 - Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
-- Local daily simulation supports A-share constraints, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, and paper execution quality reports; future work should add finer real-world matching and minute-level volume modeling.
+- Local daily simulation supports A-share constraints, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, settlement-aware paper accounting, lot cost, realized PnL, NAV reconciliation, and execution quality reports; future work should add finer real-world matching, minute-level volume modeling, and real broker statement reconciliation.
 - Local formula search, batch formula evaluation, formula corpus construction, offline AlphaGPT supervised pretraining, and a first neural-guided policy-search path are available; future work should add stronger reinforcement learning, larger offline corpora, more operators, GPU performance tuning, and broader stability validation.
 - Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.
 - One-click research suites now provide local walk-forward, promotion gates, model registry records, lifecycle review packages, active deployment state, and rollback artifacts; daily operations can require an active governed model. Future work should add richer lifecycle policies and external review workflow integrations.
-- Broker adapter, file instructions, and account ledger are local only. No real broker integration, credential handling, network submission, or verified QMT/broker file compatibility is implemented.
+- Broker adapter, file instructions, settlement profiles, and account ledger are local only. No real broker integration, credential handling, network submission, verified QMT/broker file compatibility, or tax reporting interface is implemented.

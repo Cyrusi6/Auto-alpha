@@ -488,6 +488,16 @@ def render_app(config: DashboardConfig | None = None) -> None:
         approvals = service.load_approvals()
         approval_log = service.load_approval_log()
         account_state = service.load_paper_account_state()
+        settlement_report = service.load_settlement_report()
+        settlement_events = service.load_settlement_events()
+        cash_buckets = service.load_cash_buckets()
+        position_lots = service.load_position_lots()
+        position_availability = service.load_position_availability()
+        realized_pnl = service.load_realized_pnl()
+        account_nav = service.load_account_nav()
+        account_reconciliation = service.load_account_reconciliation_report()
+        account_performance = service.load_account_performance_report()
+        fee_tax_report = service.load_fee_tax_report()
         positions = service.load_paper_positions()
         snapshots = service.load_account_snapshots()
         trade_ledger = service.load_trade_ledger()
@@ -525,6 +535,31 @@ def render_app(config: DashboardConfig | None = None) -> None:
         _show_dataframe_or_empty("Account Snapshots", snapshots)
         _show_dataframe_or_empty("Trade Ledger", trade_ledger)
         _show_dataframe_or_empty("Corporate Action Ledger", corporate_action_ledger)
+        st.subheader("Settlement, Lots, PnL And NAV")
+        st.json(
+            {
+                "settlement": {
+                    "profile": settlement_report.get("settlement_profile"),
+                    "pending": settlement_report.get("pending_settlement_event_count", 0),
+                    "failed": settlement_report.get("failed_settlement_event_count", 0),
+                    "realized_pnl": settlement_report.get("realized_pnl", 0.0),
+                    "unrealized_pnl": settlement_report.get("unrealized_pnl", 0.0),
+                    "nav_difference": settlement_report.get("nav_difference", 0.0),
+                    "fee_tax_total": settlement_report.get("fee_tax_total", 0.0),
+                },
+                "account_reconciliation": account_reconciliation,
+                "account_performance": account_performance,
+                "fee_tax": fee_tax_report,
+            }
+            if settlement_report
+            else {"status": "No settlement_report.json found"}
+        )
+        _show_dataframe_or_empty("Settlement Events", settlement_events)
+        _show_dataframe_or_empty("Cash Buckets", cash_buckets)
+        _show_dataframe_or_empty("Position Lots", position_lots)
+        _show_dataframe_or_empty("Position Availability", position_availability)
+        _show_dataframe_or_empty("Realized PnL", realized_pnl)
+        _show_dataframe_or_empty("Account NAV", account_nav)
         st.subheader("Broker")
         st.json(
             {

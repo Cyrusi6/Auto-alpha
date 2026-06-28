@@ -111,6 +111,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--corporate-action-application-date-mode", default="pay_date")
     parser.add_argument("--reconcile-adjustment-factors", action="store_true")
     parser.add_argument("--fail-on-corporate-action-error", action="store_true")
+    parser.add_argument("--settlement-aware", action="store_true")
+    parser.add_argument("--settlement-dir")
+    parser.add_argument(
+        "--settlement-profile",
+        choices=["cn_ashare_paper_default", "conservative_t_plus_one_cash", "immediate_legacy"],
+        default="cn_ashare_paper_default",
+    )
+    parser.add_argument("--cost-basis-method", choices=["average", "fifo"], default="average")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -231,6 +239,10 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
         corporate_action_application_date_mode=args.corporate_action_application_date_mode,
         reconcile_adjustment_factors=args.reconcile_adjustment_factors,
         fail_on_corporate_action_error=args.fail_on_corporate_action_error,
+        settlement_aware=args.settlement_aware,
+        settlement_dir=args.settlement_dir,
+        settlement_profile=args.settlement_profile,
+        cost_basis_method=args.cost_basis_method,
     )
 
 

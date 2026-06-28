@@ -92,6 +92,20 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--corporate-action-report-dir")
     parser.add_argument("--corporate-action-cash-field", default="cash_div")
     parser.add_argument("--reconcile-adjustment-factors", action="store_true")
+    parser.add_argument("--settlement-aware", action="store_true")
+    parser.add_argument("--settlement-dir")
+    parser.add_argument(
+        "--settlement-profile",
+        choices=["cn_ashare_paper_default", "conservative_t_plus_one_cash", "immediate_legacy"],
+        default="cn_ashare_paper_default",
+    )
+    parser.add_argument("--cost-basis-method", choices=["average", "fifo"], default="average")
+    parser.add_argument("--enforce-available-cash", action="store_true")
+    parser.add_argument("--enforce-available-shares", action="store_true")
+    parser.add_argument("--allow-unsettled-cash-for-buy", action="store_true")
+    parser.add_argument("--allow-unsettled-shares-for-sell", action="store_true")
+    parser.add_argument("--settle-through-date")
+    parser.add_argument("--write-settlement-report", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -297,6 +311,71 @@ def main(argv: list[str] | None = None) -> int:
             result.metrics["leakage_blocker_count"] = float(payload.get("blocker_count", 0) or 0)
             (output_dir / "backtest_result.json").write_text(json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
 
+    settlement_paths: dict[str, str | None] = {
+        "settlement_report_path": None,
+        "settlement_report_md_path": None,
+        "settlement_events_path": None,
+        "cash_buckets_path": None,
+        "position_lots_path": None,
+        "position_availability_path": None,
+        "realized_pnl_path": None,
+        "account_nav_path": None,
+        "account_performance_report_path": None,
+        "account_reconciliation_report_path": None,
+        "fee_tax_report_path": None,
+    }
+    if args.settlement_aware or args.write_settlement_report:
+        from paper_account import LocalPaperAccount
+        from settlement_engine.report import write_settlement_report
+
+        settlement_dir = Path(args.settlement_dir) if args.settlement_dir else output_dir / "settlement"
+        account = LocalPaperAccount(settlement_dir / "account")
+        if account.load_state().initial_cash <= 0:
+            account.reset(args.initial_cash)
+        fills_by_date: dict[str, list[object]] = {}
+        for fill in result.fills:
+            fills_by_date.setdefault(fill.trade_date, []).append(fill)
+        for trade_date, fills in sorted(fills_by_date.items()):
+            prices = _prices_from_loader(loader, trade_date)
+            account.apply_fills_settlement_aware(
+                fills,
+                data_dir=args.data_dir,
+                trade_date=trade_date,
+                profile=args.settlement_profile,
+                prices=prices,
+                cost_basis_method=args.cost_basis_method,
+            )
+        settle_date = args.settle_through_date or (loader.trade_dates[-1] if loader.trade_dates else "")
+        state = account.settle(settle_date, prices=_prices_from_loader(loader, settle_date), profile=args.settlement_profile)
+        if settle_date:
+            state = account.mark_to_market(_prices_from_loader(loader, settle_date), settle_date)
+        settlement_paths = write_settlement_report(state, settlement_dir, settle_date, profile_name=args.settlement_profile)
+        reconciliation_payload = {}
+        if settlement_paths.get("account_reconciliation_report_path"):
+            reconciliation_payload = json.loads(Path(settlement_paths["account_reconciliation_report_path"]).read_text(encoding="utf-8"))
+        fee_payload = {}
+        if settlement_paths.get("fee_tax_report_path"):
+            fee_payload = json.loads(Path(settlement_paths["fee_tax_report_path"]).read_text(encoding="utf-8"))
+        result.metrics.update(
+            {
+                "settlement_aware": 1.0 if args.settlement_aware else 0.0,
+                "pending_settlement_events": float(sum(event.get("status") == "pending" for event in state.settlement_events)),
+                "failed_settlement_events": float(sum(event.get("status") == "failed" for event in state.settlement_events)),
+                "available_cash": float(state.available_cash),
+                "available_cash_min": float(state.available_cash),
+                "realized_pnl": float(sum(float(record.get("realized_pnl", 0.0) or 0.0) for record in state.realized_pnl_ledger)),
+                "unrealized_pnl": float(sum(float(position.unrealized_pnl) for position in state.positions.values())),
+                "total_fees": float(fee_payload.get("total_fee_tax", 0.0) or 0.0),
+                "total_commission": float(fee_payload.get("commission", 0.0) or 0.0),
+                "total_stamp_duty": float(fee_payload.get("stamp_duty", 0.0) or 0.0),
+                "total_transfer_fee": float(fee_payload.get("transfer_fee", 0.0) or 0.0),
+                "total_slippage": float(fee_payload.get("slippage", 0.0) or 0.0),
+                "nav_difference": float(reconciliation_payload.get("nav_difference", 0.0) or 0.0),
+                "settlement_reconciliation_error_count": float(reconciliation_payload.get("error_count", 0) or 0),
+            }
+        )
+        (output_dir / "backtest_result.json").write_text(json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+
     summary = {
         "factor_id": factor_id,
         "factor_type": factor_meta["factor_type"],
@@ -319,10 +398,14 @@ def main(argv: list[str] | None = None) -> int:
         "signal_lag_days": args.signal_lag_days,
         "corporate_action_aware": bool(args.corporate_action_aware),
         "target_return_mode": args.target_return_mode,
+        "settlement_aware": bool(args.settlement_aware),
+        "settlement_profile": args.settlement_profile,
+        "cost_basis_method": args.cost_basis_method,
         "leakage_gate_status": leakage_gate_status,
         **leakage_paths,
         **corporate_paths,
         **execution_plan_paths,
+        **settlement_paths,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0
@@ -349,6 +432,14 @@ def _write_corporate_action_artifacts(args: argparse.Namespace, loader: AShareDa
     )
     summary = json.loads(Path(paths["corporate_actions_report_path"]).read_text(encoding="utf-8"))
     return paths, summary
+
+
+def _prices_from_loader(loader: AShareDataLoader, trade_date: str) -> dict[str, float]:
+    if not trade_date or trade_date not in loader.trade_dates:
+        return {}
+    close = loader.raw_data_cache["close"].detach().cpu()
+    date_idx = loader.trade_dates.index(trade_date)
+    return {ts_code: float(close[idx, date_idx].item()) for idx, ts_code in enumerate(loader.ts_codes)}
 
 
 if __name__ == "__main__":

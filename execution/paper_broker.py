@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 from typing import Sequence
 
@@ -75,7 +76,8 @@ class PaperBroker:
             if shares < requested_shares:
                 status = "PARTIAL"
             value = shares * price
-            cost = self.cost_model.estimate(side, value).total
+            breakdown = self.cost_model.estimate(side, value)
+            cost = breakdown.total
             fills.append(
                 ExecutionFill(
                     trade_date=trade_date,
@@ -87,6 +89,12 @@ class PaperBroker:
                     status=status,
                     cost=float(cost),
                     reason=volume_reason if status == "PARTIAL" else "",
+                    commission=float(breakdown.commission),
+                    stamp_duty=float(breakdown.stamp_duty),
+                    transfer_fee=float(breakdown.transfer_fee),
+                    slippage=float(breakdown.slippage),
+                    market_impact=float(breakdown.market_impact),
+                    cost_breakdown=asdict(breakdown),
                 )
             )
         export_fills_jsonl(fills, self.output_dir / "paper_fills.jsonl")

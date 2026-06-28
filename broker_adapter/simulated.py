@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -191,9 +192,10 @@ class SimulatedBrokerAdapter:
             return self._fill(record, price, 0, 0.0, 0.0, "REJECTED", volume_reason or "zero_shares")
         status = "PARTIAL" if shares < requested_shares else "FILLED"
         value = float(shares * price)
-        cost = float(self.cost_model.estimate(side, value).total)
+        breakdown = self.cost_model.estimate(side, value)
+        cost = float(breakdown.total)
         reason = volume_reason if status == "PARTIAL" else ""
-        return self._fill(record, price, int(shares), value, cost, status, reason)
+        return self._fill(record, price, int(shares), value, cost, status, reason, asdict(breakdown))
 
     def _status_for_fill(self, record: BrokerOrderRecord, fill: BrokerFillRecord) -> str:
         if fill.status == "REJECTED":
@@ -254,8 +256,10 @@ class SimulatedBrokerAdapter:
         cost: float,
         status: str,
         reason: str,
+        cost_breakdown: dict[str, float] | None = None,
     ) -> BrokerFillRecord:
         request = record.request if isinstance(record.request, BrokerOrderRequest) else BrokerOrderRequest(**record.request)
+        cost_breakdown = cost_breakdown or {}
         return BrokerFillRecord(
             broker_fill_id=f"bf_{record.broker_order_id}_{max(shares, 0)}_{status.lower()}",
             broker_order_id=record.broker_order_id,
@@ -270,6 +274,13 @@ class SimulatedBrokerAdapter:
             cost=float(max(cost, 0.0)),
             status=status,
             reason=reason,
+            commission=float(cost_breakdown.get("commission", 0.0) or 0.0),
+            stamp_duty=float(cost_breakdown.get("stamp_duty", 0.0) or 0.0),
+            transfer_fee=float(cost_breakdown.get("transfer_fee", 0.0) or 0.0),
+            slippage=float(cost_breakdown.get("slippage", 0.0) or 0.0),
+            market_impact=float(cost_breakdown.get("market_impact", 0.0) or 0.0),
+            other_fee=float(cost_breakdown.get("other_fee", 0.0) or 0.0),
+            cost_breakdown=cost_breakdown,
             parent_order_id=request.parent_order_id,
             child_order_id=request.child_order_id,
             bucket=request.bucket,

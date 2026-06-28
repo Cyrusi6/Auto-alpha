@@ -41,6 +41,7 @@ PLATFORM_MODULES = [
     "research",
     "research_suite",
     "risk_model",
+    "settlement_engine",
     "leakage_audit",
     "strategy_manager",
     "universe",

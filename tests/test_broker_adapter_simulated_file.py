@@ -51,6 +51,8 @@ def test_simulated_broker_fill_partial_and_rejects(tmp_path):
     assert all(isinstance(fill, ExecutionFill) for fill in execution_fills)
     assert execution_fills[0].broker_order_id
     assert execution_fills[0].broker_fill_id
+    assert execution_fills[0].commission >= 0
+    assert execution_fills[0].cost_breakdown is not None
 
 
 def test_file_instruction_adapter_exports_and_imports_inbox(tmp_path):
@@ -86,6 +88,8 @@ def test_file_instruction_adapter_exports_and_imports_inbox(tmp_path):
                 "shares": 100,
                 "value": 1000.0,
                 "cost": 5.0,
+                "commission": 4.0,
+                "transfer_fee": 1.0,
                 "status": "FILLED",
             }
         )
@@ -97,3 +101,5 @@ def test_file_instruction_adapter_exports_and_imports_inbox(tmp_path):
 
     assert imported.idempotent_replay_count == 1
     assert imported.fills[0].status == "FILLED"
+    assert imported.fills[0].commission == 4.0
+    assert imported.fills[0].transfer_fee == 1.0

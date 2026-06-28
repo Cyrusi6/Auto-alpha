@@ -132,6 +132,8 @@ class ResearchSuiteRunner:
                 "adjustment_reconciliation_warning_count": self.corporate_action_summary.get(
                     "adjustment_reconciliation_warning_count", 0
                 ),
+                "settlement_aware": self.config.settlement_aware,
+                "settlement_profile": self.config.settlement_profile,
             },
         )
         suite_json, suite_md = write_suite_report(result, self.output_dir)
@@ -679,6 +681,19 @@ class ResearchSuiteRunner:
             argv.extend(["--run-leakage-audit", "--leakage-audit-dir", str(self._backtest_leakage_dir())])
             if self.config.fail_on_leakage_blocker:
                 argv.append("--fail-on-leakage-blocker")
+        if self.config.settlement_aware:
+            argv.extend(
+                [
+                    "--settlement-aware",
+                    "--settlement-dir",
+                    str(self._settlement_dir("backtest")),
+                    "--settlement-profile",
+                    self.config.settlement_profile,
+                    "--cost-basis-method",
+                    self.config.cost_basis_method,
+                    "--write-settlement-report",
+                ]
+            )
 
         payload = _run_json_main(run_backtest.main, argv)
         self.backtest_summary = payload
@@ -710,6 +725,20 @@ class ResearchSuiteRunner:
             output_paths["backtest_total_return_report"] = str(payload["total_return_report_path"])
         if payload.get("adjustment_reconciliation_path"):
             output_paths["backtest_adjustment_reconciliation"] = str(payload["adjustment_reconciliation_path"])
+        for key in (
+            "settlement_report_path",
+            "settlement_events_path",
+            "cash_buckets_path",
+            "position_lots_path",
+            "position_availability_path",
+            "realized_pnl_path",
+            "account_nav_path",
+            "account_performance_report_path",
+            "account_reconciliation_report_path",
+            "fee_tax_report_path",
+        ):
+            if payload.get(key):
+                output_paths[f"backtest_{key.replace('_path', '')}"] = str(payload[key])
         if self.selected_factor_id:
             output_paths["selected_factor_values"] = str(
                 Path(self.config.factor_store_dir) / "factor_values" / f"{self.selected_factor_id}.jsonl"
@@ -818,6 +847,18 @@ class ResearchSuiteRunner:
                     self.config.corporate_action_cash_field,
                 ]
             )
+        if self.config.settlement_aware:
+            argv.extend(
+                [
+                    "--settlement-aware",
+                    "--settlement-dir",
+                    str(self._settlement_dir("orders")),
+                    "--settlement-profile",
+                    self.config.settlement_profile,
+                    "--paper-account-dir",
+                    str(self._settlement_dir("orders") / "account"),
+                ]
+            )
 
         payload = _run_json_main(strategy_runner.main, argv)
         output_paths = {
@@ -831,6 +872,10 @@ class ResearchSuiteRunner:
             output_paths["orders_optimization_result"] = str(payload["optimization_result_path"])
         if payload.get("corporate_action_report_path"):
             output_paths["orders_corporate_action_report"] = str(payload["corporate_action_report_path"])
+        settlement_precheck = payload.get("settlement_precheck", {}) if isinstance(payload.get("settlement_precheck"), dict) else {}
+        paths = settlement_precheck.get("settlement_report_paths", {}) if isinstance(settlement_precheck.get("settlement_report_paths"), dict) else {}
+        for key, path in paths.items():
+            output_paths[f"orders_{key.replace('_path', '')}"] = str(path)
         for name, path in output_paths.items():
             self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "orders")
         return payload, output_paths
@@ -978,6 +1023,12 @@ class ResearchSuiteRunner:
         tr_report = self._corporate_action_dir() / "total_return_report.json"
         ca_validation = self._corporate_action_dir() / "corporate_action_validation_report.json"
         ca_reconciliation = self._corporate_action_dir() / "adjustment_factor_reconciliation.json"
+        settlement_dir = self._settlement_dir("backtest")
+        settlement_report = settlement_dir / "settlement_report.json"
+        account_reconciliation = settlement_dir / "account_reconciliation_report.json"
+        account_performance = settlement_dir / "account_performance_report.json"
+        cash_buckets = settlement_dir / "cash_buckets.jsonl"
+        realized_pnl = settlement_dir / "realized_pnl.jsonl"
         if pit_report.exists():
             argv.extend(["--pit-validation-report-path", str(pit_report)])
         if survivorship_report.exists():
@@ -994,6 +1045,16 @@ class ResearchSuiteRunner:
             argv.extend(["--corporate-action-validation-path", str(ca_validation)])
         if ca_reconciliation.exists():
             argv.extend(["--adjustment-reconciliation-path", str(ca_reconciliation)])
+        if settlement_report.exists():
+            argv.extend(["--settlement-report-path", str(settlement_report)])
+        if account_reconciliation.exists():
+            argv.extend(["--account-reconciliation-report-path", str(account_reconciliation)])
+        if account_performance.exists():
+            argv.extend(["--account-performance-report-path", str(account_performance)])
+        if cash_buckets.exists():
+            argv.extend(["--cash-buckets-path", str(cash_buckets)])
+        if realized_pnl.exists():
+            argv.extend(["--realized-pnl-path", str(realized_pnl)])
         if self.config.model_lifecycle_policy_path:
             argv.extend(["--policy-path", self.config.model_lifecycle_policy_path])
         if self.config.require_model_approval:
@@ -1052,6 +1113,10 @@ class ResearchSuiteRunner:
 
     def _backtest_leakage_dir(self) -> Path:
         return Path(self.config.backtest_dir) / "leakage_audit"
+
+    def _settlement_dir(self, stage: str) -> Path:
+        base = Path(self.config.settlement_dir) if self.config.settlement_dir else self.output_dir.parent / "settlement"
+        return base / stage
 
     def _corporate_action_dir(self) -> Path:
         if self.config.corporate_action_dir:

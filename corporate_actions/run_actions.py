@@ -30,6 +30,14 @@ def _build_parser() -> argparse.ArgumentParser:
         cmd.add_argument("--application-date-mode", choices=("ex_date", "pay_date", "div_listdate", "record_date"), default="pay_date")
         cmd.add_argument("--total-return-mode", choices=("price_only", "cash_dividend", "cash_reinvested"), default="cash_reinvested")
         cmd.add_argument("--reconcile-adjustment", action="store_true")
+        cmd.add_argument("--settlement-aware", action="store_true")
+        cmd.add_argument("--settlement-dir")
+        cmd.add_argument(
+            "--settlement-profile",
+            choices=("cn_ashare_paper_default", "conservative_t_plus_one_cash", "immediate_legacy"),
+            default="cn_ashare_paper_default",
+        )
+        cmd.add_argument("--cost-basis-method", choices=("average", "fifo"), default="average")
         cmd.add_argument("--tolerance", type=float, default=0.05)
         cmd.add_argument("--strict", action="store_true")
         cmd.add_argument("--fail-on-error", action="store_true")
@@ -98,6 +106,16 @@ def main(argv: list[str] | None = None) -> int:
                 trade_date=args.trade_date,
                 mode=args.application_date_mode,
             )
+            settlement_paths = {}
+            if args.settlement_aware and args.settlement_dir:
+                from settlement_engine import SettlementCalendar, apply_settlement_events, build_settlement_events_from_corporate_actions, load_settlement_profile
+                from settlement_engine.report import write_settlement_report
+
+                profile = load_settlement_profile(args.settlement_profile, cost_basis_method=args.cost_basis_method)
+                calendar = SettlementCalendar.from_data_dir(args.data_dir)
+                settlement_events = build_settlement_events_from_corporate_actions(applications, profile=profile, calendar=calendar, account_id=state.account_id)
+                state = account.save_state(apply_settlement_events(state, settlement_events, args.trade_date, profile=profile))
+                settlement_paths = write_settlement_report(state, args.settlement_dir, args.trade_date, profile_name=profile.profile_name)
             payload = {
                 "account_dir": args.account_dir,
                 "applications": [application.to_dict() for application in applications],
@@ -106,6 +124,7 @@ def main(argv: list[str] | None = None) -> int:
                 "positions": {key: value.to_dict() for key, value in state.positions.items()},
                 "corporate_action_ledger_path": str(account.corporate_action_ledger_path),
                 "settlement_ledger_path": str(account.settlement_ledger_path),
+                "settlement_paths": settlement_paths,
             }
         else:  # pragma: no cover
             raise ValueError(f"unsupported command: {args.command}")

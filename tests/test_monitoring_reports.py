@@ -106,6 +106,37 @@ def _prepare_monitoring_artifacts(tmp_path):
         '{"batch_id":"batch_monitor","status_mismatch_count":0,"orphan_fills":0,"unfilled_value":0.0,"issues":[]}',
         encoding="utf-8",
     )
+    settlement_dir = tmp_path / "settlement"
+    settlement_dir.mkdir()
+    (settlement_dir / "settlement_report.json").write_text(
+        json.dumps(
+            {
+                "settlement_aware": True,
+                "settlement_profile": "cn_ashare_paper_default",
+                "pending_settlement_event_count": 1,
+                "failed_settlement_event_count": 0,
+                "settlement_reconciliation_error_count": 0,
+                "available_cash": 100000.0,
+                "withdrawable_cash": 100000.0,
+                "frozen_cash": 0.0,
+                "unsettled_receivable": 10.0,
+                "unsettled_payable": 0.0,
+                "realized_pnl": 1.0,
+                "unrealized_pnl": 2.0,
+                "nav_difference": 0.0,
+                "fee_tax_total": 5.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (settlement_dir / "account_reconciliation_report.json").write_text(
+        '{"error_count":0,"warning_count":0,"nav_difference":0.0,"issues":[]}',
+        encoding="utf-8",
+    )
+    (settlement_dir / "fee_tax_report.json").write_text(
+        '{"fee_tax_total":5.0,"commission":3.0,"stamp_duty":1.0,"transfer_fee":1.0,"total_fee_tax":5.0}',
+        encoding="utf-8",
+    )
     release_dir = tmp_path / "release"
     release_dir.mkdir()
     (release_dir / "artifact_validation_report.json").write_text(
@@ -167,6 +198,12 @@ def test_monitoring_report_cli_writes_alerts(tmp_path, capsys):
             str(release_dir / "release_gate_report.json"),
             "--release-manifest-path",
             str(release_dir / "release_manifest.json"),
+            "--settlement-report-path",
+            str(tmp_path / "settlement" / "settlement_report.json"),
+            "--account-reconciliation-report-path",
+            str(tmp_path / "settlement" / "account_reconciliation_report.json"),
+            "--fee-tax-report-path",
+            str(tmp_path / "settlement" / "fee_tax_report.json"),
             "--model-registry-dir",
             str(registry_dir),
             "--model-version-id",
@@ -196,6 +233,9 @@ def test_monitoring_report_cli_writes_alerts(tmp_path, capsys):
     assert payload["checks"]["artifact_schema_validation"]["artifact_schema_warning_count"] == 1
     assert payload["checks"]["release_gate"]["release_gate_status"] == "passed"
     assert payload["checks"]["package_build_artifacts"]["package_build_status"] == "passed"
+    assert payload["checks"]["settlement_report"]["pending_settlement_event_count"] == 1
+    assert payload["checks"]["account_reconciliation"]["error_count"] == 0
+    assert payload["checks"]["settlement_fee_tax"]["fee_tax_total"] == 5.0
     assert payload["checks"]["model_registry"]["model_versions"] == 1
     assert payload["checks"]["active_model_status"]["active_model_version_id"] == active.model_version_id
     assert payload["checks"]["model_lifecycle_health"]["recommended_action"] == "keep_active"

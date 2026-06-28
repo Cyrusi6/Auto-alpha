@@ -1,4 +1,5 @@
 import math
+import json
 
 import pytest
 
@@ -118,3 +119,48 @@ def test_paper_account_broker_fill_idempotency(tmp_path):
     assert second.positions["000001.SZ"].shares == 100
     assert len(second.trade_ledger) == 2
     assert second.trade_ledger[0].broker_fill_id == "bf_1"
+
+
+def test_paper_account_loads_legacy_state_and_settlement_idempotent(tmp_path):
+    data_dir = tmp_path / "data"
+    cal_dir = data_dir / "trade_calendar"
+    cal_dir.mkdir(parents=True)
+    (cal_dir / "records.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({"trade_date": "20240102", "is_open": True}),
+                json.dumps({"trade_date": "20240103", "is_open": True}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    account = LocalPaperAccount(tmp_path / "account")
+    account.root_dir.mkdir(parents=True)
+    account.state_path.write_text(
+        json.dumps({"account_id": "paper_ashare", "initial_cash": 10000.0, "cash": 10000.0, "positions": {}, "cash_ledger": [], "trade_ledger": []}),
+        encoding="utf-8",
+    )
+    state = account.load_state()
+    assert state.available_cash == 10000.0
+    assert state.position_lots == []
+
+    fill = ExecutionFill(
+        trade_date="20240102",
+        ts_code="000001.SZ",
+        side="BUY",
+        price=10.0,
+        shares=100,
+        value=1000.0,
+        status="FILLED",
+        cost=1.0,
+        broker_fill_id="settlement_bf_1",
+        child_order_id="settlement_child_1",
+    )
+    first = account.apply_fills_settlement_aware([fill], data_dir, "20240102", prices={"000001.SZ": 10.0})
+    second = account.apply_fills_settlement_aware([fill], data_dir, "20240102", prices={"000001.SZ": 10.0})
+
+    assert first.cash == second.cash
+    assert len(second.trade_ledger) == 1
+    assert len(second.settlement_events) == 2
+    assert (account.settlement_events_path).exists()

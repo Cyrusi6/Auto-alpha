@@ -57,6 +57,11 @@ def build_model_lineage_graph(
             warnings.append(f"artifact_dir_missing:{artifact_dir}")
             continue
         nodes.append({"id": str(path), "type": "artifact_dir"})
+        for filename, node_type in _SETTLEMENT_ARTIFACT_TYPES.items():
+            artifact_path = path / filename
+            if artifact_path.exists():
+                nodes.append({"id": str(artifact_path), "type": node_type, "path": str(artifact_path)})
+                edges.append({"source": str(artifact_path), "target": str(path), "type": "contained_in"})
     return ModelLineageGraph(
         created_at=datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
         nodes=_dedupe_nodes(nodes),
@@ -75,3 +80,12 @@ def _dedupe_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
         seen.add(node_id)
         result.append(node)
     return result
+
+
+_SETTLEMENT_ARTIFACT_TYPES = {
+    "settlement_report.json": "settlement_report",
+    "account_reconciliation_report.json": "account_reconciliation",
+    "account_nav.jsonl": "account_nav",
+    "cash_buckets.jsonl": "cash_buckets",
+    "realized_pnl.jsonl": "realized_pnl",
+}

@@ -69,6 +69,7 @@ packages = [
     "research",
     "research_suite",
     "risk_model",
+    "settlement_engine",
     "strategy_manager",
     "universe",
 ]
@@ -110,6 +111,7 @@ include = [
     "research",
     "research_suite",
     "risk_model",
+    "settlement_engine",
     "strategy_manager",
     "universe",
     "README.md",

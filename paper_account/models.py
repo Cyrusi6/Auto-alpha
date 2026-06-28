@@ -14,6 +14,12 @@ class PaperPosition:
     market_price: float = 0.0
     market_value: float = 0.0
     unrealized_pnl: float = 0.0
+    available_shares: int = 0
+    frozen_shares: int = 0
+    unsettled_buy_shares: int = 0
+    pending_sell_shares: int = 0
+    realized_pnl: float = 0.0
+    lot_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -50,6 +56,13 @@ class PaperTradeLedgerEntry:
     client_order_id: str | None = None
     broker_adapter: str | None = None
     broker_batch_id: str | None = None
+    commission: float = 0.0
+    stamp_duty: float = 0.0
+    transfer_fee: float = 0.0
+    slippage: float = 0.0
+    market_impact: float = 0.0
+    other_fee: float = 0.0
+    cost_breakdown: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -102,6 +115,15 @@ class PaperAccountState:
     settlement_ledger: list[dict[str, Any]] = field(default_factory=list)
     snapshots: list[PaperAccountSnapshot] = field(default_factory=list)
     updated_at: str | None = None
+    available_cash: float | None = None
+    withdrawable_cash: float | None = None
+    frozen_cash: float = 0.0
+    unsettled_receivable: float = 0.0
+    unsettled_payable: float = 0.0
+    position_lots: list[dict[str, Any]] = field(default_factory=list)
+    settlement_events: list[dict[str, Any]] = field(default_factory=list)
+    realized_pnl_ledger: list[dict[str, Any]] = field(default_factory=list)
+    account_nav: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -115,4 +137,13 @@ class PaperAccountState:
             "settlement_ledger": [dict(entry) for entry in self.settlement_ledger],
             "snapshots": [snapshot.to_dict() for snapshot in self.snapshots],
             "updated_at": self.updated_at,
+            "available_cash": float(self.cash if self.available_cash is None else self.available_cash),
+            "withdrawable_cash": float(self.cash if self.withdrawable_cash is None else self.withdrawable_cash),
+            "frozen_cash": float(self.frozen_cash),
+            "unsettled_receivable": float(self.unsettled_receivable),
+            "unsettled_payable": float(self.unsettled_payable),
+            "position_lots": [dict(entry) for entry in self.position_lots],
+            "settlement_events": [dict(entry) for entry in self.settlement_events],
+            "realized_pnl_ledger": [dict(entry) for entry in self.realized_pnl_ledger],
+            "account_nav": [dict(entry) for entry in self.account_nav],
         }

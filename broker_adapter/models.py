@@ -106,6 +106,13 @@ class BrokerFillRecord:
     cost: float
     status: str
     reason: str = ""
+    commission: float = 0.0
+    stamp_duty: float = 0.0
+    transfer_fee: float = 0.0
+    slippage: float = 0.0
+    market_impact: float = 0.0
+    other_fee: float = 0.0
+    cost_breakdown: dict[str, float] = field(default_factory=dict)
     parent_order_id: str | None = None
     child_order_id: str | None = None
     bucket: str | None = None

@@ -34,3 +34,10 @@ class ExecutionFill:
     client_order_id: str | None = None
     broker_adapter: str | None = None
     broker_batch_id: str | None = None
+    commission: float = 0.0
+    stamp_duty: float = 0.0
+    transfer_fee: float = 0.0
+    slippage: float = 0.0
+    market_impact: float = 0.0
+    other_fee: float = 0.0
+    cost_breakdown: dict[str, float] | None = None

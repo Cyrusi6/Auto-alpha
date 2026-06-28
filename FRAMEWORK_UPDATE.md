@@ -1576,3 +1576,12 @@
 - Extended `AShareDataLoader`, `matrix_store`, research/search/suite, backtest, strategy, operations, lifecycle review, monitoring, dashboard, artifact schema, release inventory, and local CI with opt-in corporate-action-aware / total-return mode.
 - Added paper-account corporate action and settlement ledgers with idempotent cash-dividend and stock-distribution application.
 - Default research remains `adjusted_close`; explicit total return uses `--corporate-action-aware --target-return-mode corporate_action_total_return`.
+
+## Task 029 - Trade Settlement, Lot Cost, PnL, And NAV Reconciliation
+
+- Added `settlement_engine/` for local paper settlement profiles, deterministic settlement events, cash/share availability, position lots, fee/tax breakdown, realized PnL, account NAV, reconciliation reports, and `settlement_engine.run_settlement`.
+- Extended execution, execution plan, broker adapter, and paper account fills/ledgers with commission, stamp duty, transfer fee, slippage, market impact, other fee, and cost-breakdown fields while keeping old fill constructors compatible.
+- Added settlement-aware paper account application, settlement advancement, order precheck, report export, and broker-fill idempotency so repeated approved executions do not duplicate cash, lot, or trade-ledger updates.
+- Integrated settlement-aware mode into backtest, strategy runner, operations, corporate action account application, factor lifecycle review, monitoring, dashboard, artifact schema, release inventory, local CI, and packaging.
+- Settlement-aware artifacts include `settlement_report.json/md`, `settlement_events.jsonl`, `cash_buckets.jsonl`, `position_lots.jsonl`, `position_availability.jsonl`, `realized_pnl.jsonl`, `account_nav.jsonl`, `account_performance_report.json`, `account_reconciliation_report.json`, and `fee_tax_report.json`.
+- This remains local paper accounting only; no real broker clearing interface, tax reporting interface, default network access, or live trading path was added.

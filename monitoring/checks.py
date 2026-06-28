@@ -401,10 +401,12 @@ def check_total_return_report(report_path: str | Path | None) -> tuple[dict[str,
     }, alerts
 
 
-def check_corporate_action_ledger(account_dir: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
-    if not account_dir:
+def check_corporate_action_ledger(account_dir_or_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not account_dir_or_path:
         return {"exists": False, "corporate_action_ledger_entries": 0}, []
-    rows = _read_jsonl(Path(account_dir) / "corporate_action_ledger.jsonl")
+    path = Path(account_dir_or_path)
+    ledger_path = path if path.suffix == ".jsonl" else path / "corporate_action_ledger.jsonl"
+    rows = _read_jsonl(ledger_path)
     applied = sum(1 for row in rows if row.get("status") == "APPLIED")
     skipped = sum(1 for row in rows if row.get("status") != "APPLIED")
     cash = sum(float(row.get("cash_amount", 0.0) or 0.0) for row in rows if row.get("status") == "APPLIED")
@@ -764,6 +766,72 @@ def check_feature_cutoff_policy(report_path: str | Path | None) -> tuple[dict[st
     if payload and mode == "same_day_after_close":
         alerts.append(MonitoringAlert("info", "feature_cutoff_policy", "same_day_after_close mode requires execution timing review"))
     return {"exists": bool(payload), "feature_cutoff_mode": mode}, alerts
+
+
+def check_settlement_report(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    if not payload:
+        return {"exists": False, "pending_settlement_event_count": 0, "failed_settlement_event_count": 0}, []
+    pending = int(payload.get("pending_settlement_event_count", 0) or 0)
+    failed = int(payload.get("failed_settlement_event_count", 0) or 0)
+    nav_difference = abs(float(payload.get("nav_difference", 0.0) or 0.0))
+    errors = int(payload.get("reconciliation_error_count", 0) or 0)
+    alerts: list[MonitoringAlert] = []
+    if failed or errors:
+        alerts.append(
+            MonitoringAlert(
+                "error",
+                "settlement_report",
+                "settlement report contains failed events or reconciliation errors",
+                {"failed_events": failed, "reconciliation_errors": errors},
+            )
+        )
+    elif pending:
+        alerts.append(MonitoringAlert("info", "settlement_report", "pending settlement events exist", {"pending": pending}))
+    if nav_difference > 1e-6:
+        alerts.append(MonitoringAlert("warning", "settlement_nav", "settlement NAV reconciliation difference detected", {"nav_difference": nav_difference}))
+    return {
+        "exists": True,
+        "pending_settlement_event_count": pending,
+        "failed_settlement_event_count": failed,
+        "settlement_reconciliation_error_count": errors,
+        "nav_difference": nav_difference,
+        "realized_pnl": float(payload.get("realized_pnl", 0.0) or 0.0),
+        "unrealized_pnl": float(payload.get("unrealized_pnl", 0.0) or 0.0),
+        "fee_tax_total": float(payload.get("fee_tax_total", 0.0) or 0.0),
+    }, alerts
+
+
+def check_account_reconciliation(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    if not payload:
+        return {"exists": False, "error_count": 0}, []
+    errors = int(payload.get("error_count", 0) or 0)
+    warnings = int(payload.get("warning_count", 0) or 0)
+    alerts = []
+    if errors:
+        alerts.append(MonitoringAlert("error", "account_reconciliation", "account reconciliation has errors", {"error_count": errors}))
+    elif warnings:
+        alerts.append(MonitoringAlert("warning", "account_reconciliation", "account reconciliation has warnings", {"warning_count": warnings}))
+    return {
+        "exists": True,
+        "error_count": errors,
+        "warning_count": warnings,
+        "cash_difference": float(payload.get("cash_difference", 0.0) or 0.0),
+        "lot_share_difference": int(payload.get("lot_share_difference", 0) or 0),
+        "nav_difference": float(payload.get("nav_difference", 0.0) or 0.0),
+    }, alerts
+
+
+def check_settlement_fee_tax(fee_tax_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(fee_tax_report_path)) if fee_tax_report_path else {}
+    if not payload:
+        return {"exists": False, "total_fee_tax": 0.0}, []
+    total = float(payload.get("total_fee_tax", payload.get("fee_tax_total", 0.0)) or 0.0)
+    alerts = []
+    if total < 0:
+        alerts.append(MonitoringAlert("error", "settlement_fee_tax", "fee and tax total is negative"))
+    return {"exists": True, "total_fee_tax": total, **payload}, alerts
 
 
 def _read_json(path: Path) -> dict[str, Any]:

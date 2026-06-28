@@ -46,6 +46,7 @@ from .checks import (
     check_quality_report,
     check_release_gate,
     check_risk_report,
+    check_account_reconciliation,
     check_pending_model_reviews,
     check_quarantined_or_paused_model_usage,
     check_style_exposure_drift,
@@ -55,6 +56,8 @@ from .checks import (
     check_total_return_report,
     check_active_universe_coverage,
     check_feature_cutoff_policy,
+    check_settlement_fee_tax,
+    check_settlement_report,
     check_unfilled_orders,
 )
 from .report import build_monitoring_report, write_monitoring_report
@@ -100,8 +103,19 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--leakage-audit-report-path")
     parser.add_argument("--truncation-consistency-report-path")
     parser.add_argument("--corporate-action-report-path")
+    parser.add_argument("--corporate-action-ledger-path")
     parser.add_argument("--total-return-report-path")
     parser.add_argument("--adjustment-reconciliation-path")
+    parser.add_argument("--settlement-report-path")
+    parser.add_argument("--settlement-events-path")
+    parser.add_argument("--cash-buckets-path")
+    parser.add_argument("--position-lots-path")
+    parser.add_argument("--position-availability-path")
+    parser.add_argument("--realized-pnl-path")
+    parser.add_argument("--account-nav-path")
+    parser.add_argument("--account-reconciliation-report-path")
+    parser.add_argument("--account-performance-report-path")
+    parser.add_argument("--fee-tax-report-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -140,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
         ("data_source_audit", lambda: check_data_source_audit(args.audit_summary_path)),
         ("corporate_action_report", lambda: check_corporate_action_report(args.corporate_action_report_path or _default_corporate_action_path(args.orders_dir, "corporate_actions_report.json"))),
         ("total_return_report", lambda: check_total_return_report(args.total_return_report_path or _default_corporate_action_path(args.orders_dir, "total_return_report.json"))),
-        ("corporate_action_ledger", lambda: check_corporate_action_ledger(args.paper_account_dir)),
+        ("corporate_action_ledger", lambda: check_corporate_action_ledger(args.corporate_action_ledger_path or args.paper_account_dir)),
         ("baseline_compare", lambda: check_baseline_compare(args.baseline_compare_path)),
         ("artifact_schema_validation", lambda: check_artifact_schema_validation(args.artifact_validation_report_path)),
         ("release_gate", lambda: check_release_gate(args.release_gate_report_path)),
@@ -162,6 +176,14 @@ def main(argv: list[str] | None = None) -> int:
         ("truncation_consistency", lambda: check_truncation_consistency(args.truncation_consistency_report_path)),
         ("active_universe_coverage", lambda: check_active_universe_coverage(args.pit_validation_report_path)),
         ("feature_cutoff_policy", lambda: check_feature_cutoff_policy(args.pit_validation_report_path)),
+        ("settlement_report", lambda: check_settlement_report(args.settlement_report_path or _default_settlement_path(args.orders_dir, "settlement_report.json"))),
+        (
+            "account_reconciliation",
+            lambda: check_account_reconciliation(
+                args.account_reconciliation_report_path or _default_settlement_path(args.orders_dir, "account_reconciliation_report.json")
+            ),
+        ),
+        ("settlement_fee_tax", lambda: check_settlement_fee_tax(args.fee_tax_report_path or _default_settlement_path(args.orders_dir, "fee_tax_report.json"))),
         ("fill_quality", lambda: check_order_fill_quality(Path(args.orders_dir) / "paper_fills.jsonl")),
         ("paper_account", lambda: check_paper_account(args.paper_account_dir)),
     ]:
@@ -249,6 +271,21 @@ def _default_corporate_action_path(orders_dir: str | Path, filename: str) -> str
 def _default_approval_store(orders_dir: str | Path) -> str:
     root = Path(orders_dir)
     for path in (root.parent / "approvals", root.parent / "model_approvals", root / "approvals"):
+        if path.exists():
+            return str(path)
+    return ""
+
+
+def _default_settlement_path(orders_dir: str | Path, filename: str) -> str:
+    root = Path(orders_dir)
+    for path in (
+        root / filename,
+        root / "settlement" / filename,
+        root.parent / "settlement" / "orders" / filename,
+        root.parent / "settlement" / "backtest" / filename,
+        root.parent / "production_execute" / "settlement" / filename,
+        root.parent / "production" / "settlement" / filename,
+    ):
         if path.exists():
             return str(path)
     return ""

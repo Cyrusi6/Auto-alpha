@@ -78,6 +78,12 @@ class AShareStrategyRunner:
         target_return_mode: str = "adjusted_close",
         corporate_action_dir: str | Path | None = None,
         corporate_action_cash_field: str = "cash_div",
+        settlement_aware: bool = False,
+        settlement_profile: str = "cn_ashare_paper_default",
+        settlement_dir: str | Path | None = None,
+        paper_account_dir: str | Path | None = None,
+        enforce_available_cash: bool = False,
+        enforce_available_shares: bool = False,
     ):
         self.data_dir = Path(data_dir)
         self.factor_store_dir = Path(factor_store_dir)
@@ -118,6 +124,12 @@ class AShareStrategyRunner:
         self.target_return_mode = target_return_mode
         self.corporate_action_dir = Path(corporate_action_dir) if corporate_action_dir is not None else None
         self.corporate_action_cash_field = corporate_action_cash_field
+        self.settlement_aware = bool(settlement_aware)
+        self.settlement_profile = settlement_profile
+        self.settlement_dir = Path(settlement_dir) if settlement_dir is not None else None
+        self.paper_account_dir = Path(paper_account_dir) if paper_account_dir is not None else None
+        self.enforce_available_cash = bool(enforce_available_cash)
+        self.enforce_available_shares = bool(enforce_available_shares)
         self.loader: AShareDataLoader | None = None
         self.selected_factor_id: str | None = None
         self.selected_factor_meta: dict[str, object] = {}
@@ -273,6 +285,22 @@ class AShareStrategyRunner:
                     encoding="utf-8",
                 )
 
+        settlement_precheck: dict[str, object] = {}
+        if self.settlement_aware and self.paper_account_dir is not None:
+            from paper_account import LocalPaperAccount
+            from settlement_engine.report import write_settlement_report
+
+            prices, _volumes, _suspended, _limit_up_flags, _limit_down_flags = _market_context(self.loader, target_book.trade_date)
+            account = LocalPaperAccount(self.paper_account_dir)
+            settlement_precheck = account.precheck_orders(orders, prices=prices, profile=self.settlement_profile)
+            if self.settlement_dir is not None:
+                settlement_precheck["settlement_report_paths"] = write_settlement_report(
+                    account.load_state(),
+                    self.settlement_dir,
+                    target_book.trade_date,
+                    profile_name=self.settlement_profile,
+                )
+
         approval_id = None
         approval_status = None
         fills = []
@@ -328,6 +356,9 @@ class AShareStrategyRunner:
                     "orders_path": str(orders_jsonl),
                     "output_dir": str(self.output_dir),
                     "component_factor_ids": self.selected_factor_meta.get("component_factor_ids", []),
+                    "settlement_aware": self.settlement_aware,
+                    "settlement_profile": self.settlement_profile,
+                    "settlement_precheck": settlement_precheck,
                     **execution_paths,
                 },
             )
@@ -400,6 +431,12 @@ class AShareStrategyRunner:
             "corporate_action_aware": self.corporate_action_aware,
             "target_return_mode": self.target_return_mode,
             "corporate_action_event_count": len(getattr(self.loader, "corporate_action_events", []) or []),
+            "settlement_aware": self.settlement_aware,
+            "settlement_profile": self.settlement_profile,
+            "settlement_precheck": settlement_precheck,
+            "settlement_precheck_rejected_order_count": settlement_precheck.get("precheck_rejected_order_count", 0),
+            "enforce_available_cash": self.enforce_available_cash,
+            "enforce_available_shares": self.enforce_available_shares,
         }
 
     def _build_execution_plan(self, orders, trade_date: str) -> tuple[ExecutionPlanResult, dict[str, object], dict[str, str]]:
@@ -477,6 +514,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default="adjusted_close",
     )
     parser.add_argument("--corporate-action-cash-field", default="cash_div")
+    parser.add_argument("--settlement-aware", action="store_true")
+    parser.add_argument("--settlement-profile", default="cn_ashare_paper_default")
+    parser.add_argument("--settlement-dir")
+    parser.add_argument("--paper-account-dir")
+    parser.add_argument("--enforce-available-cash", action="store_true")
+    parser.add_argument("--enforce-available-shares", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -523,6 +566,12 @@ def main(argv: list[str] | None = None) -> int:
         corporate_action_dir=args.corporate_action_dir,
         target_return_mode=args.target_return_mode,
         corporate_action_cash_field=args.corporate_action_cash_field,
+        settlement_aware=args.settlement_aware,
+        settlement_profile=args.settlement_profile,
+        settlement_dir=args.settlement_dir,
+        paper_account_dir=args.paper_account_dir,
+        enforce_available_cash=args.enforce_available_cash,
+        enforce_available_shares=args.enforce_available_shares,
     ).generate_orders()
     print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0

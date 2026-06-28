@@ -32,6 +32,12 @@ class LifecyclePolicy:
     max_corporate_action_error_count: int = 0
     max_adjustment_reconciliation_error_count: int = 0
     max_adjustment_reconciliation_warning_count: int = 999
+    require_settlement_reconciliation_passed: bool = False
+    max_settlement_error_count: int = 0
+    max_settlement_reconciliation_error_count: int = 0
+    max_pending_settlement_event_count: int = 999999
+    max_failed_settlement_event_count: int = 0
+    max_nav_difference_abs: float = 1e-6
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -84,6 +90,7 @@ class ModelReviewPackage:
     pit_summary: dict[str, Any] = field(default_factory=dict)
     leakage_summary: dict[str, Any] = field(default_factory=dict)
     corporate_action_summary: dict[str, Any] = field(default_factory=dict)
+    settlement_summary: dict[str, Any] = field(default_factory=dict)
     lineage_graph_path: str | None = None
 
     def to_dict(self) -> dict[str, Any]:

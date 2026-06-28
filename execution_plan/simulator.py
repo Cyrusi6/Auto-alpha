@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from execution import ExecutionFill
 
 from backtest import AShareCostModel, AShareTradingRules
@@ -56,8 +58,9 @@ def simulate_child_orders(
             continue
         status = "PARTIAL" if shares < requested_shares else "FILLED"
         value = float(shares * price)
-        cost = float(cost_model.estimate(side, value).total)
-        fills.append(_fill(child, price, int(shares), value, cost, status, volume_reason if status == "PARTIAL" else ""))
+        breakdown = cost_model.estimate(side, value)
+        cost = float(breakdown.total)
+        fills.append(_fill(child, price, int(shares), value, cost, status, volume_reason if status == "PARTIAL" else "", asdict(breakdown)))
         if side == "BUY":
             same_day_buys.add(child.ts_code)
 
@@ -81,7 +84,8 @@ def simulate_child_orders(
     return ExecutionPlanResult(schedule=schedule, fills=fills, quality=quality)
 
 
-def _fill(child, price: float, shares: int, value: float, cost: float, status: str, reason: str) -> ExecutionFill:
+def _fill(child, price: float, shares: int, value: float, cost: float, status: str, reason: str, cost_breakdown: dict[str, float] | None = None) -> ExecutionFill:
+    cost_breakdown = cost_breakdown or {}
     return ExecutionFill(
         trade_date=child.trade_date,
         ts_code=child.ts_code,
@@ -95,4 +99,11 @@ def _fill(child, price: float, shares: int, value: float, cost: float, status: s
         parent_order_id=child.parent_order_id,
         child_order_id=child.child_order_id,
         bucket=child.bucket,
+        commission=float(cost_breakdown.get("commission", 0.0) or 0.0),
+        stamp_duty=float(cost_breakdown.get("stamp_duty", 0.0) or 0.0),
+        transfer_fee=float(cost_breakdown.get("transfer_fee", 0.0) or 0.0),
+        slippage=float(cost_breakdown.get("slippage", 0.0) or 0.0),
+        market_impact=float(cost_breakdown.get("market_impact", 0.0) or 0.0),
+        other_fee=float(cost_breakdown.get("other_fee", 0.0) or 0.0),
+        cost_breakdown=cost_breakdown,
     )

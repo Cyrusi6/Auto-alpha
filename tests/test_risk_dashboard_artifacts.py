@@ -54,6 +54,30 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
         '{"batch_id":"batch_1","schema_name":"generic_broker_csv","orders":1}',
         encoding="utf-8",
     )
+    settlement_dir = tmp_path / "settlement"
+    settlement_dir.mkdir()
+    (settlement_dir / "settlement_report.json").write_text(
+        '{"settlement_aware":true,"settlement_profile":"cn_ashare_paper_default","pending_settlement_event_count":1,"fee_tax_total":5.0}',
+        encoding="utf-8",
+    )
+    (settlement_dir / "settlement_events.jsonl").write_text(
+        '{"settlement_event_id":"se_1","status":"pending","event_type":"trade_buy_cash"}\n',
+        encoding="utf-8",
+    )
+    (settlement_dir / "cash_buckets.jsonl").write_text('{"trade_date":"20240104","available_cash":100.0}\n', encoding="utf-8")
+    (settlement_dir / "position_lots.jsonl").write_text('{"lot_id":"lot_1","ts_code":"000001.SZ","shares_remaining":100}\n', encoding="utf-8")
+    (settlement_dir / "position_availability.jsonl").write_text(
+        '{"ts_code":"000001.SZ","available_shares":100,"total_shares":100}\n',
+        encoding="utf-8",
+    )
+    (settlement_dir / "realized_pnl.jsonl").write_text('{"ts_code":"000001.SZ","realized_pnl":1.0}\n', encoding="utf-8")
+    (settlement_dir / "account_nav.jsonl").write_text('{"trade_date":"20240104","equity":1000.0}\n', encoding="utf-8")
+    (settlement_dir / "account_reconciliation_report.json").write_text(
+        '{"error_count":0,"nav_difference":0.0,"issues":[]}',
+        encoding="utf-8",
+    )
+    (settlement_dir / "account_performance_report.json").write_text('{"total_return":0.0}', encoding="utf-8")
+    (settlement_dir / "fee_tax_report.json").write_text('{"fee_tax_total":5.0,"total_fee_tax":5.0}', encoding="utf-8")
     (tmp_path / "backtest" / "optimization_result.json").write_text(
         '{"factor_id":"factor_x","weights":{"000001.SZ":0.1}}',
         encoding="utf-8",
@@ -167,6 +191,16 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
     assert not service.load_broker_events().empty
     assert not service.load_broker_fills().empty
     assert service.load_broker_instruction_manifest()["orders"] == 1
+    assert service.load_settlement_report()["settlement_aware"] is True
+    assert not service.load_settlement_events().empty
+    assert not service.load_cash_buckets().empty
+    assert not service.load_position_lots().empty
+    assert not service.load_position_availability().empty
+    assert not service.load_realized_pnl().empty
+    assert not service.load_account_nav().empty
+    assert service.load_account_reconciliation_report()["error_count"] == 0
+    assert service.load_account_performance_report()["total_return"] == 0.0
+    assert service.load_fee_tax_report()["fee_tax_total"] == 5.0
     assert service.load_data_source_smoke_report()["status"] == "OK"
     assert len(service.load_provider_probe()["probes"]) == 1
     assert service.load_field_coverage_report()["datasets"][0]["dataset"] == "daily_bars"

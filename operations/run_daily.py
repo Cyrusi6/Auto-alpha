@@ -68,6 +68,20 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--corporate-action-application-date-mode", default="pay_date")
     parser.add_argument("--corporate-action-cash-field", default="cash_div")
     parser.add_argument("--reconcile-adjustment-factors", action="store_true")
+    parser.add_argument("--settlement-aware", action="store_true")
+    parser.add_argument("--settlement-dir")
+    parser.add_argument(
+        "--settlement-profile",
+        choices=["cn_ashare_paper_default", "conservative_t_plus_one_cash", "immediate_legacy"],
+        default="cn_ashare_paper_default",
+    )
+    parser.add_argument("--cost-basis-method", choices=["average", "fifo"], default="average")
+    parser.add_argument("--settle-before-trading", action="store_true")
+    parser.add_argument("--settle-through-date")
+    parser.add_argument("--enforce-available-cash", action="store_true")
+    parser.add_argument("--enforce-available-shares", action="store_true")
+    parser.add_argument("--allow-unsettled-cash-for-buy", action="store_true")
+    parser.add_argument("--allow-unsettled-shares-for-sell", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -126,6 +140,16 @@ def main(argv: list[str] | None = None) -> int:
         corporate_action_application_date_mode=args.corporate_action_application_date_mode,
         corporate_action_cash_field=args.corporate_action_cash_field,
         reconcile_adjustment_factors=args.reconcile_adjustment_factors,
+        settlement_aware=args.settlement_aware,
+        settlement_dir=args.settlement_dir,
+        settlement_profile=args.settlement_profile,
+        cost_basis_method=args.cost_basis_method,
+        settle_before_trading=args.settle_before_trading,
+        settle_through_date=args.settle_through_date,
+        enforce_available_cash=args.enforce_available_cash,
+        enforce_available_shares=args.enforce_available_shares,
+        allow_unsettled_cash_for_buy=args.allow_unsettled_cash_for_buy,
+        allow_unsettled_shares_for_sell=args.allow_unsettled_shares_for_sell,
     )
     result = runner.run(
         require_approval=args.require_approval,

@@ -185,6 +185,70 @@ def _artifact_checks(paths: dict[str, str], policy: LifecyclePolicy) -> list[Fac
                 f"total return mode {total_return.get('total_return_mode', '')}",
             )
         )
+    settlement = _read_json(paths.get("settlement_report_path") or paths.get("settlement_report"))
+    if settlement:
+        errors = int(settlement.get("reconciliation_error_count", 0) or 0)
+        failed = int(settlement.get("failed_settlement_event_count", 0) or 0)
+        pending = int(settlement.get("pending_settlement_event_count", 0) or 0)
+        nav_difference = abs(float(settlement.get("nav_difference", 0.0) or 0.0))
+        max_settlement_errors = (
+            policy.max_settlement_error_count
+            if policy.max_settlement_error_count != 0
+            else policy.max_settlement_reconciliation_error_count
+        )
+        checks.append(
+            _check(
+                "settlement_reconciliation_errors",
+                errors <= max_settlement_errors,
+                errors,
+                max_settlement_errors,
+                "error",
+            )
+        )
+        checks.append(
+            _check(
+                "settlement_pending_events",
+                pending <= policy.max_pending_settlement_event_count,
+                pending,
+                policy.max_pending_settlement_event_count,
+                "warning" if policy.require_settlement_reconciliation_passed else "info",
+            )
+        )
+        checks.append(
+            _check(
+                "settlement_failed_events",
+                failed <= policy.max_failed_settlement_event_count,
+                failed,
+                policy.max_failed_settlement_event_count,
+                "error",
+            )
+        )
+        checks.append(
+            _check(
+                "settlement_nav_difference",
+                nav_difference <= policy.max_nav_difference_abs,
+                nav_difference,
+                policy.max_nav_difference_abs,
+                "warning",
+            )
+        )
+    reconciliation_report = _read_json(paths.get("account_reconciliation_report_path") or paths.get("account_reconciliation_report"))
+    if reconciliation_report:
+        errors = int(reconciliation_report.get("error_count", 0) or 0)
+        max_settlement_errors = (
+            policy.max_settlement_error_count
+            if policy.max_settlement_error_count != 0
+            else policy.max_settlement_reconciliation_error_count
+        )
+        checks.append(
+            _check(
+                "account_reconciliation_errors",
+                errors <= max_settlement_errors,
+                errors,
+                max_settlement_errors,
+                "error",
+            )
+        )
     return checks
 
 

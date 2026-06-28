@@ -168,6 +168,11 @@ def test_daily_run_simulated_broker_is_idempotent(tmp_path):
         broker_adapter="simulated",
         broker_store_dir=tmp_path / "broker",
         broker_reconcile=True,
+        settlement_aware=True,
+        settlement_dir=tmp_path / "settlement",
+        settlement_profile="cn_ashare_paper_default",
+        cost_basis_method="fifo",
+        settle_through_date="20240104",
     )
     executed = execute_runner.run(approval_id=proposed.approval_id, execute_approved=True)
     first_state = json.loads((tmp_path / "account" / "account_state.json").read_text(encoding="utf-8"))
@@ -180,6 +185,9 @@ def test_daily_run_simulated_broker_is_idempotent(tmp_path):
     assert replay.summary["idempotent_replay_count"] > 0
     assert first_state["cash"] == second_state["cash"]
     assert len(first_state["trade_ledger"]) == len(second_state["trade_ledger"])
+    assert len(first_state["settlement_events"]) == len(second_state["settlement_events"])
+    assert executed.summary["settlement_report_path"]
+    assert (tmp_path / "settlement" / "settlement_report.json").exists()
 
 
 def test_daily_run_file_broker_exports_without_account_update(tmp_path):
