@@ -25,6 +25,9 @@ class DashboardConfig:
     schema_validation_dir: Path = Path("artifacts/schema_validation")
     release_dir: Path = Path("artifacts/release")
     ci_dir: Path = Path(".ci_artifacts")
+    formula_corpus_dir: Path = Path("artifacts/formula_corpus")
+    formula_batch_eval_dir: Path = Path("artifacts/formula_batch_eval")
+    pretrain_dir: Path = Path("artifacts/alphagpt_pretrain")
 
     @classmethod
     def from_env(cls) -> "DashboardConfig":
@@ -49,4 +52,7 @@ class DashboardConfig:
             schema_validation_dir=Path(os.getenv("ASHARE_DASHBOARD_SCHEMA_VALIDATION_DIR") or "artifacts/schema_validation"),
             release_dir=Path(os.getenv("ASHARE_DASHBOARD_RELEASE_DIR") or "artifacts/release"),
             ci_dir=Path(os.getenv("ASHARE_DASHBOARD_CI_DIR") or ".ci_artifacts"),
+            formula_corpus_dir=Path(os.getenv("ASHARE_DASHBOARD_FORMULA_CORPUS_DIR") or "artifacts/formula_corpus"),
+            formula_batch_eval_dir=Path(os.getenv("ASHARE_DASHBOARD_FORMULA_BATCH_EVAL_DIR") or "artifacts/formula_batch_eval"),
+            pretrain_dir=Path(os.getenv("ASHARE_DASHBOARD_PRETRAIN_DIR") or "artifacts/alphagpt_pretrain"),
         )

@@ -79,6 +79,18 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
     "cli_inventory": _definition("cli_inventory", ["entries"], ["cli_inventory.json"]),
     "ci_report": _definition("ci_report", ["commands"], ["ci_report.json"]),
     "ci_command_results": _definition("ci_command_results", ["name", "returncode"], ["ci_command_results.jsonl"], kind="jsonl", allow_empty=True),
+    "formula_corpus": _definition("formula_corpus", ["formula_hash", "formula_tokens"], ["formula_corpus.jsonl"], kind="jsonl", allow_empty=False),
+    "formula_sequences": _definition("formula_sequences", ["formula_hash", "prefix_tokens", "target_token"], ["formula_sequences.jsonl"], kind="jsonl", allow_empty=False),
+    "formula_preferences": _definition("formula_preferences", ["pair_id", "preferred_hash", "rejected_hash"], ["formula_preferences.jsonl"], kind="jsonl", allow_empty=True),
+    "formula_corpus_stats": _definition("formula_corpus_stats", ["total_records", "valid_records"], ["formula_corpus_stats.json"]),
+    "formula_corpus_build_result": _definition("formula_corpus_build_result", ["created_at", "stats", "paths"], ["formula_corpus_build_result.json"]),
+    "formula_batch_eval_result": _definition("formula_batch_eval_result", ["batch_id", "results", "summary"], ["formula_batch_eval_result.json"]),
+    "formula_eval_results": _definition("formula_eval_results", ["request", "status", "score"], ["formula_eval_results.jsonl"], kind="jsonl", allow_empty=True),
+    "formula_eval_cache_manifest": _definition("formula_eval_cache_manifest", ["cache_dir", "enabled"], ["formula_eval_cache_manifest.json"]),
+    "formula_batch_eval_benchmark": _definition("formula_batch_eval_benchmark", ["formulas_requested", "elapsed_seconds"], ["formula_batch_eval_benchmark.json"]),
+    "alphagpt_pretrain_result": _definition("alphagpt_pretrain_result", ["status", "history", "checkpoint_manifest"], ["alphagpt_pretrain_result.json"]),
+    "alphagpt_pretrain_history": _definition("alphagpt_pretrain_history", ["epoch", "loss"], ["alphagpt_pretrain_history.jsonl"], kind="jsonl", allow_empty=True),
+    "alphagpt_checkpoint_manifest": _definition("alphagpt_checkpoint_manifest", ["latest_checkpoint_path", "checkpoints"], ["checkpoint_manifest.json"]),
 }
 
 

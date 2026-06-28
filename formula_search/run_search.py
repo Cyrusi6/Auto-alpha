@@ -38,6 +38,16 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--neural-policy-steps", type=int, default=1)
     parser.add_argument("--neural-checkpoint")
     parser.add_argument("--hybrid-neural-ratio", type=float, default=0.5)
+    parser.add_argument("--corpus-sequence-path")
+    parser.add_argument("--corpus-path")
+    parser.add_argument("--matrix-cache-dir")
+    parser.add_argument("--use-matrix-cache", action="store_true")
+    parser.add_argument("--use-batch-eval", action="store_true")
+    parser.add_argument("--batch-eval-output-dir", "--batch-eval-dir", dest="batch_eval_output_dir")
+    parser.add_argument("--batch-eval-chunk-size", type=int, default=32)
+    parser.add_argument("--batch-eval-device", default="auto")
+    parser.add_argument("--use-eval-cache", action="store_true")
+    parser.add_argument("--eval-cache-dir")
     parser.add_argument("--factor-transform", default="raw", choices=sorted(SUPPORTED_TRANSFORMS))
     parser.add_argument("--enable-gate", action="store_true")
     parser.add_argument("--disable-gate", action="store_true")
@@ -96,6 +106,14 @@ def main(argv: list[str] | None = None) -> int:
         train_ratio=args.train_ratio,
         valid_ratio=args.valid_ratio,
         continue_on_error=args.continue_on_error,
+        matrix_cache_dir=args.matrix_cache_dir,
+        use_matrix_cache=args.use_matrix_cache,
+        use_batch_eval=args.use_batch_eval,
+        batch_eval_output_dir=args.batch_eval_output_dir,
+        batch_eval_chunk_size=args.batch_eval_chunk_size,
+        batch_eval_device=args.batch_eval_device,
+        use_eval_cache=args.use_eval_cache,
+        eval_cache_dir=args.eval_cache_dir,
     ).run()
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))
     return 0
@@ -148,6 +166,14 @@ def _run_hybrid(args: argparse.Namespace, search_config: FormulaSearchConfig) ->
         train_ratio=args.train_ratio,
         valid_ratio=args.valid_ratio,
         continue_on_error=args.continue_on_error,
+        matrix_cache_dir=args.matrix_cache_dir,
+        use_matrix_cache=args.use_matrix_cache,
+        use_batch_eval=args.use_batch_eval,
+        batch_eval_output_dir=args.batch_eval_output_dir,
+        batch_eval_chunk_size=args.batch_eval_chunk_size,
+        batch_eval_device=args.batch_eval_device,
+        use_eval_cache=args.use_eval_cache,
+        eval_cache_dir=args.eval_cache_dir,
     ).run()
     payload = random_result.to_dict()
     neural_payload = neural_result.to_dict()
@@ -182,6 +208,15 @@ def _neural_config_from_args(args: argparse.Namespace) -> NeuralSearchConfig:
         enable_gate=args.enable_gate and not args.disable_gate,
         top_k=args.top_k,
         composite_method=args.composite_method,
+        corpus_sequence_path=args.corpus_sequence_path or _sequence_path_from_corpus(args.corpus_path),
+        matrix_cache_dir=args.matrix_cache_dir,
+        use_matrix_cache=args.use_matrix_cache,
+        use_batch_eval=args.use_batch_eval,
+        batch_eval_output_dir=args.batch_eval_output_dir,
+        batch_eval_chunk_size=args.batch_eval_chunk_size,
+        batch_eval_device=args.batch_eval_device,
+        use_eval_cache=args.use_eval_cache,
+        eval_cache_dir=args.eval_cache_dir,
     )
 
 
@@ -194,6 +229,14 @@ def _unique(values: list[str]) -> list[str]:
         seen.add(value)
         result.append(value)
     return result
+
+
+def _sequence_path_from_corpus(corpus_path: str | None) -> str | None:
+    if not corpus_path:
+        return None
+    path = Path(corpus_path)
+    sibling = path.parent / "formula_sequences.jsonl"
+    return str(sibling if sibling.exists() else path)
 
 
 if __name__ == "__main__":

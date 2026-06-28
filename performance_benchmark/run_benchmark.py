@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+import types
 
 from .runner import run_benchmark
 
@@ -30,3 +32,16 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+_parent = sys.modules.get(__package__)
+if _parent is not None:  # Keep ``from performance_benchmark import run_benchmark`` returning the function.
+    setattr(_parent, "run_benchmark", run_benchmark)
+
+
+class _CallableBenchmarkModule(types.ModuleType):
+    def __call__(self, *args, **kwargs):
+        return run_benchmark(*args, **kwargs)
+
+
+sys.modules[__name__].__class__ = _CallableBenchmarkModule

@@ -52,7 +52,7 @@ class NeuralFormulaTrainer:
         self.candidates_json = candidates_json
         self.correlation_threshold = correlation_threshold
         self.min_coverage = min_coverage
-        self.device = torch.device(config.device)
+        self.device = _resolve_device(config.device)
         torch.manual_seed(config.seed)
         random.seed(config.seed)
         if config.resume_checkpoint:
@@ -70,7 +70,11 @@ class NeuralFormulaTrainer:
         self.vm = StackVM()
 
     def supervised_warmup(self) -> list[NeuralTrainingStep]:
-        dataset = FormulaSequenceDataset.from_defaults(self.store, self.candidates_json)
+        dataset = (
+            FormulaSequenceDataset.from_jsonl(self.config.corpus_sequence_path)
+            if self.config.corpus_sequence_path
+            else FormulaSequenceDataset.from_defaults(self.store, self.candidates_json)
+        )
         if len(dataset) == 0:
             return []
         for step in range(max(self.config.warmup_steps, 0)):
@@ -243,6 +247,14 @@ class NeuralFormulaTrainer:
             disable_composite=True,
             batch_id=f"{search_id}_policy_{step}",
             search_id=search_id,
+            matrix_cache_dir=self.config.matrix_cache_dir,
+            use_matrix_cache=self.config.use_matrix_cache,
+            use_batch_eval=self.config.use_batch_eval,
+            batch_eval_output_dir=str(self.output_dir / f"policy_step_{step}" / "batch_eval") if self.config.use_batch_eval else None,
+            batch_eval_chunk_size=self.config.batch_eval_chunk_size,
+            batch_eval_device=self.config.batch_eval_device,
+            use_eval_cache=self.config.use_eval_cache,
+            eval_cache_dir=self.config.eval_cache_dir,
         )
         batch_result = BatchFactorResearchRunner(batch_config, from_formula_search_candidates(candidates)).run()
         by_hash = {result.candidate.formula_hash: result for result in batch_result.results}
@@ -275,6 +287,8 @@ class NeuralFormulaTrainer:
             device="cpu",
             universe_name=self.universe_name,
             universe_file=self.universe_file,
+            matrix_cache_dir=self.config.matrix_cache_dir,
+            use_matrix_cache=self.config.use_matrix_cache,
         ).load_data()
         values = build_composite_factor_matrix(
             self.store,
@@ -302,3 +316,11 @@ def _utc_now() -> str:
 
 def _safe_time(value: str) -> str:
     return "".join(char if char.isalnum() else "_" for char in value).strip("_")
+
+
+def _resolve_device(device: str) -> torch.device:
+    if device == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if str(device).startswith("cuda") and not torch.cuda.is_available():
+        return torch.device("cpu")
+    return torch.device(device)

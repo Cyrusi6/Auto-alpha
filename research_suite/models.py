@@ -72,6 +72,21 @@ class ResearchSuiteConfig:
     use_matrix_cache: bool = False
     benchmark: bool = False
     benchmark_dir: str | None = None
+    build_formula_corpus: bool = False
+    formula_corpus_dir: str | None = None
+    pretrain_alphagpt: bool = False
+    pretrain_dir: str | None = None
+    pretrain_epochs: int = 1
+    pretrain_batch_size: int = 8
+    pretrain_max_sequences: int | None = None
+    pretrain_device: str = "auto"
+    pretrain_preference_steps: int = 0
+    use_batch_eval: bool = False
+    batch_eval_dir: str | None = None
+    batch_eval_chunk_size: int = 32
+    batch_eval_device: str = "auto"
+    use_eval_cache: bool = False
+    eval_cache_dir: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -438,6 +438,53 @@ def check_package_build_artifacts(manifest_path: str | Path | None) -> tuple[dic
     }, alerts
 
 
+def check_formula_corpus(corpus_stats_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not corpus_stats_path:
+        return {"exists": False, "valid_records": 0}, []
+    payload = _read_json(Path(corpus_stats_path))
+    valid = int(payload.get("valid_records", 0) or 0) if payload else 0
+    total = int(payload.get("total_records", 0) or 0) if payload else 0
+    alerts = [] if valid else [MonitoringAlert("warning", "formula_corpus", "formula corpus has no valid records")]
+    return {"exists": bool(payload), "total_records": total, "valid_records": valid}, alerts
+
+
+def check_formula_batch_eval(result_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not result_path:
+        return {"exists": False, "errors": 0}, []
+    payload = _read_json(Path(result_path))
+    summary = payload.get("summary", {}) if payload else {}
+    counts = summary.get("status_counts", {}) if isinstance(summary, dict) else {}
+    errors = int(counts.get("error", 0) or 0) if isinstance(counts, dict) else 0
+    alerts = []
+    if errors:
+        alerts.append(MonitoringAlert("warning", "formula_batch_eval", "formula batch evaluation contains errors", {"errors": errors}))
+    return {"exists": bool(payload), "status_counts": counts, "errors": errors, "cache_hits": summary.get("cache_hits", 0) if isinstance(summary, dict) else 0}, alerts
+
+
+def check_alphagpt_pretrain(result_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not result_path:
+        return {"exists": False, "status": ""}, []
+    payload = _read_json(Path(result_path))
+    status = str(payload.get("status") or "") if payload else ""
+    latest = ((payload.get("summary") or {}).get("latest_checkpoint_path") if payload else None)
+    alerts = []
+    if payload and status != "success":
+        alerts.append(MonitoringAlert("warning", "alphagpt_pretrain", "AlphaGPT pretrain did not complete successfully", {"status": status}))
+    return {"exists": bool(payload), "status": status, "latest_checkpoint_path": latest, "epochs": len(payload.get("history", [])) if payload else 0}, alerts
+
+
+def check_alphagpt_checkpoint_manifest(manifest_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not manifest_path:
+        return {"exists": False, "checkpoints": 0}, []
+    payload = _read_json(Path(manifest_path))
+    checkpoints = payload.get("checkpoints", []) if payload else []
+    latest = payload.get("latest_checkpoint_path", "") if payload else ""
+    alerts = []
+    if payload and not checkpoints:
+        alerts.append(MonitoringAlert("warning", "alphagpt_checkpoint_manifest", "checkpoint manifest has no checkpoints"))
+    return {"exists": bool(payload), "checkpoints": len(checkpoints), "latest_checkpoint_path": latest}, alerts
+
+
 def check_order_fill_quality(fills_path: str | Path) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     fills = _read_jsonl(Path(fills_path))
     total = len(fills)

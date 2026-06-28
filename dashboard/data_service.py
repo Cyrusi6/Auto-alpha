@@ -586,6 +586,48 @@ class AshareDashboardService:
                 return payload
         return {}
 
+    def load_formula_corpus_stats(self) -> dict[str, Any]:
+        for path in self._formula_corpus_candidates("formula_corpus_stats.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_formula_corpus(self) -> pd.DataFrame:
+        for path in self._formula_corpus_candidates("formula_corpus.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_formula_batch_eval_result(self) -> dict[str, Any]:
+        for path in self._formula_batch_eval_candidates("formula_batch_eval_result.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_formula_eval_results(self) -> pd.DataFrame:
+        for path in self._formula_batch_eval_candidates("formula_eval_results.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_alphagpt_pretrain_result(self) -> dict[str, Any]:
+        for path in self._pretrain_artifact_candidates("alphagpt_pretrain_result.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_alphagpt_pretrain_history(self) -> pd.DataFrame:
+        for path in self._pretrain_artifact_candidates("alphagpt_pretrain_history.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
     def _neural_artifact_candidates(self, filename: str) -> list[Path]:
         root = self.config.report_dir.parent
         return [
@@ -595,6 +637,8 @@ class AshareDashboardService:
             root / "search" / "neural" / filename,
             root / "suite" / "search" / filename,
             root / "suite" / "search" / "neural" / filename,
+            root / "suite" / "alphagpt_pretrain" / filename,
+            self.config.pretrain_dir / filename,
         ]
 
     def _neural_checkpoint_candidates(self) -> list[Path]:
@@ -606,6 +650,32 @@ class AshareDashboardService:
             root / "search" / "neural" / "checkpoints",
             root / "suite" / "search" / "checkpoints",
             root / "suite" / "search" / "neural" / "checkpoints",
+            root / "suite" / "alphagpt_pretrain" / "checkpoints",
+            self.config.pretrain_dir / "checkpoints",
+        ]
+
+    def _formula_corpus_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.formula_corpus_dir / filename,
+            root / "formula_corpus" / filename,
+            root / "suite" / "formula_corpus" / filename,
+        ]
+
+    def _formula_batch_eval_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.formula_batch_eval_dir / filename,
+            root / "formula_batch_eval" / filename,
+            root / "suite" / "formula_batch_eval" / filename,
+        ]
+
+    def _pretrain_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.pretrain_dir / filename,
+            root / "alphagpt_pretrain" / filename,
+            root / "suite" / "alphagpt_pretrain" / filename,
         ]
 
     def _production_candidates(self, filename: str) -> list[Path]:

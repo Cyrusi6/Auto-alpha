@@ -84,6 +84,38 @@ def main(argv: list[str] | None = None) -> int:
             ],
         ),
         (
+            "formula_corpus_smoke",
+            [
+                sys.executable,
+                "-m",
+                "formula_corpus.run_corpus",
+                "--output-dir",
+                str(quick_dir / "formula_corpus"),
+                "--pretty",
+            ],
+        ),
+        (
+            "alphagpt_pretrain_smoke",
+            [
+                sys.executable,
+                "-m",
+                "neural_search.run_pretrain",
+                "--sequence-path",
+                str(quick_dir / "formula_corpus" / "formula_sequences.jsonl"),
+                "--output-dir",
+                str(quick_dir / "pretrain"),
+                "--epochs",
+                "1",
+                "--batch-size",
+                "4",
+                "--max-sequences",
+                "8",
+                "--device",
+                "cpu",
+                "--pretty",
+            ],
+        ),
+        (
             "release_manager_dry_run",
             [
                 sys.executable,

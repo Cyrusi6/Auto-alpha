@@ -39,6 +39,14 @@ class FormulaSearchRunner:
         train_ratio: float = 0.6,
         valid_ratio: float = 0.2,
         continue_on_error: bool = True,
+        matrix_cache_dir: str | None = None,
+        use_matrix_cache: bool = False,
+        use_batch_eval: bool = False,
+        batch_eval_output_dir: str | None = None,
+        batch_eval_chunk_size: int = 32,
+        batch_eval_device: str = "auto",
+        use_eval_cache: bool = False,
+        eval_cache_dir: str | None = None,
     ):
         self.search_config = search_config
         self.data_dir = data_dir
@@ -55,6 +63,14 @@ class FormulaSearchRunner:
         self.train_ratio = train_ratio
         self.valid_ratio = valid_ratio
         self.continue_on_error = continue_on_error
+        self.matrix_cache_dir = matrix_cache_dir
+        self.use_matrix_cache = bool(use_matrix_cache)
+        self.use_batch_eval = bool(use_batch_eval)
+        self.batch_eval_output_dir = batch_eval_output_dir
+        self.batch_eval_chunk_size = int(batch_eval_chunk_size)
+        self.batch_eval_device = batch_eval_device
+        self.use_eval_cache = bool(use_eval_cache)
+        self.eval_cache_dir = eval_cache_dir
         self.rng = random.Random(search_config.seed)
 
     def run(self) -> FormulaSearchResult:
@@ -128,6 +144,9 @@ class FormulaSearchRunner:
                 "correlation_threshold": self.correlation_threshold,
                 "min_coverage": self.min_coverage,
                 "composite_method": self.composite_method,
+                "matrix_cache_dir": self.matrix_cache_dir,
+                "use_matrix_cache": self.use_matrix_cache,
+                "use_batch_eval": self.use_batch_eval,
             },
         )
         self._write_outputs(result, generated)
@@ -154,6 +173,18 @@ class FormulaSearchRunner:
             disable_composite=True,
             batch_id=f"{search_id}_gen_{generation}",
             search_id=search_id,
+            matrix_cache_dir=self.matrix_cache_dir,
+            use_matrix_cache=self.use_matrix_cache,
+            use_batch_eval=self.use_batch_eval,
+            batch_eval_output_dir=(
+                str(Path(self.batch_eval_output_dir) / f"generation_{generation}")
+                if self.batch_eval_output_dir
+                else None
+            ),
+            batch_eval_chunk_size=self.batch_eval_chunk_size,
+            batch_eval_device=self.batch_eval_device,
+            use_eval_cache=self.use_eval_cache,
+            eval_cache_dir=self.eval_cache_dir,
         )
         return BatchFactorResearchRunner(config=config, candidates=from_formula_search_candidates(candidates)).run()
 
@@ -203,6 +234,8 @@ class FormulaSearchRunner:
             device="cpu",
             universe_name=self.universe_name,
             universe_file=self.universe_file,
+            matrix_cache_dir=self.matrix_cache_dir,
+            use_matrix_cache=self.use_matrix_cache,
         ).load_data()
         values = build_composite_factor_matrix(
             store,

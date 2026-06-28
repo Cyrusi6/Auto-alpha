@@ -1478,3 +1478,37 @@
 - 扩展 schema registry 到更多历史 artifacts，并逐步提高 strict validation 覆盖率。
 - 为 release gate 增加更细的 artifact lineage、schema migration 和 wheel 安装 smoke。
 - 在真实发布流程中补充签名、版本号策略、变更日志生成和人工审批。
+
+## 2026-06-28 - 任务 025
+
+### 本次变更摘要
+- 新增 `formula_corpus/`，可从默认候选、seed formulas、factor store、search/batch/neural artifacts 和 suite catalog 构建可复用公式语料。
+- 新增 `formula_batch_eval/`，支持共享 `AShareDataLoader`、matrix cache、eval cache、chunked StackVM 执行、transform、split metrics、gate/correlation 评估和 approved factor 注册。
+- 新增 `neural_search.run_pretrain`，支持从 `formula_sequences.jsonl` 离线监督预训练 AlphaGPT，并输出训练历史、checkpoint manifest 和 latest checkpoint。
+- `research.BatchFactorResearchRunner`、`formula_search.run_search` 和 `research_suite.run_suite` 支持 matrix cache、batch eval、eval cache、formula corpus 和 pretrain checkpoint。
+- `performance_benchmark/` 增加公式批量评估和 AlphaGPT 预训练小样本基准。
+- `artifact_schema/`、`release_manager/`、`ci/`、monitoring 和 dashboard 接入新增 corpus、batch eval、pretrain artifact。
+- `pyproject.toml` 打包列表加入 `formula_corpus` 和 `formula_batch_eval`。
+
+### 新增文件
+- `formula_corpus/`
+- `formula_batch_eval/`
+- `neural_search/pretrain.py`
+- `neural_search/run_pretrain.py`
+- `tests/test_formula_corpus.py`
+- `tests/test_formula_batch_eval.py`
+- `tests/test_alphagpt_pretrain.py`
+- `tests/test_formula_batch_eval_integration.py`
+- `tests/test_research_suite_formula_pretrain_batch_eval.py`
+- `tests/test_formula_pretrain_no_old_terms.py`
+
+### 新增 A 股平台能力
+- `python -m formula_corpus.run_corpus`：构建公式语料、next-token sequence、preference pairs 和 corpus stats。
+- `python -m formula_batch_eval.run_batch_eval`：对公式语料或候选公式做矩阵化批量评估，并可注册通过 gate 的因子。
+- `python -m neural_search.run_pretrain`：基于本地语料离线预训练 AlphaGPT，生成 checkpoint 供 neural/hybrid search 复用。
+- `python -m research_suite.run_suite --build-formula-corpus --pretrain-alphagpt --use-batch-eval`：在一键套件中串联语料构建、预训练、批量评估和搜索。
+
+### 后续待办
+- 扩展真实历史公式语料来源、负样本构造和偏好学习策略。
+- 将 batch eval 推进到更大规模矩阵缓存与 GPU 性能压测。
+- 增强 AlphaGPT 离线预训练配置、checkpoint selection 和 warm-start policy search 稳定性。

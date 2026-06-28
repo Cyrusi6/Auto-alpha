@@ -57,12 +57,19 @@ def build_matrix_cache(
     cache_dir = Path(output_dir) if output_dir is not None else data_path / "matrix_cache"
     requested_fields = list(fields or DEFAULT_MATRIX_FIELDS)
     cache_dir.mkdir(parents=True, exist_ok=True)
+    effective_universe_name = universe_name
+    universe_missing_fallback = False
+    if universe_file is None and universe_name is not None:
+        expected_universe_path = data_path / "universe" / f"{universe_name}.jsonl"
+        if not expected_universe_path.exists():
+            effective_universe_name = None
+            universe_missing_fallback = True
 
     loader = AShareDataLoader(
         data_dir=data_path,
         device="cpu",
         universe_file=universe_file,
-        universe_name=universe_name,
+        universe_name=effective_universe_name,
     ).load_data()
 
     raw = dict(loader.raw_data_cache)
@@ -119,6 +126,8 @@ def build_matrix_cache(
         "cache_hash": cache_hash,
         "universe_file": str(universe_file) if universe_file is not None else None,
         "universe_name": universe_name,
+        "effective_universe_name": effective_universe_name,
+        "universe_missing_fallback": universe_missing_fallback,
         "security_metadata": loader.security_metadata,
     }
     metadata_path = cache_dir / "metadata.json"

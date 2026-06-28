@@ -517,12 +517,69 @@ GitHub Actions are split by boundary:
 
 The package build uses hatchling and includes only A-share platform modules. It excludes tests, assets, paper material, experiments, and standalone non-platform files from the wheel/sdist.
 
+## Formula Corpus, Batch Evaluation, And AlphaGPT Pretraining
+
+`formula_corpus/` builds a reusable local formula corpus from default candidates, seed formulas, factor store records, search outputs, neural search outputs, batch reports, and suite artifact catalogs. It validates formulas with `StackVM.validate_with_reason`, deduplicates by stable formula hash, merges source metadata, and writes:
+
+- `formula_corpus.jsonl`
+- `formula_sequences.jsonl`
+- `formula_preferences.jsonl`
+- `formula_corpus_stats.json`
+- `formula_corpus_build_result.json`
+- `formula_corpus_report.md`
+
+```bash
+uv run python -m formula_corpus.run_corpus \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --artifact-dir /tmp/auto-alpha-demo/search \
+  --output-dir /tmp/auto-alpha-demo/formula_corpus \
+  --pretty
+```
+
+`formula_batch_eval/` evaluates formula batches with one shared `AShareDataLoader`, optional matrix cache, optional eval cache, split metrics, transform, gate, correlation checks, and optional approved-factor registration:
+
+```bash
+uv run python -m formula_batch_eval.run_batch_eval \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --report-dir /tmp/auto-alpha-demo/reports \
+  --output-dir /tmp/auto-alpha-demo/batch_eval \
+  --corpus-path /tmp/auto-alpha-demo/formula_corpus/formula_corpus.jsonl \
+  --use-matrix-cache \
+  --matrix-cache-dir /tmp/auto-alpha-demo/data/matrix_cache \
+  --use-eval-cache \
+  --register-approved \
+  --pretty
+```
+
+`neural_search.run_pretrain` performs offline supervised AlphaGPT pretraining from `formula_sequences.jsonl`, with optional preference fine-tuning from `formula_preferences.jsonl`. It defaults to CPU/auto device fallback and writes `alphagpt_pretrain_result.json`, `alphagpt_pretrain_history.jsonl`, `alphagpt_pretrain_report.md`, `checkpoint_manifest.json`, and `checkpoints/latest.pt`.
+
+```bash
+uv run python -m neural_search.run_pretrain \
+  --sequence-path /tmp/auto-alpha-demo/formula_corpus/formula_sequences.jsonl \
+  --preference-path /tmp/auto-alpha-demo/formula_corpus/formula_preferences.jsonl \
+  --output-dir /tmp/auto-alpha-demo/pretrain \
+  --epochs 1 \
+  --batch-size 8 \
+  --device auto \
+  --pretty
+```
+
+`formula_search.run_search` and `research_suite.run_suite` can now reuse these artifacts with `--corpus-path`, `--neural-checkpoint`, `--use-batch-eval`, `--use-matrix-cache`, and `--use-eval-cache`. A suite can build the corpus, pretrain AlphaGPT, run batch evaluation, search, backtest, orders, walk-forward, and promotion in one command by adding:
+
+```bash
+--build-formula-corpus \
+--pretrain-alphagpt \
+--use-batch-eval \
+--use-matrix-cache
+```
+
 ## Current Gaps
 
 - Tushare HTTP provider, production sync scaffolding, offline fake smoke, gated online smoke, permission/rate diagnostics, audit summary, incremental recovery checks, and baseline comparison are available; production use still requires real token/quota operation, real full-market performance runs, and more provider pairs.
 - Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
 - Local daily simulation supports A-share constraints, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, and paper execution quality reports; future work should add finer real-world matching and minute-level volume modeling.
-- Local formula search and a first neural-guided policy-search path are available; future work should add stronger reinforcement learning, offline pretraining, more operators, GPU performance tuning, and broader stability validation.
+- Local formula search, batch formula evaluation, formula corpus construction, offline AlphaGPT supervised pretraining, and a first neural-guided policy-search path are available; future work should add stronger reinforcement learning, larger offline corpora, more operators, GPU performance tuning, and broader stability validation.
 - Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.
 - One-click research suites now provide local walk-forward and promotion gates; daily operations now provide local approval, paper account ledger, and monitoring artifacts. Future work should add richer approval policies and human review workflow.
 - Broker adapter, file instructions, and account ledger are local only. No real broker integration, credential handling, network submission, or verified QMT/broker file compatibility is implemented.

@@ -26,6 +26,10 @@ from .checks import (
     check_factor_risk_concentration,
     check_factor_drift,
     check_field_coverage,
+    check_formula_batch_eval,
+    check_formula_corpus,
+    check_alphagpt_pretrain,
+    check_alphagpt_checkpoint_manifest,
     check_impact_cost_spike,
     check_order_fill_quality,
     check_paper_account,
@@ -66,6 +70,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--artifact-validation-report-path")
     parser.add_argument("--release-gate-report-path")
     parser.add_argument("--release-manifest-path")
+    parser.add_argument("--formula-corpus-stats-path")
+    parser.add_argument("--formula-batch-eval-result-path")
+    parser.add_argument("--alphagpt-pretrain-result-path")
+    parser.add_argument("--alphagpt-checkpoint-manifest-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -106,6 +114,10 @@ def main(argv: list[str] | None = None) -> int:
         ("artifact_schema_validation", lambda: check_artifact_schema_validation(args.artifact_validation_report_path)),
         ("release_gate", lambda: check_release_gate(args.release_gate_report_path)),
         ("package_build_artifacts", lambda: check_package_build_artifacts(args.release_manifest_path)),
+        ("formula_corpus", lambda: check_formula_corpus(args.formula_corpus_stats_path)),
+        ("formula_batch_eval", lambda: check_formula_batch_eval(args.formula_batch_eval_result_path)),
+        ("alphagpt_pretrain", lambda: check_alphagpt_pretrain(args.alphagpt_pretrain_result_path)),
+        ("alphagpt_checkpoint_manifest", lambda: check_alphagpt_checkpoint_manifest(args.alphagpt_checkpoint_manifest_path)),
         ("fill_quality", lambda: check_order_fill_quality(Path(args.orders_dir) / "paper_fills.jsonl")),
         ("paper_account", lambda: check_paper_account(args.paper_account_dir)),
     ]:

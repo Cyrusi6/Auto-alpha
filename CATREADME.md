@@ -232,6 +232,24 @@ It writes `monitoring_report.json`, `monitoring_report.md`, and `alerts.jsonl`.
 
 Data-source smoke writes `data_source_smoke_report.json/md`, `provider_probe.json`, `field_coverage.json`, `audit_summary.json`, `incremental_recovery_report.json`, `baseline_compare_summary.json`, and `dataset_contracts.json`. Default tests use sample and fake Tushare clients only; a real Tushare token is used only when an operator explicitly passes `--allow-network --require-token`.
 
+## Formula Corpus And Offline Pretraining
+
+`formula_corpus/` turns local research artifacts into reusable AlphaGPT training data. It reads default candidates, seed formulas, factor store records, search outputs, neural outputs, batch reports, and suite catalogs; validates each formula with StackVM; deduplicates by stable formula hash; and writes corpus records, next-token sequence records, preference pairs, stats, and a human-readable report.
+
+`formula_batch_eval/` evaluates formula batches through one shared data loader. It supports JSONL or matrix-cache data access, chunking, optional eval cache, transforms, split metrics, gate decisions, correlation checks, and optional approved-factor registration. It is used directly by `formula_batch_eval.run_batch_eval` and can be enabled inside `research.BatchFactorResearchRunner`.
+
+`neural_search.run_pretrain` trains AlphaGPT offline from `formula_sequences.jsonl` and optional `formula_preferences.jsonl`. It writes checkpoint manifests and training history and can feed `formula_search.run_search --search-mode neural|hybrid` through `--neural-checkpoint`.
+
+`research_suite.run_suite` now supports:
+
+- `--build-formula-corpus`
+- `--pretrain-alphagpt`
+- `--use-batch-eval`
+- `--use-eval-cache`
+- `--use-matrix-cache`
+
+These stages run before formula search and their artifacts are registered in the suite catalog.
+
 ## Release And Artifact Governance
 
 `artifact_schema/` defines a local schema registry for platform artifacts. JSON reports can carry top-level `artifact_type`, `schema_version`, `producer`, `created_at`, and `artifact_metadata`. JSONL rows keep their business schema stable; schema details are captured through sidecars and manifests. Legacy unversioned artifacts are validated in compatible mode with warnings.
@@ -276,4 +294,4 @@ The artifact catalog indexes data manifest, quality report, pipeline state, univ
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton plus a data-source smoke validator for offline fake Tushare scenarios and gated real-token diagnostics. Artifact schema versioning, release gate reports, local CI, and package build artifacts are available. Matrix cache, local benchmark, and data-source comparison skeletons are available. Barra-like risk model v1 and benchmark-aware portfolio optimization now have a local implementation. Capacity-aware execution planning, broker adapter state, file instruction export, and paper child-order simulation are available. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Daily production now has local approvals, paper account ledger, broker reconciliation, and monitoring reports. Real full-market token/quota operation, full-market stress runs, incremental matrix refresh, richer provider comparisons, production Barra definitions, robust full-market covariance calibration, a professional optimizer, stronger reinforcement learning, offline pretraining, richer walk-forward policies, richer approval policies, human review workflow, broader neural training stability validation, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, verified broker file mappings, and real broker connectivity are future work.
+The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton plus a data-source smoke validator for offline fake Tushare scenarios and gated real-token diagnostics. Artifact schema versioning, release gate reports, local CI, and package build artifacts are available. Matrix cache, local benchmark, and data-source comparison skeletons are available. Formula corpus construction, matrix-aware batch formula evaluation, and offline AlphaGPT pretraining are available. Barra-like risk model v1 and benchmark-aware portfolio optimization now have a local implementation. Capacity-aware execution planning, broker adapter state, file instruction export, and paper child-order simulation are available. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Daily production now has local approvals, paper account ledger, broker reconciliation, and monitoring reports. Real full-market token/quota operation, full-market stress runs, incremental matrix refresh, richer provider comparisons, production Barra definitions, robust full-market covariance calibration, a professional optimizer, stronger reinforcement learning, larger offline corpora, richer walk-forward policies, richer approval policies, human review workflow, broader neural training stability validation, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, verified broker file mappings, and real broker connectivity are future work.

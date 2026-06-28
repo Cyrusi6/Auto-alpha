@@ -90,6 +90,24 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
     ci_dir = tmp_path / "ci"
     ci_dir.mkdir()
     (ci_dir / "ci_report.json").write_text('{"status":"passed","commands":[{"name":"import_smoke"}]}', encoding="utf-8")
+    corpus_dir = tmp_path / "formula_corpus"
+    corpus_dir.mkdir()
+    (corpus_dir / "formula_corpus_stats.json").write_text('{"total_records":2,"valid_records":2}', encoding="utf-8")
+    (corpus_dir / "formula_corpus.jsonl").write_text('{"formula_hash":"h1","formula_tokens":[0],"valid":true}\n', encoding="utf-8")
+    batch_eval_dir = tmp_path / "formula_batch_eval"
+    batch_eval_dir.mkdir()
+    (batch_eval_dir / "formula_batch_eval_result.json").write_text(
+        '{"batch_id":"b1","summary":{"total":1},"benchmark":{"device":"cpu"}}',
+        encoding="utf-8",
+    )
+    (batch_eval_dir / "formula_eval_results.jsonl").write_text('{"status":"approved","score":1.0}\n', encoding="utf-8")
+    pretrain_dir = tmp_path / "pretrain"
+    pretrain_dir.mkdir()
+    (pretrain_dir / "alphagpt_pretrain_result.json").write_text(
+        '{"status":"success","summary":{"latest_checkpoint_path":"latest.pt"}}',
+        encoding="utf-8",
+    )
+    (pretrain_dir / "alphagpt_pretrain_history.jsonl").write_text('{"epoch":0,"loss":1.0}\n', encoding="utf-8")
     service = AshareDashboardService(
         DashboardConfig(
             data_dir=tmp_path / "data",
@@ -101,6 +119,9 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
             schema_validation_dir=schema_dir,
             release_dir=release_dir,
             ci_dir=ci_dir,
+            formula_corpus_dir=corpus_dir,
+            formula_batch_eval_dir=batch_eval_dir,
+            pretrain_dir=pretrain_dir,
         )
     )
 
@@ -136,3 +157,9 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
     assert service.load_module_inventory()["modules"][0]["module"] == "data_pipeline"
     assert service.load_cli_inventory()["entries"][0]["module"] == "data_pipeline.run_pipeline"
     assert service.load_ci_report()["status"] == "passed"
+    assert service.load_formula_corpus_stats()["valid_records"] == 2
+    assert not service.load_formula_corpus().empty
+    assert service.load_formula_batch_eval_result()["batch_id"] == "b1"
+    assert not service.load_formula_eval_results().empty
+    assert service.load_alphagpt_pretrain_result()["status"] == "success"
+    assert not service.load_alphagpt_pretrain_history().empty

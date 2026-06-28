@@ -41,7 +41,7 @@ class NeuralFormulaSampler:
         self.temperature = float(temperature)
         self.top_k_tokens = top_k_tokens
         self.vm = StackVM()
-        self.torch_generator = torch.Generator()
+        self.torch_generator = torch.Generator(device=next(model.parameters()).device)
         self.torch_generator.manual_seed(int(seed))
 
     def sample_formula(self, track_grad: bool = False, generation: int = 0) -> PolicySample:

@@ -44,6 +44,14 @@ class BatchResearchConfig:
     disable_composite: bool = False
     batch_id: str | None = None
     search_id: str | None = None
+    matrix_cache_dir: str | None = None
+    use_matrix_cache: bool = False
+    use_batch_eval: bool = False
+    batch_eval_output_dir: str | None = None
+    batch_eval_chunk_size: int = 32
+    batch_eval_device: str = "auto"
+    use_eval_cache: bool = False
+    eval_cache_dir: str | None = None
 
 
 @dataclass(frozen=True)

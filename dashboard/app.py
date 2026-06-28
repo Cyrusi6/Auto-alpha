@@ -173,6 +173,12 @@ def render_app(config: DashboardConfig | None = None) -> None:
         neural_history = service.load_neural_training_history()
         neural_markdown = service.load_neural_search_report_markdown()
         neural_checkpoints = service.load_neural_checkpoints()
+        corpus_stats = service.load_formula_corpus_stats()
+        corpus_rows = service.load_formula_corpus()
+        batch_eval_result = service.load_formula_batch_eval_result()
+        eval_rows = service.load_formula_eval_results()
+        pretrain_result = service.load_alphagpt_pretrain_result()
+        pretrain_history = service.load_alphagpt_pretrain_history()
         suite_result = service.load_suite_result()
         suite_markdown = service.load_suite_report_markdown()
         artifact_catalog = service.load_artifact_catalog()
@@ -232,6 +238,36 @@ def render_app(config: DashboardConfig | None = None) -> None:
         _show_dataframe_or_empty("Neural Checkpoints", neural_checkpoints)
         if neural_markdown:
             st.markdown(neural_markdown)
+        st.subheader("Formula Corpus")
+        if corpus_stats:
+            st.json(corpus_stats)
+        else:
+            st.info("No formula_corpus_stats.json found.")
+        _show_dataframe_or_empty("Formula Corpus Records", corpus_rows.head(100) if not corpus_rows.empty else corpus_rows)
+        st.subheader("Formula Batch Evaluation")
+        if batch_eval_result:
+            st.json(
+                {
+                    "batch_id": batch_eval_result.get("batch_id"),
+                    "summary": batch_eval_result.get("summary"),
+                    "benchmark": batch_eval_result.get("benchmark"),
+                }
+            )
+        else:
+            st.info("No formula_batch_eval_result.json found.")
+        _show_dataframe_or_empty("Formula Eval Results", eval_rows.head(100) if not eval_rows.empty else eval_rows)
+        st.subheader("AlphaGPT Pretrain")
+        if pretrain_result:
+            st.json(
+                {
+                    "status": pretrain_result.get("status"),
+                    "summary": pretrain_result.get("summary"),
+                    "paths": pretrain_result.get("paths"),
+                }
+            )
+        else:
+            st.info("No alphagpt_pretrain_result.json found.")
+        _show_dataframe_or_empty("AlphaGPT Pretrain History", pretrain_history)
         st.subheader("Research Suite")
         if suite_result:
             st.json(

@@ -45,6 +45,8 @@ class BatchFactorResearchRunner:
             device="cpu",
             universe_name=config.universe_name,
             universe_file=config.universe_file,
+            matrix_cache_dir=config.matrix_cache_dir,
+            use_matrix_cache=config.use_matrix_cache,
         )
         self.vm = StackVM()
         self.evaluator = AShareFactorEvaluator()
@@ -54,6 +56,8 @@ class BatchFactorResearchRunner:
         batch_id = self.config.batch_id or _make_batch_id(created_at)
         output_dir = Path(self.config.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
+        if self.config.use_batch_eval:
+            return self._run_with_batch_eval(batch_id, created_at, output_dir)
         self.loader.load_data()
 
         results: list[CandidateRunResult] = []
@@ -106,6 +110,97 @@ class BatchFactorResearchRunner:
             composite_factor_id=composite_info.get("factor_id") if composite_info else None,
             paths=paths,
             summary=summary,
+        )
+        self._write_outputs(batch_result)
+        write_batch_report(batch_result, output_dir)
+        return batch_result
+
+    def _run_with_batch_eval(self, batch_id: str, created_at: str, output_dir: Path) -> BatchResearchResult:
+        from formula_batch_eval import FormulaBatchEvalConfig, FormulaBatchEvaluator, requests_from_candidates
+
+        eval_output_dir = Path(self.config.batch_eval_output_dir) if self.config.batch_eval_output_dir else output_dir / "batch_eval"
+        eval_result = FormulaBatchEvaluator(
+            FormulaBatchEvalConfig(
+                data_dir=self.config.data_dir,
+                universe_name=self.config.universe_name,
+                universe_file=self.config.universe_file,
+                factor_store_dir=self.config.factor_store_dir,
+                report_dir=self.config.report_dir,
+                output_dir=str(eval_output_dir),
+                matrix_cache_dir=self.config.matrix_cache_dir,
+                use_matrix_cache=self.config.use_matrix_cache,
+                device=self.config.batch_eval_device,
+                factor_transform=self.config.factor_transform,
+                enable_gate=self.config.enable_gate,
+                correlation_threshold=self.config.correlation_threshold,
+                min_coverage=self.config.min_coverage,
+                train_ratio=self.config.train_ratio,
+                valid_ratio=self.config.valid_ratio,
+                chunk_size=self.config.batch_eval_chunk_size,
+                use_eval_cache=self.config.use_eval_cache,
+                eval_cache_dir=self.config.eval_cache_dir,
+                skip_existing=True,
+                register_approved=True,
+                batch_id=batch_id,
+                continue_on_error=self.config.continue_on_error,
+            )
+        ).run(requests_from_candidates(self.candidates))
+        results = [
+            CandidateRunResult(
+                candidate=FactorCandidate(
+                    name=item.request.name,
+                    formula_tokens=item.request.formula_tokens,
+                    formula_names=item.request.formula_names,
+                    description=item.request.description,
+                    formula_hash=item.request.formula_hash,
+                    complexity=item.request.complexity,
+                    lookback=item.request.lookback,
+                    source=item.request.source,
+                    parent_hashes=(item.request.metadata or {}).get("parent_hashes"),
+                    generation=(item.request.metadata or {}).get("generation"),
+                    validation_reason=(item.request.metadata or {}).get("validation_reason"),
+                ),
+                factor_id=item.factor_id,
+                status=item.status,
+                metrics_by_split=item.metrics_by_split,
+                score=item.score,
+                gate_reasons=item.gate_reasons,
+                max_abs_correlation=item.max_abs_correlation,
+                report_json_path=item.report_json_path,
+                report_md_path=item.report_md_path,
+                error=item.error,
+            )
+            for item in eval_result.results
+        ]
+        approved_ids = [result.factor_id for result in results if result.factor_id is not None and result.status == "approved"]
+        rejected_ids = [result.factor_id for result in results if result.factor_id is not None and result.status == "rejected"]
+        self.loader = AShareDataLoader(
+            data_dir=self.config.data_dir,
+            device="cpu",
+            universe_name=self.config.universe_name,
+            universe_file=self.config.universe_file,
+            matrix_cache_dir=self.config.matrix_cache_dir,
+            use_matrix_cache=self.config.use_matrix_cache,
+        )
+        self.loader.load_data()
+        composite_info = None if self.config.disable_composite else self._build_composite(batch_id, created_at)
+        paths = {
+            "batch_result_path": str(output_dir / "batch_result.json"),
+            "batch_results_path": str(output_dir / "batch_results.jsonl"),
+            "batch_report_json_path": str(output_dir / "batch_report.json"),
+            "batch_report_md_path": str(output_dir / "batch_report.md"),
+            "formula_batch_eval_result_path": eval_result.paths["formula_batch_eval_result_path"],
+            "formula_eval_results_path": eval_result.paths["formula_eval_results_path"],
+        }
+        batch_result = BatchResearchResult(
+            batch_id=batch_id,
+            created_at=created_at,
+            results=results,
+            approved_factor_ids=approved_ids,
+            rejected_factor_ids=rejected_ids,
+            composite_factor_id=composite_info.get("factor_id") if composite_info else None,
+            paths=paths,
+            summary=self._summary(results, composite_info) | {"batch_eval": eval_result.summary},
         )
         self._write_outputs(batch_result)
         write_batch_report(batch_result, output_dir)

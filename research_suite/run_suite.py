@@ -64,6 +64,21 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--use-matrix-cache", action="store_true")
     parser.add_argument("--benchmark", action="store_true")
     parser.add_argument("--benchmark-dir")
+    parser.add_argument("--build-formula-corpus", action="store_true")
+    parser.add_argument("--formula-corpus-dir")
+    parser.add_argument("--pretrain-alphagpt", action="store_true")
+    parser.add_argument("--pretrain-dir")
+    parser.add_argument("--pretrain-epochs", type=int, default=1)
+    parser.add_argument("--pretrain-batch-size", type=int, default=8)
+    parser.add_argument("--pretrain-max-sequences", type=int)
+    parser.add_argument("--pretrain-device", default="auto")
+    parser.add_argument("--preference-epochs", type=int, default=0)
+    parser.add_argument("--use-batch-eval", action="store_true")
+    parser.add_argument("--batch-eval-dir")
+    parser.add_argument("--batch-eval-chunk-size", type=int, default=32)
+    parser.add_argument("--batch-eval-device", default="auto")
+    parser.add_argument("--use-eval-cache", action="store_true")
+    parser.add_argument("--eval-cache-dir")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -142,6 +157,21 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
         use_matrix_cache=args.use_matrix_cache,
         benchmark=args.benchmark,
         benchmark_dir=args.benchmark_dir,
+        build_formula_corpus=args.build_formula_corpus,
+        formula_corpus_dir=args.formula_corpus_dir,
+        pretrain_alphagpt=args.pretrain_alphagpt,
+        pretrain_dir=args.pretrain_dir,
+        pretrain_epochs=args.pretrain_epochs,
+        pretrain_batch_size=args.pretrain_batch_size,
+        pretrain_max_sequences=args.pretrain_max_sequences,
+        pretrain_device=args.pretrain_device,
+        pretrain_preference_steps=args.preference_epochs,
+        use_batch_eval=args.use_batch_eval,
+        batch_eval_dir=args.batch_eval_dir,
+        batch_eval_chunk_size=args.batch_eval_chunk_size,
+        batch_eval_device=args.batch_eval_device,
+        use_eval_cache=args.use_eval_cache,
+        eval_cache_dir=args.eval_cache_dir,
     )
 
 

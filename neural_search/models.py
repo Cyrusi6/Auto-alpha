@@ -27,6 +27,15 @@ class NeuralSearchConfig:
     enable_gate: bool = True
     top_k: int = 5
     composite_method: str = "rank_average"
+    corpus_sequence_path: str | None = None
+    matrix_cache_dir: str | None = None
+    use_matrix_cache: bool = False
+    use_batch_eval: bool = False
+    batch_eval_output_dir: str | None = None
+    batch_eval_chunk_size: int = 32
+    batch_eval_device: str = "auto"
+    use_eval_cache: bool = False
+    eval_cache_dir: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -103,6 +112,77 @@ class NeuralSearchResult:
     best_formulas: list[dict[str, Any]]
     checkpoint_paths: list[str]
     paths: dict[str, str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class AlphaGPTPretrainConfig:
+    sequence_path: str
+    output_dir: str
+    preference_path: str | None = None
+    seed: int = 42
+    epochs: int = 1
+    batch_size: int = 16
+    learning_rate: float = 1e-3
+    max_sequences: int | None = None
+    preference_steps: int = 0
+    preference_margin: float = 0.1
+    checkpoint_every: int = 1
+    resume_checkpoint: str | None = None
+    device: str = "auto"
+    amp: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class AlphaGPTPretrainEpoch:
+    epoch: int
+    phase: str
+    loss: float
+    token_accuracy: float
+    sequences_seen: int
+    preference_pairs_seen: int
+    stable_rank: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class PreferenceTrainingStep:
+    step: int
+    loss: float
+    preferred_log_prob: float
+    rejected_log_prob: float
+    margin: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class AlphaGPTCheckpointManifest:
+    latest_checkpoint_path: str | None
+    checkpoints: list[dict[str, Any]]
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class AlphaGPTPretrainResult:
+    created_at: str
+    status: str
+    config: dict[str, Any]
+    history: list[dict[str, Any]]
+    preference_history: list[dict[str, Any]]
+    checkpoint_manifest: dict[str, Any]
+    paths: dict[str, str]
+    summary: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

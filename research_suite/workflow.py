@@ -12,9 +12,12 @@ from typing import Any, Callable
 from backtest import run_backtest
 from data_pipeline import run_pipeline
 from factor_store import LocalFactorStore
+from formula_batch_eval.run_batch_eval import main as run_formula_batch_eval_main
+from formula_corpus.run_corpus import main as run_formula_corpus_main
 from formula_search import run_search
 from matrix_store.run_build_matrix import main as run_build_matrix_main
 from model_core.data_loader import AShareDataLoader
+from neural_search.run_pretrain import main as run_pretrain_main
 from performance_benchmark.run_benchmark import main as run_benchmark_main
 from strategy_manager import runner as strategy_runner
 from universe import run_universe
@@ -48,6 +51,12 @@ class ResearchSuiteRunner:
                 self._append_stage("matrix_cache", self._stage_matrix_cache)
             if self.config.benchmark:
                 self._append_stage("benchmark", self._stage_benchmark)
+            if self.config.build_formula_corpus:
+                self._append_stage("formula_corpus", self._stage_formula_corpus)
+            if self.config.pretrain_alphagpt:
+                self._append_stage("alphagpt_pretrain", self._stage_alphagpt_pretrain)
+            if self.config.use_batch_eval:
+                self._append_stage("formula_batch_eval", self._stage_formula_batch_eval)
             self._append_stage("formula_search", self._stage_formula_search)
             self._append_stage("backtest", self._stage_backtest)
             if not self.config.skip_orders:
@@ -214,6 +223,116 @@ class ResearchSuiteRunner:
             self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "benchmark")
         return payload, output_paths
 
+    def _stage_formula_corpus(self) -> tuple[dict[str, Any], dict[str, str]]:
+        corpus_dir = self._formula_corpus_dir()
+        argv = [
+            "--factor-store-dir",
+            self.config.factor_store_dir,
+            "--output-dir",
+            str(corpus_dir),
+            "--artifact-dir",
+            str(Path(self.config.output_dir) / "search"),
+        ]
+        payload = _run_json_main(run_formula_corpus_main, argv)
+        output_paths = {
+            "formula_corpus": str(corpus_dir / "formula_corpus.jsonl"),
+            "formula_sequences": str(corpus_dir / "formula_sequences.jsonl"),
+            "formula_preferences": str(corpus_dir / "formula_preferences.jsonl"),
+            "formula_corpus_stats": str(corpus_dir / "formula_corpus_stats.json"),
+            "formula_corpus_report": str(corpus_dir / "formula_corpus_report.md"),
+            "formula_corpus_build_result": str(corpus_dir / "formula_corpus_build_result.json"),
+        }
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "formula_corpus")
+        return payload, output_paths
+
+    def _stage_alphagpt_pretrain(self) -> tuple[dict[str, Any], dict[str, str]]:
+        corpus_dir = self._formula_corpus_dir()
+        if not (corpus_dir / "formula_sequences.jsonl").exists():
+            self._stage_formula_corpus()
+        pretrain_dir = self._pretrain_dir()
+        argv = [
+            "--sequence-path",
+            str(corpus_dir / "formula_sequences.jsonl"),
+            "--preference-path",
+            str(corpus_dir / "formula_preferences.jsonl"),
+            "--output-dir",
+            str(pretrain_dir),
+            "--epochs",
+            str(self.config.pretrain_epochs),
+            "--batch-size",
+            str(self.config.pretrain_batch_size),
+            "--device",
+            self.config.pretrain_device,
+            "--preference-steps",
+            str(self.config.pretrain_preference_steps),
+        ]
+        if self.config.pretrain_max_sequences is not None:
+            argv.extend(["--max-sequences", str(self.config.pretrain_max_sequences)])
+        payload = _run_json_main(run_pretrain_main, argv)
+        output_paths = {
+            "alphagpt_pretrain_result": str(pretrain_dir / "alphagpt_pretrain_result.json"),
+            "alphagpt_pretrain_history": str(pretrain_dir / "alphagpt_pretrain_history.jsonl"),
+            "alphagpt_pretrain_report": str(pretrain_dir / "alphagpt_pretrain_report.md"),
+            "alphagpt_checkpoint_manifest": str(pretrain_dir / "checkpoint_manifest.json"),
+            "alphagpt_latest_checkpoint": str(pretrain_dir / "checkpoints" / "latest.pt"),
+        }
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "alphagpt_pretrain")
+        return payload, output_paths
+
+    def _stage_formula_batch_eval(self) -> tuple[dict[str, Any], dict[str, str]]:
+        corpus_dir = self._formula_corpus_dir()
+        if not (corpus_dir / "formula_corpus.jsonl").exists():
+            self._stage_formula_corpus()
+        batch_dir = self._batch_eval_dir()
+        argv = [
+            "--data-dir",
+            self.config.data_dir,
+            "--universe-name",
+            self.config.universe_name,
+            "--factor-store-dir",
+            self.config.factor_store_dir,
+            "--report-dir",
+            self.config.report_dir,
+            "--output-dir",
+            str(batch_dir),
+            "--corpus-path",
+            str(corpus_dir / "formula_corpus.jsonl"),
+            "--max-formulas",
+            str(self.config.search_max_candidates or self.config.search_population_size),
+            "--factor-transform",
+            self.config.factor_transform,
+            "--enable-gate",
+            "--correlation-threshold",
+            "0.99",
+            "--min-coverage",
+            "0.5",
+            "--chunk-size",
+            str(self.config.batch_eval_chunk_size),
+            "--device",
+            self.config.batch_eval_device,
+            "--register-approved",
+            "--continue-on-error",
+        ]
+        if self.config.use_matrix_cache:
+            argv.extend(["--use-matrix-cache", "--matrix-cache-dir", str(self._matrix_cache_dir())])
+        if self.config.use_eval_cache:
+            argv.append("--use-eval-cache")
+            if self.config.eval_cache_dir:
+                argv.extend(["--eval-cache-dir", self.config.eval_cache_dir])
+        payload = _run_json_main(run_formula_batch_eval_main, argv)
+        output_paths = {
+            "formula_batch_eval_result": str(batch_dir / "formula_batch_eval_result.json"),
+            "formula_eval_results": str(batch_dir / "formula_eval_results.jsonl"),
+            "formula_batch_eval_report": str(batch_dir / "formula_batch_eval_report.md"),
+            "formula_eval_cache_manifest": str(batch_dir / "formula_eval_cache_manifest.json"),
+            "formula_batch_eval_benchmark": str(batch_dir / "formula_batch_eval_benchmark.json"),
+        }
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "formula_batch_eval")
+        return payload, output_paths
+
     def _stage_formula_search(self) -> tuple[dict[str, Any], dict[str, str]]:
         payload = _run_json_main(
             run_search.main,
@@ -262,7 +381,19 @@ class ResearchSuiteRunner:
                 "--min-coverage",
                 "0.5",
             ]
-            + (["--neural-checkpoint", self.config.neural_checkpoint] if self.config.neural_checkpoint else []),
+            + (["--corpus-sequence-path", str(self._formula_corpus_dir() / "formula_sequences.jsonl")] if (self._formula_corpus_dir() / "formula_sequences.jsonl").exists() else [])
+            + (["--matrix-cache-dir", str(self._matrix_cache_dir()), "--use-matrix-cache"] if self.config.use_matrix_cache else [])
+            + (["--use-batch-eval", "--batch-eval-output-dir", str(self._batch_eval_dir()), "--batch-eval-chunk-size", str(self.config.batch_eval_chunk_size), "--batch-eval-device", self.config.batch_eval_device] if self.config.use_batch_eval else [])
+            + (["--use-eval-cache"] + (["--eval-cache-dir", self.config.eval_cache_dir] if self.config.eval_cache_dir else []) if self.config.use_eval_cache else [])
+            + (
+                ["--neural-checkpoint", self.config.neural_checkpoint]
+                if self.config.neural_checkpoint
+                else (
+                    ["--neural-checkpoint", str(self._pretrain_dir() / "checkpoints" / "latest.pt")]
+                    if self.config.pretrain_alphagpt and (self._pretrain_dir() / "checkpoints" / "latest.pt").exists()
+                    else []
+                )
+            ),
         )
         paths = payload.get("paths", {}) if isinstance(payload.get("paths"), dict) else {}
         output_paths = {
@@ -494,6 +625,15 @@ class ResearchSuiteRunner:
 
     def _benchmark_dir(self) -> Path:
         return Path(self.config.benchmark_dir) if self.config.benchmark_dir else Path(self.config.output_dir) / "benchmark"
+
+    def _formula_corpus_dir(self) -> Path:
+        return Path(self.config.formula_corpus_dir) if self.config.formula_corpus_dir else Path(self.config.output_dir) / "formula_corpus"
+
+    def _pretrain_dir(self) -> Path:
+        return Path(self.config.pretrain_dir) if self.config.pretrain_dir else Path(self.config.output_dir) / "alphagpt_pretrain"
+
+    def _batch_eval_dir(self) -> Path:
+        return Path(self.config.batch_eval_dir) if self.config.batch_eval_dir else Path(self.config.output_dir) / "formula_batch_eval"
 
 
 def _run_json_main(main_func: Callable[[list[str] | None], int], argv: list[str]) -> dict[str, Any]:

@@ -45,6 +45,24 @@ class FormulaSequenceDataset:
             formulas.extend(load_candidates_from_json(candidates_json))
         return cls(formulas)
 
+    @classmethod
+    def from_jsonl(cls, path: str | Path) -> "FormulaSequenceDataset":
+        formulas: list[list[int]] = []
+        samples: list[tuple[list[int], int]] = []
+        for line in Path(path).read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            prefix = payload.get("prefix_tokens")
+            target = payload.get("target_token")
+            if isinstance(prefix, list) and prefix and target is not None:
+                samples.append(([int(token) for token in prefix], int(target)))
+            elif isinstance(payload.get("formula_tokens"), list):
+                formulas.append([int(token) for token in payload["formula_tokens"]])
+        dataset = cls(formulas)
+        dataset.samples.extend(samples)
+        return dataset
+
     def __len__(self) -> int:
         return len(self.samples)
 

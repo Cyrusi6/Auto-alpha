@@ -32,7 +32,16 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-lookback", type=int, default=10)
     parser.add_argument("--checkpoint-every", type=int, default=1)
     parser.add_argument("--resume-checkpoint")
-    parser.add_argument("--device", default="cpu")
+    parser.add_argument("--device", default="auto")
+    parser.add_argument("--corpus-sequence-path")
+    parser.add_argument("--matrix-cache-dir")
+    parser.add_argument("--use-matrix-cache", action="store_true")
+    parser.add_argument("--use-batch-eval", action="store_true")
+    parser.add_argument("--batch-eval-output-dir")
+    parser.add_argument("--batch-eval-chunk-size", type=int, default=32)
+    parser.add_argument("--batch-eval-device", default="auto")
+    parser.add_argument("--use-eval-cache", action="store_true")
+    parser.add_argument("--eval-cache-dir")
     parser.add_argument("--factor-transform", default="raw", choices=sorted(SUPPORTED_TRANSFORMS))
     parser.add_argument("--enable-gate", action="store_true")
     parser.add_argument("--disable-gate", action="store_true")
@@ -64,6 +73,15 @@ def main(argv: list[str] | None = None) -> int:
         enable_gate=args.enable_gate and not args.disable_gate,
         top_k=args.top_k,
         composite_method=args.composite_method,
+        corpus_sequence_path=args.corpus_sequence_path,
+        matrix_cache_dir=args.matrix_cache_dir,
+        use_matrix_cache=args.use_matrix_cache,
+        use_batch_eval=args.use_batch_eval,
+        batch_eval_output_dir=args.batch_eval_output_dir,
+        batch_eval_chunk_size=args.batch_eval_chunk_size,
+        batch_eval_device=args.batch_eval_device,
+        use_eval_cache=args.use_eval_cache,
+        eval_cache_dir=args.eval_cache_dir,
     )
     result = NeuralFormulaTrainer(
         config=config,

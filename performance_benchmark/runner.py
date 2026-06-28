@@ -11,11 +11,14 @@ import torch
 
 from backtest import run_backtest
 from factor_store import FactorRecord, LocalFactorStore, make_factor_id, stable_formula_hash
+from formula_batch_eval import FormulaBatchEvalConfig, FormulaBatchEvaluator, requests_from_candidates
+from formula_corpus import FormulaCorpusConfig, build_formula_corpus
 from formula_search.models import FormulaSearchConfig
 from formula_search.search import FormulaSearchRunner
 from model_core.data_loader import AShareDataLoader
 from model_core.vm import StackVM
 from model_core.vocab import FORMULA_VOCAB
+from neural_search import AlphaGPTPretrainConfig, AlphaGPTPretrainer
 from research import BatchFactorResearchRunner, BatchResearchConfig
 from research.candidates import default_candidates
 
@@ -40,6 +43,8 @@ def run_benchmark(
         _run_item("stackvm_execute_default_formulas", lambda: _bench_stackvm(data_path)),
         _run_item("research_batch_small", lambda: _bench_research_batch(data_path, output_path)),
         _run_item("formula_search_small", lambda: _bench_formula_search(data_path, output_path)),
+        _run_item("formula_batch_eval_small", lambda: _bench_formula_batch_eval(data_path, output_path, cache_path)),
+        _run_item("alphagpt_pretrain_small", lambda: _bench_pretrain(output_path)),
         _run_item("backtest_equal_weight", lambda: _bench_backtest(data_path, output_path, "equal_weight")),
         _run_item("backtest_risk_aware", lambda: _bench_backtest(data_path, output_path, "risk_aware")),
     ]
@@ -165,6 +170,46 @@ def _bench_formula_search(data_dir: Path, output_dir: Path) -> dict[str, int]:
         composite_method="rank_average",
     ).run()
     return {"formulas_evaluated": result.candidates_evaluated, **_loader_payload(AShareDataLoader(data_dir=data_dir, device="cpu").load_data())}
+
+
+def _bench_formula_batch_eval(data_dir: Path, output_dir: Path, cache_dir: Path | None) -> dict[str, int]:
+    result = FormulaBatchEvaluator(
+        FormulaBatchEvalConfig(
+            data_dir=str(data_dir),
+            factor_store_dir=str(output_dir / "batch_eval_store"),
+            report_dir=str(output_dir / "batch_eval_reports"),
+            output_dir=str(output_dir / "formula_batch_eval"),
+            matrix_cache_dir=str(cache_dir) if cache_dir is not None else None,
+            use_matrix_cache=_cache_exists(cache_dir),
+            factor_transform="winsorize_zscore",
+            enable_gate=True,
+            min_coverage=0.5,
+            correlation_threshold=0.99,
+            register_approved=False,
+            chunk_size=2,
+            device="cpu",
+        )
+    ).run(requests_from_candidates(default_candidates()[:3]))
+    return {"formulas_evaluated": len(result.results), **_loader_payload(AShareDataLoader(data_dir=data_dir, device="cpu").load_data())}
+
+
+def _bench_pretrain(output_dir: Path) -> dict[str, int]:
+    corpus_dir = output_dir / "pretrain_corpus"
+    corpus = build_formula_corpus(FormulaCorpusConfig(output_dir=str(corpus_dir), max_records=8))
+    result = AlphaGPTPretrainer(
+        AlphaGPTPretrainConfig(
+            sequence_path=corpus.paths["formula_sequences_path"],
+            output_dir=str(output_dir / "pretrain"),
+            epochs=1,
+            batch_size=4,
+            max_sequences=8,
+            device="cpu",
+        )
+    ).train()
+    return {
+        "formulas_evaluated": int(result.summary.get("sequences", 0)),
+        "records_read": int(result.summary.get("sequences", 0)),
+    }
 
 
 def _bench_backtest(data_dir: Path, output_dir: Path, portfolio_method: str) -> dict[str, int]:

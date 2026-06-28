@@ -23,6 +23,8 @@ PLATFORM_MODULES = [
     "execution_plan",
     "factor_engine",
     "factor_store",
+    "formula_batch_eval",
+    "formula_corpus",
     "formula_search",
     "matrix_store",
     "model_core",
