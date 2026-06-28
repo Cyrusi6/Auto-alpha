@@ -66,6 +66,9 @@ class FormulaBatchEvalConfig:
     register_approved: bool = False
     batch_id: str | None = None
     continue_on_error: bool = True
+    shard_id: int | None = None
+    shard_count: int = 1
+    resource_report_path: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

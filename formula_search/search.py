@@ -63,6 +63,13 @@ class FormulaSearchRunner:
         data_version_manifest_path: str | None = None,
         require_data_freeze: bool = False,
         freeze_validation_report_path: str | None = None,
+        compute_state_dir: str | None = None,
+        compute_output_dir: str | None = None,
+        use_compute_scheduler: bool = False,
+        formula_shard_count: int = 1,
+        formula_shard_id: int | None = None,
+        resource_report_path: str | None = None,
+        experiment_id: str | None = None,
     ):
         self.search_config = search_config
         self.data_dir = data_dir
@@ -103,6 +110,13 @@ class FormulaSearchRunner:
         self.data_version_manifest_path = data_version_manifest_path
         self.require_data_freeze = bool(require_data_freeze)
         self.freeze_validation_report_path = freeze_validation_report_path
+        self.compute_state_dir = compute_state_dir
+        self.compute_output_dir = compute_output_dir
+        self.use_compute_scheduler = bool(use_compute_scheduler)
+        self.formula_shard_count = int(formula_shard_count)
+        self.formula_shard_id = formula_shard_id
+        self.resource_report_path = resource_report_path
+        self.experiment_id = experiment_id
         self.rng = random.Random(search_config.seed)
 
     def run(self) -> FormulaSearchResult:
@@ -191,6 +205,11 @@ class FormulaSearchRunner:
                 "data_freeze_id": self.data_freeze_id,
                 "data_version_manifest_path": self.data_version_manifest_path,
                 "require_data_freeze": self.require_data_freeze,
+                "use_compute_scheduler": self.use_compute_scheduler,
+                "formula_shard_count": self.formula_shard_count,
+                "formula_shard_id": self.formula_shard_id,
+                "resource_report_path": self.resource_report_path,
+                "experiment_id": self.experiment_id,
             },
         )
         self._write_outputs(result, generated)
@@ -249,6 +268,12 @@ class FormulaSearchRunner:
             data_version_manifest_path=self.data_version_manifest_path,
             require_data_freeze=self.require_data_freeze,
             freeze_validation_report_path=self.freeze_validation_report_path,
+            compute_state_dir=self.compute_state_dir,
+            compute_output_dir=self.compute_output_dir,
+            use_compute_scheduler=self.use_compute_scheduler,
+            formula_shard_count=self.formula_shard_count,
+            formula_shard_id=self.formula_shard_id,
+            resource_report_path=self.resource_report_path,
         )
         return BatchFactorResearchRunner(config=config, candidates=from_formula_search_candidates(candidates)).run()
 

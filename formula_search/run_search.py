@@ -11,6 +11,7 @@ from data_lake import validate_research_input
 from neural_search.models import NeuralSearchConfig
 from neural_search.trainer import NeuralFormulaTrainer
 from research.composite import COMPOSITE_METHODS
+from experiment_orchestrator.merge import merge_formula_search_results
 
 from .models import FormulaSearchConfig
 from .search import FormulaSearchRunner
@@ -79,6 +80,16 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--train-ratio", type=float, default=0.6)
     parser.add_argument("--valid-ratio", type=float, default=0.2)
     parser.add_argument("--continue-on-error", action="store_true")
+    parser.add_argument("--use-compute-scheduler", action="store_true")
+    parser.add_argument("--compute-state-dir")
+    parser.add_argument("--compute-output-dir")
+    parser.add_argument("--formula-shard-count", type=int, default=1)
+    parser.add_argument("--formula-shard-id", type=int)
+    parser.add_argument("--resource-report-path")
+    parser.add_argument("--experiment-id")
+    parser.add_argument("--distributed-search", action="store_true")
+    parser.add_argument("--merge-search-shards", action="store_true")
+    parser.add_argument("--search-shard-dir", action="append", default=[])
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -86,6 +97,13 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     freeze_payload = _apply_data_freeze_args(args)
+    if args.merge_search_shards:
+        report = merge_formula_search_results(args.search_shard_dir, args.output_dir)
+        payload = report.to_dict()
+        payload.update(freeze_payload)
+        payload["search_mode"] = "merge"
+        print(json.dumps(payload, ensure_ascii=False, indent=2 if args.pretty else None))
+        return 0 if report.status in {"success", "warning"} else 1
     search_config = FormulaSearchConfig(
         seed=args.seed,
         population_size=args.population_size,
@@ -156,6 +174,13 @@ def main(argv: list[str] | None = None) -> int:
         data_version_manifest_path=args.data_version_manifest_path,
         require_data_freeze=args.require_data_freeze,
         freeze_validation_report_path=args.freeze_validation_report_path,
+        compute_state_dir=args.compute_state_dir,
+        compute_output_dir=args.compute_output_dir,
+        use_compute_scheduler=args.use_compute_scheduler,
+        formula_shard_count=args.formula_shard_count,
+        formula_shard_id=args.formula_shard_id,
+        resource_report_path=args.resource_report_path,
+        experiment_id=args.experiment_id,
     ).run()
     payload = result.to_dict()
     payload.update(freeze_payload)

@@ -130,6 +130,21 @@ class ResearchSuiteConfig:
     freeze_mode: str = "copy"
     validate_data_freeze: bool = False
     fail_on_freeze_error: bool = False
+    use_compute_scheduler: bool = False
+    compute_state_dir: str | None = None
+    compute_output_dir: str | None = None
+    experiment_output_dir: str | None = None
+    experiment_workflow: str = "full_research_compute_smoke"
+    gpu_count: int = 0
+    shard_count: int = 1
+    formula_shards: int = 1
+    use_ddp_pretrain: bool = False
+    pretrain_world_size: int = 1
+    max_parallel_gpu_jobs: int = 1
+    max_parallel_cpu_jobs: int = 1
+    resource_report_dir: str | None = None
+    resume_compute: bool = False
+    compute_dry_run: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

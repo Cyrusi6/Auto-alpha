@@ -68,6 +68,12 @@ class BatchResearchConfig:
     data_version_manifest_path: str | None = None
     require_data_freeze: bool = False
     freeze_validation_report_path: str | None = None
+    compute_state_dir: str | None = None
+    compute_output_dir: str | None = None
+    use_compute_scheduler: bool = False
+    formula_shard_count: int = 1
+    formula_shard_id: int | None = None
+    resource_report_path: str | None = None
 
 
 @dataclass(frozen=True)

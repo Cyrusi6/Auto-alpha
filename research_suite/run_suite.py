@@ -30,6 +30,21 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--freeze-mode", choices=["copy", "hardlink", "manifest_only"], default="copy")
     parser.add_argument("--validate-data-freeze", action="store_true")
     parser.add_argument("--fail-on-freeze-error", action="store_true")
+    parser.add_argument("--use-compute-scheduler", action="store_true")
+    parser.add_argument("--compute-state-dir")
+    parser.add_argument("--compute-output-dir")
+    parser.add_argument("--experiment-output-dir")
+    parser.add_argument("--experiment-workflow", default="full_research_compute_smoke")
+    parser.add_argument("--gpu-count", type=int, default=0)
+    parser.add_argument("--shard-count", type=int, default=1)
+    parser.add_argument("--formula-shards", type=int, default=1)
+    parser.add_argument("--use-ddp-pretrain", action="store_true")
+    parser.add_argument("--pretrain-world-size", type=int, default=1)
+    parser.add_argument("--max-parallel-gpu-jobs", type=int, default=1)
+    parser.add_argument("--max-parallel-cpu-jobs", type=int, default=1)
+    parser.add_argument("--resource-report-dir")
+    parser.add_argument("--resume-compute", action="store_true")
+    parser.add_argument("--compute-dry-run", action="store_true")
     parser.add_argument("--universe-name", default="csi300_sample")
     parser.add_argument("--index-code", default="000300.SH")
     parser.add_argument("--factor-store-dir")
@@ -173,6 +188,21 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
         freeze_mode=args.freeze_mode,
         validate_data_freeze=args.validate_data_freeze,
         fail_on_freeze_error=args.fail_on_freeze_error,
+        use_compute_scheduler=args.use_compute_scheduler,
+        compute_state_dir=args.compute_state_dir,
+        compute_output_dir=args.compute_output_dir,
+        experiment_output_dir=args.experiment_output_dir,
+        experiment_workflow=args.experiment_workflow,
+        gpu_count=args.gpu_count,
+        shard_count=args.shard_count,
+        formula_shards=args.formula_shards,
+        use_ddp_pretrain=args.use_ddp_pretrain,
+        pretrain_world_size=args.pretrain_world_size,
+        max_parallel_gpu_jobs=args.max_parallel_gpu_jobs,
+        max_parallel_cpu_jobs=args.max_parallel_cpu_jobs,
+        resource_report_dir=args.resource_report_dir,
+        resume_compute=args.resume_compute,
+        compute_dry_run=args.compute_dry_run,
         universe_name=args.universe_name,
         index_code=args.index_code,
         factor_store_dir=str(args.factor_store_dir or base_dir / "store"),

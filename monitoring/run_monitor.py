@@ -21,6 +21,11 @@ from .checks import (
     check_baseline_compare,
     check_backfill_coverage,
     check_backfill_run,
+    check_compute_cluster_resources,
+    check_compute_job_failures,
+    check_compute_job_retries,
+    check_cpu_fallbacks,
+    check_cuda_oom,
     check_open_broker_orders,
     check_capacity_warnings,
     check_data_source_audit,
@@ -41,8 +46,12 @@ from .checks import (
     check_field_coverage,
     check_formula_batch_eval,
     check_formula_corpus,
+    check_experiment_merge_status,
+    check_experiment_shard_failures,
     check_alphagpt_pretrain,
     check_alphagpt_checkpoint_manifest,
+    check_gpu_availability,
+    check_gpu_throughput_regression,
     check_impact_cost_spike,
     check_model_lifecycle_health,
     check_model_lineage_completeness,
@@ -74,6 +83,7 @@ from .checks import (
     check_settlement_fee_tax,
     check_settlement_report,
     check_statement_staleness,
+    check_stale_gpu_leases,
     check_unfilled_orders,
     check_unresolved_reconciliation_breaks,
     check_material_reconciliation_breaks,
@@ -111,6 +121,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--artifact-validation-report-path")
     parser.add_argument("--release-gate-report-path")
     parser.add_argument("--release-manifest-path")
+    parser.add_argument("--compute-run-report-path")
+    parser.add_argument("--compute-resource-snapshot-path")
+    parser.add_argument("--compute-jobs-path")
+    parser.add_argument("--compute-job-runs-path")
+    parser.add_argument("--experiment-run-report-path")
+    parser.add_argument("--experiment-plan-path")
+    parser.add_argument("--experiment-merge-report-path")
+    parser.add_argument("--gpu-benchmark-report-path")
     parser.add_argument("--risk-control-report-path")
     parser.add_argument("--risk-control-breaches-path")
     parser.add_argument("--risk-limit-usage-path")
@@ -211,6 +229,16 @@ def main(argv: list[str] | None = None) -> int:
         ("artifact_schema_validation", lambda: check_artifact_schema_validation(args.artifact_validation_report_path)),
         ("release_gate", lambda: check_release_gate(args.release_gate_report_path)),
         ("package_build_artifacts", lambda: check_package_build_artifacts(args.release_manifest_path)),
+        ("compute_cluster_resources", lambda: check_compute_cluster_resources(args.compute_resource_snapshot_path)),
+        ("gpu_availability", lambda: check_gpu_availability(args.compute_resource_snapshot_path)),
+        ("compute_job_failures", lambda: check_compute_job_failures(args.compute_run_report_path)),
+        ("compute_job_retries", lambda: check_compute_job_retries(args.compute_run_report_path)),
+        ("stale_gpu_leases", lambda: check_stale_gpu_leases(_default_compute_path(args.compute_run_report_path, "gpu_leases.jsonl"))),
+        ("cuda_oom", lambda: check_cuda_oom(args.compute_run_report_path)),
+        ("cpu_fallbacks", lambda: check_cpu_fallbacks(args.compute_run_report_path)),
+        ("experiment_shard_failures", lambda: check_experiment_shard_failures(args.experiment_run_report_path)),
+        ("experiment_merge_status", lambda: check_experiment_merge_status(args.experiment_merge_report_path)),
+        ("gpu_throughput_regression", lambda: check_gpu_throughput_regression(args.gpu_benchmark_report_path)),
         ("formula_corpus", lambda: check_formula_corpus(args.formula_corpus_stats_path)),
         ("formula_batch_eval", lambda: check_formula_batch_eval(args.formula_batch_eval_result_path)),
         ("alphagpt_pretrain", lambda: check_alphagpt_pretrain(args.alphagpt_pretrain_result_path)),
@@ -266,6 +294,14 @@ def _default_risk_path(orders_dir: str | Path) -> str:
 
 def _default_path(orders_dir: str | Path, filename: str) -> str:
     path = Path(orders_dir) / filename
+    return str(path) if path.exists() else ""
+
+
+def _default_compute_path(anchor_path: str | Path | None, filename: str) -> str:
+    if not anchor_path:
+        return ""
+    root = Path(anchor_path).parent
+    path = root / filename
     return str(path) if path.exists() else ""
 
 

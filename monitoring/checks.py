@@ -279,6 +279,99 @@ def check_broker_file_outbox(outbox_manifest_path: str | Path | None) -> tuple[d
     }, alerts
 
 
+def check_compute_cluster_resources(resource_snapshot_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(resource_snapshot_path)) if resource_snapshot_path else {}
+    cuda_available = bool(payload.get("cuda_available", False)) if payload else False
+    gpu_count = int(payload.get("cuda_device_count", 0) or 0) if payload else 0
+    return {
+        "exists": bool(payload),
+        "cuda_available": cuda_available,
+        "gpu_count_detected": gpu_count,
+        "device_count": len(payload.get("devices", []) or []) if payload else 0,
+    }, []
+
+
+def check_gpu_availability(resource_snapshot_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    result, _alerts = check_compute_cluster_resources(resource_snapshot_path)
+    alerts = []
+    if result.get("exists") and not result.get("cuda_available"):
+        alerts.append(MonitoringAlert("info", "gpu_availability", "CUDA GPU unavailable; compute jobs should use CPU fallback"))
+    return result, alerts
+
+
+def check_compute_job_failures(compute_run_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(compute_run_report_path)) if compute_run_report_path else {}
+    failed = int(payload.get("failed_count", 0) or 0) if payload else 0
+    timed_out = int(payload.get("timeout_count", 0) or 0) if payload else 0
+    alerts = []
+    if failed or timed_out:
+        alerts.append(MonitoringAlert("error", "compute_job_failures", "compute run has failed or timed out jobs", {"failed": failed, "timed_out": timed_out}))
+    return {
+        "exists": bool(payload),
+        "compute_job_count": int(payload.get("job_count", 0) or 0) if payload else 0,
+        "compute_failed_job_count": failed,
+        "compute_timeout_count": timed_out,
+        "compute_success_count": int(payload.get("success_count", 0) or 0) if payload else 0,
+        "total_gpu_allocated_seconds": float(payload.get("total_gpu_allocated_seconds", 0.0) or 0.0) if payload else 0.0,
+    }, alerts
+
+
+def check_compute_job_retries(compute_run_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(compute_run_report_path)) if compute_run_report_path else {}
+    return {"exists": bool(payload), "compute_resumed_job_count": int(payload.get("resumed_count", 0) or 0) if payload else 0}, []
+
+
+def check_stale_gpu_leases(gpu_leases_path: str | Path | None = None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(gpu_leases_path)) if gpu_leases_path else []
+    alerts = [MonitoringAlert("warning", "stale_gpu_leases", "GPU leases are still open", {"count": len(rows)})] if rows else []
+    return {"exists": bool(rows), "stale_gpu_lease_count": len(rows)}, alerts
+
+
+def check_cuda_oom(compute_run_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(compute_run_report_path)) if compute_run_report_path else {}
+    count = int(payload.get("oom_error_count", 0) or 0) if payload else 0
+    alerts = [MonitoringAlert("error", "cuda_oom", "compute run recorded CUDA OOM", {"count": count})] if count else []
+    return {"exists": bool(payload), "cuda_oom_count": count}, alerts
+
+
+def check_cpu_fallbacks(compute_run_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(compute_run_report_path)) if compute_run_report_path else {}
+    return {"exists": bool(payload), "fallback_to_cpu_count": int(payload.get("fallback_to_cpu_count", 0) or 0) if payload else 0}, []
+
+
+def check_experiment_shard_failures(experiment_run_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(experiment_run_report_path)) if experiment_run_report_path else {}
+    failed = int(payload.get("failed_shard_count", 0) or 0) if payload else 0
+    alerts = [MonitoringAlert("error", "experiment_shards", "experiment has failed shards", {"failed_shard_count": failed})] if failed else []
+    return {
+        "exists": bool(payload),
+        "experiment_status": payload.get("status", "") if payload else "",
+        "experiment_shard_count": int(payload.get("shard_count", 0) or 0) if payload else 0,
+        "experiment_failed_shard_count": failed,
+    }, alerts
+
+
+def check_experiment_merge_status(experiment_merge_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(experiment_merge_report_path)) if experiment_merge_report_path else {}
+    status = str(payload.get("status", "")) if payload else ""
+    missing = int(payload.get("missing_shard_count", 0) or 0) if payload else 0
+    alerts = []
+    if status not in {"", "success"} or missing:
+        alerts.append(MonitoringAlert("warning", "experiment_merge", "experiment merge is not clean", {"status": status, "missing_shard_count": missing}))
+    return {"exists": bool(payload), "experiment_merge_status": status, "missing_shard_count": missing}, alerts
+
+
+def check_gpu_throughput_regression(gpu_benchmark_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(gpu_benchmark_report_path)) if gpu_benchmark_report_path else {}
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    return {
+        "exists": bool(payload),
+        "formula_eval_throughput": float(summary.get("formula_eval_formulas_per_second_gpu", 0.0) or summary.get("formula_eval_formulas_per_second_cpu", 0.0) or 0.0),
+        "pretrain_samples_per_second": float(summary.get("pretrain_samples_per_second_cpu", 0.0) or 0.0),
+        "scheduler_warning_count": 0,
+    }, []
+
+
 def check_pre_trade_risk_controls(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     if not report_path:
         return {"exists": False, "risk_control_status": ""}, []

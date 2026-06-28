@@ -9,7 +9,9 @@ from factor_engine import SUPPORTED_TRANSFORMS
 from research.candidates import default_candidates, load_candidates_json
 
 from .evaluator import FormulaBatchEvaluator, requests_from_candidates, requests_from_corpus
+from .merge import merge_shard_outputs
 from .models import FormulaBatchEvalConfig
+from .sharding import select_shard_requests, write_shard_manifest
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -43,12 +45,26 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--register-approved", action="store_true")
     parser.add_argument("--batch-id")
     parser.add_argument("--continue-on-error", action="store_true")
+    parser.add_argument("--shard-id", type=int)
+    parser.add_argument("--shard-count", type=int, default=1)
+    parser.add_argument("--shard-manifest-path")
+    parser.add_argument("--write-shard-manifest", action="store_true")
+    parser.add_argument("--merge-shards", action="store_true")
+    parser.add_argument("--shard-dir", action="append", default=[])
+    parser.add_argument("--merge-output-dir")
+    parser.add_argument("--gpu-index", type=int)
+    parser.add_argument("--device-lock-id")
+    parser.add_argument("--resource-report-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    if args.merge_shards:
+        payload = merge_shard_outputs(args.shard_dir, args.merge_output_dir or args.output_dir)
+        print(json.dumps(payload, ensure_ascii=False, indent=2 if args.pretty else None))
+        return 0 if payload.get("status") in {"success", "warning"} else 1
     if args.corpus_path:
         requests = requests_from_corpus(args.corpus_path, max_records=args.max_formulas)
     elif args.candidates_json:
@@ -59,6 +75,16 @@ def main(argv: list[str] | None = None) -> int:
         requests = requests_from_candidates(default_candidates())
         if args.max_formulas is not None:
             requests = requests[: args.max_formulas]
+    requests = select_shard_requests(requests, args.shard_id, args.shard_count)
+    if args.write_shard_manifest and args.shard_id is not None:
+        write_shard_manifest(
+            requests,
+            args.output_dir,
+            args.shard_id,
+            args.shard_count,
+            args.corpus_path or args.candidates_json,
+            manifest_path=args.shard_manifest_path,
+        )
     config = FormulaBatchEvalConfig(
         data_dir=args.data_dir,
         universe_name=args.universe_name,
@@ -83,6 +109,9 @@ def main(argv: list[str] | None = None) -> int:
         register_approved=args.register_approved,
         batch_id=args.batch_id,
         continue_on_error=args.continue_on_error,
+        shard_id=args.shard_id,
+        shard_count=args.shard_count,
+        resource_report_path=args.resource_report_path,
     )
     result = FormulaBatchEvaluator(config).run(requests)
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))

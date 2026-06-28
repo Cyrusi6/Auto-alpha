@@ -19,6 +19,8 @@ The current implementation is local-first. It uses deterministic sample data and
 - `research/`: Batch candidate execution, factor ranking, composite factor construction, and batch research reports.
 - `formula_search/`: Formula metadata, random generation, mutation, crossover, multi-generation search, and search reports.
 - `neural_search/`: AlphaGPT warm-start training, action-mask constrained formula sampling, lightweight policy search, checkpointing, and neural search reports.
+- `compute_cluster/`: Local CPU/GPU probe, GPU leases, job queue, subprocess runner, heartbeat, retry/resume state, and compute resource reports.
+- `experiment_orchestrator/`: Research experiment graph planning, formula shard jobs, scheduler integration, shard merge, and experiment reports.
 - `research_suite/`: One-click orchestration, walk-forward robustness, production-candidate promotion, and artifact catalog.
 - `model_registry/`: Local model/factor version registry, lifecycle state machine, active deployments, rollback records, lineage graph, and registry reports.
 - `factor_lifecycle/`: Factor health checks, lifecycle decisions, human review packages, activation approval flow, and lifecycle reports.
@@ -839,7 +841,7 @@ uv run python -m formula_batch_eval.run_batch_eval \
   --pretty
 ```
 
-`neural_search.run_pretrain` performs offline supervised AlphaGPT pretraining from `formula_sequences.jsonl`, with optional preference fine-tuning from `formula_preferences.jsonl`. It defaults to CPU/auto device fallback and writes `alphagpt_pretrain_result.json`, `alphagpt_pretrain_history.jsonl`, `alphagpt_pretrain_report.md`, `checkpoint_manifest.json`, and `checkpoints/latest.pt`.
+`neural_search.run_pretrain` performs offline supervised AlphaGPT pretraining from `formula_sequences.jsonl`, with optional preference fine-tuning from `formula_preferences.jsonl`. It defaults to CPU/auto device fallback and writes `alphagpt_pretrain_result.json`, `alphagpt_pretrain_history.jsonl`, `alphagpt_pretrain_report.md`, `checkpoint_manifest.json`, `distributed_training_report.json`, optional `resource_usage.json`, and `checkpoints/latest.pt`. `--distributed --world-size N` records single-node DDP metadata and falls back cleanly on CPU unless `--strict-cuda` is used.
 
 ```bash
 uv run python -m neural_search.run_pretrain \
@@ -852,13 +854,59 @@ uv run python -m neural_search.run_pretrain \
   --pretty
 ```
 
+`formula_batch_eval.run_batch_eval` can split a formula corpus into deterministic shards and merge shard outputs:
+
+```bash
+uv run python -m formula_batch_eval.run_batch_eval \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --report-dir /tmp/auto-alpha-demo/reports \
+  --output-dir /tmp/auto-alpha-demo/batch_eval_shard_0 \
+  --corpus-path /tmp/auto-alpha-demo/formula_corpus/formula_corpus.jsonl \
+  --shard-id 0 \
+  --shard-count 4 \
+  --write-shard-manifest \
+  --resource-report-path /tmp/auto-alpha-demo/batch_eval_shard_0/resource_usage.json \
+  --pretty
+```
+
+`compute_cluster/` provides a local research compute plane. It does not require GPU in CI; CUDA jobs acquire file-based GPU leases when available and otherwise report skipped/fallback states.
+
+```bash
+uv run python -m compute_cluster.run_compute probe \
+  --state-dir /tmp/auto-alpha-demo/compute_state \
+  --output-dir /tmp/auto-alpha-demo/compute_probe \
+  --pretty
+
+uv run python -m compute_cluster.run_compute smoke \
+  --state-dir /tmp/auto-alpha-demo/compute_state \
+  --output-dir /tmp/auto-alpha-demo/compute_smoke \
+  --pretty
+```
+
+`experiment_orchestrator/` builds a formula-shard experiment plan, submits jobs through the local scheduler, and merges shard results:
+
+```bash
+uv run python -m experiment_orchestrator.run_experiment smoke \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --output-dir /tmp/auto-alpha-demo/experiment \
+  --compute-state-dir /tmp/auto-alpha-demo/compute_state \
+  --shard-count 4 \
+  --device cpu \
+  --pretty
+```
+
 `formula_search.run_search` and `research_suite.run_suite` can now reuse these artifacts with `--corpus-path`, `--neural-checkpoint`, `--use-batch-eval`, `--use-matrix-cache`, and `--use-eval-cache`. A suite can build the corpus, pretrain AlphaGPT, run batch evaluation, search, backtest, orders, walk-forward, and promotion in one command by adding:
 
 ```bash
 --build-formula-corpus \
 --pretrain-alphagpt \
 --use-batch-eval \
---use-matrix-cache
+--use-matrix-cache \
+--use-compute-scheduler \
+--formula-shards 4 \
+--compute-output-dir /tmp/auto-alpha-demo/compute \
+--experiment-output-dir /tmp/auto-alpha-demo/experiment
 ```
 
 ## Point-In-Time And Leakage Governance
@@ -908,7 +956,7 @@ Current PIT boundaries:
 - Tushare HTTP provider, production sync scaffolding, governed backfill plans, offline fake smoke, gated online smoke/backfill, permission/rate diagnostics, audit summary, incremental recovery checks, baseline comparison, dataset versioning, and research freezes are available; production use still requires real token/quota operation, real full-market performance runs, incremental matrix refresh, and more provider pairs.
 - Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
 - Local daily simulation supports A-share constraints, pre-trade risk controls, local kill switch, override approvals, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, settlement-aware paper accounting, lot cost, realized PnL, NAV reconciliation, generic statement import, external account mirroring, EOD break management, and execution quality reports; future work should add finer real-world matching, minute-level volume modeling, verified real broker statement mappings, richer limit policies, and real broker connectivity.
-- Local formula search, batch formula evaluation, formula corpus construction, offline AlphaGPT supervised pretraining, and a first neural-guided policy-search path are available; future work should add stronger reinforcement learning, larger offline corpora, more operators, GPU performance tuning, and broader stability validation.
+- Local formula search, batch formula evaluation, formula corpus construction, offline AlphaGPT supervised pretraining, a first neural-guided policy-search path, and a local CPU/GPU compute scheduler are available; future work should add stronger reinforcement learning, larger offline corpora, more operators, true full-market 4-GPU stress runs, richer DDP training, and broader stability validation.
 - Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.
 - One-click research suites now provide local walk-forward, promotion gates, model registry records, lifecycle review packages, active deployment state, and rollback artifacts; daily operations can require an active governed model. Future work should add richer lifecycle policies and external review workflow integrations.
 - Broker adapter, file instructions, broker statement import, settlement profiles, EOD reconciliation, and account ledger are local only. No real broker integration, credential handling, network submission, verified QMT/broker file compatibility, or tax reporting interface is implemented.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import contextlib
 import io
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -41,7 +42,7 @@ class BatchFactorResearchRunner:
         candidates: list[FactorCandidate] | None = None,
     ):
         self.config = config
-        self.candidates = candidates or default_candidates()
+        self.candidates = _select_candidate_shard(candidates or default_candidates(), config.formula_shard_id, config.formula_shard_count)
         self.store = LocalFactorStore(config.factor_store_dir)
         self.freeze_validation = validate_research_input(
             data_dir=config.data_dir,
@@ -165,6 +166,9 @@ class BatchFactorResearchRunner:
                 register_approved=True,
                 batch_id=batch_id,
                 continue_on_error=self.config.continue_on_error,
+                shard_id=self.config.formula_shard_id,
+                shard_count=self.config.formula_shard_count,
+                resource_report_path=self.config.resource_report_path,
             )
         ).run(requests_from_candidates(self.candidates))
         results = [
@@ -346,6 +350,12 @@ class BatchFactorResearchRunner:
                 "freeze_validation_status": self.freeze_validation.status,
                 "data_version_manifest_path": self.config.data_version_manifest_path,
                 "freeze_validation_report_path": self.config.freeze_validation_report_path,
+                "compute_job_id": None,
+                "shard_id": self.config.formula_shard_id,
+                "shard_count": self.config.formula_shard_count,
+                "compute_device": self.config.batch_eval_device if self.config.use_batch_eval else "cpu",
+                "cuda_visible_devices": "",
+                "resource_snapshot_path": self.config.resource_report_path,
             },
             factor_type="single",
             batch_id=batch_id,
@@ -536,6 +546,18 @@ def _utc_now() -> str:
 def _make_batch_id(created_at: str) -> str:
     safe = "".join(char if char.isalnum() else "_" for char in created_at).strip("_")
     return f"batch_{safe}"
+
+
+def _select_candidate_shard(candidates: list[FactorCandidate], shard_id: int | None, shard_count: int) -> list[FactorCandidate]:
+    if shard_id is None or shard_count <= 1:
+        return candidates
+    selected: list[FactorCandidate] = []
+    for candidate in candidates:
+        key = candidate.formula_hash or "|".join(str(token) for token in candidate.formula_tokens)
+        bucket = int(hashlib.sha256(key.encode("utf-8")).hexdigest()[:8], 16) % int(shard_count)
+        if bucket == int(shard_id):
+            selected.append(candidate)
+    return selected
 
 
 def _dataset_version_id(path: str | None) -> str | None:

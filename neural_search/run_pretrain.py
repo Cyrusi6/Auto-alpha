@@ -26,6 +26,18 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--resume-checkpoint")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--amp", action="store_true")
+    parser.add_argument("--distributed", action="store_true")
+    parser.add_argument("--world-size", type=int, default=1)
+    parser.add_argument("--rank", type=int, default=0)
+    parser.add_argument("--local-rank", type=int, default=0)
+    parser.add_argument("--backend", choices=["nccl", "gloo"], default="gloo")
+    parser.add_argument("--master-addr", default="127.0.0.1")
+    parser.add_argument("--master-port", default="29500")
+    parser.add_argument("--ddp-init-method")
+    parser.add_argument("--ddp-find-unused-parameters", action="store_true")
+    parser.add_argument("--resource-report-path")
+    parser.add_argument("--strict-cuda", action="store_true")
+    parser.add_argument("--save-rank0-only", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -48,6 +60,18 @@ def main(argv: list[str] | None = None) -> int:
             resume_checkpoint=args.resume_checkpoint,
             device=args.device,
             amp=args.amp,
+            distributed=args.distributed,
+            world_size=args.world_size,
+            rank=args.rank,
+            local_rank=args.local_rank,
+            backend=args.backend,
+            master_addr=args.master_addr,
+            master_port=str(args.master_port),
+            ddp_init_method=args.ddp_init_method,
+            ddp_find_unused_parameters=args.ddp_find_unused_parameters,
+            resource_report_path=args.resource_report_path,
+            strict_cuda=args.strict_cuda,
+            save_rank0_only=args.save_rank0_only,
         )
     ).train()
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))

@@ -253,6 +253,94 @@ class AshareDashboardService:
                 return payload
         return {}
 
+    def load_compute_resource_snapshot(self) -> dict[str, Any]:
+        for path in self._compute_artifact_candidates("compute_resource_snapshot.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_compute_run_report(self) -> dict[str, Any]:
+        for path in self._compute_artifact_candidates("compute_run_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_compute_jobs(self) -> pd.DataFrame:
+        for path in self._compute_artifact_candidates("compute_jobs.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_compute_job_runs(self) -> pd.DataFrame:
+        for path in self._compute_artifact_candidates("compute_job_runs.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_compute_scheduler_events(self) -> pd.DataFrame:
+        for path in self._compute_artifact_candidates("compute_scheduler_events.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_compute_heartbeats(self) -> pd.DataFrame:
+        for path in self._compute_artifact_candidates("compute_heartbeats.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_gpu_leases(self) -> pd.DataFrame:
+        for path in self._compute_artifact_candidates("gpu_leases.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_experiment_plan(self) -> dict[str, Any]:
+        return self._read_first_json(self._experiment_artifact_candidates("experiment_plan.json"))
+
+    def load_experiment_graph(self) -> dict[str, Any]:
+        return self._read_first_json(self._experiment_artifact_candidates("experiment_graph.json"))
+
+    def load_experiment_run_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._experiment_artifact_candidates("experiment_run_report.json"))
+
+    def load_experiment_resource_plan(self) -> dict[str, Any]:
+        return self._read_first_json(self._experiment_artifact_candidates("experiment_resource_plan.json"))
+
+    def load_experiment_shards(self) -> pd.DataFrame:
+        for path in self._experiment_artifact_candidates("experiment_shards.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_experiment_merge_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._experiment_artifact_candidates("experiment_merge_report.json"))
+
+    def load_experiment_artifact_catalog(self) -> dict[str, Any]:
+        return self._read_first_json(self._experiment_artifact_candidates("experiment_artifact_catalog.json"))
+
+    def load_distributed_training_report(self) -> dict[str, Any]:
+        for path in self._neural_artifact_candidates("distributed_training_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_gpu_benchmark_report(self) -> dict[str, Any]:
+        for path in self._benchmark_candidates("benchmark_result.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
     def load_backtest_result(self) -> dict[str, Any]:
         return self._read_json(self.config.backtest_dir / "backtest_result.json")
 
@@ -1368,6 +1456,35 @@ class AshareDashboardService:
             root / "broker" / filename,
             root / "broker_file" / "outbox" / filename,
         ]
+
+    def _compute_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.compute_dir / filename,
+            self.config.compute_dir / "compute_state" / filename,
+            root / "compute_state" / filename,
+            root / "compute_probe" / filename,
+            root / "suite" / "compute_state" / filename,
+            root / "compute_suite" / filename,
+        ]
+
+    def _experiment_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.experiment_dir / filename,
+            self.config.experiment_dir / "merged" / filename,
+            root / "experiment" / filename,
+            root / "experiment" / "merged" / filename,
+            root / "experiment_suite" / filename,
+            root / "suite" / "experiment" / filename,
+        ]
+
+    def _read_first_json(self, paths: list[Path]) -> dict[str, Any]:
+        for path in paths:
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
 
     def _statement_artifact_candidates(self, filename: str) -> list[Path]:
         root = self.config.report_dir.parent

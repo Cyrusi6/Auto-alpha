@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import random
 import shutil
 from datetime import datetime
@@ -29,6 +30,8 @@ class AlphaGPTPretrainer:
     def __init__(self, config: AlphaGPTPretrainConfig):
         self.config = config
         self.output_dir = Path(config.output_dir)
+        if config.distributed and config.strict_cuda and not torch.cuda.is_available():
+            raise RuntimeError("distributed cuda pretrain requested but CUDA is unavailable")
         self.device = _resolve_device(config.device)
         self.amp_enabled = bool(config.amp and self.device.type == "cuda")
         torch.manual_seed(config.seed)
@@ -69,7 +72,9 @@ class AlphaGPTPretrainer:
             "alphagpt_pretrain_report_path": str(self.output_dir / "alphagpt_pretrain_report.md"),
             "checkpoint_manifest_path": str(self.output_dir / "checkpoint_manifest.json"),
             "latest_checkpoint_path": str(self.output_dir / "checkpoints" / "latest.pt"),
+            "distributed_training_report_path": str(self.output_dir / "distributed_training_report.json"),
         }
+        distributed_report = self._distributed_payload()
         result = AlphaGPTPretrainResult(
             created_at=created_at,
             status="success",
@@ -85,6 +90,9 @@ class AlphaGPTPretrainer:
                 "epochs": len(self.history),
                 "preference_steps": len(self.preference_history),
                 "latest_checkpoint_path": latest,
+                "distributed": bool(self.config.distributed),
+                "world_size": int(self.config.world_size),
+                "fallback_to_cpu": bool(distributed_report.get("fallback_to_cpu", False)),
             },
         )
         self._write_outputs(result)
@@ -184,8 +192,44 @@ class AlphaGPTPretrainer:
             "alphagpt_pretrain_history",
             "neural_search",
         )
-        write_json_artifact(self.output_dir / "checkpoint_manifest.json", result.checkpoint_manifest, "alphagpt_checkpoint_manifest", "neural_search")
+        checkpoint_manifest = result.checkpoint_manifest | {
+            "distributed": bool(self.config.distributed),
+            "world_size": int(self.config.world_size),
+            "rank0_only": bool(self.config.save_rank0_only),
+            "device_count_detected": int(torch.cuda.device_count()) if torch.cuda.is_available() else 0,
+            "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
+            "amp_enabled": bool(self.amp_enabled),
+            "fallback_to_cpu": bool(self.config.distributed and self.device.type == "cpu"),
+            "resource_report_path": self.config.resource_report_path,
+        }
+        write_json_artifact(self.output_dir / "checkpoint_manifest.json", checkpoint_manifest, "alphagpt_checkpoint_manifest", "neural_search")
+        distributed_payload = self._distributed_payload()
+        write_json_artifact(
+            self.output_dir / "distributed_training_report.json",
+            distributed_payload,
+            "distributed_training_report",
+            "neural_search",
+        )
+        if self.config.resource_report_path:
+            write_json_artifact(self.config.resource_report_path, distributed_payload, "resource_usage_report", "neural_search")
         (self.output_dir / "alphagpt_pretrain_report.md").write_text(_render_report(result), encoding="utf-8")
+
+    def _distributed_payload(self) -> dict[str, Any]:
+        return {
+            "distributed": bool(self.config.distributed),
+            "world_size": int(self.config.world_size),
+            "rank": int(self.config.rank),
+            "local_rank": int(self.config.local_rank),
+            "backend": self.config.backend,
+            "device_resolved": str(self.device),
+            "cuda_available": bool(torch.cuda.is_available()),
+            "device_count_detected": int(torch.cuda.device_count()) if torch.cuda.is_available() else 0,
+            "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
+            "rank0_only": bool(self.config.save_rank0_only),
+            "fallback_to_cpu": bool(self.config.distributed and self.device.type == "cpu"),
+            "distributed_skipped_reason": "cuda_unavailable" if self.config.distributed and self.device.type == "cpu" else "",
+            "resource_report_path": self.config.resource_report_path,
+        }
 
 
 def _load_sequences(path: str | Path, max_records: int | None) -> list[dict[str, Any]]:

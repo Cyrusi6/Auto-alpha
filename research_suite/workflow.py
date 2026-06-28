@@ -33,6 +33,7 @@ from data_lake.fingerprint import content_hash_for_fingerprints, fingerprint_dat
 from data_lake.models import DatasetVersionRecord
 from data_lake.report import write_data_lake_report, write_dataset_version_manifest
 from data_lake.freeze import write_freeze_validation_report
+from experiment_orchestrator.workflows import run_workflow_smoke
 
 from .catalog import register_artifact, write_artifact_catalog
 from .models import ArtifactCatalog, PromotionConfig, ResearchSuiteConfig, ResearchSuiteResult, SuiteStageResult
@@ -55,6 +56,7 @@ class ResearchSuiteRunner:
         self.pit_summary: dict[str, Any] = {}
         self.leakage_summary: dict[str, Any] = {}
         self.corporate_action_summary: dict[str, Any] = {}
+        self.compute_summary: dict[str, Any] = {}
         self.dataset_version_id: str | None = None
         self.data_freeze_id: str | None = config.data_freeze_id
         self.data_freeze_hash: str | None = None
@@ -98,6 +100,8 @@ class ResearchSuiteRunner:
                 self._append_stage("alphagpt_pretrain", self._stage_alphagpt_pretrain)
             if self.config.use_batch_eval:
                 self._append_stage("formula_batch_eval", self._stage_formula_batch_eval)
+            if self.config.use_compute_scheduler:
+                self._append_stage("compute_experiment", self._stage_compute_experiment)
             self._append_stage("formula_search", self._stage_formula_search)
             self._append_stage("backtest", self._stage_backtest)
             if self.config.run_leakage_audit:
@@ -168,6 +172,23 @@ class ResearchSuiteRunner:
                 "freeze_validation_status": self.freeze_validation_status,
                 "data_quality_error_count": _quality_error_count(Path(self.config.data_dir) / "quality_report.json"),
                 "data_hash_drift_count": self.data_hash_drift_count,
+                "compute_scheduler_enabled": self.config.use_compute_scheduler,
+                "compute_run_id": self.compute_summary.get("run_id"),
+                "experiment_id": self.compute_summary.get("experiment_id"),
+                "gpu_count_detected": self.compute_summary.get("gpu_count_detected", 0),
+                "gpu_count_used": self.compute_summary.get("gpu_count_used", 0),
+                "shard_count": self.compute_summary.get("shard_count", self.config.shard_count),
+                "compute_success_count": self.compute_summary.get("compute_success_count", 0),
+                "compute_failed_count": self.compute_summary.get("compute_failed_count", 0),
+                "compute_resumed_count": self.compute_summary.get("compute_resumed_count", 0),
+                "total_gpu_allocated_seconds": self.compute_summary.get("total_gpu_allocated_seconds", 0.0),
+                "formula_eval_throughput": self.compute_summary.get("formula_eval_throughput", 0.0),
+                "pretrain_samples_per_second": self.compute_summary.get("pretrain_samples_per_second", 0.0),
+                "fallback_to_cpu_count": self.compute_summary.get("fallback_to_cpu_count", 0),
+                "cuda_oom_count": self.compute_summary.get("cuda_oom_count", 0),
+                "experiment_plan_path": self.compute_summary.get("experiment_plan_path"),
+                "compute_run_report_path": self.compute_summary.get("compute_run_report_path"),
+                "experiment_merge_report_path": self.compute_summary.get("experiment_merge_report_path"),
             },
         )
         suite_json, suite_md = write_suite_report(result, self.output_dir)
@@ -629,6 +650,69 @@ class ResearchSuiteRunner:
             self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "formula_batch_eval")
         return payload, output_paths
 
+    def _stage_compute_experiment(self) -> tuple[dict[str, Any], dict[str, str]]:
+        experiment_dir = Path(self.config.experiment_output_dir) if self.config.experiment_output_dir else self.output_dir / "experiment"
+        compute_state_dir = Path(self.config.compute_state_dir) if self.config.compute_state_dir else self.output_dir / "compute_state"
+        corpus_path = self._formula_corpus_dir() / "formula_corpus.jsonl"
+        if not corpus_path.exists() and self.config.build_formula_corpus:
+            self._stage_formula_corpus()
+        report = run_workflow_smoke(
+            {
+                "workflow": self.config.experiment_workflow,
+                "data_dir": self.config.data_dir,
+                "data_freeze_dir": self.config.data_freeze_dir,
+                "data_freeze_id": self.data_freeze_id,
+                "data_version_manifest_path": self.config.data_version_manifest_path,
+                "require_data_freeze": self.config.require_data_freeze,
+                "factor_store_dir": self.config.factor_store_dir,
+                "matrix_cache_dir": str(self._matrix_cache_dir()) if self.config.use_matrix_cache or self.config.matrix_cache_dir else None,
+                "formula_corpus_path": str(corpus_path) if corpus_path.exists() else None,
+                "output_dir": str(experiment_dir),
+                "compute_state_dir": str(compute_state_dir),
+                "gpu_count": self.config.gpu_count,
+                "shard_count": self.config.shard_count,
+                "max_formulas": self.config.search_max_candidates,
+                "device": "cuda" if self.config.gpu_count > 0 else "cpu",
+                "use_ddp_pretrain": self.config.use_ddp_pretrain,
+                "pretrain_epochs": self.config.pretrain_epochs,
+                "pretrain_batch_size": self.config.pretrain_batch_size,
+                "search_mode": self.config.search_mode,
+                "search_generations": self.config.search_generations,
+                "search_population_size": self.config.search_population_size,
+                "search_max_candidates": self.config.search_max_candidates,
+                "batch_eval_chunk_size": self.config.batch_eval_chunk_size,
+                "max_parallel_gpu_jobs": self.config.max_parallel_gpu_jobs,
+                "max_parallel_cpu_jobs": self.config.max_parallel_cpu_jobs,
+                "resume": self.config.resume_compute,
+                "dry_run": self.config.compute_dry_run,
+            }
+        )
+        payload = report.to_dict()
+        summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+        self.compute_summary = {
+            "run_id": summary.get("compute_run_id") or Path(str(payload.get("compute_run_report_path") or "")).stem,
+            "experiment_id": payload.get("experiment_id"),
+            "gpu_count_detected": summary.get("gpu_count_detected", 0),
+            "gpu_count_used": self.config.gpu_count,
+            "shard_count": payload.get("shard_count", self.config.shard_count),
+            "compute_success_count": summary.get("compute_success_count", 0),
+            "compute_failed_count": summary.get("compute_failed_count", 0),
+            "compute_resumed_count": summary.get("compute_resumed_count", 0),
+            "total_gpu_allocated_seconds": summary.get("total_gpu_allocated_seconds", 0.0),
+            "formula_eval_throughput": summary.get("formula_eval_throughput", 0.0),
+            "pretrain_samples_per_second": summary.get("pretrain_samples_per_second", 0.0),
+            "fallback_to_cpu_count": summary.get("fallback_to_cpu_count", 0),
+            "cuda_oom_count": summary.get("cuda_oom_count", 0),
+            "experiment_plan_path": payload.get("plan_path"),
+            "compute_run_report_path": payload.get("compute_run_report_path"),
+            "experiment_merge_report_path": payload.get("merge_report_path"),
+        }
+        paths = payload.get("paths", {}) if isinstance(payload.get("paths"), dict) else {}
+        for name, path in paths.items():
+            if path:
+                self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "compute_experiment")
+        return self.compute_summary | {"status": payload.get("status")}, {str(k): str(v) for k, v in paths.items() if v}
+
     def _stage_formula_search(self) -> tuple[dict[str, Any], dict[str, str]]:
         payload = _run_json_main(
             run_search.main,
@@ -680,6 +764,21 @@ class ResearchSuiteRunner:
             + _freeze_cli_args(self.config)
             + (["--corpus-sequence-path", str(self._formula_corpus_dir() / "formula_sequences.jsonl")] if (self._formula_corpus_dir() / "formula_sequences.jsonl").exists() else [])
             + (["--matrix-cache-dir", str(self._matrix_cache_dir()), "--use-matrix-cache"] if self.config.use_matrix_cache else [])
+            + (
+                [
+                    "--use-compute-scheduler",
+                    "--compute-state-dir",
+                    str(self.config.compute_state_dir or self.output_dir / "compute_state"),
+                    "--compute-output-dir",
+                    str(self.config.compute_output_dir or self.output_dir / "compute"),
+                    "--formula-shard-count",
+                    str(self.config.formula_shards),
+                    "--experiment-id",
+                    str(self.compute_summary.get("experiment_id") or self.config.suite_name),
+                ]
+                if self.config.use_compute_scheduler
+                else []
+            )
             + (
                 [
                     "--corporate-action-aware",

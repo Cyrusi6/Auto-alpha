@@ -185,3 +185,41 @@ def test_broker_statement_and_eod_artifacts_are_registered(tmp_path):
     assert {"broker_statement_import_report", "eod_reconciliation_report", "reconciliation_breaks", "adjustment_proposals"} <= {
         entry.artifact_type for entry in manifest.entries
     }
+
+
+def test_compute_and_experiment_artifacts_are_registered(tmp_path):
+    compute_report = tmp_path / "compute_run_report.json"
+    write_json_artifact(
+        compute_report,
+        {"run_id": "run_1", "status": "success", "job_count": 1},
+        artifact_type="compute_run_report",
+        producer="test",
+    )
+    compute_jobs = tmp_path / "compute_jobs.jsonl"
+    write_jsonl_artifact(
+        compute_jobs,
+        [{"job_id": "job_1", "job_kind": "shell_command"}],
+        artifact_type="compute_jobs",
+        producer="test",
+    )
+    experiment_plan = tmp_path / "experiment_plan.json"
+    write_json_artifact(
+        experiment_plan,
+        {"experiment_id": "exp_1", "workflow": "full_research_compute_smoke", "compute_jobs": []},
+        artifact_type="experiment_plan",
+        producer="test",
+    )
+    experiment_report = tmp_path / "experiment_run_report.json"
+    write_json_artifact(
+        experiment_report,
+        {"experiment_id": "exp_1", "workflow": "full_research_compute_smoke", "status": "success"},
+        artifact_type="experiment_run_report",
+        producer="test",
+    )
+
+    for path in [compute_report, compute_jobs, experiment_plan, experiment_report]:
+        assert validate_artifact(path, strict=True).valid is True
+    manifest = build_artifact_manifest([compute_report, compute_jobs, experiment_plan, experiment_report], root_dir=tmp_path)
+    assert {"compute_run_report", "compute_jobs", "experiment_plan", "experiment_run_report"} <= {
+        entry.artifact_type for entry in manifest.entries
+    }

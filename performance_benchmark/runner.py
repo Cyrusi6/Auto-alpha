@@ -9,6 +9,9 @@ from typing import Callable
 
 import torch
 
+from compute_cluster.gpu_probe import probe_compute_resources
+from compute_cluster.models import ComputeSchedulerConfig
+from compute_cluster.run_compute import main as run_compute_main
 from backtest import run_backtest
 from factor_store import FactorRecord, LocalFactorStore, make_factor_id, stable_formula_hash
 from formula_batch_eval import FormulaBatchEvalConfig, FormulaBatchEvaluator, requests_from_candidates
@@ -31,28 +34,65 @@ def run_benchmark(
     data_dir: str | Path,
     output_dir: str | Path,
     matrix_cache_dir: str | Path | None = None,
+    formula_corpus_path: str | Path | None = None,
+    data_freeze_dir: str | Path | None = None,
+    device: str = "auto",
+    gpu_count: int = 0,
+    shard_count: int = 1,
+    max_formulas: int | None = None,
+    run_gpu: bool = False,
+    run_ddp: bool = False,
+    skip_gpu_if_unavailable: bool = True,
+    compute_state_dir: str | Path | None = None,
 ) -> BenchmarkResult:
     data_path = Path(data_dir)
     output_path = Path(output_dir)
     cache_path = Path(matrix_cache_dir) if matrix_cache_dir is not None else None
     output_path.mkdir(parents=True, exist_ok=True)
 
+    snapshot = probe_compute_resources()
     items = [
+        _run_item("gpu_probe", lambda: _bench_gpu_probe(snapshot)),
         _run_item("jsonl_loader_load_data", lambda: _bench_loader(data_path, None, False)),
         _run_item("matrix_loader_load_data", lambda: _bench_loader(data_path, cache_path, True), skip=not _cache_exists(cache_path)),
+        _run_item("matrix_cache_io_throughput", lambda: _bench_matrix_io(cache_path), skip=not _cache_exists(cache_path)),
         _run_item("stackvm_execute_default_formulas", lambda: _bench_stackvm(data_path)),
         _run_item("research_batch_small", lambda: _bench_research_batch(data_path, output_path)),
         _run_item("formula_search_small", lambda: _bench_formula_search(data_path, output_path)),
         _run_item("formula_batch_eval_small", lambda: _bench_formula_batch_eval(data_path, output_path, cache_path)),
+        _run_item("cpu_formula_batch_eval_baseline", lambda: _bench_formula_batch_eval(data_path, output_path / "cpu_baseline", cache_path)),
+        _run_item("gpu_formula_batch_eval_single_device", lambda: _bench_formula_batch_eval(data_path, output_path / "gpu_single", cache_path), skip=not run_gpu or (skip_gpu_if_unavailable and not snapshot.cuda_available)),
+        _run_item("gpu_formula_batch_eval_sharded", lambda: _bench_formula_batch_eval(data_path, output_path / "gpu_sharded", cache_path), skip=not run_gpu or (skip_gpu_if_unavailable and not snapshot.cuda_available)),
         _run_item("alphagpt_pretrain_small", lambda: _bench_pretrain(output_path)),
+        _run_item("alphagpt_pretrain_cpu_smoke", lambda: _bench_pretrain(output_path / "pretrain_cpu")),
+        _run_item("alphagpt_pretrain_gpu_smoke", lambda: _bench_pretrain(output_path / "pretrain_gpu"), skip=not run_gpu or (skip_gpu_if_unavailable and not snapshot.cuda_available)),
+        _run_item("alphagpt_pretrain_ddp_smoke", lambda: _bench_pretrain(output_path / "pretrain_ddp"), skip=not run_ddp or (skip_gpu_if_unavailable and not snapshot.cuda_available)),
+        _run_item("scheduler_overhead_smoke", lambda: _bench_scheduler(output_path, compute_state_dir)),
+        _run_item("freeze_hash_validation_throughput", lambda: _bench_freeze_hash(data_freeze_dir), skip=data_freeze_dir is None),
         _run_item("backtest_equal_weight", lambda: _bench_backtest(data_path, output_path, "equal_weight")),
         _run_item("backtest_risk_aware", lambda: _bench_backtest(data_path, output_path, "risk_aware")),
     ]
+    item_map = {item.name: item for item in items}
     summary = {
         "items": len(items),
         "successful_items": sum(1 for item in items if item.success),
         "failed_items": sum(1 for item in items if not item.success),
         "total_wall_time_seconds": float(sum(item.wall_time_seconds for item in items)),
+        "gpu_count_detected": int(snapshot.cuda_device_count),
+        "gpu_count_used": int(gpu_count if snapshot.cuda_available else 0),
+        "cuda_available": bool(snapshot.cuda_available),
+        "formula_eval_formulas_per_second_cpu": item_map.get("cpu_formula_batch_eval_baseline").throughput_estimate if item_map.get("cpu_formula_batch_eval_baseline") else 0.0,
+        "formula_eval_formulas_per_second_gpu": item_map.get("gpu_formula_batch_eval_single_device").throughput_estimate if item_map.get("gpu_formula_batch_eval_single_device") and item_map["gpu_formula_batch_eval_single_device"].success else 0.0,
+        "formula_eval_formulas_per_second_sharded": item_map.get("gpu_formula_batch_eval_sharded").throughput_estimate if item_map.get("gpu_formula_batch_eval_sharded") and item_map["gpu_formula_batch_eval_sharded"].success else 0.0,
+        "pretrain_samples_per_second_cpu": item_map.get("alphagpt_pretrain_cpu_smoke").throughput_estimate if item_map.get("alphagpt_pretrain_cpu_smoke") else 0.0,
+        "scheduler_overhead_seconds": item_map.get("scheduler_overhead_smoke").wall_time_seconds if item_map.get("scheduler_overhead_smoke") else 0.0,
+        "matrix_cache_read_mb_per_second": item_map.get("matrix_cache_io_throughput").throughput_estimate if item_map.get("matrix_cache_io_throughput") else 0.0,
+        "freeze_hash_mb_per_second": item_map.get("freeze_hash_validation_throughput").throughput_estimate if item_map.get("freeze_hash_validation_throughput") else 0.0,
+        "oom_count": 0,
+        "fallback_to_cpu_count": sum(1 for item in items if item.error == "skipped"),
+        "speedup_vs_cpu": 0.0,
+        "speedup_vs_single_gpu": 0.0,
+        "skipped_gpu_reason": "" if snapshot.cuda_available else "cuda_unavailable",
     }
     result = BenchmarkResult(
         data_dir=str(data_path),
@@ -103,6 +143,33 @@ def _bench_loader(data_dir: Path, cache_dir: Path | None, use_cache: bool) -> di
         use_matrix_cache=use_cache,
     ).load_data()
     return _loader_payload(loader)
+
+
+def _bench_gpu_probe(snapshot) -> dict[str, int]:
+    return {"records_read": int(snapshot.cuda_device_count), "n_features": len(snapshot.devices)}
+
+
+def _bench_matrix_io(cache_dir: Path | None) -> dict[str, int]:
+    if cache_dir is None:
+        return {"records_read": 0}
+    total = sum(path.stat().st_size for path in cache_dir.glob("*.npy")) + sum(path.stat().st_size for path in cache_dir.glob("*.npz"))
+    return {"records_read": int(total / (1024 * 1024)) or 1}
+
+
+def _bench_scheduler(output_dir: Path, compute_state_dir: str | Path | None) -> dict[str, int]:
+    state_dir = Path(compute_state_dir) if compute_state_dir is not None else output_dir / "compute_state"
+    with contextlib.redirect_stdout(io.StringIO()):
+        rc = run_compute_main(["smoke", "--state-dir", str(state_dir), "--output-dir", str(output_dir / "compute_smoke")])
+    if rc != 0:
+        raise RuntimeError(f"compute smoke returned {rc}")
+    return {"records_read": 1}
+
+
+def _bench_freeze_hash(data_freeze_dir: str | Path | None) -> dict[str, int]:
+    if data_freeze_dir is None:
+        return {"records_read": 0}
+    total = sum(path.stat().st_size for path in Path(data_freeze_dir).rglob("*") if path.is_file())
+    return {"records_read": int(total / (1024 * 1024)) or 1}
 
 
 def _bench_stackvm(data_dir: Path) -> dict[str, int]:

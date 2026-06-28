@@ -133,6 +133,18 @@ class AlphaGPTPretrainConfig:
     resume_checkpoint: str | None = None
     device: str = "auto"
     amp: bool = False
+    distributed: bool = False
+    world_size: int = 1
+    rank: int = 0
+    local_rank: int = 0
+    backend: str = "gloo"
+    master_addr: str = "127.0.0.1"
+    master_port: str = "29500"
+    ddp_init_method: str | None = None
+    ddp_find_unused_parameters: bool = False
+    resource_report_path: str | None = None
+    strict_cuda: bool = False
+    save_rank0_only: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

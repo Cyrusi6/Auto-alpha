@@ -53,6 +53,13 @@ def test_research_suite_formula_corpus_pretrain_batch_eval(tmp_path, capsys):
             "cpu",
             "--batch-eval-chunk-size",
             "2",
+            "--use-compute-scheduler",
+            "--compute-state-dir",
+            str(tmp_path / "compute_state"),
+            "--experiment-output-dir",
+            str(tmp_path / "experiment"),
+            "--formula-shards",
+            "1",
             "--walk-forward-train-size",
             "1",
             "--walk-forward-test-size",
@@ -70,11 +77,15 @@ def test_research_suite_formula_corpus_pretrain_batch_eval(tmp_path, capsys):
     assert "formula_corpus" in stage_names
     assert "alphagpt_pretrain" in stage_names
     assert "formula_batch_eval" in stage_names
+    assert "compute_experiment" in stage_names
     assert (tmp_path / "suite" / "formula_corpus" / "formula_corpus.jsonl").exists()
     assert (tmp_path / "suite" / "alphagpt_pretrain" / "checkpoint_manifest.json").exists()
     assert (tmp_path / "suite" / "formula_batch_eval" / "formula_batch_eval_result.json").exists()
+    assert (tmp_path / "compute_state" / "compute_run_report.json").exists()
+    assert (tmp_path / "experiment" / "experiment_run_report.json").exists()
     catalog = json.loads((tmp_path / "suite" / "artifact_catalog.json").read_text())
     names = {entry["name"] for entry in catalog["entries"]}
     assert "formula_corpus" in names
     assert "alphagpt_pretrain_result" in names
     assert "formula_batch_eval_result" in names
+    assert "compute_run_report" in names

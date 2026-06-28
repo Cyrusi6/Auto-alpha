@@ -24,6 +24,8 @@ class DashboardConfig:
     data_source_smoke_dir: Path = Path("artifacts/data_source_smoke")
     backfill_dir: Path = Path("artifacts/backfill")
     data_lake_dir: Path = Path("artifacts/data_lake")
+    compute_dir: Path = Path("artifacts/compute")
+    experiment_dir: Path = Path("artifacts/experiment")
     schema_validation_dir: Path = Path("artifacts/schema_validation")
     release_dir: Path = Path("artifacts/release")
     ci_dir: Path = Path(".ci_artifacts")
@@ -57,6 +59,8 @@ class DashboardConfig:
             data_source_smoke_dir=Path(os.getenv("ASHARE_DASHBOARD_DATA_SOURCE_SMOKE_DIR") or "artifacts/data_source_smoke"),
             backfill_dir=Path(os.getenv("ASHARE_DASHBOARD_BACKFILL_DIR") or "artifacts/backfill"),
             data_lake_dir=Path(os.getenv("ASHARE_DASHBOARD_DATA_LAKE_DIR") or "artifacts/data_lake"),
+            compute_dir=Path(os.getenv("ASHARE_DASHBOARD_COMPUTE_DIR") or "artifacts/compute"),
+            experiment_dir=Path(os.getenv("ASHARE_DASHBOARD_EXPERIMENT_DIR") or "artifacts/experiment"),
             schema_validation_dir=Path(os.getenv("ASHARE_DASHBOARD_SCHEMA_VALIDATION_DIR") or "artifacts/schema_validation"),
             release_dir=Path(os.getenv("ASHARE_DASHBOARD_RELEASE_DIR") or "artifacts/release"),
             ci_dir=Path(os.getenv("ASHARE_DASHBOARD_CI_DIR") or ".ci_artifacts"),

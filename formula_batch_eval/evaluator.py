@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from datetime import datetime
 from pathlib import Path
@@ -110,6 +111,7 @@ class FormulaBatchEvaluator:
             "formula_batch_eval_report_path": str(self.output_dir / "formula_batch_eval_report.md"),
             "formula_eval_cache_manifest_path": str(self.output_dir / "formula_eval_cache_manifest.json"),
             "formula_batch_eval_benchmark_path": str(self.output_dir / "formula_batch_eval_benchmark.json"),
+            "resource_usage_path": str(self.output_dir / "resource_usage.json"),
         }
         result = FormulaBatchEvalResult(
             batch_id=batch_id,
@@ -122,6 +124,7 @@ class FormulaBatchEvaluator:
             benchmark=benchmark.to_dict(),
         )
         self._write_outputs(result)
+        self._write_resource_usage(result)
         return result
 
     def _run_request(self, request: FormulaEvalRequest, batch_id: str, created_at: str) -> FormulaEvalResult:
@@ -364,6 +367,21 @@ class FormulaBatchEvaluator:
             "formula_batch_eval",
         )
         (self.output_dir / "formula_batch_eval_report.md").write_text(_render_report(result), encoding="utf-8")
+
+    def _write_resource_usage(self, result: FormulaBatchEvalResult) -> None:
+        fallback_to_cpu = str(self.config.device or "auto").startswith("cuda") and str(self.device) == "cpu"
+        payload = {
+            "device_requested": self.config.device,
+            "device_resolved": str(self.device),
+            "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
+            "fallback_to_cpu": bool(fallback_to_cpu),
+            "shard_id": self.config.shard_id,
+            "shard_count": self.config.shard_count,
+            "formulas_per_second": float(result.benchmark.get("formulas_per_second", 0.0) or 0.0),
+            "formulas_evaluated": int(result.benchmark.get("formulas_evaluated", 0) or 0),
+        }
+        path = Path(self.config.resource_report_path) if self.config.resource_report_path else self.output_dir / "resource_usage.json"
+        write_json_artifact(path, payload, "resource_usage_report", "formula_batch_eval")
 
 
 def requests_from_candidates(candidates: Iterable[FactorCandidate]) -> list[FormulaEvalRequest]:

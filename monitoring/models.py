@@ -60,6 +60,15 @@ class MonitoringReport:
         artifact_schema = self.checks.get("artifact_schema_validation", {}) if isinstance(self.checks, dict) else {}
         release_gate = self.checks.get("release_gate", {}) if isinstance(self.checks, dict) else {}
         package_build = self.checks.get("package_build_artifacts", {}) if isinstance(self.checks, dict) else {}
+        compute_resources = self.checks.get("compute_cluster_resources", {}) if isinstance(self.checks, dict) else {}
+        compute_failures = self.checks.get("compute_job_failures", {}) if isinstance(self.checks, dict) else {}
+        compute_retries = self.checks.get("compute_job_retries", {}) if isinstance(self.checks, dict) else {}
+        stale_leases = self.checks.get("stale_gpu_leases", {}) if isinstance(self.checks, dict) else {}
+        cuda_oom = self.checks.get("cuda_oom", {}) if isinstance(self.checks, dict) else {}
+        cpu_fallbacks = self.checks.get("cpu_fallbacks", {}) if isinstance(self.checks, dict) else {}
+        experiment_shards = self.checks.get("experiment_shard_failures", {}) if isinstance(self.checks, dict) else {}
+        experiment_merge = self.checks.get("experiment_merge_status", {}) if isinstance(self.checks, dict) else {}
+        gpu_throughput = self.checks.get("gpu_throughput_regression", {}) if isinstance(self.checks, dict) else {}
         return {
             "created_at": self.created_at,
             "as_of_date": self.as_of_date,
@@ -131,4 +140,22 @@ class MonitoringReport:
             "artifact_schema_warning_count": int(artifact_schema.get("artifact_schema_warning_count", 0) or 0) if isinstance(artifact_schema, dict) else 0,
             "release_gate_status": str(release_gate.get("release_gate_status", "")) if isinstance(release_gate, dict) else "",
             "package_build_status": str(package_build.get("package_build_status", "")) if isinstance(package_build, dict) else "",
+            "cuda_available": bool(compute_resources.get("cuda_available", False)) if isinstance(compute_resources, dict) else False,
+            "gpu_count_detected": int(compute_resources.get("gpu_count_detected", 0) or 0) if isinstance(compute_resources, dict) else 0,
+            "gpu_count_used": int(gpu_throughput.get("gpu_count_used", 0) or 0) if isinstance(gpu_throughput, dict) else 0,
+            "compute_job_count": int(compute_failures.get("compute_job_count", 0) or 0) if isinstance(compute_failures, dict) else 0,
+            "compute_failed_job_count": int(compute_failures.get("compute_failed_job_count", 0) or 0) if isinstance(compute_failures, dict) else 0,
+            "compute_resumed_job_count": int(compute_retries.get("compute_resumed_job_count", 0) or 0) if isinstance(compute_retries, dict) else 0,
+            "compute_timeout_count": int(compute_failures.get("compute_timeout_count", 0) or 0) if isinstance(compute_failures, dict) else 0,
+            "stale_gpu_lease_count": int(stale_leases.get("stale_gpu_lease_count", 0) or 0) if isinstance(stale_leases, dict) else 0,
+            "cuda_oom_count": int(cuda_oom.get("cuda_oom_count", 0) or 0) if isinstance(cuda_oom, dict) else 0,
+            "fallback_to_cpu_count": int(cpu_fallbacks.get("fallback_to_cpu_count", 0) or 0) if isinstance(cpu_fallbacks, dict) else 0,
+            "total_gpu_allocated_seconds": float(compute_failures.get("total_gpu_allocated_seconds", 0.0) or 0.0) if isinstance(compute_failures, dict) else 0.0,
+            "formula_eval_throughput": float(gpu_throughput.get("formula_eval_throughput", 0.0) or 0.0) if isinstance(gpu_throughput, dict) else 0.0,
+            "pretrain_samples_per_second": float(gpu_throughput.get("pretrain_samples_per_second", 0.0) or 0.0) if isinstance(gpu_throughput, dict) else 0.0,
+            "experiment_status": str(experiment_shards.get("experiment_status", "")) if isinstance(experiment_shards, dict) else "",
+            "experiment_shard_count": int(experiment_shards.get("experiment_shard_count", 0) or 0) if isinstance(experiment_shards, dict) else 0,
+            "experiment_failed_shard_count": int(experiment_shards.get("experiment_failed_shard_count", 0) or 0) if isinstance(experiment_shards, dict) else 0,
+            "experiment_merge_status": str(experiment_merge.get("experiment_merge_status", "")) if isinstance(experiment_merge, dict) else "",
+            "scheduler_warning_count": int(gpu_throughput.get("scheduler_warning_count", 0) or 0) if isinstance(gpu_throughput, dict) else 0,
         }

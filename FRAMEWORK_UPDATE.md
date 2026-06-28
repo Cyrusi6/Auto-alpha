@@ -1663,3 +1663,12 @@
 - Extended monitoring and dashboard data service to read backfill, dataset version, freeze validation, and data lineage artifacts.
 - Extended artifact schema registry, release inventory, packaging metadata, README, CATREADME, and `.env.example` for the new production data lake and backfill modules.
 - This remains a local governed-data and research-freeze layer. Real full-market backfill still requires explicit Tushare token/network access, quota checks, operational review, and full-scale performance validation.
+
+## Task 033 - 4-GPU Research Compute Plane, Scheduling, And Large-Scale Sharding
+
+- Added `compute_cluster/` for local CPU/CUDA probing, file-based GPU leases, JSON/JSONL job state, subprocess job runs, heartbeats, retry/resume, scheduler reports, and `compute_cluster.run_compute`.
+- Added `experiment_orchestrator/` for formula-corpus sharding, experiment graph/plan/resource artifacts, compute job submission, shard merge reports, and `experiment_orchestrator.run_experiment`.
+- Extended `formula_batch_eval` with deterministic shard selection, shard manifests, shard merge, GPU/device metadata hooks, and per-run `resource_usage.json`.
+- Extended `neural_search.run_pretrain` with distributed/DDP metadata options, rank0 checkpoint metadata, CPU fallback reporting, and resource report output.
+- Extended `research`, `formula_search`, `research_suite`, `performance_benchmark`, monitoring, dashboard, artifact schema, release inventory, local CI, package metadata, README, and CATREADME with compute scheduler and experiment orchestration artifacts.
+- Default CI/test paths remain CPU/offline and skip or fallback when CUDA is unavailable. The 4-card RTX 4090 path is an optional operator smoke for per-GPU shard parallelism and AlphaGPT DDP metadata, not a default requirement.
