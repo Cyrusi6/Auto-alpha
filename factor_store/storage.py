@@ -154,6 +154,16 @@ class LocalFactorStore:
             matrix[stock_idx, date_idx] = float(record.value)
         return matrix
 
+    def sync_status_from_model_registry(self, registry: Any, model_version_id: str) -> StorageResult:
+        model = registry.get_model_version(model_version_id)
+        if model is None:
+            raise FileNotFoundError(f"model version not found: {model_version_id}")
+        return self.update_factor_status(
+            model.factor_id,
+            model.lifecycle_status,
+            reason=f"model_registry:{model.lifecycle_status}",
+        )
+
     @staticmethod
     def _append_jsonl(path: Path, record: object) -> None:
         with path.open("a", encoding="utf-8") as handle:

@@ -12,11 +12,13 @@ from typing import Any, Callable
 from backtest import run_backtest
 from data_pipeline import run_pipeline
 from factor_store import LocalFactorStore
+from factor_lifecycle.run_lifecycle import main as run_lifecycle_main
 from formula_batch_eval.run_batch_eval import main as run_formula_batch_eval_main
 from formula_corpus.run_corpus import main as run_formula_corpus_main
 from formula_search import run_search
 from matrix_store.run_build_matrix import main as run_build_matrix_main
 from model_core.data_loader import AShareDataLoader
+from model_registry import LocalModelRegistry, ModelKind, write_model_registry_report
 from neural_search.run_pretrain import main as run_pretrain_main
 from performance_benchmark.run_benchmark import main as run_benchmark_main
 from strategy_manager import runner as strategy_runner
@@ -38,6 +40,8 @@ class ResearchSuiteRunner:
         self.selected_factor_id: str | None = None
         self.promotion_decision = None
         self.backtest_summary: dict[str, Any] = {}
+        self.model_version_id: str | None = None
+        self.model_lifecycle_summary: dict[str, Any] = {}
 
     def run(self) -> ResearchSuiteResult:
         started_at = _utc_now()
@@ -64,6 +68,10 @@ class ResearchSuiteRunner:
             self._append_stage("walk_forward", self._stage_walk_forward)
             if not self.config.disable_promotion and self.config.promote_latest_composite:
                 self._append_stage("promotion", self._stage_promotion)
+            if self.config.register_model_version:
+                self._append_stage("model_registry", self._stage_model_registry)
+            if self.config.create_model_review_package or self.config.require_model_approval:
+                self._append_stage("model_lifecycle", self._stage_model_lifecycle)
         except Exception:
             status = "failed"
 
@@ -89,6 +97,13 @@ class ResearchSuiteRunner:
                 "selected_factor_id": self.selected_factor_id,
                 "backtest_metrics": self.backtest_summary.get("metrics", {}),
                 "matrix_cache_dir": str(self._matrix_cache_dir()),
+                "model_version_id": self.model_version_id,
+                "model_lifecycle_status": self.model_lifecycle_summary.get("current_status") or self.model_lifecycle_summary.get("lifecycle_status"),
+                "model_registry_dir": str(self._model_registry_dir()),
+                "model_review_package_path": self.model_lifecycle_summary.get("model_review_package_path"),
+                "model_lifecycle_report_path": self.model_lifecycle_summary.get("factor_lifecycle_report_path"),
+                "model_approval_id": self.model_lifecycle_summary.get("approval_id"),
+                "model_recommended_action": self.model_lifecycle_summary.get("recommended_action"),
             },
         )
         suite_json, suite_md = write_suite_report(result, self.output_dir)
@@ -620,6 +635,94 @@ class ResearchSuiteRunner:
         self.catalog = register_artifact(self.catalog, "promotion_decision", path, "json", "promotion")
         return self.promotion_decision.to_dict(), {"promotion_decision": str(path)}
 
+    def _stage_model_registry(self) -> tuple[dict[str, Any], dict[str, str]]:
+        if not self.selected_factor_id:
+            raise ValueError("no selected factor for model registry registration")
+        store = LocalFactorStore(self.config.factor_store_dir)
+        factor = next((record for record in store.load_factors() if record.factor_id == self.selected_factor_id), None)
+        if factor is None:
+            raise FileNotFoundError(f"selected factor not found: {self.selected_factor_id}")
+        lifecycle_status = "production_candidate" if self.promotion_decision and self.promotion_decision.passed else "research_candidate"
+        registry = LocalModelRegistry(self._model_registry_dir())
+        source_artifacts = {entry.name: entry.path for entry in self.catalog.entries}
+        model = registry.register_factor_record(
+            factor,
+            model_kind=ModelKind.composite_factor,
+            source_artifacts=source_artifacts,
+            metrics=factor.metrics,
+            metadata={"suite_name": self.config.suite_name, "promotion_decision": self.promotion_decision.to_dict() if self.promotion_decision else {}},
+            lifecycle_status=lifecycle_status,
+        )
+        self.model_version_id = model.model_version_id
+        registry.sync_factor_store_status(store, model.model_version_id)
+        report_json, report_md = write_model_registry_report(registry)
+        output_paths = {
+            "model_versions": str(registry.versions_path),
+            "model_state": str(registry.state_path),
+            "model_deployments": str(registry.deployments_path),
+            "lifecycle_events": str(registry.events_path),
+            "model_registry_manifest": str(registry.manifest_path),
+            "model_registry_report": str(report_json),
+            "model_registry_report_md": str(report_md),
+            "model_lineage_graph": str(self._model_registry_dir() / "model_lineage_graph.json"),
+        }
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "model_registry")
+        return model.to_dict(), output_paths
+
+    def _stage_model_lifecycle(self) -> tuple[dict[str, Any], dict[str, str]]:
+        if not self.model_version_id:
+            self._stage_model_registry()
+        argv = [
+            "propose-activation",
+            "--data-dir",
+            self.config.data_dir,
+            "--factor-store-dir",
+            self.config.factor_store_dir,
+            "--registry-dir",
+            str(self._model_registry_dir()),
+            "--approval-store-dir",
+            str(self._model_approval_store_dir()),
+            "--output-dir",
+            str(self._model_lifecycle_dir()),
+            "--model-version-id",
+            str(self.model_version_id),
+            "--as-of-date",
+            self.config.as_of_date,
+            "--promotion-decision-path",
+            str(Path(self.config.output_dir) / "promotion_decision.json"),
+            "--backtest-result-path",
+            str(Path(self.config.backtest_dir) / "backtest_result.json"),
+            "--artifact-catalog-path",
+            str(Path(self.config.output_dir) / "artifact_catalog.json"),
+            "--create-review-package",
+        ]
+        if self.config.model_lifecycle_policy_path:
+            argv.extend(["--policy-path", self.config.model_lifecycle_policy_path])
+        if self.config.require_model_approval:
+            argv.append("--require-approval")
+        payload = _run_json_main(run_lifecycle_main, argv)
+        paths = payload.get("paths", {}) if isinstance(payload.get("paths"), dict) else {}
+        self.model_lifecycle_summary = {
+            "approval_id": payload.get("approval_id"),
+            "recommended_action": (payload.get("decision") or {}).get("recommended_action"),
+            "current_status": (payload.get("decision") or {}).get("current_status"),
+            **paths,
+        }
+        output_paths = {
+            "factor_lifecycle_report": paths.get("factor_lifecycle_report_path", str(self._model_lifecycle_dir() / "factor_lifecycle_report.json")),
+            "factor_lifecycle_report_md": paths.get("factor_lifecycle_report_md_path", str(self._model_lifecycle_dir() / "factor_lifecycle_report.md")),
+            "lifecycle_decisions": paths.get("lifecycle_decisions_path", str(self._model_lifecycle_dir() / "lifecycle_decisions.jsonl")),
+            "factor_health_checks": paths.get("factor_health_checks_path", str(self._model_lifecycle_dir() / "factor_health_checks.jsonl")),
+            "model_review_package": paths.get("model_review_package_path", str(self._model_lifecycle_dir() / "model_review_package.json")),
+            "model_review_package_md": paths.get("model_review_package_md_path", str(self._model_lifecycle_dir() / "model_review_package.md")),
+            "model_lineage_graph": paths.get("model_lineage_graph_path", str(self._model_registry_dir() / "model_lineage_graph.json")),
+        }
+        for name, path in output_paths.items():
+            if path:
+                self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "model_lifecycle")
+        return payload, output_paths
+
     def _matrix_cache_dir(self) -> Path:
         return Path(self.config.matrix_cache_dir) if self.config.matrix_cache_dir else Path(self.config.data_dir) / "matrix_cache"
 
@@ -634,6 +737,15 @@ class ResearchSuiteRunner:
 
     def _batch_eval_dir(self) -> Path:
         return Path(self.config.batch_eval_dir) if self.config.batch_eval_dir else Path(self.config.output_dir) / "formula_batch_eval"
+
+    def _model_registry_dir(self) -> Path:
+        return Path(self.config.model_registry_dir) if self.config.model_registry_dir else Path(self.config.output_dir).parent / "model_registry"
+
+    def _model_lifecycle_dir(self) -> Path:
+        return Path(self.config.model_lifecycle_output_dir) if self.config.model_lifecycle_output_dir else Path(self.config.output_dir) / "model_lifecycle"
+
+    def _model_approval_store_dir(self) -> Path:
+        return Path(self.config.model_approval_store_dir) if self.config.model_approval_store_dir else Path(self.config.output_dir).parent / "approvals"
 
 
 def _run_json_main(main_func: Callable[[list[str] | None], int], argv: list[str]) -> dict[str, Any]:

@@ -628,6 +628,76 @@ class AshareDashboardService:
                 return frame
         return pd.DataFrame()
 
+    def load_model_registry_report(self) -> dict[str, Any]:
+        for path in self._model_registry_candidates("model_registry_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_model_registry_manifest(self) -> dict[str, Any]:
+        for path in self._model_registry_candidates("model_registry_manifest.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_model_versions(self) -> pd.DataFrame:
+        for path in self._model_registry_candidates("model_versions.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_model_deployments(self) -> pd.DataFrame:
+        for path in self._model_registry_candidates("model_deployments.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_model_lifecycle_events(self) -> pd.DataFrame:
+        for path in self._model_registry_candidates("lifecycle_events.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_model_lineage_graph(self) -> dict[str, Any]:
+        for path in self._model_registry_candidates("model_lineage_graph.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_factor_lifecycle_report(self) -> dict[str, Any]:
+        for path in self._model_lifecycle_candidates("factor_lifecycle_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_factor_health_checks(self) -> pd.DataFrame:
+        for path in self._model_lifecycle_candidates("factor_health_checks.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_lifecycle_decisions(self) -> pd.DataFrame:
+        for path in self._model_lifecycle_candidates("lifecycle_decisions.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_model_review_package(self) -> dict[str, Any]:
+        for path in self._model_lifecycle_candidates("model_review_package.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
     def _neural_artifact_candidates(self, filename: str) -> list[Path]:
         root = self.config.report_dir.parent
         return [
@@ -676,6 +746,24 @@ class AshareDashboardService:
             self.config.pretrain_dir / filename,
             root / "alphagpt_pretrain" / filename,
             root / "suite" / "alphagpt_pretrain" / filename,
+        ]
+
+    def _model_registry_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.model_registry_dir / filename,
+            root / "model_registry" / filename,
+            root / "suite" / "model_registry" / filename,
+            root / "production" / filename,
+            root / "production_execute" / filename,
+        ]
+
+    def _model_lifecycle_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.model_lifecycle_dir / filename,
+            root / "model_lifecycle" / filename,
+            root / "suite" / "model_lifecycle" / filename,
         ]
 
     def _production_candidates(self, filename: str) -> list[Path]:

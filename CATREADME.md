@@ -7,11 +7,12 @@ This repository is now organized as a local A-share factor research platform. Th
 3. Register factors and experiments.
 4. Run batch or search-style research and build composite factors.
 5. Run the one-click research suite, including walk-forward and promotion.
-6. Run equal-weight or benchmark-aware portfolio simulation.
-7. Estimate capacity, build execution plans, and export target positions plus paper orders.
-8. Route approved child orders through local paper, simulated broker, or file-instruction broker adapters.
-9. Run approval-gated daily paper operations.
-10. Review artifacts and monitoring in the dashboard.
+6. Register promoted factors as governed model versions, build review packages, and activate approved model deployments.
+7. Run equal-weight or benchmark-aware portfolio simulation.
+8. Estimate capacity, build execution plans, and export target positions plus paper orders.
+9. Route approved child orders through local paper, simulated broker, or file-instruction broker adapters.
+10. Run approval-gated daily paper operations.
+11. Review artifacts and monitoring in the dashboard.
 
 ## Data Layer
 
@@ -184,12 +185,24 @@ Filled and partial fills update cash and positions. Rejected fills are recorded 
 
 `operations/` runs the daily production path:
 
-1. Select a `production_candidate` factor, or fall back to the latest approved composite factor.
+1. Select an active model from `model_registry/`, or select a `production_candidate` factor when registry mode is disabled.
 2. Generate target positions and proposed orders with `strategy_manager`.
 3. If approval is required, write a pending approval batch and stop.
 4. After approval, execute local paper fills, update the paper account, and write `production_run.json` plus `production_run.md`.
 
 Capacity-aware daily runs store parent and child order schedules inside approval batches. Approved child orders can keep the default paper simulator path, route through the simulated broker state machine, or export generic file instructions. Broker-enabled runs write `broker_report.json/md`, `broker_orders.jsonl`, `broker_events.jsonl`, `broker_fills.jsonl`, and `broker_reconciliation.json/md`. Repeated execution of the same approved child orders is idempotent at the broker order and paper-account fill layers.
+
+`model_registry/` stores governed model versions and active deployments:
+
+- `model_versions.jsonl`
+- `model_state.json`
+- `model_deployments.jsonl`
+- `lifecycle_events.jsonl`
+- `model_registry_manifest.json`
+- `model_registry_report.json/md`
+- `model_lineage_graph.json`
+
+`factor_lifecycle/` evaluates factor health, writes human review packages, creates `model_lifecycle` approval batches, applies approved activations, and supports pause, quarantine, retire, and rollback flows. `operations.run_daily --use-model-registry --require-active-model` blocks paused, quarantined, retired, or missing active models before order generation.
 
 `monitoring/` checks local production artifacts:
 
@@ -197,6 +210,9 @@ Capacity-aware daily runs store parent and child order schedules inside approval
 - quality report errors
 - production factor availability and recent factor drift
 - risk report violations
+- active model status and lifecycle health
+- pending model review approvals
+- model lineage completeness and rollback availability
 - style exposure drift
 - active risk drift
 - factor risk concentration
@@ -277,7 +293,7 @@ GitHub Actions are split by risk boundary:
 
 ## Dashboard
 
-`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, data-source smoke reports, provider probes, field coverage, audit summaries, incremental recovery reports, baseline summaries, matrix cache metadata, matrix validation reports, benchmark reports, data-source comparison reports, factor store, factor reports, batch reports, search reports, neural search reports, neural training history, checkpoint lists, suite reports, artifact catalog, promotion decisions, risk reports, risk model reports, risk exposures, risk decomposition, return attribution, capacity reports, execution plans, parent orders, child orders, child fills, execution quality, broker reports, broker order states, broker events, broker fills, reconciliation reports, file outbox manifests, optimization results, backtest outputs, target positions, orders, paper fills, production runs, approvals, paper account state, account ledgers, monitoring reports, artifact schema validation reports, release gate reports, release manifests, dependency/module/CLI inventories, local CI reports, and alerts. Missing artifacts produce empty states instead of errors.
+`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, data-source smoke reports, provider probes, field coverage, audit summaries, incremental recovery reports, baseline summaries, matrix cache metadata, matrix validation reports, benchmark reports, data-source comparison reports, factor store, factor reports, batch reports, search reports, neural search reports, neural training history, checkpoint lists, suite reports, artifact catalog, promotion decisions, model registry reports, model deployments, lifecycle events, factor lifecycle reports, health checks, review packages, lineage graphs, risk reports, risk model reports, risk exposures, risk decomposition, return attribution, capacity reports, execution plans, parent orders, child orders, child fills, execution quality, broker reports, broker order states, broker events, broker fills, reconciliation reports, file outbox manifests, optimization results, backtest outputs, target positions, orders, paper fills, production runs, approvals, paper account state, account ledgers, monitoring reports, artifact schema validation reports, release gate reports, release manifests, dependency/module/CLI inventories, local CI reports, and alerts. Missing artifacts produce empty states instead of errors.
 
 ## Research Suite Outputs
 
@@ -291,7 +307,8 @@ GitHub Actions are split by risk boundary:
 - `artifact_catalog.md`
 
 The artifact catalog indexes data manifest, quality report, pipeline state, universe summary, optional matrix metadata, optional benchmark reports, search reports, factor store files, selected factor values, backtest outputs, risk reports, optimization results, order outputs, suite report, and promotion decision.
+When lifecycle governance is enabled, it also indexes model registry files, lifecycle reports, model review packages, approval ids, and lineage graph artifacts.
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton plus a data-source smoke validator for offline fake Tushare scenarios and gated real-token diagnostics. Artifact schema versioning, release gate reports, local CI, and package build artifacts are available. Matrix cache, local benchmark, and data-source comparison skeletons are available. Formula corpus construction, matrix-aware batch formula evaluation, and offline AlphaGPT pretraining are available. Barra-like risk model v1 and benchmark-aware portfolio optimization now have a local implementation. Capacity-aware execution planning, broker adapter state, file instruction export, and paper child-order simulation are available. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Daily production now has local approvals, paper account ledger, broker reconciliation, and monitoring reports. Real full-market token/quota operation, full-market stress runs, incremental matrix refresh, richer provider comparisons, production Barra definitions, robust full-market covariance calibration, a professional optimizer, stronger reinforcement learning, larger offline corpora, richer walk-forward policies, richer approval policies, human review workflow, broader neural training stability validation, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, verified broker file mappings, and real broker connectivity are future work.
+The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton plus a data-source smoke validator for offline fake Tushare scenarios and gated real-token diagnostics. Artifact schema versioning, release gate reports, local CI, and package build artifacts are available. Matrix cache, local benchmark, and data-source comparison skeletons are available. Formula corpus construction, matrix-aware batch formula evaluation, and offline AlphaGPT pretraining are available. Barra-like risk model v1 and benchmark-aware portfolio optimization now have a local implementation. Capacity-aware execution planning, broker adapter state, file instruction export, and paper child-order simulation are available. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Daily production now has local approvals, model registry activation gates, paper account ledger, broker reconciliation, and monitoring reports. Real full-market token/quota operation, full-market stress runs, incremental matrix refresh, richer provider comparisons, production Barra definitions, robust full-market covariance calibration, a professional optimizer, stronger reinforcement learning, larger offline corpora, richer lifecycle policies, external review workflow integrations, broader neural training stability validation, finer matching realism, minute-level volume modeling, finer industry classification, large-scale performance tuning, verified broker file mappings, and real broker connectivity are future work.

@@ -5,6 +5,8 @@ from execution import ExecutionFill, export_fills_jsonl
 from broker_adapter import BrokerOrderRequest, SimulatedBrokerAdapter
 from factor_store import FactorRecord, LocalFactorStore, stable_formula_hash
 from model_core.data_loader import AShareDataLoader
+from model_registry import LocalModelRegistry
+from model_registry.report import write_model_registry_report
 from monitoring import run_monitor
 from monitoring.checks import check_quality_report
 from paper_account import LocalPaperAccount
@@ -123,6 +125,24 @@ def _prepare_monitoring_artifacts(tmp_path):
 
 def test_monitoring_report_cli_writes_alerts(tmp_path, capsys):
     data_dir, store_dir, account_dir, orders_dir, broker_dir, release_dir = _prepare_monitoring_artifacts(tmp_path)
+    registry_dir = tmp_path / "model_registry"
+    registry = LocalModelRegistry(registry_dir)
+    model = registry.register_factor_record(LocalFactorStore(store_dir).load_factors()[0])
+    active, _deployment = registry.activate(model.model_version_id, approval_id="model_approval")
+    write_model_registry_report(registry)
+    lifecycle_dir = tmp_path / "model_lifecycle"
+    lifecycle_dir.mkdir()
+    (lifecycle_dir / "factor_lifecycle_report.json").write_text(
+        json.dumps(
+            {
+                "evaluation": {
+                    "decision": {"recommended_action": "keep_active"},
+                    "checks": [{"name": "recent_coverage", "severity": "info", "passed": True}],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
     exit_code = run_monitor.main(
         [
             "--data-dir",
@@ -147,6 +167,14 @@ def test_monitoring_report_cli_writes_alerts(tmp_path, capsys):
             str(release_dir / "release_gate_report.json"),
             "--release-manifest-path",
             str(release_dir / "release_manifest.json"),
+            "--model-registry-dir",
+            str(registry_dir),
+            "--model-version-id",
+            active.model_version_id,
+            "--factor-lifecycle-report-path",
+            str(lifecycle_dir / "factor_lifecycle_report.json"),
+            "--model-lineage-graph-path",
+            str(registry_dir / "model_lineage_graph.json"),
             "--pretty",
         ]
     )
@@ -168,6 +196,10 @@ def test_monitoring_report_cli_writes_alerts(tmp_path, capsys):
     assert payload["checks"]["artifact_schema_validation"]["artifact_schema_warning_count"] == 1
     assert payload["checks"]["release_gate"]["release_gate_status"] == "passed"
     assert payload["checks"]["package_build_artifacts"]["package_build_status"] == "passed"
+    assert payload["checks"]["model_registry"]["model_versions"] == 1
+    assert payload["checks"]["active_model_status"]["active_model_version_id"] == active.model_version_id
+    assert payload["checks"]["model_lifecycle_health"]["recommended_action"] == "keep_active"
+    assert payload["checks"]["model_lineage_completeness"]["model_lineage_node_count"] >= 1
     assert any(alert["check"] == "fill_quality" for alert in payload["alerts"])
     assert (tmp_path / "monitoring" / "monitoring_report.json").exists()
     assert (tmp_path / "monitoring" / "monitoring_report.md").exists()

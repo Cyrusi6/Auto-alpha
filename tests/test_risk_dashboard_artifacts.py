@@ -108,6 +108,29 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
         encoding="utf-8",
     )
     (pretrain_dir / "alphagpt_pretrain_history.jsonl").write_text('{"epoch":0,"loss":1.0}\n', encoding="utf-8")
+    model_registry_dir = tmp_path / "model_registry"
+    model_registry_dir.mkdir()
+    (model_registry_dir / "model_registry_report.json").write_text(
+        '{"status_counts":{"active":1},"active_model_id":"model_1","active_models":[{"model_version_id":"model_1"}]}',
+        encoding="utf-8",
+    )
+    (model_registry_dir / "model_registry_manifest.json").write_text(
+        '{"model_count":1,"model_versions":1,"deployments":1,"events":1}',
+        encoding="utf-8",
+    )
+    (model_registry_dir / "model_versions.jsonl").write_text('{"model_version_id":"model_1","factor_id":"factor_x","lifecycle_status":"active"}\n', encoding="utf-8")
+    (model_registry_dir / "model_deployments.jsonl").write_text('{"deployment_id":"deploy_1","model_version_id":"model_1","status":"active"}\n', encoding="utf-8")
+    (model_registry_dir / "lifecycle_events.jsonl").write_text('{"event_id":"event_1","model_version_id":"model_1","to_status":"active"}\n', encoding="utf-8")
+    (model_registry_dir / "model_lineage_graph.json").write_text('{"nodes":[{"id":"model_1"}],"edges":[]}', encoding="utf-8")
+    model_lifecycle_dir = tmp_path / "model_lifecycle"
+    model_lifecycle_dir.mkdir()
+    (model_lifecycle_dir / "factor_lifecycle_report.json").write_text(
+        '{"decision":{"recommended_action":"approve_for_activation","status":"ok"},"metrics":{}}',
+        encoding="utf-8",
+    )
+    (model_lifecycle_dir / "factor_health_checks.jsonl").write_text('{"name":"recent_coverage","passed":true}\n', encoding="utf-8")
+    (model_lifecycle_dir / "lifecycle_decisions.jsonl").write_text('{"factor_id":"factor_x","recommended_action":"approve_for_activation"}\n', encoding="utf-8")
+    (model_lifecycle_dir / "model_review_package.json").write_text('{"model_version_id":"model_1","factor_id":"factor_x"}', encoding="utf-8")
     service = AshareDashboardService(
         DashboardConfig(
             data_dir=tmp_path / "data",
@@ -122,6 +145,8 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
             formula_corpus_dir=corpus_dir,
             formula_batch_eval_dir=batch_eval_dir,
             pretrain_dir=pretrain_dir,
+            model_registry_dir=model_registry_dir,
+            model_lifecycle_dir=model_lifecycle_dir,
         )
     )
 
@@ -163,3 +188,13 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
     assert not service.load_formula_eval_results().empty
     assert service.load_alphagpt_pretrain_result()["status"] == "success"
     assert not service.load_alphagpt_pretrain_history().empty
+    assert service.load_model_registry_report()["active_model_id"] == "model_1"
+    assert service.load_model_registry_manifest()["model_versions"] == 1
+    assert not service.load_model_versions().empty
+    assert not service.load_model_deployments().empty
+    assert not service.load_model_lifecycle_events().empty
+    assert len(service.load_model_lineage_graph()["nodes"]) == 1
+    assert service.load_factor_lifecycle_report()["decision"]["recommended_action"] == "approve_for_activation"
+    assert not service.load_factor_health_checks().empty
+    assert not service.load_lifecycle_decisions().empty
+    assert service.load_model_review_package()["model_version_id"] == "model_1"

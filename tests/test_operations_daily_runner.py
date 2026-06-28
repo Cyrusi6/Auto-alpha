@@ -4,6 +4,7 @@ from approval import LocalApprovalStore
 from data_pipeline.ashare import AShareDataConfig, AShareDataManager
 from factor_store import FactorRecord, LocalFactorStore, stable_formula_hash
 from model_core.data_loader import AShareDataLoader
+from model_registry import LocalModelRegistry
 from operations import ProductionDailyRunner
 from operations import run_daily
 from paper_account import LocalPaperAccount
@@ -216,3 +217,57 @@ def test_daily_run_file_broker_exports_without_account_update(tmp_path):
     assert result.executed is False
     assert result.summary["broker_outbox_manifest_path"]
     assert state["cash"] == 1_000_000.0
+
+
+def test_daily_run_can_require_active_model_registry_entry(tmp_path):
+    data_dir, store_dir, factor_id = _prepare_data_and_factor(tmp_path)
+    factor_store = LocalFactorStore(store_dir)
+    registry = LocalModelRegistry(tmp_path / "registry")
+    model = registry.register_factor_record(factor_store.load_factors()[0])
+    active, _deployment = registry.activate(model.model_version_id, approval_id="approval_model")
+    registry.sync_factor_store_status(factor_store, active.model_version_id)
+
+    runner = ProductionDailyRunner(
+        data_dir=data_dir,
+        factor_store_dir=store_dir,
+        approval_store_dir=tmp_path / "approvals",
+        paper_account_dir=tmp_path / "account",
+        output_dir=tmp_path / "production",
+        orders_dir=tmp_path / "orders",
+        latest_production=True,
+        rebalance_date="20240104",
+        top_n=2,
+        max_weight=0.10,
+        use_model_registry=True,
+        model_registry_dir=tmp_path / "registry",
+        require_active_model=True,
+    )
+    proposed = runner.run(require_approval=True)
+
+    assert proposed.factor_id == factor_id
+    assert proposed.summary["model_version_id"] == active.model_version_id
+    approval = LocalApprovalStore(tmp_path / "approvals").load_batch(proposed.approval_id)
+    assert approval.model_version_id == active.model_version_id
+    assert approval.lifecycle_summary["model_lifecycle_status"] == "active"
+
+    registry.pause(active.model_version_id, reason="test pause", actor="tester")
+    blocked_runner = ProductionDailyRunner(
+        data_dir=data_dir,
+        factor_store_dir=store_dir,
+        approval_store_dir=tmp_path / "approvals2",
+        paper_account_dir=tmp_path / "account",
+        output_dir=tmp_path / "blocked",
+        orders_dir=tmp_path / "blocked_orders",
+        latest_production=True,
+        rebalance_date="20240104",
+        top_n=2,
+        max_weight=0.10,
+        use_model_registry=True,
+        model_registry_dir=tmp_path / "registry",
+        require_active_model=True,
+    )
+
+    blocked = blocked_runner.run(require_approval=True)
+
+    assert blocked.status == "failed"
+    assert "active model" in blocked.error or "paused" in blocked.error

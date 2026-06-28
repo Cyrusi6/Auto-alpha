@@ -18,6 +18,8 @@ The current implementation is local-first. It uses deterministic sample data and
 - `formula_search/`: Formula metadata, random generation, mutation, crossover, multi-generation search, and search reports.
 - `neural_search/`: AlphaGPT warm-start training, action-mask constrained formula sampling, lightweight policy search, checkpointing, and neural search reports.
 - `research_suite/`: One-click orchestration, walk-forward robustness, production-candidate promotion, and artifact catalog.
+- `model_registry/`: Local model/factor version registry, lifecycle state machine, active deployments, rollback records, lineage graph, and registry reports.
+- `factor_lifecycle/`: Factor health checks, lifecycle decisions, human review packages, activation approval flow, and lifecycle reports.
 - `risk_model/`: Security exposures, Barra-like style and industry factors, factor returns, risk decomposition, attribution, covariance, risk constraints, and risk reports.
 - `portfolio_optimizer/`: Deterministic long-only benchmark-aware portfolio optimizer.
 - `capacity_model/`: Local capacity, participation, and impact-cost estimates from amount, volume, turnover, and volatility.
@@ -250,6 +252,50 @@ uv run python -m neural_search.run_neural_search \
 
 The suite runner is available through `python -m research_suite.run_suite`. It orchestrates data sync, universe construction, formula search, composite backtest, paper order export, walk-forward robustness evaluation, promotion decision, suite report, and `artifact_catalog.json`. When promotion passes, the selected composite factor is updated to `production_candidate` in the factor store with the promotion decision in metadata.
 
+Suites can also register the selected factor as a governed model version and create a human review package:
+
+```bash
+uv run python -m research_suite.run_suite \
+  --suite-name governed_suite \
+  --provider sample \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --universe-name csi300_sample \
+  --index-code 000300.SH \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --report-dir /tmp/auto-alpha-demo/reports \
+  --output-dir /tmp/auto-alpha-demo/suite \
+  --backtest-dir /tmp/auto-alpha-demo/backtest \
+  --orders-dir /tmp/auto-alpha-demo/orders \
+  --register-model-version \
+  --model-registry-dir /tmp/auto-alpha-demo/model_registry \
+  --create-model-review-package \
+  --model-lifecycle-output-dir /tmp/auto-alpha-demo/model_lifecycle \
+  --require-model-approval \
+  --model-approval-store-dir /tmp/auto-alpha-demo/approvals \
+  --pretty
+```
+
+The lifecycle path writes `model_versions.jsonl`, `model_deployments.jsonl`, `lifecycle_events.jsonl`, `model_registry_report.json/md`, `model_lineage_graph.json`, `factor_lifecycle_report.json/md`, `model_review_package.json/md`, and a pending `model_lifecycle` approval batch. After approval, activation is explicit:
+
+```bash
+uv run python -m approval.run_approval \
+  --store-dir /tmp/auto-alpha-demo/approvals \
+  approve \
+  --approval-id <MODEL_APPROVAL_ID> \
+  --reviewer local_reviewer \
+  --comment activate_model \
+  --pretty
+
+uv run python -m factor_lifecycle.run_lifecycle \
+  apply-approved \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --registry-dir /tmp/auto-alpha-demo/model_registry \
+  --approval-store-dir /tmp/auto-alpha-demo/approvals \
+  --output-dir /tmp/auto-alpha-demo/model_lifecycle_apply \
+  --approval-id <MODEL_APPROVAL_ID> \
+  --pretty
+```
+
 `research_suite.run_suite` can also build matrix cache and run benchmark artifacts:
 
 ```bash
@@ -404,6 +450,9 @@ uv run python -m operations.run_daily \
   --top-n 2 \
   --max-weight 0.10 \
   --portfolio-value 1000000 \
+  --use-model-registry \
+  --model-registry-dir /tmp/auto-alpha-demo/model_registry \
+  --require-active-model \
   --require-approval \
   --pretty
 
@@ -433,6 +482,9 @@ uv run python -m operations.run_daily \
   --top-n 2 \
   --max-weight 0.10 \
   --portfolio-value 1000000 \
+  --use-model-registry \
+  --model-registry-dir /tmp/auto-alpha-demo/model_registry \
+  --require-active-model \
   --pretty
 
 uv run python -m monitoring.run_monitor \
@@ -444,10 +496,13 @@ uv run python -m monitoring.run_monitor \
   --as-of-date 20240104 \
   --broker-store-dir /tmp/auto-alpha-demo/broker \
   --broker-batch-id <APPROVAL_ID> \
+  --model-registry-dir /tmp/auto-alpha-demo/model_registry \
+  --factor-lifecycle-report-path /tmp/auto-alpha-demo/model_lifecycle/factor_lifecycle_report.json \
+  --model-lineage-graph-path /tmp/auto-alpha-demo/model_registry/model_lineage_graph.json \
   --pretty
 ```
 
-Daily production writes `production_run.json/md`; approvals are stored under `approvals/<approval_id>.json` plus `approval_log.jsonl`; the paper account writes `account_state.json`, `positions.jsonl`, `cash_ledger.jsonl`, `trade_ledger.jsonl`, and `account_snapshots.jsonl`; broker-enabled runs write `broker_report.json/md`, `broker_orders.jsonl`, `broker_events.jsonl`, `broker_fills.jsonl`, and `broker_reconciliation.json/md`; monitoring writes `monitoring_report.json/md` and `alerts.jsonl`.
+Daily production writes `production_run.json/md`; approvals are stored under `approvals/<approval_id>.json` plus `approval_log.jsonl`; the paper account writes `account_state.json`, `positions.jsonl`, `cash_ledger.jsonl`, `trade_ledger.jsonl`, and `account_snapshots.jsonl`; broker-enabled runs write `broker_report.json/md`, `broker_orders.jsonl`, `broker_events.jsonl`, `broker_fills.jsonl`, and `broker_reconciliation.json/md`; model-governed runs record model version/deployment context; monitoring writes `monitoring_report.json/md` and `alerts.jsonl`.
 
 To export generic file instructions without local fills:
 
@@ -581,5 +636,5 @@ uv run python -m neural_search.run_pretrain \
 - Local daily simulation supports A-share constraints, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, and paper execution quality reports; future work should add finer real-world matching and minute-level volume modeling.
 - Local formula search, batch formula evaluation, formula corpus construction, offline AlphaGPT supervised pretraining, and a first neural-guided policy-search path are available; future work should add stronger reinforcement learning, larger offline corpora, more operators, GPU performance tuning, and broader stability validation.
 - Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.
-- One-click research suites now provide local walk-forward and promotion gates; daily operations now provide local approval, paper account ledger, and monitoring artifacts. Future work should add richer approval policies and human review workflow.
+- One-click research suites now provide local walk-forward, promotion gates, model registry records, lifecycle review packages, active deployment state, and rollback artifacts; daily operations can require an active governed model. Future work should add richer lifecycle policies and external review workflow integrations.
 - Broker adapter, file instructions, and account ledger are local only. No real broker integration, credential handling, network submission, or verified QMT/broker file compatibility is implemented.

@@ -40,6 +40,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--broker-auto-fill", action="store_true", default=True)
     parser.add_argument("--broker-reconcile", action="store_true")
     parser.add_argument("--broker-price-type", default="MARKET")
+    parser.add_argument("--use-model-registry", action="store_true")
+    parser.add_argument("--model-registry-dir")
+    parser.add_argument("--model-version-id")
+    parser.add_argument("--require-active-model", action="store_true")
+    parser.add_argument("--allow-production-candidate-fallback", action="store_true")
+    parser.add_argument("--model-kind", default="composite_factor")
+    parser.add_argument("--model-environment", default="paper")
+    parser.add_argument("--block-paused-model", action="store_true", default=True)
+    parser.add_argument("--block-quarantined-model", action="store_true", default=True)
     parser.add_argument("--require-approval", action="store_true")
     parser.add_argument("--approval-id")
     parser.add_argument("--execute-approved", action="store_true")
@@ -80,6 +89,15 @@ def main(argv: list[str] | None = None) -> int:
         broker_auto_fill=args.broker_auto_fill,
         broker_reconcile=args.broker_reconcile,
         broker_price_type=args.broker_price_type,
+        use_model_registry=args.use_model_registry,
+        model_registry_dir=args.model_registry_dir,
+        model_version_id=args.model_version_id,
+        require_active_model=args.require_active_model,
+        allow_production_candidate_fallback=args.allow_production_candidate_fallback,
+        model_kind=args.model_kind,
+        model_environment=args.model_environment,
+        block_paused_model=args.block_paused_model,
+        block_quarantined_model=args.block_quarantined_model,
     )
     result = runner.run(
         require_approval=args.require_approval,

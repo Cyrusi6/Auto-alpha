@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from approval import ApprovalBatch, ApprovalOrder, ApprovalStatus, LocalApprovalStore
+from approval import ApprovalBatch, ApprovalOrder, ApprovalStatus, ApprovalType, LocalApprovalStore
 
 
 def _batch():
@@ -58,3 +58,33 @@ def test_approval_store_create_list_approve_reject_and_expire(tmp_path):
     assert [batch.approval_id for batch in expired] == ["approval_third"]
     assert (tmp_path / "approval_log.jsonl").exists()
     json.dumps(store.load_batch("approval_test").to_dict())
+
+
+def test_approval_store_loads_legacy_order_batch_without_lifecycle_fields(tmp_path):
+    approvals_dir = tmp_path / "approvals"
+    approvals_dir.mkdir()
+    (approvals_dir / "legacy_order.json").write_text(
+        json.dumps(
+            {
+                "approval_id": "legacy_order",
+                "created_at": "2026-06-27T00:00:00Z",
+                "factor_id": "factor_legacy",
+                "factor_type": "composite",
+                "rebalance_date": "20240104",
+                "portfolio_method": "risk_aware",
+                "orders": [],
+                "risk_summary": {},
+                "status": "pending",
+                "decision": None,
+                "metadata": {},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    batch = LocalApprovalStore(tmp_path).load_batch("legacy_order")
+
+    assert batch.approval_type == ApprovalType.order_batch
+    assert batch.model_version_id is None
+    assert batch.lifecycle_summary == {}

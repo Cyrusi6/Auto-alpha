@@ -87,6 +87,13 @@ class ResearchSuiteConfig:
     batch_eval_device: str = "auto"
     use_eval_cache: bool = False
     eval_cache_dir: str | None = None
+    register_model_version: bool = False
+    model_registry_dir: str | None = None
+    create_model_review_package: bool = False
+    model_lifecycle_output_dir: str | None = None
+    require_model_approval: bool = False
+    model_lifecycle_policy_path: str | None = None
+    model_approval_store_dir: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

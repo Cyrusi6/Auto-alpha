@@ -179,6 +179,16 @@ def render_app(config: DashboardConfig | None = None) -> None:
         eval_rows = service.load_formula_eval_results()
         pretrain_result = service.load_alphagpt_pretrain_result()
         pretrain_history = service.load_alphagpt_pretrain_history()
+        model_registry_report = service.load_model_registry_report()
+        model_registry_manifest = service.load_model_registry_manifest()
+        model_versions = service.load_model_versions()
+        model_deployments = service.load_model_deployments()
+        model_events = service.load_model_lifecycle_events()
+        lineage_graph = service.load_model_lineage_graph()
+        lifecycle_report = service.load_factor_lifecycle_report()
+        health_checks = service.load_factor_health_checks()
+        lifecycle_decisions = service.load_lifecycle_decisions()
+        review_package = service.load_model_review_package()
         suite_result = service.load_suite_result()
         suite_markdown = service.load_suite_report_markdown()
         artifact_catalog = service.load_artifact_catalog()
@@ -268,6 +278,30 @@ def render_app(config: DashboardConfig | None = None) -> None:
         else:
             st.info("No alphagpt_pretrain_result.json found.")
         _show_dataframe_or_empty("AlphaGPT Pretrain History", pretrain_history)
+        st.subheader("Model Registry")
+        st.json(
+            {
+                "status_counts": model_registry_report.get("status_counts", {}) if model_registry_report else {},
+                "active_model_id": model_registry_report.get("active_model_id", "") if model_registry_report else "",
+                "manifest_models": model_registry_manifest.get("model_count", 0) if model_registry_manifest else 0,
+                "lineage_nodes": len(lineage_graph.get("nodes", [])) if lineage_graph else 0,
+                "lineage_edges": len(lineage_graph.get("edges", [])) if lineage_graph else 0,
+            }
+        )
+        _show_dataframe_or_empty("Model Versions", model_versions)
+        _show_dataframe_or_empty("Model Deployments", model_deployments)
+        _show_dataframe_or_empty("Model Lifecycle Events", model_events)
+        st.subheader("Factor Lifecycle")
+        st.json(
+            {
+                "recommended_action": lifecycle_report.get("decision", {}).get("recommended_action") if lifecycle_report else "",
+                "decision_status": lifecycle_report.get("decision", {}).get("status") if lifecycle_report else "",
+                "review_package_model": review_package.get("model_version_id", "") if review_package else "",
+                "review_package_factor": review_package.get("factor_id", "") if review_package else "",
+            }
+        )
+        _show_dataframe_or_empty("Factor Health Checks", health_checks)
+        _show_dataframe_or_empty("Lifecycle Decisions", lifecycle_decisions)
         st.subheader("Research Suite")
         if suite_result:
             st.json(
@@ -275,6 +309,8 @@ def render_app(config: DashboardConfig | None = None) -> None:
                     "suite_name": suite_result.get("suite_name"),
                     "status": suite_result.get("status"),
                     "selected_factor_id": suite_result.get("selected_factor_id"),
+                    "model_version_id": suite_result.get("summary", {}).get("model_version_id"),
+                    "model_lifecycle_status": suite_result.get("summary", {}).get("model_lifecycle_status"),
                     "stages": [
                         {
                             "name": stage.get("name"),
@@ -403,6 +439,8 @@ def render_app(config: DashboardConfig | None = None) -> None:
         monitoring_alerts = service.load_monitoring_alerts()
         broker_report = service.load_broker_report()
         broker_reconciliation = service.load_broker_reconciliation()
+        model_registry_report = service.load_model_registry_report()
+        lifecycle_report = service.load_factor_lifecycle_report()
         st.subheader("Production Run")
         st.json(
             production_run
@@ -433,6 +471,15 @@ def render_app(config: DashboardConfig | None = None) -> None:
             {
                 "broker_summary": broker_report.get("summary", {}) if broker_report else {},
                 "reconciliation": broker_reconciliation,
+            }
+        )
+        st.subheader("Model Lifecycle")
+        st.json(
+            {
+                "registry_status_counts": model_registry_report.get("status_counts", {}) if model_registry_report else {},
+                "active_model_id": model_registry_report.get("active_model_id", "") if model_registry_report else "",
+                "lifecycle_recommended_action": lifecycle_report.get("decision", {}).get("recommended_action") if lifecycle_report else "",
+                "lifecycle_status": lifecycle_report.get("decision", {}).get("status") if lifecycle_report else "",
             }
         )
         st.subheader("Monitoring")

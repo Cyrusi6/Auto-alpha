@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ from execution import ExecutionOrder, PaperBroker, export_fills_jsonl, export_or
 from execution_plan import ChildOrder, ExecutionPlanResult, ExecutionSchedule, ParentOrder, simulate_child_orders, write_execution_plan_report
 from factor_store import LocalFactorStore
 from model_core.data_loader import AShareDataLoader
+from model_registry import LocalModelRegistry, ModelKind, ModelLifecycleStatus, write_model_registry_report
 from paper_account import LocalPaperAccount, compute_account_performance
 from strategy_manager.runner import AShareStrategyRunner
 
@@ -61,6 +63,15 @@ class ProductionDailyRunner:
         broker_auto_fill: bool = True,
         broker_reconcile: bool = False,
         broker_price_type: str = "MARKET",
+        use_model_registry: bool = False,
+        model_registry_dir: str | Path | None = None,
+        model_version_id: str | None = None,
+        require_active_model: bool = False,
+        allow_production_candidate_fallback: bool = False,
+        model_kind: str = ModelKind.composite_factor,
+        model_environment: str = "paper",
+        block_paused_model: bool = True,
+        block_quarantined_model: bool = True,
     ):
         self.data_dir = Path(data_dir)
         self.factor_store_dir = Path(factor_store_dir)
@@ -92,6 +103,16 @@ class ProductionDailyRunner:
         self.broker_auto_fill = bool(broker_auto_fill)
         self.broker_reconcile = bool(broker_reconcile)
         self.broker_price_type = broker_price_type
+        self.use_model_registry = bool(use_model_registry)
+        self.model_registry_dir = Path(model_registry_dir) if model_registry_dir is not None else self.output_dir.parent / "model_registry"
+        self.model_version_id = model_version_id
+        self.require_active_model = bool(require_active_model)
+        self.allow_production_candidate_fallback = bool(allow_production_candidate_fallback)
+        self.model_kind = model_kind
+        self.model_environment = model_environment
+        self.block_paused_model = bool(block_paused_model)
+        self.block_quarantined_model = bool(block_quarantined_model)
+        self._model_context: dict[str, Any] = {}
 
     def run(
         self,
@@ -163,6 +184,9 @@ class ProductionDailyRunner:
                 "positions": len(account_state.positions),
                 "performance": compute_account_performance(account_state),
             }
+        self._attach_model_metadata_to_summary(summary)
+        if require_approval and summary.get("approval_id"):
+            self._attach_model_metadata_to_approval(str(summary["approval_id"]))
         return ProductionRunResult(
             run_id=run_id,
             created_at=created_at,
@@ -183,6 +207,7 @@ class ProductionDailyRunner:
         batch = store.load_batch(approval_id)
         if batch.status != ApprovalStatus.approved:
             raise ValueError(f"approval batch must be approved before execution: {approval_id} is {batch.status}")
+        self._validate_approval_model_context(batch)
         loader = AShareDataLoader(data_dir=self.data_dir, device="cpu").load_data()
         prices, volumes, suspended, limit_up, limit_down = _market_context(loader, batch.rebalance_date)
         orders = [
@@ -305,6 +330,7 @@ class ProductionDailyRunner:
                 "performance": compute_account_performance(state),
             },
         }
+        self._attach_model_metadata_to_summary(summary, batch=batch)
         production_status = "broker_exported" if self.broker_adapter == "file" and broker_summary.get("inbox_fills", 0) == 0 else "executed"
         return ProductionRunResult(
             run_id=run_id,
@@ -409,6 +435,8 @@ class ProductionDailyRunner:
         return fills, broker_summary, broker_paths
 
     def _select_factor_id(self) -> str:
+        if self.use_model_registry:
+            return self._select_factor_id_from_registry()
         if self.factor_id:
             return self.factor_id
         store = LocalFactorStore(self.factor_store_dir)
@@ -423,6 +451,100 @@ class ProductionDailyRunner:
         if record is not None:
             return record.factor_id
         raise ValueError("no production_candidate or approved composite factor is available")
+
+    def _select_factor_id_from_registry(self) -> str:
+        registry = LocalModelRegistry(self.model_registry_dir)
+        model = None
+        deployment = None
+        warning_count = 0
+        if self.model_version_id:
+            model = registry.get_model_version(self.model_version_id)
+            if model is None:
+                raise FileNotFoundError(f"model version not found: {self.model_version_id}")
+            deployment = registry.latest_active_deployment(model_kind=model.model_kind, environment=self.model_environment)
+        else:
+            deployment = registry.latest_active_deployment(model_kind=self.model_kind, environment=self.model_environment)
+            model = registry.get_model_version(deployment.model_version_id) if deployment is not None else None
+        if model is None:
+            fallback = registry.latest_by_status(ModelLifecycleStatus.production_candidate, model_kind=self.model_kind)
+            if fallback is not None and self.allow_production_candidate_fallback and not self.require_active_model:
+                model = fallback
+                warning_count += 1
+            else:
+                raise ValueError("no active model is available in model registry")
+        if model.lifecycle_status != ModelLifecycleStatus.active:
+            if model.lifecycle_status == ModelLifecycleStatus.production_candidate and self.allow_production_candidate_fallback and not self.require_active_model:
+                warning_count += 1
+            elif model.lifecycle_status == ModelLifecycleStatus.paused and self.block_paused_model:
+                raise ValueError(f"model is paused and cannot be used: {model.model_version_id}")
+            elif model.lifecycle_status == ModelLifecycleStatus.quarantined and self.block_quarantined_model:
+                raise ValueError(f"model is quarantined and cannot be used: {model.model_version_id}")
+            elif model.lifecycle_status in {ModelLifecycleStatus.retired, ModelLifecycleStatus.rejected}:
+                raise ValueError(f"model status cannot be used for production: {model.lifecycle_status}")
+            elif self.require_active_model:
+                raise ValueError(f"active model required, got {model.lifecycle_status}")
+        report_json, _report_md = write_model_registry_report(registry)
+        lineage_path = self.model_registry_dir / "model_lineage_graph.json"
+        self._model_context = {
+            "model_registry_enabled": True,
+            "model_version_id": model.model_version_id,
+            "model_lifecycle_status": model.lifecycle_status,
+            "model_deployment_id": deployment.deployment_id if deployment else "",
+            "model_registry_dir": str(self.model_registry_dir),
+            "model_registry_report_path": str(report_json),
+            "model_lineage_graph_path": str(lineage_path),
+            "model_registry_warning_count": warning_count,
+        }
+        return model.factor_id
+
+    def _attach_model_metadata_to_summary(self, summary: dict[str, Any], batch: Any | None = None) -> None:
+        if self.use_model_registry:
+            if not self._model_context and batch is not None:
+                self._model_context = {
+                    "model_registry_enabled": True,
+                    "model_version_id": batch.model_version_id,
+                    "model_lifecycle_status": (batch.metadata or {}).get("model_lifecycle_status", ""),
+                    "model_deployment_id": (batch.metadata or {}).get("model_deployment_id", ""),
+                    "model_registry_dir": str(self.model_registry_dir),
+                    "model_registry_report_path": (batch.metadata or {}).get("model_registry_report_path", ""),
+                    "model_lineage_graph_path": (batch.metadata or {}).get("model_lineage_graph_path", ""),
+                    "model_registry_warning_count": 0,
+                }
+            summary.update(self._model_context)
+        else:
+            summary.setdefault("model_registry_enabled", False)
+
+    def _attach_model_metadata_to_approval(self, approval_id: str) -> None:
+        if not self.use_model_registry or not self._model_context:
+            return
+        store = LocalApprovalStore(self.approval_store_dir)
+        batch = store.load_batch(approval_id)
+        metadata = dict(batch.metadata or {})
+        metadata.update(self._model_context)
+        updated = replace(batch, model_version_id=self._model_context.get("model_version_id"), lifecycle_summary=self._model_context, metadata=metadata)
+        store.save_batch(updated)
+
+    def _validate_approval_model_context(self, batch: Any) -> None:
+        if not self.use_model_registry:
+            return
+        registry = LocalModelRegistry(self.model_registry_dir)
+        active = registry.latest_active(model_kind=self.model_kind, environment=self.model_environment)
+        batch_model_id = batch.model_version_id or (batch.metadata or {}).get("model_version_id")
+        if self.require_active_model:
+            if active is None:
+                raise ValueError("active model required but no active deployment exists")
+            if batch_model_id and batch_model_id != active.model_version_id:
+                raise ValueError("approval model_version_id does not match active deployment")
+        if active is not None:
+            deployment = registry.latest_active_deployment(model_kind=self.model_kind, environment=self.model_environment)
+            self._model_context = {
+                "model_registry_enabled": True,
+                "model_version_id": active.model_version_id,
+                "model_lifecycle_status": active.lifecycle_status,
+                "model_deployment_id": deployment.deployment_id if deployment else "",
+                "model_registry_dir": str(self.model_registry_dir),
+                "model_registry_warning_count": 0,
+            }
 
 
 def _paths_from_summary(summary: dict[str, Any]) -> dict[str, str]:
@@ -455,6 +577,8 @@ def _paths_from_summary(summary: dict[str, Any]) -> dict[str, str]:
         "broker_fills_path",
         "broker_outbox_manifest_path",
         "broker_outbox_summary_path",
+        "model_registry_report_path",
+        "model_lineage_graph_path",
     ]
     return {key: str(summary[key]) for key in keys if summary.get(key)}
 

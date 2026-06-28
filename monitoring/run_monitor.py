@@ -10,6 +10,7 @@ from factor_store import LocalFactorStore
 
 from .checks import (
     check_active_risk_drift,
+    check_active_model_status,
     check_artifact_schema_validation,
     check_attribution_anomaly,
     check_broker_file_outbox,
@@ -31,6 +32,10 @@ from .checks import (
     check_alphagpt_pretrain,
     check_alphagpt_checkpoint_manifest,
     check_impact_cost_spike,
+    check_model_lifecycle_health,
+    check_model_lineage_completeness,
+    check_model_registry,
+    check_model_rollback_state,
     check_order_fill_quality,
     check_paper_account,
     check_package_build_artifacts,
@@ -38,6 +43,8 @@ from .checks import (
     check_quality_report,
     check_release_gate,
     check_risk_report,
+    check_pending_model_reviews,
+    check_quarantined_or_paused_model_usage,
     check_style_exposure_drift,
     check_unfilled_orders,
 )
@@ -74,6 +81,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--formula-batch-eval-result-path")
     parser.add_argument("--alphagpt-pretrain-result-path")
     parser.add_argument("--alphagpt-checkpoint-manifest-path")
+    parser.add_argument("--model-registry-dir")
+    parser.add_argument("--model-version-id")
+    parser.add_argument("--factor-lifecycle-report-path")
+    parser.add_argument("--model-review-package-path")
+    parser.add_argument("--model-lineage-graph-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -118,6 +130,13 @@ def main(argv: list[str] | None = None) -> int:
         ("formula_batch_eval", lambda: check_formula_batch_eval(args.formula_batch_eval_result_path)),
         ("alphagpt_pretrain", lambda: check_alphagpt_pretrain(args.alphagpt_pretrain_result_path)),
         ("alphagpt_checkpoint_manifest", lambda: check_alphagpt_checkpoint_manifest(args.alphagpt_checkpoint_manifest_path)),
+        ("model_registry", lambda: check_model_registry(args.model_registry_dir)),
+        ("active_model_status", lambda: check_active_model_status(args.model_registry_dir, args.model_version_id)),
+        ("model_lifecycle_health", lambda: check_model_lifecycle_health(args.factor_lifecycle_report_path)),
+        ("pending_model_reviews", lambda: check_pending_model_reviews(_default_approval_store(args.orders_dir))),
+        ("model_lineage_completeness", lambda: check_model_lineage_completeness(args.model_lineage_graph_path)),
+        ("model_rollback_state", lambda: check_model_rollback_state(args.model_registry_dir)),
+        ("quarantined_or_paused_model_usage", lambda: check_quarantined_or_paused_model_usage(args.model_registry_dir)),
         ("fill_quality", lambda: check_order_fill_quality(Path(args.orders_dir) / "paper_fills.jsonl")),
         ("paper_account", lambda: check_paper_account(args.paper_account_dir)),
     ]:
@@ -182,6 +201,14 @@ def _default_broker_outbox_manifest(orders_dir: str | Path) -> str:
         root / "outbox" / "broker_instruction_manifest.json",
         root.parent / "broker_file" / "outbox" / "broker_instruction_manifest.json",
     ):
+        if path.exists():
+            return str(path)
+    return ""
+
+
+def _default_approval_store(orders_dir: str | Path) -> str:
+    root = Path(orders_dir)
+    for path in (root.parent / "approvals", root.parent / "model_approvals", root / "approvals"):
         if path.exists():
             return str(path)
     return ""

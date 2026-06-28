@@ -10,6 +10,7 @@ from typing import Any
 from factor_store import LocalFactorStore
 from paper_account import LocalPaperAccount, compute_account_performance
 from broker_adapter import LocalBrokerStore
+from model_registry import LocalModelRegistry
 
 from .models import MonitoringAlert
 
@@ -483,6 +484,121 @@ def check_alphagpt_checkpoint_manifest(manifest_path: str | Path | None) -> tupl
     if payload and not checkpoints:
         alerts.append(MonitoringAlert("warning", "alphagpt_checkpoint_manifest", "checkpoint manifest has no checkpoints"))
     return {"exists": bool(payload), "checkpoints": len(checkpoints), "latest_checkpoint_path": latest}, alerts
+
+
+def check_model_registry(registry_dir: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not registry_dir:
+        return {"exists": False, "model_versions": 0}, []
+    registry = LocalModelRegistry(registry_dir)
+    versions = registry.load_model_versions()
+    deployments = registry.load_deployments()
+    counts: dict[str, int] = {}
+    for record in versions:
+        counts[record.lifecycle_status] = counts.get(record.lifecycle_status, 0) + 1
+    return {
+        "exists": bool(versions or deployments),
+        "model_versions": len(versions),
+        "deployments": len(deployments),
+        "status_counts": counts,
+        "quarantined_model_count": counts.get("quarantined", 0),
+        "paused_model_count": counts.get("paused", 0),
+        "retired_model_count": counts.get("retired", 0),
+    }, []
+
+
+def check_active_model_status(
+    registry_dir: str | Path | None,
+    model_version_id: str | None = None,
+) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not registry_dir:
+        return {"exists": False, "active_model_version_id": None}, []
+    registry = LocalModelRegistry(registry_dir)
+    model = registry.get_model_version(model_version_id) if model_version_id else registry.latest_active()
+    deployment = registry.latest_active_deployment()
+    alerts = []
+    if model is None:
+        alerts.append(MonitoringAlert("warning", "active_model_status", "no active model found"))
+        return {"exists": False, "active_model_version_id": None}, alerts
+    if model.lifecycle_status != "active":
+        alerts.append(MonitoringAlert("warning", "active_model_status", "selected model is not active", {"status": model.lifecycle_status}))
+    return {
+        "exists": True,
+        "active_model_version_id": model.model_version_id,
+        "active_model_factor_id": model.factor_id,
+        "model_lifecycle_status": model.lifecycle_status,
+        "model_deployment_id": deployment.deployment_id if deployment else "",
+    }, alerts
+
+
+def check_model_lifecycle_health(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    if not payload:
+        return {"exists": False, "model_health_error_count": 0, "model_health_warning_count": 0}, []
+    evaluation = payload.get("evaluation", {}) if isinstance(payload.get("evaluation"), dict) else {}
+    checks = evaluation.get("checks", []) if isinstance(evaluation.get("checks"), list) else []
+    errors = sum(1 for check in checks if check.get("severity") in {"error", "blocker"} and not check.get("passed"))
+    warnings = sum(1 for check in checks if check.get("severity") == "warning" and not check.get("passed"))
+    alerts = []
+    if errors:
+        alerts.append(MonitoringAlert("error", "model_lifecycle_health", "model lifecycle health has errors", {"errors": errors}))
+    elif warnings:
+        alerts.append(MonitoringAlert("warning", "model_lifecycle_health", "model lifecycle health has warnings", {"warnings": warnings}))
+    return {
+        "exists": True,
+        "model_health_error_count": errors,
+        "model_health_warning_count": warnings,
+        "recommended_action": (evaluation.get("decision") or {}).get("recommended_action") if isinstance(evaluation.get("decision"), dict) else "",
+    }, alerts
+
+
+def check_pending_model_reviews(approval_store_dir: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not approval_store_dir:
+        return {"exists": False, "pending_model_review_count": 0}, []
+    try:
+        from approval import LocalApprovalStore
+
+        pending = [
+            batch
+            for batch in LocalApprovalStore(approval_store_dir).list_batches(status="pending")
+            if getattr(batch, "approval_type", "order_batch") == "model_lifecycle"
+        ]
+    except Exception:
+        pending = []
+    alerts = [MonitoringAlert("warning", "pending_model_reviews", "pending model lifecycle approvals exist", {"count": len(pending)})] if pending else []
+    return {"exists": True, "pending_model_review_count": len(pending)}, alerts
+
+
+def check_model_lineage_completeness(graph_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(graph_path)) if graph_path else {}
+    if not payload:
+        return {"exists": False, "model_lineage_node_count": 0, "model_lineage_missing_artifact_count": 0}, []
+    warnings = payload.get("warnings", []) if isinstance(payload.get("warnings"), list) else []
+    return {
+        "exists": True,
+        "model_lineage_node_count": len(payload.get("nodes", []) or []),
+        "model_lineage_edge_count": len(payload.get("edges", []) or []),
+        "model_lineage_missing_artifact_count": len(warnings),
+    }, []
+
+
+def check_model_rollback_state(registry_dir: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not registry_dir:
+        return {"exists": False, "model_rollback_available": False}, []
+    registry = LocalModelRegistry(registry_dir)
+    previous = [deployment for deployment in registry.load_deployments() if deployment.status == "previous"]
+    return {"exists": True, "model_rollback_available": bool(previous), "previous_deployments": len(previous)}, []
+
+
+def check_quarantined_or_paused_model_usage(registry_dir: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not registry_dir:
+        return {"exists": False, "quarantined_model_count": 0, "paused_model_count": 0}, []
+    versions = LocalModelRegistry(registry_dir).load_model_versions()
+    paused = sum(1 for record in versions if record.lifecycle_status == "paused")
+    quarantined = sum(1 for record in versions if record.lifecycle_status == "quarantined")
+    alerts = []
+    if paused or quarantined:
+        alerts.append(MonitoringAlert("warning", "model_lifecycle_status", "paused or quarantined models exist", {"paused": paused, "quarantined": quarantined}))
+    return {"exists": bool(versions), "paused_model_count": paused, "quarantined_model_count": quarantined}, alerts
 
 
 def check_order_fill_quality(fills_path: str | Path) -> tuple[dict[str, Any], list[MonitoringAlert]]:

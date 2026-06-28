@@ -91,6 +91,16 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
     "alphagpt_pretrain_result": _definition("alphagpt_pretrain_result", ["status", "history", "checkpoint_manifest"], ["alphagpt_pretrain_result.json"]),
     "alphagpt_pretrain_history": _definition("alphagpt_pretrain_history", ["epoch", "loss"], ["alphagpt_pretrain_history.jsonl"], kind="jsonl", allow_empty=True),
     "alphagpt_checkpoint_manifest": _definition("alphagpt_checkpoint_manifest", ["latest_checkpoint_path", "checkpoints"], ["checkpoint_manifest.json"]),
+    "model_versions": _definition("model_versions", ["model_version_id", "factor_id", "lifecycle_status"], ["model_versions.jsonl"], kind="jsonl", allow_empty=True),
+    "model_deployments": _definition("model_deployments", ["deployment_id", "model_version_id", "status"], ["model_deployments.jsonl"], kind="jsonl", allow_empty=True),
+    "lifecycle_events": _definition("lifecycle_events", ["event_id", "model_version_id", "action"], ["lifecycle_events.jsonl"], kind="jsonl", allow_empty=True),
+    "model_registry_manifest": _definition("model_registry_manifest", ["model_versions", "deployments", "events"], ["model_registry_manifest.json"]),
+    "model_registry_report": _definition("model_registry_report", ["manifest", "active_models", "deployments"], ["model_registry_report.json"]),
+    "model_lineage_graph": _definition("model_lineage_graph", ["nodes", "edges"], ["model_lineage_graph.json"]),
+    "factor_lifecycle_report": _definition("factor_lifecycle_report", ["evaluation"], ["factor_lifecycle_report.json"]),
+    "factor_health_checks": _definition("factor_health_checks", ["name", "severity", "passed"], ["factor_health_checks.jsonl"], kind="jsonl", allow_empty=True),
+    "lifecycle_decisions": _definition("lifecycle_decisions", ["factor_id", "recommended_action"], ["lifecycle_decisions.jsonl"], kind="jsonl", allow_empty=True),
+    "model_review_package": _definition("model_review_package", ["factor_id", "lifecycle_status", "health_checks"], ["model_review_package.json"]),
 }
 
 

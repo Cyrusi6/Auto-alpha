@@ -1512,3 +1512,33 @@
 - 扩展真实历史公式语料来源、负样本构造和偏好学习策略。
 - 将 batch eval 推进到更大规模矩阵缓存与 GPU 性能压测。
 - 增强 AlphaGPT 离线预训练配置、checkpoint selection 和 warm-start policy search 稳定性。
+
+## 2026-06-28 - 任务 026
+
+### 本次变更摘要
+- 新增 `model_registry/`，提供本地模型版本、部署、生命周期事件、状态机、lineage graph、registry report 和 `model_registry.run_registry` CLI。
+- 新增 `factor_lifecycle/`，提供因子健康检查、生命周期决策、review package、model lifecycle approval、approved activation、pause/quarantine/rollback 等治理入口。
+- `approval/` 增加 `approval_type=model_lifecycle` 及 model lifecycle 字段，并保持旧 order approval record 兼容。
+- `research_suite.run_suite` 支持 `--register-model-version`、`--create-model-review-package` 和 `--require-model-approval`，可将 promoted composite factor 写入 model registry、生成 review package，并创建待审批 model activation batch。
+- `operations.run_daily` 支持 `--use-model-registry` 和 `--require-active-model`，可从 active model deployment 选择 factor，并阻断 paused/quarantined/retired 或缺失 active model 的生产运行。
+- monitoring 新增 model registry、active model status、lifecycle health、pending review、lineage completeness、rollback availability 和 paused/quarantined status checks。
+- dashboard 增加 model registry report、model versions/deployments/events、factor lifecycle report、health checks、review package 和 lineage graph 本地读取展示。
+- `artifact_schema/`、`release_manager/`、`ci/` 和 `pyproject.toml` 接入 `model_registry` / `factor_lifecycle` artifacts 与 package/module inventory。
+
+### 新增文件
+- `model_registry/`
+- `factor_lifecycle/`
+- `tests/test_model_registry.py`
+- `tests/test_factor_lifecycle.py`
+- `tests/test_model_lifecycle_no_old_terms.py`
+
+### 新增 A 股平台能力
+- `python -m model_registry.run_registry`：注册 factor model、查看 active model、activate/pause/quarantine/retire/rollback，并写 registry report 和 lineage graph。
+- `python -m factor_lifecycle.run_lifecycle propose-activation`：评估 factor health，生成 review package，并可创建 pending `model_lifecycle` approval。
+- `python -m factor_lifecycle.run_lifecycle apply-approved`：审批通过后激活 model deployment，并同步 factor store lifecycle status。
+- `python -m operations.run_daily --use-model-registry --require-active-model`：生产运行只使用已激活模型，暂停/隔离/退役状态会阻断订单生成。
+
+### 后续待办
+- 扩展 lifecycle policy 到更多生产指标，例如长期漂移、真实成交质量、回撤恢复和人工复审 SLA。
+- 增加更细的 model deployment environment 管理、跨环境 promotion，以及外部审批系统对接。
+- 为 model registry 增加 schema migration、版本 diff 和更完整的 lineage 可视化。

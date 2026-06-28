@@ -79,6 +79,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-eval-device", default="auto")
     parser.add_argument("--use-eval-cache", action="store_true")
     parser.add_argument("--eval-cache-dir")
+    parser.add_argument("--register-model-version", action="store_true")
+    parser.add_argument("--model-registry-dir")
+    parser.add_argument("--create-model-review-package", action="store_true")
+    parser.add_argument("--model-lifecycle-output-dir")
+    parser.add_argument("--require-model-approval", action="store_true")
+    parser.add_argument("--model-lifecycle-policy-path")
+    parser.add_argument("--model-approval-store-dir")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -172,6 +179,13 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
         batch_eval_device=args.batch_eval_device,
         use_eval_cache=args.use_eval_cache,
         eval_cache_dir=args.eval_cache_dir,
+        register_model_version=args.register_model_version,
+        model_registry_dir=args.model_registry_dir,
+        create_model_review_package=args.create_model_review_package,
+        model_lifecycle_output_dir=args.model_lifecycle_output_dir,
+        require_model_approval=args.require_model_approval,
+        model_lifecycle_policy_path=args.model_lifecycle_policy_path,
+        model_approval_store_dir=args.model_approval_store_dir,
     )
 
 

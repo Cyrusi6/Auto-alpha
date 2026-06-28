@@ -13,6 +13,11 @@ class ApprovalStatus:
     expired = "expired"
 
 
+class ApprovalType:
+    order_batch = "order_batch"
+    model_lifecycle = "model_lifecycle"
+
+
 @dataclass(frozen=True)
 class ApprovalOrder:
     trade_date: str
@@ -51,6 +56,11 @@ class ApprovalBatch:
     parent_orders: list[dict[str, Any]] = field(default_factory=list)
     child_orders: list[dict[str, Any]] = field(default_factory=list)
     capacity_summary: dict[str, Any] = field(default_factory=dict)
+    approval_type: str = ApprovalType.order_batch
+    model_version_id: str | None = None
+    model_lifecycle_action: str | None = None
+    model_review_package_path: str | None = None
+    lifecycle_summary: dict[str, Any] = field(default_factory=dict)
     status: str = ApprovalStatus.pending
     decision: ApprovalDecision | None = None
     metadata: dict[str, Any] = field(default_factory=dict)

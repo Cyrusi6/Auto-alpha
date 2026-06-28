@@ -82,3 +82,32 @@ def test_research_suite_workflow_supports_hybrid_search(tmp_path):
     assert formula_stage.summary["search_mode"] == "hybrid"
     assert "neural_search_result" in formula_stage.output_paths
     assert (Path(formula_stage.output_paths["neural_search_result"])).exists()
+
+
+def test_research_suite_can_register_model_and_create_review_package(tmp_path):
+    config = _suite_config(
+        tmp_path,
+        search_population_size=4,
+        search_generations=1,
+        search_max_candidates=2,
+        top_k=2,
+        skip_orders=True,
+        register_model_version=True,
+        model_registry_dir=str(tmp_path / "model_registry"),
+        create_model_review_package=True,
+        model_lifecycle_output_dir=str(tmp_path / "model_lifecycle"),
+        require_model_approval=True,
+        model_approval_store_dir=str(tmp_path / "approvals"),
+    )
+    result = ResearchSuiteRunner(config).run()
+    stage_statuses = {stage.name: stage.status for stage in result.stages}
+
+    assert result.status == "success"
+    assert stage_statuses["model_registry"] == "success"
+    assert stage_statuses["model_lifecycle"] == "success"
+    assert result.summary["model_version_id"]
+    assert result.summary["model_approval_id"]
+    assert (tmp_path / "model_registry" / "model_versions.jsonl").exists()
+    assert (tmp_path / "model_registry" / "model_registry_report.json").exists()
+    assert (tmp_path / "model_lifecycle" / "model_review_package.json").exists()
+    assert (tmp_path / "approvals" / "approvals" / f"{result.summary['model_approval_id']}.json").exists()

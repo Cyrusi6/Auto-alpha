@@ -22,6 +22,8 @@ def test_release_inventories_cover_platform_modules():
     assert "data_pipeline" in module_names
     assert "research_suite" in module_names
     assert "broker_adapter" in module_names
+    assert "model_registry" in module_names
+    assert "factor_lifecycle" in module_names
     assert "assets" not in module_names
     assert "paper" not in module_names
     assert "lord" not in module_names
@@ -75,5 +77,7 @@ def test_pyproject_packaging_config_excludes_non_platform_dirs():
     assert "package = true" in text
     assert '"artifact_schema"' in text
     assert '"release_manager"' in text
+    assert '"model_registry"' in text
+    assert '"factor_lifecycle"' in text
     assert '"times.py"' in text
     assert '"tests"' in text
