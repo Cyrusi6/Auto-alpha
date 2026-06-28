@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Sequence
 
 from backtest import AShareCostModel, AShareTradingRules
+from risk_controls import LocalRiskControlState
 
 from .models import (
     BrokerFillRecord,
@@ -37,6 +38,8 @@ class SimulatedBrokerAdapter:
         auto_fill: bool = True,
         cost_model: AShareCostModel | None = None,
         trading_rules: AShareTradingRules | None = None,
+        risk_control_state_dir: str | Path | None = None,
+        risk_policy_path: str | Path | None = None,
     ):
         self.store = LocalBrokerStore(store_dir)
         self.prices = prices or {}
@@ -47,6 +50,8 @@ class SimulatedBrokerAdapter:
         self.auto_fill = bool(auto_fill)
         self.cost_model = cost_model or AShareCostModel()
         self.trading_rules = trading_rules or AShareTradingRules()
+        self.risk_control_state_dir = Path(risk_control_state_dir) if risk_control_state_dir is not None else None
+        self.risk_policy_path = Path(risk_policy_path) if risk_policy_path is not None else None
 
     def submit_orders(
         self,
@@ -72,6 +77,14 @@ class SimulatedBrokerAdapter:
                 continue
             record = make_order_record(request)
             record = self.store.save_order(record)
+            if self._risk_kill_switch_active():
+                fill = self._fill(record, float(request.price or 0.0), 0, 0.0, 0.0, "REJECTED", "risk_kill_switch_active")
+                fills.append(fill)
+                self.store.append_fill(fill)
+                events.append(self._transition(record, BrokerOrderStatus.REJECTED, "risk_kill_switch_active", fill=fill))
+                record = self.store.get_order(record.broker_order_id) or record
+                orders.append(record)
+                continue
             events.append(self._transition(record, BrokerOrderStatus.SUBMITTED, "submitted"))
             record = self.store.get_order(record.broker_order_id) or record
             events.append(self._transition(record, BrokerOrderStatus.ACCEPTED, "accepted"))
@@ -96,6 +109,11 @@ class SimulatedBrokerAdapter:
             idempotent_replay_count=replay_count,
             summary=summary,
         )
+
+    def _risk_kill_switch_active(self) -> bool:
+        if self.risk_control_state_dir is None:
+            return False
+        return LocalRiskControlState(self.risk_control_state_dir).load_kill_switch().active
 
     def cancel_order(self, broker_order_id: str, reason: str) -> BrokerOrderRecord:
         record = self._require_order(broker_order_id)

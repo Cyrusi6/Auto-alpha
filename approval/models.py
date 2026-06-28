@@ -17,6 +17,7 @@ class ApprovalType:
     order_batch = "order_batch"
     model_lifecycle = "model_lifecycle"
     account_reconciliation_adjustment = "account_reconciliation_adjustment"
+    risk_control_override = "risk_control_override"
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,14 @@ class ApprovalBatch:
     eod_reconciliation_status: str | None = None
     unresolved_break_count: int = 0
     material_break_count: int = 0
+    risk_control_report_path: str | None = None
+    risk_control_breaches_path: str | None = None
+    risk_override_request_path: str | None = None
+    risk_control_summary: dict[str, Any] = field(default_factory=dict)
+    kill_switch_action: str | None = None
+    risk_override_scope: str | None = None
+    risk_override_expiry_date: str | None = None
+    risk_override_max_usage_count: int | None = None
     status: str = ApprovalStatus.pending
     decision: ApprovalDecision | None = None
     metadata: dict[str, Any] = field(default_factory=dict)

@@ -1626,3 +1626,30 @@
 - Add richer configurable broker-statement field mapping templates and manual mapping review reports.
 - Extend reconciliation matching across multi-day partial fills, cancelled/replaced orders, and settlement calendars.
 - Add break lifecycle ownership, aging, SLA, and persistent resolution status before any real broker onboarding.
+
+## Task 031 - Pre-Trade Risk Limits, Kill Switch, And Execution Gate
+
+- Added `risk_controls/` for local A-share pre-trade policy profiles, order/child/broker request evaluation, accepted/rejected/clipped order artifacts, limit usage snapshots, audit events, kill switch state, and approval-gated override records.
+- Extended approval batches with `risk_control_override` approval type and optional risk control report, breach, override, kill switch, and override-expiry metadata while keeping older approval records compatible.
+- Integrated opt-in `--risk-controls` into `strategy_manager.runner`, `operations.run_daily`, `backtest.run_backtest`, simulated/file broker adapters, monitoring, dashboard artifact service, artifact schema registry, release inventory, local CI, and packaging metadata.
+- `operations.run_daily --block-on-kill-switch` now blocks proposal/execution locally when the risk kill switch is active unless an approved risk override or explicit local override is provided.
+- Broker adapter risk controls remain local only: the simulated adapter rejects locally and the file adapter withholds outbox instructions when the kill switch is active.
+
+### New Artifacts
+- `risk_control_policy.json`
+- `risk_control_policy_manifest.json`
+- `risk_control_report.json/md`
+- `risk_control_breaches.jsonl`
+- `risk_control_decisions.jsonl`
+- `risk_limit_usage.jsonl`
+- `accepted_orders.jsonl`
+- `rejected_orders.jsonl`
+- `clipped_orders.jsonl`
+- `kill_switch_state.json`
+- `risk_override_request.json`
+- `risk_override_records.jsonl`
+
+### Follow-Ups
+- Expand policy templates with sector, account, ADV, issuer, concentration, and intraday usage dimensions.
+- Add richer override expiry/usage enforcement and ownership workflows.
+- Add production-grade limit calibration, intraday state refresh, and verified broker-side pre-trade controls before any real broker onboarding.

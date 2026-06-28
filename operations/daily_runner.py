@@ -27,6 +27,7 @@ from factor_store import LocalFactorStore
 from model_core.data_loader import AShareDataLoader
 from model_registry import LocalModelRegistry, ModelKind, ModelLifecycleStatus, write_model_registry_report
 from paper_account import LocalPaperAccount, compute_account_performance
+from risk_controls import LocalRiskControlState
 from strategy_manager.runner import AShareStrategyRunner
 
 from .models import ProductionRunResult
@@ -107,6 +108,18 @@ class ProductionDailyRunner:
         create_adjustment_approval: bool = False,
         apply_approved_adjustments: bool = False,
         adjustment_approval_id: str | None = None,
+        risk_controls: bool = False,
+        risk_policy_path: str | Path | None = None,
+        risk_control_state_dir: str | Path | None = None,
+        risk_control_output_dir: str | Path | None = None,
+        risk_policy_profile: str = "cn_ashare_paper_default",
+        risk_fail_on_breach: bool = False,
+        risk_allow_clipping: bool = False,
+        create_risk_override_approval: bool = False,
+        risk_override_approval_store_dir: str | Path | None = None,
+        risk_override_approval_id: str | None = None,
+        block_on_kill_switch: bool = False,
+        force_risk_local_override: bool = False,
     ):
         self.data_dir = Path(data_dir)
         self.factor_store_dir = Path(factor_store_dir)
@@ -179,6 +192,18 @@ class ProductionDailyRunner:
         self.create_adjustment_approval = bool(create_adjustment_approval)
         self.apply_approved_adjustments = bool(apply_approved_adjustments)
         self.adjustment_approval_id = adjustment_approval_id
+        self.risk_controls = bool(risk_controls)
+        self.risk_policy_path = Path(risk_policy_path) if risk_policy_path is not None else None
+        self.risk_control_state_dir = Path(risk_control_state_dir) if risk_control_state_dir is not None else self.output_dir / "risk_state"
+        self.risk_control_output_dir = Path(risk_control_output_dir) if risk_control_output_dir is not None else self.output_dir / "risk_controls"
+        self.risk_policy_profile = risk_policy_profile
+        self.risk_fail_on_breach = bool(risk_fail_on_breach)
+        self.risk_allow_clipping = bool(risk_allow_clipping)
+        self.create_risk_override_approval = bool(create_risk_override_approval)
+        self.risk_override_approval_store_dir = Path(risk_override_approval_store_dir) if risk_override_approval_store_dir is not None else self.approval_store_dir
+        self.risk_override_approval_id = risk_override_approval_id
+        self.block_on_kill_switch = bool(block_on_kill_switch)
+        self.force_risk_local_override = bool(force_risk_local_override)
         self._model_context: dict[str, Any] = {}
 
     def run(
@@ -218,6 +243,9 @@ class ProductionDailyRunner:
         return final
 
     def _propose(self, run_id: str, created_at: str, require_approval: bool) -> ProductionRunResult:
+        blocked = self._risk_kill_switch_blocked()
+        if blocked is not None:
+            return blocked(run_id, created_at, factor_id=self.factor_id or "", rebalance_date=self.rebalance_date or "")
         factor_id = self._select_factor_id()
         if self.settlement_aware and self.settle_before_trading and self.rebalance_date:
             LocalPaperAccount(self.paper_account_dir).settle(self.rebalance_date, profile=self.settlement_profile)
@@ -259,6 +287,15 @@ class ProductionDailyRunner:
             paper_account_dir=self.paper_account_dir,
             enforce_available_cash=self.enforce_available_cash,
             enforce_available_shares=self.enforce_available_shares,
+            risk_controls=self.risk_controls,
+            risk_policy_path=self.risk_policy_path,
+            risk_control_state_dir=self.risk_control_state_dir,
+            risk_control_output_dir=self.risk_control_output_dir,
+            risk_policy_profile=self.risk_policy_profile,
+            risk_fail_on_breach=self.risk_fail_on_breach,
+            risk_allow_clipping=self.risk_allow_clipping,
+            create_risk_override_approval=self.create_risk_override_approval,
+            risk_override_approval_store_dir=self.risk_override_approval_store_dir,
         ).generate_orders()
         if self.apply_corporate_actions:
             prices = _prices_for_date(
@@ -320,6 +357,9 @@ class ProductionDailyRunner:
     def _execute_approved(self, run_id: str, created_at: str, approval_id: str | None) -> ProductionRunResult:
         if not approval_id:
             raise ValueError("approval_id is required when execute_approved is enabled")
+        blocked = self._risk_kill_switch_blocked(approval_id=approval_id)
+        if blocked is not None:
+            return blocked(run_id, created_at, factor_id=self.factor_id or "", rebalance_date=self.rebalance_date or "")
         store = LocalApprovalStore(self.approval_store_dir)
         batch = store.load_batch(approval_id)
         if batch.status != ApprovalStatus.approved:
@@ -545,6 +585,11 @@ class ProductionDailyRunner:
             batch.approval_id,
             price_type=self.broker_price_type,
         )
+        broker_risk_state_dir = (
+            self.risk_control_state_dir
+            if self.risk_controls and not self.force_risk_local_override and not self._approved_risk_override_exists(self.risk_override_approval_id or batch.approval_id)
+            else None
+        )
         if self.broker_adapter == "simulated":
             adapter = SimulatedBrokerAdapter(
                 self.broker_store_dir,
@@ -554,6 +599,8 @@ class ProductionDailyRunner:
                 limit_up=limit_up,
                 limit_down=limit_down,
                 auto_fill=self.broker_auto_fill,
+                risk_control_state_dir=broker_risk_state_dir,
+                risk_policy_path=self.risk_policy_path if self.risk_controls else None,
             )
             result = adapter.submit_orders(requests, batch_id=batch.approval_id)
         elif self.broker_adapter == "file":
@@ -562,6 +609,8 @@ class ProductionDailyRunner:
                 self.broker_outbox_dir,
                 self.broker_inbox_dir,
                 BrokerAdapterConfig(adapter_type="file", price_type=self.broker_price_type),
+                risk_control_state_dir=broker_risk_state_dir,
+                risk_policy_path=self.risk_policy_path if self.risk_controls else None,
             )
             result = adapter.submit_orders(requests, batch_id=batch.approval_id)
         else:
@@ -613,6 +662,48 @@ class ProductionDailyRunner:
         if self.broker_adapter == "file" and not fills:
             broker_summary["status"] = "broker_exported"
         return fills, broker_summary, broker_paths
+
+    def _risk_kill_switch_blocked(self, approval_id: str | None = None):
+        if not self.risk_controls or not self.block_on_kill_switch:
+            return None
+        state = LocalRiskControlState(self.risk_control_state_dir).load_kill_switch()
+        if not state.active:
+            return None
+        if self.force_risk_local_override:
+            return None
+        override_id = self.risk_override_approval_id or approval_id
+        if override_id and self._approved_risk_override_exists(override_id):
+            return None
+
+        def _blocked(run_id: str, created_at: str, factor_id: str, rebalance_date: str) -> ProductionRunResult:
+            summary = {
+                "risk_controls": True,
+                "risk_control_status": "blocked",
+                "kill_switch_active": True,
+                "kill_switch_reason": state.reason,
+                "risk_control_state_dir": str(self.risk_control_state_dir),
+                "kill_switch_state_path": str(LocalRiskControlState(self.risk_control_state_dir).kill_switch_path),
+            }
+            return ProductionRunResult(
+                run_id=run_id,
+                created_at=created_at,
+                status="risk_blocked",
+                factor_id=factor_id,
+                rebalance_date=rebalance_date,
+                executed=False,
+                paths=_paths_from_summary(summary),
+                summary=summary,
+                error="risk kill switch is active",
+            )
+
+        return _blocked
+
+    def _approved_risk_override_exists(self, approval_id: str) -> bool:
+        try:
+            batch = LocalApprovalStore(self.approval_store_dir).load_batch(approval_id)
+        except FileNotFoundError:
+            return False
+        return batch.status == ApprovalStatus.approved and batch.approval_type == "risk_control_override"
 
     def _select_factor_id(self) -> str:
         if self.use_model_registry:
@@ -980,6 +1071,18 @@ def _paths_from_summary(summary: dict[str, Any]) -> dict[str, str]:
         "adjustment_proposal_batch_path",
         "adjustment_application_result_path",
         "adjustment_ledger_path",
+        "risk_control_report_path",
+        "risk_control_report_md_path",
+        "risk_control_breaches_path",
+        "risk_limit_usage_path",
+        "risk_control_decisions_path",
+        "accepted_orders_path",
+        "rejected_orders_path",
+        "clipped_orders_path",
+        "kill_switch_state_path",
+        "risk_override_request_path",
+        "risk_override_records_path",
+        "risk_control_policy_manifest_path",
     ]
     return {key: str(summary[key]) for key in keys if summary.get(key)}
 

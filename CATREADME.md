@@ -10,10 +10,11 @@ This repository is now organized as a local A-share factor research platform. Th
 6. Register promoted factors as governed model versions, build review packages, and activate approved model deployments.
 7. Run equal-weight or benchmark-aware portfolio simulation.
 8. Estimate capacity, build execution plans, and export target positions plus paper orders.
-9. Route approved child orders through local paper, simulated broker, or file-instruction broker adapters.
-10. Apply local paper settlement, cash/share availability, lot cost, PnL, and NAV reconciliation.
-11. Run approval-gated daily paper operations.
-12. Review artifacts and monitoring in the dashboard.
+9. Apply opt-in pre-trade risk limits and local kill switch gates.
+10. Route approved child orders through local paper, simulated broker, or file-instruction broker adapters.
+11. Apply local paper settlement, cash/share availability, lot cost, PnL, and NAV reconciliation.
+12. Run approval-gated daily paper operations.
+13. Review artifacts and monitoring in the dashboard.
 
 ## Data Layer
 
@@ -101,6 +102,8 @@ Planned sync splits large daily datasets by date windows and splits index consti
 
 `execution_plan/` converts target orders into parent orders, child orders, bucketed schedules, simulated child fills, and execution quality artifacts. Default buckets are `open`, `morning`, `afternoon`, and `close`.
 
+`risk_controls/` provides opt-in local pre-trade controls. It evaluates target orders, child orders, and broker requests against JSON policy profiles, records limit usage, writes accepted/rejected/clipped order artifacts, maintains a local kill switch, and can create approval-gated override requests. It is a local paper gate only; it does not submit live orders or read broker credentials.
+
 `broker_adapter/` defines the local broker contract. It stores broker order requests, statuses, events, fills, batch summaries, and reconciliation reports in JSON/JSONL. `SimulatedBrokerAdapter` applies local A-share trading rules to approved child orders and supports idempotent submit, cancel, replace, status, fills, and reconciliation. `FileInstructionBrokerAdapter` writes generic outbox CSV/JSONL/manifest files and can import optional inbox statuses/fills. Its `qmt_skeleton` mode is only a field-mapping skeleton and does not claim real QMT or broker file compatibility.
 
 `broker_statement/` imports local generic broker statement files into normalized external orders, trades, fills, positions, cash, settlement, and corporate-action mirrors. It writes source hashes, import reports, parse issues, validation reports, and synthetic statements for local smoke tests. Its QMT mode is only a configurable skeleton and requires manual real-file verification.
@@ -172,7 +175,7 @@ With `--capacity-aware`, backtest generates parent/child execution plans before 
 - `orders.jsonl`
 - `paper_fills.jsonl`
 
-With `--portfolio-method risk_aware`, target positions include optimized weight, benchmark weight, and active weight. The summary includes risk metrics and constraint violations. With `--use-factor-risk-model`, strategy and daily operations summaries include style exposure, active style exposure, and risk decomposition. With `--capacity-aware`, strategy writes `capacity_report.json/md`, `execution_plan.json/md`, `parent_orders.jsonl`, `child_orders.jsonl`, `child_fills.jsonl`, and `execution_quality.json`.
+With `--portfolio-method risk_aware`, target positions include optimized weight, benchmark weight, and active weight. The summary includes risk metrics and constraint violations. With `--use-factor-risk-model`, strategy and daily operations summaries include style exposure, active style exposure, and risk decomposition. With `--capacity-aware`, strategy writes `capacity_report.json/md`, `execution_plan.json/md`, `parent_orders.jsonl`, `child_orders.jsonl`, `child_fills.jsonl`, and `execution_quality.json`. With `--risk-controls`, strategy evaluates orders before approval or paper execution and writes `risk_control_report.json/md`, `risk_control_breaches.jsonl`, `risk_control_decisions.jsonl`, `risk_limit_usage.jsonl`, `accepted_orders.jsonl`, `rejected_orders.jsonl`, `clipped_orders.jsonl`, and `kill_switch_state.json`.
 
 ## Production Operations
 
@@ -181,7 +184,7 @@ With `--portfolio-method risk_aware`, target positions include optimized weight,
 - `approvals/<approval_id>.json`
 - `approval_log.jsonl`
 
-Batches move through `pending`, `approved`, `rejected`, and `expired`. Approved batches cannot be rejected later, and every decision is logged. Approval types include order batches, model lifecycle activation, and account reconciliation adjustments.
+Batches move through `pending`, `approved`, `rejected`, and `expired`. Approved batches cannot be rejected later, and every decision is logged. Approval types include order batches, model lifecycle activation, account reconciliation adjustments, and risk control overrides.
 
 `paper_account/` maintains a persistent local paper ledger. It writes:
 
@@ -202,6 +205,8 @@ Filled and partial fills update cash and positions. Rejected fills are recorded 
 5. Optionally import a broker statement, run EOD reconciliation, create adjustment proposals, create an `account_reconciliation_adjustment` approval, and apply approved manual adjustments idempotently.
 
 Capacity-aware daily runs store parent and child order schedules inside approval batches. Approved child orders can keep the default paper simulator path, route through the simulated broker state machine, or export generic file instructions. Broker-enabled runs write `broker_report.json/md`, `broker_orders.jsonl`, `broker_events.jsonl`, `broker_fills.jsonl`, and `broker_reconciliation.json/md`. Repeated execution of the same approved child orders is idempotent at the broker order and paper-account fill layers.
+
+Risk-control-aware daily runs can block proposal or execution while the local kill switch is active, filter proposed orders before approval, and recheck execution before broker routing. Override requests are stored as normal approval batches with `approval_type=risk_control_override`; applying an approved override is explicit and audited.
 
 Settlement-aware daily runs can settle pending events before trading, precheck orders against available cash and available shares, apply approved broker fills into settlement events, advance settlement through a chosen date, and write `settlement_report.json/md`, `settlement_events.jsonl`, `cash_buckets.jsonl`, `position_lots.jsonl`, `position_availability.jsonl`, `realized_pnl.jsonl`, `account_nav.jsonl`, `account_performance_report.json`, `account_reconciliation_report.json`, and `fee_tax_report.json`.
 

@@ -92,6 +92,18 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--create-adjustment-approval", action="store_true")
     parser.add_argument("--apply-approved-adjustments", action="store_true")
     parser.add_argument("--adjustment-approval-id")
+    parser.add_argument("--risk-controls", action="store_true")
+    parser.add_argument("--risk-policy-path")
+    parser.add_argument("--risk-control-state-dir")
+    parser.add_argument("--risk-control-output-dir")
+    parser.add_argument("--risk-policy-profile", default="cn_ashare_paper_default")
+    parser.add_argument("--risk-fail-on-breach", action="store_true")
+    parser.add_argument("--risk-allow-clipping", action="store_true")
+    parser.add_argument("--create-risk-override-approval", action="store_true")
+    parser.add_argument("--risk-override-approval-store-dir")
+    parser.add_argument("--risk-override-approval-id")
+    parser.add_argument("--block-on-kill-switch", action="store_true")
+    parser.add_argument("--force-risk-local-override", action="store_true")
     parser.add_argument("--reconcile-only", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
@@ -171,6 +183,18 @@ def main(argv: list[str] | None = None) -> int:
         create_adjustment_approval=args.create_adjustment_approval,
         apply_approved_adjustments=args.apply_approved_adjustments,
         adjustment_approval_id=args.adjustment_approval_id,
+        risk_controls=args.risk_controls,
+        risk_policy_path=args.risk_policy_path,
+        risk_control_state_dir=args.risk_control_state_dir,
+        risk_control_output_dir=args.risk_control_output_dir,
+        risk_policy_profile=args.risk_policy_profile,
+        risk_fail_on_breach=args.risk_fail_on_breach,
+        risk_allow_clipping=args.risk_allow_clipping,
+        create_risk_override_approval=args.create_risk_override_approval,
+        risk_override_approval_store_dir=args.risk_override_approval_store_dir,
+        risk_override_approval_id=args.risk_override_approval_id,
+        block_on_kill_switch=args.block_on_kill_switch,
+        force_risk_local_override=args.force_risk_local_override,
     )
     result = runner.run(
         require_approval=args.require_approval,

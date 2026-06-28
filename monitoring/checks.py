@@ -279,6 +279,51 @@ def check_broker_file_outbox(outbox_manifest_path: str | Path | None) -> tuple[d
     }, alerts
 
 
+def check_pre_trade_risk_controls(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not report_path:
+        return {"exists": False, "risk_control_status": ""}, []
+    payload = _read_json(Path(report_path))
+    status = str(payload.get("status") or "")
+    rejected = int(payload.get("rejected_orders", 0) or 0) if payload else 0
+    clipped = int(payload.get("clipped_orders", 0) or 0) if payload else 0
+    warnings = int(payload.get("warning_count", 0) or 0) if payload else 0
+    errors = int(payload.get("error_count", 0) or 0) if payload else 0
+    blockers = int(payload.get("blocker_count", 0) or 0) if payload else 0
+    alerts = []
+    if blockers or errors:
+        alerts.append(MonitoringAlert("error", "pre_trade_risk_controls", "pre-trade risk controls have errors", {"errors": errors, "blockers": blockers}))
+    elif rejected or clipped or warnings:
+        alerts.append(MonitoringAlert("warning", "pre_trade_risk_controls", "pre-trade risk controls require review", {"rejected": rejected, "clipped": clipped, "warnings": warnings}))
+    return {
+        "exists": bool(payload),
+        "risk_control_status": status,
+        "risk_control_rejected_orders": rejected,
+        "risk_control_clipped_orders": clipped,
+        "risk_control_warning_count": warnings,
+        "risk_control_error_count": errors,
+        "risk_control_blocker_count": blockers,
+    }, alerts
+
+
+def check_risk_limit_usage(usage_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(usage_path)) if usage_path else []
+    breached = [row for row in rows if row.get("status") == "breached"]
+    return {"exists": bool(rows), "risk_limit_usage_records": len(rows), "risk_limit_breached_records": len(breached)}, []
+
+
+def check_kill_switch_state(kill_switch_state_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(kill_switch_state_path)) if kill_switch_state_path else {}
+    active = bool(payload.get("active", False)) if payload else False
+    alerts = [MonitoringAlert("error", "kill_switch_state", "risk kill switch is active", {"reason": payload.get("reason", "")})] if active else []
+    return {"exists": bool(payload), "kill_switch_active": active, "kill_switch_reason": payload.get("reason", "") if payload else ""}, alerts
+
+
+def check_risk_overrides(records_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(records_path)) if records_path else []
+    active = [row for row in rows if row.get("status") in {"applied", "active"}]
+    return {"exists": bool(rows), "risk_override_records": len(rows), "active_risk_overrides": len(active)}, []
+
+
 def check_broker_statement_import(import_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     if not import_report_path:
         return {"exists": False, "broker_statement_imported": False, "broker_statement_parse_error_count": 0}, []

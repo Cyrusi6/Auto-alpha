@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import csv
 import json
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
 
 from artifact_schema.writer import write_json_artifact, write_jsonl_artifact
+from risk_controls import LocalRiskControlState
 
 from .models import (
     BrokerAdapterConfig,
@@ -46,11 +48,15 @@ class FileInstructionBrokerAdapter:
         outbox_dir: str | Path,
         inbox_dir: str | Path | None = None,
         config: BrokerAdapterConfig | None = None,
+        risk_control_state_dir: str | Path | None = None,
+        risk_policy_path: str | Path | None = None,
     ):
         self.store = LocalBrokerStore(store_dir)
         self.outbox_dir = Path(outbox_dir)
         self.inbox_dir = Path(inbox_dir) if inbox_dir is not None else None
         self.config = config or BrokerAdapterConfig(adapter_type="file", schema_name="generic_broker_csv")
+        self.risk_control_state_dir = Path(risk_control_state_dir) if risk_control_state_dir is not None else None
+        self.risk_policy_path = Path(risk_policy_path) if risk_policy_path is not None else None
 
     def submit_orders(
         self,
@@ -64,6 +70,7 @@ class FileInstructionBrokerAdapter:
         events: list[BrokerOrderEvent] = []
         duplicate_count = 0
         replay_count = 0
+        export_requests: list[BrokerOrderRequest] = []
         for request in requests:
             existing = self.store.get_order_by_client_id(request.client_order_id)
             if existing is not None:
@@ -72,8 +79,27 @@ class FileInstructionBrokerAdapter:
                 self.store.increment_replay_count(existing.batch_id, existing.client_order_id)
                 orders.append(existing)
                 continue
+            if self._risk_kill_switch_active():
+                record = make_order_record(request, status=BrokerOrderStatus.REJECTED)
+                record = replace(record, reject_reason="risk_kill_switch_active")
+                record = self.store.save_order(record)
+                event = BrokerOrderEvent(
+                    event_id=f"be_{record.broker_order_id}_risk_rejected",
+                    broker_order_id=record.broker_order_id,
+                    client_order_id=record.client_order_id,
+                    batch_id=record.batch_id,
+                    event_type="rejected",
+                    status=BrokerOrderStatus.REJECTED,
+                    created_at=_utc_now(),
+                    message="risk_kill_switch_active",
+                )
+                self.store.append_event(event)
+                orders.append(record)
+                events.append(event)
+                continue
             record = make_order_record(request, status=BrokerOrderStatus.EXPORTED)
             self.store.save_order(record)
+            export_requests.append(request)
             event = BrokerOrderEvent(
                 event_id=f"be_{record.broker_order_id}_exported",
                 broker_order_id=record.broker_order_id,
@@ -88,7 +114,7 @@ class FileInstructionBrokerAdapter:
             self.store.append_event(event)
             orders.append(record)
             events.append(event)
-        manifest_path = self._write_outbox(batch, requests)
+        manifest_path = self._write_outbox(batch, export_requests)
         fills = self._import_inbox_fills(batch)
         summary = self.store.write_batch_summary(batch).to_dict() if batch else {}
         summary.update(
@@ -109,6 +135,11 @@ class FileInstructionBrokerAdapter:
             idempotent_replay_count=replay_count,
             summary=summary,
         )
+
+    def _risk_kill_switch_active(self) -> bool:
+        if self.risk_control_state_dir is None:
+            return False
+        return LocalRiskControlState(self.risk_control_state_dir).load_kill_switch().active
 
     def cancel_order(self, broker_order_id: str, reason: str) -> BrokerOrderRecord:
         record = self.store.get_order(broker_order_id)

@@ -505,6 +505,11 @@ def render_app(config: DashboardConfig | None = None) -> None:
         monitoring_report = service.load_monitoring_report()
         monitoring_markdown = service.load_monitoring_report_markdown()
         monitoring_alerts = service.load_monitoring_alerts()
+        risk_control_report = service.load_risk_control_report()
+        risk_control_breaches = service.load_risk_control_breaches()
+        risk_limit_usage = service.load_risk_limit_usage()
+        kill_switch_state = service.load_kill_switch_state()
+        risk_override_records = service.load_risk_override_records()
         broker_report = service.load_broker_report()
         broker_reconciliation = service.load_broker_reconciliation()
         statement_manifest = service.load_broker_statement_manifest()
@@ -574,6 +579,23 @@ def render_app(config: DashboardConfig | None = None) -> None:
         _show_dataframe_or_empty("Position Availability", position_availability)
         _show_dataframe_or_empty("Realized PnL", realized_pnl)
         _show_dataframe_or_empty("Account NAV", account_nav)
+        st.subheader("Pre-Trade Risk Controls")
+        st.json(
+            {
+                "status": risk_control_report.get("status", "") if risk_control_report else "",
+                "accepted_orders": risk_control_report.get("accepted_orders", 0) if risk_control_report else 0,
+                "rejected_orders": risk_control_report.get("rejected_orders", 0) if risk_control_report else 0,
+                "clipped_orders": risk_control_report.get("clipped_orders", 0) if risk_control_report else 0,
+                "warning_count": risk_control_report.get("warning_count", 0) if risk_control_report else 0,
+                "error_count": risk_control_report.get("error_count", 0) if risk_control_report else 0,
+                "kill_switch_active": kill_switch_state.get("active", False) if kill_switch_state else False,
+                "kill_switch_reason": kill_switch_state.get("reason", "") if kill_switch_state else "",
+                "override_records": len(risk_override_records),
+            }
+        )
+        _show_dataframe_or_empty("Risk Control Breaches", risk_control_breaches)
+        _show_dataframe_or_empty("Risk Limit Usage", risk_limit_usage)
+        _show_dataframe_or_empty("Risk Override Records", risk_override_records)
         st.subheader("Broker")
         st.json(
             {

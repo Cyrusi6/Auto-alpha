@@ -123,6 +123,20 @@ def main(argv: list[str] | None = None) -> int:
             ],
         ),
         (
+            "risk_controls_smoke",
+            [
+                sys.executable,
+                "-m",
+                "risk_controls.run_controls",
+                "smoke",
+                "--output-dir",
+                str(quick_dir / "risk_controls"),
+                "--state-dir",
+                str(quick_dir / "risk_state"),
+                "--pretty",
+            ],
+        ),
+        (
             "point_in_time_validate_smoke",
             [
                 sys.executable,

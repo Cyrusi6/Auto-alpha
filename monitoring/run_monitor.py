@@ -48,10 +48,14 @@ from .checks import (
     check_order_fill_quality,
     check_paper_account,
     check_package_build_artifacts,
+    check_pre_trade_risk_controls,
     check_point_in_time_validation,
     check_provider_readiness,
     check_quality_report,
     check_release_gate,
+    check_risk_limit_usage,
+    check_kill_switch_state,
+    check_risk_overrides,
     check_risk_report,
     check_account_reconciliation,
     check_pending_model_reviews,
@@ -99,6 +103,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--artifact-validation-report-path")
     parser.add_argument("--release-gate-report-path")
     parser.add_argument("--release-manifest-path")
+    parser.add_argument("--risk-control-report-path")
+    parser.add_argument("--risk-control-breaches-path")
+    parser.add_argument("--risk-limit-usage-path")
+    parser.add_argument("--kill-switch-state-path")
+    parser.add_argument("--risk-override-records-path")
     parser.add_argument("--formula-corpus-stats-path")
     parser.add_argument("--formula-batch-eval-result-path")
     parser.add_argument("--alphagpt-pretrain-result-path")
@@ -165,6 +174,10 @@ def main(argv: list[str] | None = None) -> int:
             "broker_file_outbox",
             lambda: check_broker_file_outbox(args.broker_outbox_manifest_path or _default_broker_outbox_manifest(args.orders_dir)),
         ),
+        ("pre_trade_risk_controls", lambda: check_pre_trade_risk_controls(args.risk_control_report_path or _default_risk_control_path(args.orders_dir, "risk_control_report.json"))),
+        ("risk_limit_usage", lambda: check_risk_limit_usage(args.risk_limit_usage_path or _default_risk_control_path(args.orders_dir, "risk_limit_usage.jsonl"))),
+        ("kill_switch_state", lambda: check_kill_switch_state(args.kill_switch_state_path or _default_risk_control_path(args.orders_dir, "kill_switch_state.json"))),
+        ("risk_overrides", lambda: check_risk_overrides(args.risk_override_records_path or _default_risk_control_path(args.orders_dir, "risk_override_records.jsonl"))),
         ("broker_statement_import", lambda: check_broker_statement_import(args.broker_statement_import_report_path)),
         ("statement_staleness", lambda: check_statement_staleness(args.broker_statement_manifest_path, args.as_of_date)),
         ("eod_reconciliation", lambda: check_eod_reconciliation(args.eod_reconciliation_report_path)),
@@ -274,6 +287,21 @@ def _default_broker_outbox_manifest(orders_dir: str | Path) -> str:
         root / "broker_instruction_manifest.json",
         root / "outbox" / "broker_instruction_manifest.json",
         root.parent / "broker_file" / "outbox" / "broker_instruction_manifest.json",
+    ):
+        if path.exists():
+            return str(path)
+    return ""
+
+
+def _default_risk_control_path(orders_dir: str | Path, filename: str) -> str:
+    root = Path(orders_dir)
+    for path in (
+        root / filename,
+        root / "risk_controls" / filename,
+        root.parent / "risk_controls" / filename,
+        root.parent / "production" / "risk_controls" / filename,
+        root.parent / "production_execute" / "risk_controls" / filename,
+        root.parent / "backtest" / "risk_controls" / filename,
     ):
         if path.exists():
             return str(path)

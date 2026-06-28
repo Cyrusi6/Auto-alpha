@@ -44,6 +44,10 @@ class MonitoringReport:
         nav_diff = self.checks.get("external_nav_difference", {}) if isinstance(self.checks, dict) else {}
         proposals = self.checks.get("adjustment_proposals", {}) if isinstance(self.checks, dict) else {}
         application = self.checks.get("adjustment_application", {}) if isinstance(self.checks, dict) else {}
+        risk_controls = self.checks.get("pre_trade_risk_controls", {}) if isinstance(self.checks, dict) else {}
+        risk_usage = self.checks.get("risk_limit_usage", {}) if isinstance(self.checks, dict) else {}
+        kill_switch = self.checks.get("kill_switch_state", {}) if isinstance(self.checks, dict) else {}
+        risk_overrides = self.checks.get("risk_overrides", {}) if isinstance(self.checks, dict) else {}
         return {
             "created_at": self.created_at,
             "as_of_date": self.as_of_date,
@@ -86,4 +90,13 @@ class MonitoringReport:
             "adjustment_proposal_count": int(proposals.get("adjustment_proposal_count", 0) or 0) if isinstance(proposals, dict) else 0,
             "adjustment_application_count": int(application.get("adjustment_application_count", 0) or 0) if isinstance(application, dict) else 0,
             "adjustment_pending_approval_count": int(proposals.get("adjustment_pending_approval_count", 0) or 0) if isinstance(proposals, dict) else 0,
+            "risk_control_status": str(risk_controls.get("risk_control_status", "")) if isinstance(risk_controls, dict) else "",
+            "risk_control_rejected_orders": int(risk_controls.get("risk_control_rejected_orders", 0) or 0) if isinstance(risk_controls, dict) else 0,
+            "risk_control_clipped_orders": int(risk_controls.get("risk_control_clipped_orders", 0) or 0) if isinstance(risk_controls, dict) else 0,
+            "risk_control_warning_count": int(risk_controls.get("risk_control_warning_count", 0) or 0) if isinstance(risk_controls, dict) else 0,
+            "risk_control_error_count": int(risk_controls.get("risk_control_error_count", 0) or 0) if isinstance(risk_controls, dict) else 0,
+            "risk_limit_usage_records": int(risk_usage.get("risk_limit_usage_records", 0) or 0) if isinstance(risk_usage, dict) else 0,
+            "risk_limit_breached_records": int(risk_usage.get("risk_limit_breached_records", 0) or 0) if isinstance(risk_usage, dict) else 0,
+            "kill_switch_active": bool(kill_switch.get("kill_switch_active", False)) if isinstance(kill_switch, dict) else False,
+            "active_risk_overrides": int(risk_overrides.get("active_risk_overrides", 0) or 0) if isinstance(risk_overrides, dict) else 0,
         }

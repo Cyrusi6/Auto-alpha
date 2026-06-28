@@ -646,6 +646,41 @@ class AshareDashboardService:
                 return frame
         return pd.DataFrame()
 
+    def load_risk_control_report(self) -> dict[str, Any]:
+        for path in self._risk_control_candidates("risk_control_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_risk_control_breaches(self) -> pd.DataFrame:
+        for path in self._risk_control_candidates("risk_control_breaches.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_risk_limit_usage(self) -> pd.DataFrame:
+        for path in self._risk_control_candidates("risk_limit_usage.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_kill_switch_state(self) -> dict[str, Any]:
+        for path in self._risk_control_candidates("kill_switch_state.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_risk_override_records(self) -> pd.DataFrame:
+        for path in self._risk_control_candidates("risk_override_records.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
     def load_matrix_metadata(self) -> dict[str, Any]:
         for path in self._matrix_candidates("metadata.json"):
             payload = self._read_json(path)
@@ -1190,6 +1225,20 @@ class AshareDashboardService:
             self.config.orders_dir / filename,
             root / "backtest" / filename,
             root / "backtest_direct" / filename,
+        ]
+
+    def _risk_control_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.orders_dir / "risk_controls" / filename,
+            self.config.orders_dir / filename,
+            self.config.backtest_dir / "risk_controls" / filename,
+            root / "risk_controls" / filename,
+            root / "production" / "risk_controls" / filename,
+            root / "production_execute" / "risk_controls" / filename,
+            root / "production_execute_replay" / "risk_controls" / filename,
+            root / "backtest" / "risk_controls" / filename,
+            root / "backtest_direct" / "risk_controls" / filename,
         ]
 
     def _execution_plan_candidates(self, filename: str) -> list[Path]:

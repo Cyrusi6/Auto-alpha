@@ -17,6 +17,7 @@ from model_core.data_loader import AShareDataLoader
 from capacity_model import write_capacity_report
 from execution_plan import write_execution_plan_report
 from risk_model import write_risk_model_report, write_risk_report
+from risk_controls import evaluate_order_records
 
 from .io import describe_factor, factor_values_to_matrix, select_factor_id
 from .simulator import AShareBacktestSimulator
@@ -106,6 +107,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--allow-unsettled-shares-for-sell", action="store_true")
     parser.add_argument("--settle-through-date")
     parser.add_argument("--write-settlement-report", action="store_true")
+    parser.add_argument("--risk-controls", action="store_true")
+    parser.add_argument("--risk-policy-path")
+    parser.add_argument("--risk-policy-profile", default="cn_ashare_paper_default")
+    parser.add_argument("--risk-control-dir")
+    parser.add_argument("--risk-fail-on-breach", action="store_true")
+    parser.add_argument("--risk-allow-clipping", action="store_true")
+    parser.add_argument("--risk-state-reset-each-run", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -200,6 +208,57 @@ def main(argv: list[str] | None = None) -> int:
     )
     _write_jsonl(output_dir / "equity_curve.jsonl", result.snapshots)
     _write_jsonl(output_dir / "trades.jsonl", result.fills)
+    risk_control_paths: dict[str, str | None] = {
+        "risk_control_report_path": None,
+        "risk_control_breaches_path": None,
+        "risk_limit_usage_path": None,
+        "risk_control_decisions_path": None,
+        "accepted_orders_path": None,
+        "rejected_orders_path": None,
+        "clipped_orders_path": None,
+        "kill_switch_state_path": None,
+    }
+    risk_control_summary: dict[str, object] = {"status": "not_run"}
+    if args.risk_controls:
+        risk_dir = Path(args.risk_control_dir) if args.risk_control_dir else output_dir / "risk_controls"
+        state_dir = risk_dir / "state"
+        if args.risk_state_reset_each_run and state_dir.exists():
+            import shutil
+
+            shutil.rmtree(state_dir)
+        report, _split, paths = evaluate_order_records(
+            result.fills,
+            policy_path=args.risk_policy_path,
+            policy_profile=args.risk_policy_profile,
+            state_dir=state_dir,
+            output_dir=risk_dir,
+            batch_id=f"backtest_{factor_id}",
+            trade_date=loader.trade_dates[-1] if loader.trade_dates else "",
+            scope="order",
+            allow_clipping=args.risk_allow_clipping,
+        )
+        risk_control_paths = {key: str(value) for key, value in paths.items()}
+        risk_control_summary = {
+            "status": report.status,
+            "accepted_orders": report.accepted_orders,
+            "rejected_orders": report.rejected_orders,
+            "clipped_orders": report.clipped_orders,
+            "warning_count": report.warning_count,
+            "error_count": report.error_count,
+            "blocker_count": report.blocker_count,
+        }
+        result.metrics.update(
+            {
+                "risk_control_rejected_orders": float(report.rejected_orders),
+                "risk_control_clipped_orders": float(report.clipped_orders),
+                "risk_control_warning_count": float(report.warning_count),
+                "risk_control_error_count": float(report.error_count),
+            }
+        )
+        (output_dir / "backtest_result.json").write_text(json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        if args.risk_fail_on_breach and report.rejected_orders > 0:
+            print(json.dumps({"error": "risk controls rejected backtest orders", **risk_control_summary}, ensure_ascii=False))
+            return 1
     risk_exposures_path = None
     risk_decomposition_path = None
     return_attribution_path = None
@@ -406,6 +465,9 @@ def main(argv: list[str] | None = None) -> int:
         **corporate_paths,
         **execution_plan_paths,
         **settlement_paths,
+        "risk_controls": bool(args.risk_controls),
+        "risk_control_summary": risk_control_summary,
+        **risk_control_paths,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0

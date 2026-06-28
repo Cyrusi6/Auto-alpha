@@ -22,6 +22,8 @@ from execution_plan import (
 from factor_store import LocalFactorStore
 from model_core.data_loader import AShareDataLoader
 from portfolio_optimizer import OptimizationConfig, PortfolioOptimizer
+from risk_controls import evaluate_order_records
+from risk_controls.overrides import create_override_approval
 from risk_model import (
     build_barra_like_risk_model,
     benchmark_weights_from_index_members,
@@ -84,6 +86,15 @@ class AShareStrategyRunner:
         paper_account_dir: str | Path | None = None,
         enforce_available_cash: bool = False,
         enforce_available_shares: bool = False,
+        risk_controls: bool = False,
+        risk_policy_path: str | Path | None = None,
+        risk_control_state_dir: str | Path | None = None,
+        risk_control_output_dir: str | Path | None = None,
+        risk_policy_profile: str = "cn_ashare_paper_default",
+        risk_fail_on_breach: bool = False,
+        risk_allow_clipping: bool = False,
+        create_risk_override_approval: bool = False,
+        risk_override_approval_store_dir: str | Path | None = None,
     ):
         self.data_dir = Path(data_dir)
         self.factor_store_dir = Path(factor_store_dir)
@@ -130,6 +141,15 @@ class AShareStrategyRunner:
         self.paper_account_dir = Path(paper_account_dir) if paper_account_dir is not None else None
         self.enforce_available_cash = bool(enforce_available_cash)
         self.enforce_available_shares = bool(enforce_available_shares)
+        self.risk_controls = bool(risk_controls)
+        self.risk_policy_path = Path(risk_policy_path) if risk_policy_path is not None else None
+        self.risk_control_state_dir = Path(risk_control_state_dir) if risk_control_state_dir is not None else self.output_dir / "risk_state"
+        self.risk_control_output_dir = Path(risk_control_output_dir) if risk_control_output_dir is not None else self.output_dir / "risk_controls"
+        self.risk_policy_profile = risk_policy_profile
+        self.risk_fail_on_breach = bool(risk_fail_on_breach)
+        self.risk_allow_clipping = bool(risk_allow_clipping)
+        self.create_risk_override_approval = bool(create_risk_override_approval)
+        self.risk_override_approval_store_dir = Path(risk_override_approval_store_dir) if risk_override_approval_store_dir is not None else self.approval_store_dir
         self.loader: AShareDataLoader | None = None
         self.selected_factor_id: str | None = None
         self.selected_factor_meta: dict[str, object] = {}
@@ -243,6 +263,10 @@ class AShareStrategyRunner:
         if not ok:
             raise ValueError("; ".join(errors))
         orders = risk.filter_orders(target_book.to_orders(portfolio_value=self.portfolio_value))
+        risk_control_summary: dict[str, object] = {}
+        risk_control_paths: dict[str, str] = {}
+        if self.risk_controls:
+            orders, risk_control_summary, risk_control_paths = self._apply_risk_controls(orders, target_book.trade_date)
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
         targets_csv = export_orders_csv(target_book.targets, self.output_dir / "target_positions.csv")
@@ -347,10 +371,14 @@ class AShareStrategyRunner:
                     "risk_decomposition": self.risk_report.factor_risk_contribution if self.risk_report is not None else {},
                     "n_orders": len(orders),
                     "gross_order_value": float(sum(order.order_value for order in orders)),
+                    "risk_control_summary": risk_control_summary,
                 },
                 parent_orders=parent_orders_payload,
                 child_orders=child_orders_payload,
                 capacity_summary=capacity_summary,
+                risk_control_report_path=risk_control_paths.get("risk_control_report_path"),
+                risk_control_breaches_path=risk_control_paths.get("risk_control_breaches_path"),
+                risk_control_summary=risk_control_summary,
                 metadata={
                     "targets_path": str(targets_jsonl),
                     "orders_path": str(orders_jsonl),
@@ -360,6 +388,7 @@ class AShareStrategyRunner:
                     "settlement_profile": self.settlement_profile,
                     "settlement_precheck": settlement_precheck,
                     **execution_paths,
+                    **risk_control_paths,
                 },
             )
             LocalApprovalStore(self.approval_store_dir).save_batch(batch)
@@ -437,7 +466,66 @@ class AShareStrategyRunner:
             "settlement_precheck_rejected_order_count": settlement_precheck.get("precheck_rejected_order_count", 0),
             "enforce_available_cash": self.enforce_available_cash,
             "enforce_available_shares": self.enforce_available_shares,
+            "risk_controls": self.risk_controls,
+            "risk_control_status": risk_control_summary.get("status", "not_run"),
+            "risk_control_rejected_orders": risk_control_summary.get("rejected_orders", 0),
+            "risk_control_clipped_orders": risk_control_summary.get("clipped_orders", 0),
+            "risk_control_warning_count": risk_control_summary.get("warning_count", 0),
+            "risk_control_error_count": risk_control_summary.get("error_count", 0),
+            **risk_control_paths,
         }
+
+    def _apply_risk_controls(self, orders, trade_date: str):
+        report, split, paths = evaluate_order_records(
+            orders,
+            policy_path=self.risk_policy_path,
+            policy_profile=self.risk_policy_profile,
+            state_dir=self.risk_control_state_dir,
+            output_dir=self.risk_control_output_dir,
+            batch_id=f"strategy_{trade_date}_{self.selected_factor_id or 'factor'}",
+            trade_date=trade_date,
+            scope="order",
+            allow_clipping=self.risk_allow_clipping,
+        )
+        if self.risk_fail_on_breach and report.rejected_orders > 0:
+            raise ValueError(f"risk controls rejected {report.rejected_orders} orders")
+        if self.create_risk_override_approval and report.rejected_orders > 0:
+            if self.risk_override_approval_store_dir is None:
+                raise ValueError("risk_override_approval_store_dir is required to create risk override approval")
+            request, batch, request_path = create_override_approval(
+                approval_store_dir=self.risk_override_approval_store_dir,
+                state_dir=self.risk_control_state_dir,
+                output_dir=self.risk_control_output_dir,
+                scope="order",
+                reason="risk control breach override requested",
+                metadata={"trade_date": trade_date, "risk_control_report_path": str(paths["risk_control_report_path"])},
+            )
+            paths["risk_override_request_path"] = request_path
+            paths["risk_override_approval_path"] = Path(self.risk_override_approval_store_dir) / "approvals" / f"{batch.approval_id}.json"
+        accepted_payloads = split["accepted"]
+        adjusted_orders = [
+            type(orders[0])(
+                trade_date=str(row.get("trade_date") or trade_date),
+                ts_code=str(row.get("ts_code") or ""),
+                side=str(row.get("side") or ""),
+                target_weight=float(row.get("target_weight", 0.0) or 0.0),
+                order_value=float(row.get("order_value", 0.0) or 0.0),
+                reason=str(row.get("reason") or "rebalance"),
+            )
+            for row in accepted_payloads
+        ] if orders else []
+        summary = {
+            "status": report.status,
+            "accepted_orders": report.accepted_orders,
+            "rejected_orders": report.rejected_orders,
+            "clipped_orders": report.clipped_orders,
+            "warning_count": report.warning_count,
+            "error_count": report.error_count,
+            "blocker_count": report.blocker_count,
+            "policy_id": report.policy_id,
+            "profile": report.profile,
+        }
+        return adjusted_orders, summary, {key: str(value) for key, value in paths.items()}
 
     def _build_execution_plan(self, orders, trade_date: str) -> tuple[ExecutionPlanResult, dict[str, object], dict[str, str]]:
         if self.loader is None:
@@ -520,6 +608,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--paper-account-dir")
     parser.add_argument("--enforce-available-cash", action="store_true")
     parser.add_argument("--enforce-available-shares", action="store_true")
+    parser.add_argument("--risk-controls", action="store_true")
+    parser.add_argument("--risk-policy-path")
+    parser.add_argument("--risk-control-state-dir")
+    parser.add_argument("--risk-control-output-dir")
+    parser.add_argument("--risk-policy-profile", default="cn_ashare_paper_default")
+    parser.add_argument("--risk-fail-on-breach", action="store_true")
+    parser.add_argument("--risk-allow-clipping", action="store_true")
+    parser.add_argument("--create-risk-override-approval", action="store_true")
+    parser.add_argument("--risk-override-approval-store-dir")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -572,6 +669,15 @@ def main(argv: list[str] | None = None) -> int:
         paper_account_dir=args.paper_account_dir,
         enforce_available_cash=args.enforce_available_cash,
         enforce_available_shares=args.enforce_available_shares,
+        risk_controls=args.risk_controls,
+        risk_policy_path=args.risk_policy_path,
+        risk_control_state_dir=args.risk_control_state_dir,
+        risk_control_output_dir=args.risk_control_output_dir,
+        risk_policy_profile=args.risk_policy_profile,
+        risk_fail_on_breach=args.risk_fail_on_breach,
+        risk_allow_clipping=args.risk_allow_clipping,
+        create_risk_override_approval=args.create_risk_override_approval,
+        risk_override_approval_store_dir=args.risk_override_approval_store_dir,
     ).generate_orders()
     print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0

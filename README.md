@@ -21,6 +21,7 @@ The current implementation is local-first. It uses deterministic sample data and
 - `model_registry/`: Local model/factor version registry, lifecycle state machine, active deployments, rollback records, lineage graph, and registry reports.
 - `factor_lifecycle/`: Factor health checks, lifecycle decisions, human review packages, activation approval flow, and lifecycle reports.
 - `risk_model/`: Security exposures, Barra-like style and industry factors, factor returns, risk decomposition, attribution, covariance, risk constraints, and risk reports.
+- `risk_controls/`: Pre-trade risk limits, kill switch state, order gate artifacts, override approval hooks, and local audit logs.
 - `portfolio_optimizer/`: Deterministic long-only benchmark-aware portfolio optimizer.
 - `capacity_model/`: Local capacity, participation, and impact-cost estimates from amount, volume, turnover, and volatility.
 - `backtest/`: Long-only A-share portfolio simulation, market constraints, and benchmark-aware risk mode.
@@ -451,6 +452,42 @@ uv run python -m strategy_manager.runner \
 
 The capacity layer writes `capacity_report.json/md`; execution planning writes `execution_plan.json/md`, `parent_orders.jsonl`, `child_orders.jsonl`, `child_fills.jsonl`, and `execution_quality.json`. It remains local paper simulation only.
 
+`risk_controls/` provides opt-in pre-trade gates for strategy, operations, broker adapter, and backtest smoke runs. It writes `risk_control_report.json/md`, `risk_control_breaches.jsonl`, `risk_control_decisions.jsonl`, `risk_limit_usage.jsonl`, accepted/rejected/clipped order JSONL files, `kill_switch_state.json`, and override approval records. Example:
+
+```bash
+uv run python -m risk_controls.run_controls init-policy \
+  --output-dir /tmp/auto-alpha-demo/risk_policy \
+  --profile cn_ashare_paper_default \
+  --pretty
+
+uv run python -m operations.run_daily \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --approval-store-dir /tmp/auto-alpha-demo/approvals \
+  --paper-account-dir /tmp/auto-alpha-demo/account \
+  --output-dir /tmp/auto-alpha-demo/production \
+  --orders-dir /tmp/auto-alpha-demo/daily_orders \
+  --latest-production \
+  --rebalance-date 20240104 \
+  --portfolio-method risk_aware \
+  --index-code 000300.SH \
+  --risk-controls \
+  --risk-control-state-dir /tmp/auto-alpha-demo/risk_state \
+  --risk-control-output-dir /tmp/auto-alpha-demo/production/risk_controls \
+  --block-on-kill-switch \
+  --require-approval \
+  --pretty
+```
+
+The kill switch is local state only:
+
+```bash
+uv run python -m risk_controls.run_controls activate-kill-switch \
+  --state-dir /tmp/auto-alpha-demo/risk_state \
+  --reason manual_review \
+  --pretty
+```
+
 `broker_adapter/` adds a local broker contract on top of approved child orders. It supports:
 
 - `simulated`: idempotent broker order submission, local status transitions, broker fills, broker events, cancellation/replacement simulation, and reconciliation.
@@ -820,7 +857,7 @@ Current PIT boundaries:
 
 - Tushare HTTP provider, production sync scaffolding, offline fake smoke, gated online smoke, permission/rate diagnostics, audit summary, incremental recovery checks, and baseline comparison are available; production use still requires real token/quota operation, real full-market performance runs, and more provider pairs.
 - Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
-- Local daily simulation supports A-share constraints, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, settlement-aware paper accounting, lot cost, realized PnL, NAV reconciliation, generic statement import, external account mirroring, EOD break management, and execution quality reports; future work should add finer real-world matching, minute-level volume modeling, verified real broker statement mappings, and real broker connectivity.
+- Local daily simulation supports A-share constraints, pre-trade risk controls, local kill switch, override approvals, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, settlement-aware paper accounting, lot cost, realized PnL, NAV reconciliation, generic statement import, external account mirroring, EOD break management, and execution quality reports; future work should add finer real-world matching, minute-level volume modeling, verified real broker statement mappings, richer limit policies, and real broker connectivity.
 - Local formula search, batch formula evaluation, formula corpus construction, offline AlphaGPT supervised pretraining, and a first neural-guided policy-search path are available; future work should add stronger reinforcement learning, larger offline corpora, more operators, GPU performance tuning, and broader stability validation.
 - Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.
 - One-click research suites now provide local walk-forward, promotion gates, model registry records, lifecycle review packages, active deployment state, and rollback artifacts; daily operations can require an active governed model. Future work should add richer lifecycle policies and external review workflow integrations.
