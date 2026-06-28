@@ -20,6 +20,8 @@ def test_release_inventories_cover_platform_modules():
 
     assert "pyproject.toml" in file_names
     assert "data_pipeline" in module_names
+    assert "data_backfill" in module_names
+    assert "data_lake" in module_names
     assert "research_suite" in module_names
     assert "broker_adapter" in module_names
     assert "model_registry" in module_names
@@ -76,6 +78,8 @@ def test_pyproject_packaging_config_excludes_non_platform_dirs():
     assert "hatchling" in text
     assert "package = true" in text
     assert '"artifact_schema"' in text
+    assert '"data_backfill"' in text
+    assert '"data_lake"' in text
     assert '"release_manager"' in text
     assert '"model_registry"' in text
     assert '"factor_lifecycle"' in text

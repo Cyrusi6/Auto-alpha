@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -26,6 +28,11 @@ from strategy_manager import runner as strategy_runner
 from universe import run_universe
 from leakage_audit.run_audit import main as run_leakage_audit_main
 from point_in_time.run_pit import main as run_pit_main
+from data_lake import LocalDataLakeRegistry, create_research_freeze, validate_research_input
+from data_lake.fingerprint import content_hash_for_fingerprints, fingerprint_data_dir
+from data_lake.models import DatasetVersionRecord
+from data_lake.report import write_data_lake_report, write_dataset_version_manifest
+from data_lake.freeze import write_freeze_validation_report
 
 from .catalog import register_artifact, write_artifact_catalog
 from .models import ArtifactCatalog, PromotionConfig, ResearchSuiteConfig, ResearchSuiteResult, SuiteStageResult
@@ -48,6 +55,20 @@ class ResearchSuiteRunner:
         self.pit_summary: dict[str, Any] = {}
         self.leakage_summary: dict[str, Any] = {}
         self.corporate_action_summary: dict[str, Any] = {}
+        self.dataset_version_id: str | None = None
+        self.data_freeze_id: str | None = config.data_freeze_id
+        self.data_freeze_hash: str | None = None
+        self.freeze_validation_status: str = "not_run"
+        self.data_hash_drift_count: int = 0
+        if config.data_freeze_dir:
+            report = validate_research_input(config.data_dir, config.data_freeze_dir, config.require_data_freeze)
+            self.data_freeze_id = config.data_freeze_id or report.freeze_id
+            self.data_freeze_hash = report.content_hash
+            self.freeze_validation_status = report.status
+            self.data_hash_drift_count = report.error_count
+            if report.error_count and config.fail_on_freeze_error:
+                raise RuntimeError("data freeze validation failed")
+            self.config = replace(config, data_dir=str(Path(config.data_freeze_dir) / "data"))
 
     def run(self) -> ResearchSuiteResult:
         started_at = _utc_now()
@@ -61,6 +82,12 @@ class ResearchSuiteRunner:
                 self._append_stage("universe", self._stage_universe)
             if self.config.run_pit_validation:
                 self._append_stage("pit_validation", self._stage_pit_validation)
+            if self.config.create_data_version:
+                self._append_stage("data_version", self._stage_data_version)
+            if self.config.create_research_freeze:
+                self._append_stage("data_freeze", self._stage_data_freeze)
+            if self.config.validate_data_freeze and self.config.data_freeze_dir:
+                self._append_stage("freeze_validation", self._stage_freeze_validation)
             if self.config.build_matrix_cache:
                 self._append_stage("matrix_cache", self._stage_matrix_cache)
             if self.config.benchmark:
@@ -134,6 +161,13 @@ class ResearchSuiteRunner:
                 ),
                 "settlement_aware": self.config.settlement_aware,
                 "settlement_profile": self.config.settlement_profile,
+                "dataset_version_id": self.dataset_version_id or _dataset_version_id(self.config.data_version_manifest_path),
+                "data_freeze_id": self.data_freeze_id,
+                "data_freeze_dir": self.config.data_freeze_dir,
+                "data_freeze_hash": self.data_freeze_hash,
+                "freeze_validation_status": self.freeze_validation_status,
+                "data_quality_error_count": _quality_error_count(Path(self.config.data_dir) / "quality_report.json"),
+                "data_hash_drift_count": self.data_hash_drift_count,
             },
         )
         suite_json, suite_md = write_suite_report(result, self.output_dir)
@@ -294,6 +328,116 @@ class ResearchSuiteRunner:
             self.catalog = register_artifact(self.catalog, name.replace("_path", ""), path, _artifact_kind(path), "pit_validation")
         return payload, output_paths
 
+    def _stage_data_version(self) -> tuple[dict[str, Any], dict[str, str]]:
+        registry = LocalDataLakeRegistry(self._data_lake_registry_dir())
+        datasets = [
+            "securities",
+            "trade_calendar",
+            "daily_bars",
+            "daily_basic",
+            "financial_features",
+            "daily_limits",
+            "adjustment_factors",
+            "index_members",
+            "corporate_actions",
+        ]
+        fingerprints = fingerprint_data_dir(self.config.data_dir, datasets)
+        content_hash = content_hash_for_fingerprints(fingerprints)
+        version_id = f"dsver_{hashlib.sha256(content_hash.encode('utf-8')).hexdigest()[:16]}"
+        version = DatasetVersionRecord(
+            dataset_version_id=version_id,
+            provider=self.config.provider,
+            data_dir=self.config.data_dir,
+            start_date="20240102",
+            end_date=self.config.as_of_date,
+            datasets=[item.dataset for item in fingerprints],
+            dataset_fingerprints=[item.to_dict() for item in fingerprints],
+            quality_report_path=str(Path(self.config.data_dir) / "quality_report.json"),
+            dataset_stats_path=str(Path(self.config.data_dir) / "dataset_stats.json"),
+            pit_validation_report_path=str(self._pit_dir() / "pit_validation_report.json") if (self._pit_dir() / "pit_validation_report.json").exists() else None,
+            corporate_actions_report_path=str(self._corporate_action_dir() / "corporate_actions_report.json") if (self._corporate_action_dir() / "corporate_actions_report.json").exists() else None,
+            created_at=_utc_now(),
+            status="validated",
+            content_hash=content_hash,
+            metadata={"suite_name": self.config.suite_name},
+        )
+        version = registry.register_dataset_version(version)
+        self.dataset_version_id = version.dataset_version_id
+        version_manifest = write_dataset_version_manifest(version, self._data_version_dir())
+        lake_json, lake_md = write_data_lake_report(registry, self._data_version_dir())
+        self.config = replace(self.config, data_version_manifest_path=str(version_manifest))
+        output_paths = {
+            "dataset_version_manifest": str(version_manifest),
+            "data_lake_report": str(lake_json),
+            "data_lake_report_md": str(lake_md),
+            "dataset_versions": str(registry.versions_path),
+            "data_lake_events": str(registry.events_path),
+        }
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "data_version")
+        return {"dataset_version_id": version.dataset_version_id, "content_hash": version.content_hash}, output_paths
+
+    def _stage_data_freeze(self) -> tuple[dict[str, Any], dict[str, str]]:
+        registry = LocalDataLakeRegistry(self._data_lake_registry_dir())
+        version = registry.get_dataset_version(self.dataset_version_id or "") or registry.latest_dataset_version(provider=self.config.provider)
+        if version is None:
+            raise RuntimeError("dataset version is required before creating a research freeze")
+        freeze_dir = Path(self.config.research_freeze_dir) if self.config.research_freeze_dir else Path(self.config.output_dir).parent / "freezes" / self.config.suite_name
+        freeze = create_research_freeze(
+            self.config.data_dir,
+            freeze_dir,
+            version,
+            freeze_name=freeze_dir.name,
+            mode=self.config.freeze_mode,
+            artifact_paths={
+                "quality_report_path": str(Path(self.config.data_dir) / "quality_report.json"),
+                "pit_validation_report_path": str(self._pit_dir() / "pit_validation_report.json") if (self._pit_dir() / "pit_validation_report.json").exists() else None,
+                "corporate_actions_report_path": str(self._corporate_action_dir() / "corporate_actions_report.json") if (self._corporate_action_dir() / "corporate_actions_report.json").exists() else None,
+            },
+            matrix_cache_dir=self.config.matrix_cache_dir,
+        )
+        freeze = registry.register_freeze(freeze)
+        validation = validate_research_input(data_freeze_dir=freeze.freeze_dir, require_freeze=True)
+        validation_path = write_freeze_validation_report(validation, self._freeze_validation_dir())
+        self.data_freeze_id = freeze.freeze_id
+        self.data_freeze_hash = freeze.content_hash
+        self.freeze_validation_status = validation.status
+        self.data_hash_drift_count = validation.error_count
+        if validation.error_count and self.config.fail_on_freeze_error:
+            raise RuntimeError("research freeze validation failed")
+        self.config = replace(
+            self.config,
+            data_dir=str(Path(freeze.freeze_dir) / "data"),
+            data_freeze_dir=freeze.freeze_dir,
+            data_freeze_id=freeze.freeze_id,
+            data_version_manifest_path=str(Path(freeze.freeze_dir) / "dataset_version_manifest.json"),
+            freeze_validation_report_path=str(validation_path),
+        )
+        lake_json, lake_md = write_data_lake_report(registry, self._data_version_dir())
+        output_paths = {
+            "research_data_freeze": str(Path(freeze.freeze_dir) / "research_data_freeze.json"),
+            "freeze_manifest": str(Path(freeze.freeze_dir) / "freeze_manifest.json"),
+            "freeze_validation_report": str(validation_path),
+            "dataset_version_manifest": str(Path(freeze.freeze_dir) / "dataset_version_manifest.json"),
+            "data_lake_report": str(lake_json),
+            "data_lake_report_md": str(lake_md),
+            "research_freezes": str(registry.freezes_path),
+        }
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "data_freeze")
+        return freeze.to_dict() | {"freeze_validation_status": validation.status}, output_paths
+
+    def _stage_freeze_validation(self) -> tuple[dict[str, Any], dict[str, str]]:
+        report = validate_research_input(self.config.data_dir, self.config.data_freeze_dir, require_freeze=True)
+        path = write_freeze_validation_report(report, self._freeze_validation_dir())
+        self.freeze_validation_status = report.status
+        self.data_hash_drift_count = report.error_count
+        if report.error_count and self.config.fail_on_freeze_error:
+            raise RuntimeError("research freeze validation failed")
+        output_paths = {"freeze_validation_report": str(path)}
+        self.catalog = register_artifact(self.catalog, "freeze_validation_report", path, "json", "freeze_validation")
+        return report.to_dict(), output_paths
+
     def _stage_matrix_cache(self) -> tuple[dict[str, Any], dict[str, str]]:
         cache_dir = self._matrix_cache_dir()
         argv = [
@@ -305,6 +449,19 @@ class ResearchSuiteRunner:
                 self.config.universe_name,
                 "--validate",
             ]
+        if self.config.data_freeze_dir:
+            argv.extend(
+                [
+                    "--data-freeze-dir",
+                    self.config.data_freeze_dir,
+                    "--data-version-manifest-path",
+                    self.config.data_version_manifest_path or "",
+                    "--require-data-freeze",
+                ]
+            )
+            if self.config.data_freeze_id:
+                argv.extend(["--data-freeze-id", self.config.data_freeze_id])
+            argv.append("--write-matrix-version-manifest")
         if self.config.corporate_action_aware:
             argv.extend(
                 [
@@ -520,6 +677,7 @@ class ResearchSuiteRunner:
                 "--min-coverage",
                 "0.5",
             ]
+            + _freeze_cli_args(self.config)
             + (["--corpus-sequence-path", str(self._formula_corpus_dir() / "formula_sequences.jsonl")] if (self._formula_corpus_dir() / "formula_sequences.jsonl").exists() else [])
             + (["--matrix-cache-dir", str(self._matrix_cache_dir()), "--use-matrix-cache"] if self.config.use_matrix_cache else [])
             + (
@@ -633,6 +791,7 @@ class ResearchSuiteRunner:
             "--risk-report-dir",
             str(Path(self.config.backtest_dir) / "risk"),
         ]
+        argv.extend(_freeze_cli_args(self.config))
         if self.config.use_factor_risk_model:
             argv.extend(["--use-factor-risk-model", "--risk-model-shrinkage", str(self.config.risk_model_shrinkage)])
         if self.config.risk_model_lookback is not None:
@@ -815,6 +974,7 @@ class ResearchSuiteRunner:
             "--max-tracking-error",
             str(self.config.max_tracking_error),
         ]
+        argv.extend(_freeze_cli_args(self.config))
         if self.config.use_factor_risk_model:
             argv.extend(["--use-factor-risk-model", "--risk-model-shrinkage", str(self.config.risk_model_shrinkage)])
         if self.config.risk_model_lookback is not None:
@@ -1084,6 +1244,15 @@ class ResearchSuiteRunner:
     def _matrix_cache_dir(self) -> Path:
         return Path(self.config.matrix_cache_dir) if self.config.matrix_cache_dir else Path(self.config.data_dir) / "matrix_cache"
 
+    def _data_lake_registry_dir(self) -> Path:
+        return Path(self.config.data_lake_registry_dir) if self.config.data_lake_registry_dir else Path(self.config.output_dir).parent / "data_lake_registry"
+
+    def _data_version_dir(self) -> Path:
+        return Path(self.config.output_dir) / "data_version"
+
+    def _freeze_validation_dir(self) -> Path:
+        return Path(self.config.output_dir) / "freeze_validation"
+
     def _benchmark_dir(self) -> Path:
         return Path(self.config.benchmark_dir) if self.config.benchmark_dir else Path(self.config.output_dir) / "benchmark"
 
@@ -1145,6 +1314,34 @@ def _select_latest_composite(factor_store_dir: str) -> str | None:
 
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def _dataset_version_id(path: str | None) -> str | None:
+    if not path:
+        return None
+    payload = _read_json(Path(path))
+    value = payload.get("dataset_version_id")
+    return str(value) if value else None
+
+
+def _quality_error_count(path: Path) -> int:
+    payload = _read_json(path)
+    return int(payload.get("total_errors", 0) or 0) if payload else 0
+
+
+def _freeze_cli_args(config: ResearchSuiteConfig) -> list[str]:
+    argv: list[str] = []
+    if config.data_freeze_dir:
+        argv.extend(["--data-freeze-dir", config.data_freeze_dir])
+    if config.data_freeze_id:
+        argv.extend(["--data-freeze-id", config.data_freeze_id])
+    if config.data_version_manifest_path:
+        argv.extend(["--data-version-manifest-path", config.data_version_manifest_path])
+    if config.freeze_validation_report_path:
+        argv.extend(["--freeze-validation-report-path", config.freeze_validation_report_path])
+    if config.require_data_freeze:
+        argv.append("--require-data-freeze")
+    return argv
 
 
 def _utc_now() -> str:

@@ -56,6 +56,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fail-on-baseline-diff", action="store_true")
     parser.add_argument("--run-incremental-recovery", action="store_true")
     parser.add_argument("--run-online-incremental", action="store_true")
+    parser.add_argument("--data-lake-registry-dir")
+    parser.add_argument("--write-data-version", action="store_true")
+    parser.add_argument("--create-research-freeze", action="store_true")
+    parser.add_argument("--freeze-dir")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -94,6 +98,10 @@ def main(argv: list[str] | None = None) -> int:
         compare_baseline=args.compare_baseline,
         run_incremental_recovery=args.run_incremental_recovery,
         run_online_incremental=args.run_online_incremental,
+        data_lake_registry_dir=args.data_lake_registry_dir,
+        write_data_version=args.write_data_version,
+        create_data_freeze=args.create_research_freeze,
+        freeze_dir=args.freeze_dir,
     )
     payload = report.to_dict()
     print(json.dumps(payload, ensure_ascii=False, indent=2 if args.pretty else None, sort_keys=args.pretty))

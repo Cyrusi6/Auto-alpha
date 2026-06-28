@@ -588,6 +588,76 @@ def check_baseline_compare(baseline_compare_path: str | Path | None) -> tuple[di
     }, alerts
 
 
+def check_backfill_run(backfill_run_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not backfill_run_report_path:
+        return {"exists": False, "backfill_status": ""}, []
+    payload = _read_json(Path(backfill_run_report_path))
+    status = str(payload.get("status") or "")
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    failed = int(summary.get("failed_jobs", 0) or 0)
+    alerts = []
+    if status in {"failed", "blocked"} or failed:
+        alerts.append(MonitoringAlert("error", "backfill_run", "backfill run has failed or blocked jobs", {"failed_jobs": failed}))
+    return {
+        "exists": bool(payload),
+        "backfill_status": status,
+        "backfill_failed_jobs": failed,
+        "backfill_success_jobs": int(summary.get("success_jobs", 0) or 0),
+        "backfill_resumed_jobs": int(summary.get("resumed_jobs", 0) or 0),
+        "backfill_records": int(summary.get("records", 0) or 0),
+    }, alerts
+
+
+def check_backfill_coverage(backfill_coverage_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not backfill_coverage_report_path:
+        return {"exists": False, "backfill_coverage_gap_count": 0}, []
+    payload = _read_json(Path(backfill_coverage_report_path))
+    gaps = int(payload.get("gap_count", 0) or 0) if payload else 0
+    alerts = []
+    if gaps:
+        alerts.append(MonitoringAlert("warning", "backfill_coverage", "backfill coverage has gaps", {"gap_count": gaps}))
+    return {"exists": bool(payload), "backfill_coverage_gap_count": gaps, "status": payload.get("status", "") if payload else ""}, alerts
+
+
+def check_data_lake_version(dataset_version_manifest_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not dataset_version_manifest_path:
+        return {"exists": False, "dataset_version_id": ""}, []
+    payload = _read_json(Path(dataset_version_manifest_path))
+    fingerprints = payload.get("dataset_fingerprints", []) if payload else []
+    duplicates = sum(int(item.get("duplicate_key_count", 0) or 0) for item in fingerprints if isinstance(item, dict))
+    alerts = []
+    if duplicates:
+        alerts.append(MonitoringAlert("warning", "data_lake_version", "dataset version contains duplicate keys", {"duplicate_key_count": duplicates}))
+    return {
+        "exists": bool(payload),
+        "dataset_version_id": payload.get("dataset_version_id", "") if payload else "",
+        "dataset_content_hash": payload.get("content_hash", "") if payload else "",
+        "dataset_count": len(fingerprints),
+        "duplicate_key_count": duplicates,
+    }, alerts
+
+
+def check_research_freeze(freeze_validation_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not freeze_validation_report_path:
+        return {"exists": False, "freeze_validation_status": ""}, []
+    payload = _read_json(Path(freeze_validation_report_path))
+    status = str(payload.get("status") or "")
+    errors = int(payload.get("error_count", 0) or 0) if payload else 0
+    warnings = int(payload.get("warning_count", 0) or 0) if payload else 0
+    alerts = []
+    if errors:
+        alerts.append(MonitoringAlert("error", "research_freeze", "research freeze validation has hash drift or missing files", {"error_count": errors}))
+    elif warnings:
+        alerts.append(MonitoringAlert("warning", "research_freeze", "research freeze validation has warnings", {"warning_count": warnings}))
+    return {
+        "exists": bool(payload),
+        "freeze_id": payload.get("freeze_id") if payload else None,
+        "freeze_validation_status": status,
+        "data_hash_drift_count": errors,
+        "freeze_warning_count": warnings,
+    }, alerts
+
+
 def check_artifact_schema_validation(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     if not report_path:
         return {"exists": False, "artifact_schema_error_count": 0, "artifact_schema_warning_count": 0}, []

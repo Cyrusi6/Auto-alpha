@@ -48,6 +48,18 @@ class MonitoringReport:
         risk_usage = self.checks.get("risk_limit_usage", {}) if isinstance(self.checks, dict) else {}
         kill_switch = self.checks.get("kill_switch_state", {}) if isinstance(self.checks, dict) else {}
         risk_overrides = self.checks.get("risk_overrides", {}) if isinstance(self.checks, dict) else {}
+        data_source = self.checks.get("data_source_smoke", {}) if isinstance(self.checks, dict) else {}
+        provider = self.checks.get("provider_readiness", {}) if isinstance(self.checks, dict) else {}
+        field_coverage = self.checks.get("field_coverage", {}) if isinstance(self.checks, dict) else {}
+        data_audit = self.checks.get("data_source_audit", {}) if isinstance(self.checks, dict) else {}
+        baseline = self.checks.get("baseline_compare", {}) if isinstance(self.checks, dict) else {}
+        backfill_run = self.checks.get("backfill_run", {}) if isinstance(self.checks, dict) else {}
+        backfill_coverage = self.checks.get("backfill_coverage", {}) if isinstance(self.checks, dict) else {}
+        data_lake_version = self.checks.get("data_lake_version", {}) if isinstance(self.checks, dict) else {}
+        research_freeze = self.checks.get("research_freeze", {}) if isinstance(self.checks, dict) else {}
+        artifact_schema = self.checks.get("artifact_schema_validation", {}) if isinstance(self.checks, dict) else {}
+        release_gate = self.checks.get("release_gate", {}) if isinstance(self.checks, dict) else {}
+        package_build = self.checks.get("package_build_artifacts", {}) if isinstance(self.checks, dict) else {}
         return {
             "created_at": self.created_at,
             "as_of_date": self.as_of_date,
@@ -99,4 +111,24 @@ class MonitoringReport:
             "risk_limit_breached_records": int(risk_usage.get("risk_limit_breached_records", 0) or 0) if isinstance(risk_usage, dict) else 0,
             "kill_switch_active": bool(kill_switch.get("kill_switch_active", False)) if isinstance(kill_switch, dict) else False,
             "active_risk_overrides": int(risk_overrides.get("active_risk_overrides", 0) or 0) if isinstance(risk_overrides, dict) else 0,
+            "provider_status": str(data_source.get("provider_status", "")) if isinstance(data_source, dict) else "",
+            "provider_error_count": int(data_source.get("provider_error_count", 0) or 0) if isinstance(data_source, dict) else 0,
+            "provider_warning_count": int(data_source.get("provider_warning_count", 0) or 0) if isinstance(data_source, dict) else 0,
+            "api_permission_issue_count": int(provider.get("api_permission_issue_count", 0) or 0) if isinstance(provider, dict) else 0,
+            "rate_limit_issue_count": int(provider.get("rate_limit_issue_count", 0) or 0) if isinstance(provider, dict) else 0,
+            "missing_field_count": int(field_coverage.get("missing_field_count", 0) or 0) if isinstance(field_coverage, dict) else 0,
+            "empty_dataset_count": int(field_coverage.get("empty_dataset_count", 0) or 0) if isinstance(field_coverage, dict) else 0,
+            "data_source_cache_hit_rate": float(data_audit.get("data_source_cache_hit_rate", 0.0) or 0.0) if isinstance(data_audit, dict) else 0.0,
+            "baseline_diff_count": int(baseline.get("baseline_diff_count", 0) or 0) if isinstance(baseline, dict) else 0,
+            "backfill_status": str(backfill_run.get("backfill_status", "")) if isinstance(backfill_run, dict) else "",
+            "backfill_failed_jobs": int(backfill_run.get("backfill_failed_jobs", 0) or 0) if isinstance(backfill_run, dict) else 0,
+            "backfill_coverage_gap_count": int(backfill_coverage.get("backfill_coverage_gap_count", 0) or 0) if isinstance(backfill_coverage, dict) else 0,
+            "dataset_version_id": str(data_lake_version.get("dataset_version_id", "")) if isinstance(data_lake_version, dict) else "",
+            "dataset_content_hash": str(data_lake_version.get("dataset_content_hash", "")) if isinstance(data_lake_version, dict) else "",
+            "freeze_validation_status": str(research_freeze.get("freeze_validation_status", "")) if isinstance(research_freeze, dict) else "",
+            "data_hash_drift_count": int(research_freeze.get("data_hash_drift_count", 0) or 0) if isinstance(research_freeze, dict) else 0,
+            "artifact_schema_error_count": int(artifact_schema.get("artifact_schema_error_count", 0) or 0) if isinstance(artifact_schema, dict) else 0,
+            "artifact_schema_warning_count": int(artifact_schema.get("artifact_schema_warning_count", 0) or 0) if isinstance(artifact_schema, dict) else 0,
+            "release_gate_status": str(release_gate.get("release_gate_status", "")) if isinstance(release_gate, dict) else "",
+            "package_build_status": str(package_build.get("package_build_status", "")) if isinstance(package_build, dict) else "",
         }

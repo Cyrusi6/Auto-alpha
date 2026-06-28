@@ -13,6 +13,11 @@ from .validator import validate_matrix_cache
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build a local matrix cache from A-share JSONL artifacts.")
     parser.add_argument("--data-dir", required=True)
+    parser.add_argument("--data-freeze-dir")
+    parser.add_argument("--data-freeze-id")
+    parser.add_argument("--data-version-manifest-path")
+    parser.add_argument("--require-data-freeze", action="store_true")
+    parser.add_argument("--write-matrix-version-manifest", action="store_true")
     parser.add_argument("--output-dir")
     parser.add_argument("--universe-name")
     parser.add_argument("--universe-file")
@@ -51,6 +56,10 @@ def main(argv: list[str] | None = None) -> int:
         corporate_action_aware=args.corporate_action_aware,
         target_return_mode=args.target_return_mode,
         corporate_action_dir=args.corporate_action_dir,
+        data_freeze_dir=args.data_freeze_dir,
+        data_freeze_id=args.data_freeze_id,
+        data_version_manifest_path=args.data_version_manifest_path,
+        require_data_freeze=args.require_data_freeze,
     )
     if args.validate:
         report = validate_matrix_cache(result.cache_dir)
@@ -58,6 +67,13 @@ def main(argv: list[str] | None = None) -> int:
         payload = result.to_dict() | {"validation": report.to_dict()}
     else:
         payload = result.to_dict()
+    if args.write_matrix_version_manifest:
+        from pathlib import Path
+
+        metadata_path = Path(result.metadata_path)
+        manifest_path = Path(result.cache_dir) / "matrix_version_manifest.json"
+        manifest_path.write_text(metadata_path.read_text(encoding="utf-8"), encoding="utf-8")
+        payload["matrix_version_manifest_path"] = str(manifest_path)
     print(json.dumps(payload, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0
 

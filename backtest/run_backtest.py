@@ -18,6 +18,7 @@ from capacity_model import write_capacity_report
 from execution_plan import write_execution_plan_report
 from risk_model import write_risk_model_report, write_risk_report
 from risk_controls import evaluate_order_records
+from data_lake import validate_research_input
 
 from .io import describe_factor, factor_values_to_matrix, select_factor_id
 from .simulator import AShareBacktestSimulator
@@ -42,6 +43,11 @@ def _write_dict_jsonl(path: Path, records: list[dict[str, object]]) -> None:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run local A-share portfolio simulation.")
     parser.add_argument("--data-dir", required=True)
+    parser.add_argument("--data-freeze-dir")
+    parser.add_argument("--data-freeze-id")
+    parser.add_argument("--data-version-manifest-path")
+    parser.add_argument("--require-data-freeze", action="store_true")
+    parser.add_argument("--freeze-validation-report-path")
     parser.add_argument("--factor-store-dir", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--factor-id")
@@ -121,6 +127,12 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     output_dir = Path(args.output_dir)
+    freeze_report = validate_research_input(args.data_dir, args.data_freeze_dir, args.require_data_freeze)
+    if freeze_report.error_count > 0:
+        print(json.dumps({"error": "data freeze validation failed", "freeze_validation_status": freeze_report.status}, ensure_ascii=False))
+        return 1
+    if args.data_freeze_dir:
+        args.data_dir = str(Path(args.data_freeze_dir) / "data")
     loader = AShareDataLoader(
         data_dir=args.data_dir,
         device="cpu",
@@ -173,6 +185,8 @@ def main(argv: list[str] | None = None) -> int:
         execution_buckets=tuple(item.strip() for item in args.execution_buckets.split(",") if item.strip()),
     )
     result = simulator.simulate(factors, loader)
+    result.metrics["data_freeze_enabled"] = 1.0 if args.data_freeze_dir else 0.0
+    result.metrics["data_hash_drift_count"] = float(freeze_report.error_count)
     result.metrics["signal_lag_days"] = float(args.signal_lag_days)
     if args.point_in_time and "active_mask" in loader.raw_data_cache:
         active_mask = loader.raw_data_cache["active_mask"]
@@ -467,6 +481,12 @@ def main(argv: list[str] | None = None) -> int:
         **settlement_paths,
         "risk_controls": bool(args.risk_controls),
         "risk_control_summary": risk_control_summary,
+        "data_freeze_dir": args.data_freeze_dir,
+        "data_freeze_id": args.data_freeze_id or freeze_report.freeze_id,
+        "data_freeze_hash": freeze_report.content_hash,
+        "freeze_validation_status": freeze_report.status,
+        "data_version_manifest_path": args.data_version_manifest_path,
+        "freeze_validation_report_path": args.freeze_validation_report_path,
         **risk_control_paths,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))

@@ -29,6 +29,7 @@ from model_registry import LocalModelRegistry, ModelKind, ModelLifecycleStatus, 
 from paper_account import LocalPaperAccount, compute_account_performance
 from risk_controls import LocalRiskControlState
 from strategy_manager.runner import AShareStrategyRunner
+from data_lake import validate_research_input
 
 from .models import ProductionRunResult
 from .report import write_production_run_report
@@ -120,8 +121,20 @@ class ProductionDailyRunner:
         risk_override_approval_id: str | None = None,
         block_on_kill_switch: bool = False,
         force_risk_local_override: bool = False,
+        data_freeze_dir: str | Path | None = None,
+        data_freeze_id: str | None = None,
+        data_version_manifest_path: str | Path | None = None,
+        require_data_freeze: bool = False,
+        freeze_validation_report_path: str | Path | None = None,
     ):
-        self.data_dir = Path(data_dir)
+        self.source_data_dir = Path(data_dir)
+        self.data_freeze_dir = Path(data_freeze_dir) if data_freeze_dir is not None else None
+        self.data_freeze_id = data_freeze_id
+        self.data_version_manifest_path = Path(data_version_manifest_path) if data_version_manifest_path is not None else None
+        self.require_data_freeze = bool(require_data_freeze)
+        self.freeze_validation_report_path = Path(freeze_validation_report_path) if freeze_validation_report_path is not None else None
+        self.freeze_validation = validate_research_input(data_dir=data_dir, data_freeze_dir=data_freeze_dir, require_freeze=require_data_freeze)
+        self.data_dir = self.data_freeze_dir / "data" if self.data_freeze_dir is not None else Path(data_dir)
         self.factor_store_dir = Path(factor_store_dir)
         self.approval_store_dir = Path(approval_store_dir)
         self.paper_account_dir = Path(paper_account_dir)
@@ -216,7 +229,9 @@ class ProductionDailyRunner:
         created_at = _utc_now()
         run_id = f"prod_{_safe_time(created_at)}"
         try:
-            if reconcile_only:
+            if self.freeze_validation.error_count > 0:
+                result = self._data_freeze_failed(run_id, created_at)
+            elif reconcile_only:
                 result = self._reconcile_only(run_id, created_at, approval_id)
             elif approval_id or execute_approved:
                 result = self._execute_approved(run_id, created_at, approval_id)
@@ -339,6 +354,7 @@ class ProductionDailyRunner:
                 "performance": compute_account_performance(account_state),
             }
         self._attach_model_metadata_to_summary(summary)
+        self._attach_data_freeze_metadata(summary)
         if require_approval and summary.get("approval_id"):
             self._attach_model_metadata_to_approval(str(summary["approval_id"]))
         return ProductionRunResult(
@@ -352,6 +368,39 @@ class ProductionDailyRunner:
             executed=not require_approval,
             paths=_paths_from_summary(summary),
             summary=summary,
+        )
+
+    def _data_freeze_failed(self, run_id: str, created_at: str) -> ProductionRunResult:
+        summary = {
+            "data_freeze_dir": str(self.data_freeze_dir) if self.data_freeze_dir else None,
+            "data_freeze_id": self.data_freeze_id or self.freeze_validation.freeze_id,
+            "data_freeze_hash": self.freeze_validation.content_hash,
+            "freeze_validation_status": self.freeze_validation.status,
+            "data_hash_drift_count": self.freeze_validation.error_count,
+            "freeze_validation_errors": [issue.to_dict() for issue in self.freeze_validation.issues if issue.severity == "error"],
+        }
+        return ProductionRunResult(
+            run_id=run_id,
+            created_at=created_at,
+            status="data_freeze_failed",
+            factor_id=self.factor_id,
+            rebalance_date=self.rebalance_date or "",
+            executed=False,
+            summary=summary,
+            error="data freeze validation failed",
+        )
+
+    def _attach_data_freeze_metadata(self, summary: dict[str, Any]) -> None:
+        summary.update(
+            {
+                "data_freeze_dir": str(self.data_freeze_dir) if self.data_freeze_dir else None,
+                "data_freeze_id": self.data_freeze_id or self.freeze_validation.freeze_id,
+                "data_freeze_hash": self.freeze_validation.content_hash,
+                "freeze_validation_status": self.freeze_validation.status,
+                "data_version_manifest_path": str(self.data_version_manifest_path) if self.data_version_manifest_path else None,
+                "freeze_validation_report_path": str(self.freeze_validation_report_path) if self.freeze_validation_report_path else None,
+                "data_hash_drift_count": self.freeze_validation.error_count,
+            }
         )
 
     def _execute_approved(self, run_id: str, created_at: str, approval_id: str | None) -> ProductionRunResult:
@@ -531,6 +580,7 @@ class ProductionDailyRunner:
             if self.fail_on_reconciliation_error and summary.get("eod_reconciliation_status") in {"error", "blocker"}:
                 raise ValueError("EOD reconciliation produced error or blocker breaks")
         self._attach_model_metadata_to_summary(summary, batch=batch)
+        self._attach_data_freeze_metadata(summary)
         production_status = "broker_exported" if self.broker_adapter == "file" and broker_summary.get("inbox_fills", 0) == 0 else "executed"
         return ProductionRunResult(
             run_id=run_id,
@@ -548,6 +598,7 @@ class ProductionDailyRunner:
     def _reconcile_only(self, run_id: str, created_at: str, approval_id: str | None) -> ProductionRunResult:
         trade_date = self.rebalance_date or self.settle_through_date or ""
         summary = self._run_eod_reconciliation_workflow(trade_date, broker_batch_id=approval_id)
+        self._attach_data_freeze_metadata(summary)
         status = "reconciled"
         if self.fail_on_reconciliation_error and summary.get("eod_reconciliation_status") in {"error", "blocker"}:
             status = "failed"

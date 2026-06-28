@@ -186,6 +186,10 @@ class DataSourceSmokeConfig:
     snapshot: bool = False
     compact: bool = False
     run_incremental_recovery: bool = False
+    write_data_version: bool = False
+    create_research_freeze: bool = False
+    data_lake_registry_dir: str | None = None
+    freeze_dir: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -204,6 +208,7 @@ class DataSourceSmokeReport:
     quality_summary: dict[str, Any]
     stats_summary: dict[str, Any]
     config: DataSourceSmokeConfig
+    data_lake_summary: dict[str, Any] = field(default_factory=dict)
     paths: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -236,6 +241,7 @@ class DataSourceSmokeReport:
             "baseline_compare": self.baseline_compare.to_dict() if self.baseline_compare else None,
             "quality_summary": self.quality_summary,
             "stats_summary": self.stats_summary,
+            "data_lake_summary": self.data_lake_summary,
             "config": self.config.to_dict(),
             "paths": self.paths,
             "securities_list_status_distribution": securities_distribution,

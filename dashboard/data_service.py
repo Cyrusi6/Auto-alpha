@@ -770,6 +770,69 @@ class AshareDashboardService:
                 return payload
         return {}
 
+    def load_backfill_plan(self) -> dict[str, Any]:
+        for path in self._backfill_candidates("backfill_plan.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_backfill_run_report(self) -> dict[str, Any]:
+        for path in self._backfill_candidates("backfill_run_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_backfill_coverage_report(self) -> dict[str, Any]:
+        for path in self._backfill_candidates("backfill_coverage_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_backfill_job_results(self) -> pd.DataFrame:
+        for path in self._backfill_candidates("backfill_job_results.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_data_lake_report(self) -> dict[str, Any]:
+        for path in self._data_lake_candidates("data_lake_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_dataset_version_manifest(self) -> dict[str, Any]:
+        for path in self._data_lake_candidates("dataset_version_manifest.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_research_data_freeze(self) -> dict[str, Any]:
+        for path in self._data_lake_candidates("research_data_freeze.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_freeze_validation_report(self) -> dict[str, Any]:
+        for path in self._data_lake_candidates("freeze_validation_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_data_lineage_graph(self) -> dict[str, Any]:
+        for path in self._data_lake_candidates("data_lineage_graph.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
     def load_artifact_validation_report(self) -> dict[str, Any]:
         for path in self._schema_artifact_candidates("artifact_validation_report.json"):
             payload = self._read_json(path)
@@ -1189,6 +1252,29 @@ class AshareDashboardService:
             root / "sample_smoke" / filename,
             root / "fake_tushare_smoke" / filename,
             root / "real_tushare_smoke" / filename,
+        ]
+
+    def _backfill_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.backfill_dir / filename,
+            root / "backfill" / filename,
+            root / "data_backfill" / filename,
+            root / "sample_backfill" / filename,
+            root / "fake_tushare_backfill" / filename,
+            self.config.data_dir / filename,
+        ]
+
+    def _data_lake_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.data_lake_dir / filename,
+            root / "data_lake" / filename,
+            root / "suite" / "data_version" / filename,
+            root / "suite" / "freeze_validation" / filename,
+            root / "sample_smoke" / "data_lake" / filename,
+            root / "sample_smoke" / "research_freeze" / filename,
+            root / "research_freeze" / filename,
         ]
 
     def _schema_artifact_candidates(self, filename: str) -> list[Path]:

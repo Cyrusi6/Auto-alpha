@@ -20,6 +20,7 @@ from execution_plan import (
     write_execution_plan_report,
 )
 from factor_store import LocalFactorStore
+from data_lake import validate_research_input
 from model_core.data_loader import AShareDataLoader
 from portfolio_optimizer import OptimizationConfig, PortfolioOptimizer
 from risk_controls import evaluate_order_records
@@ -95,8 +96,26 @@ class AShareStrategyRunner:
         risk_allow_clipping: bool = False,
         create_risk_override_approval: bool = False,
         risk_override_approval_store_dir: str | Path | None = None,
+        data_freeze_dir: str | Path | None = None,
+        data_freeze_id: str | None = None,
+        data_version_manifest_path: str | Path | None = None,
+        require_data_freeze: bool = False,
+        freeze_validation_report_path: str | Path | None = None,
     ):
-        self.data_dir = Path(data_dir)
+        self.source_data_dir = Path(data_dir)
+        self.data_freeze_dir = Path(data_freeze_dir) if data_freeze_dir is not None else None
+        self.data_freeze_id = data_freeze_id
+        self.data_version_manifest_path = Path(data_version_manifest_path) if data_version_manifest_path is not None else None
+        self.require_data_freeze = bool(require_data_freeze)
+        self.freeze_validation_report_path = Path(freeze_validation_report_path) if freeze_validation_report_path is not None else None
+        self.freeze_validation = validate_research_input(
+            data_dir=data_dir,
+            data_freeze_dir=data_freeze_dir,
+            require_freeze=require_data_freeze,
+        )
+        if self.freeze_validation.error_count > 0:
+            raise RuntimeError(f"data freeze validation failed: {self.freeze_validation.status}")
+        self.data_dir = self.data_freeze_dir / "data" if self.data_freeze_dir is not None else Path(data_dir)
         self.factor_store_dir = Path(factor_store_dir)
         self.output_dir = Path(output_dir)
         self.top_n = int(top_n)
@@ -472,6 +491,13 @@ class AShareStrategyRunner:
             "risk_control_clipped_orders": risk_control_summary.get("clipped_orders", 0),
             "risk_control_warning_count": risk_control_summary.get("warning_count", 0),
             "risk_control_error_count": risk_control_summary.get("error_count", 0),
+            "data_freeze_dir": str(self.data_freeze_dir) if self.data_freeze_dir else None,
+            "data_freeze_id": self.data_freeze_id or self.freeze_validation.freeze_id,
+            "data_freeze_hash": self.freeze_validation.content_hash,
+            "freeze_validation_status": self.freeze_validation.status,
+            "data_version_manifest_path": str(self.data_version_manifest_path) if self.data_version_manifest_path else None,
+            "freeze_validation_report_path": str(self.freeze_validation_report_path) if self.freeze_validation_report_path else None,
+            "data_hash_drift_count": self.freeze_validation.error_count,
             **risk_control_paths,
         }
 
@@ -617,6 +643,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--risk-allow-clipping", action="store_true")
     parser.add_argument("--create-risk-override-approval", action="store_true")
     parser.add_argument("--risk-override-approval-store-dir")
+    parser.add_argument("--data-freeze-dir")
+    parser.add_argument("--data-freeze-id")
+    parser.add_argument("--data-version-manifest-path")
+    parser.add_argument("--require-data-freeze", action="store_true")
+    parser.add_argument("--freeze-validation-report-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -678,6 +709,11 @@ def main(argv: list[str] | None = None) -> int:
         risk_allow_clipping=args.risk_allow_clipping,
         create_risk_override_approval=args.create_risk_override_approval,
         risk_override_approval_store_dir=args.risk_override_approval_store_dir,
+        data_freeze_dir=args.data_freeze_dir,
+        data_freeze_id=args.data_freeze_id,
+        data_version_manifest_path=args.data_version_manifest_path,
+        require_data_freeze=args.require_data_freeze,
+        freeze_validation_report_path=args.freeze_validation_report_path,
     ).generate_orders()
     print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0

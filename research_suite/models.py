@@ -118,6 +118,18 @@ class ResearchSuiteConfig:
     settlement_dir: str | None = None
     settlement_profile: str = "cn_ashare_paper_default"
     cost_basis_method: str = "average"
+    data_freeze_dir: str | None = None
+    data_freeze_id: str | None = None
+    data_version_manifest_path: str | None = None
+    freeze_validation_report_path: str | None = None
+    require_data_freeze: bool = False
+    create_data_version: bool = False
+    data_lake_registry_dir: str | None = None
+    create_research_freeze: bool = False
+    research_freeze_dir: str | None = None
+    freeze_mode: str = "copy"
+    validate_data_freeze: bool = False
+    fail_on_freeze_error: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

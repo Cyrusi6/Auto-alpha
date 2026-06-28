@@ -8,6 +8,8 @@ The current implementation is local-first. It uses deterministic sample data and
 
 - `data_pipeline/`: A-share data configuration, sample and Tushare HTTP providers, market constraint datasets, sync planning, response cache, request audit, local JSONL storage, data quality checks, sync state, and data sync CLI.
 - `data_source_validation/`: Offline and gated-online provider readiness, Tushare permission/rate/field diagnostics, incremental recovery smoke, field coverage, audit summary, and baseline comparison reports.
+- `data_backfill/`: Production-style full-history backfill planning, chunked job execution, staging/quarantine, resume state, coverage reports, and readiness/quota summaries.
+- `data_lake/`: Dataset fingerprints, dataset version registry, immutable research freezes, freeze validation, lineage graphs, and retention reports.
 - `artifact_schema/`: Artifact type registry, schema versioning, checksum manifests, JSON/JSONL validation, and legacy-compatible artifact scanning.
 - `universe/`: Local A-share universe construction from governed data artifacts.
 - `model_core/`: A-share feature engineering, formula vocabulary, DSL operators, StackVM execution, factor evaluation, and mining engine.
@@ -99,6 +101,7 @@ Common variables:
 - `TUSHARE_TIMEOUT_SECONDS`: optional HTTP timeout.
 - `TUSHARE_RETRY_COUNT`: optional HTTP retry count.
 - `RUN_TUSHARE_ONLINE_SMOKE`: optional local guard for manually running online smoke checks; tests do not require it.
+- `RUN_TUSHARE_ONLINE_BACKFILL`: optional local guard for manually running online Tushare backfills; tests do not require it.
 - `ASHARE_PROVIDER`: data provider, `sample` for local deterministic data or `tushare` for Tushare Pro HTTP sync.
 - `ASHARE_DATA_DIR`: local A-share data directory.
 - `ASHARE_FACTOR_STORE_DIR`: local factor store directory.
@@ -145,6 +148,51 @@ uv run python -m data_pipeline.run_pipeline \
 ```
 
 The same path works with `--provider sample` for offline verification. Planned sync writes `sync_plan.json`; request audit writes `api_audit.jsonl`; statistics write `dataset_stats.json`; snapshots are stored under `snapshots/<snapshot_name>/`. `--validate-only` validates existing artifacts without fetching data, and standalone `--compact`, `--snapshot`, and `--stats` actions operate on existing local datasets.
+
+For production-sized history loads, use the governed backfill layer. It builds a stable job plan, executes chunks through the same provider, storage, cache, and audit path, stages raw job output, records resumable state, and writes coverage artifacts:
+
+```bash
+uv run python -m data_backfill.run_backfill execute \
+  --provider sample \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --output-dir /tmp/auto-alpha-demo/backfill \
+  --start-date 20240102 \
+  --end-date 20240104 \
+  --datasets securities,trade_calendar,daily_bars,daily_basic,financial_features,daily_limits,adjustment_factors,index_members,corporate_actions \
+  --index-codes 000300.SH \
+  --chunk-days 2 \
+  --validate \
+  --stats \
+  --compact \
+  --snapshot \
+  --pretty
+```
+
+After governed sync or backfill, register a dataset version and freeze research input data. A freeze copies or hardlinks local JSONL records plus universe artifacts, writes hashes and manifests, and can be required by matrix build, research suite, backtest, and operations commands:
+
+```bash
+uv run python -m data_lake.run_lake create-version \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --registry-dir /tmp/auto-alpha-demo/data_lake_registry \
+  --output-dir /tmp/auto-alpha-demo/data_version \
+  --provider sample \
+  --start-date 20240102 \
+  --end-date 20240104 \
+  --datasets securities,trade_calendar,daily_bars,daily_basic,financial_features,daily_limits,adjustment_factors,index_members,corporate_actions \
+  --backfill-run-report-path /tmp/auto-alpha-demo/backfill/backfill_run_report.json \
+  --backfill-coverage-report-path /tmp/auto-alpha-demo/backfill/backfill_coverage_report.json \
+  --pretty
+
+uv run python -m data_lake.run_lake create-freeze \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --registry-dir /tmp/auto-alpha-demo/data_lake_registry \
+  --output-dir /tmp/auto-alpha-demo/freeze_report \
+  --freeze-dir /tmp/auto-alpha-demo/research_freeze \
+  --freeze-name sample_freeze \
+  --pretty
+```
+
+`data_source_validation.run_smoke` can also write a dataset version and research freeze in one offline smoke run with `--write-data-version --create-research-freeze`. Real Tushare backfills remain gated by explicit allow-network/token parameters and reports never store raw tokens.
 
 Before using a real data token in production, run the data source smoke validator. It is offline by default and can use fake Tushare scenarios without network access:
 
@@ -513,6 +561,8 @@ Dashboard-specific overrides:
 - `ASHARE_DASHBOARD_MATRIX_CACHE_DIR`
 - `ASHARE_DASHBOARD_BENCHMARK_DIR`
 - `ASHARE_DASHBOARD_CROSS_SOURCE_DIR`
+- `ASHARE_DASHBOARD_BACKFILL_DIR`
+- `ASHARE_DASHBOARD_DATA_LAKE_DIR`
 - `ASHARE_DASHBOARD_SCHEMA_VALIDATION_DIR`
 - `ASHARE_DASHBOARD_RELEASE_DIR`
 - `ASHARE_DASHBOARD_CI_DIR`
@@ -855,7 +905,7 @@ Current PIT boundaries:
 
 ## Current Gaps
 
-- Tushare HTTP provider, production sync scaffolding, offline fake smoke, gated online smoke, permission/rate diagnostics, audit summary, incremental recovery checks, and baseline comparison are available; production use still requires real token/quota operation, real full-market performance runs, and more provider pairs.
+- Tushare HTTP provider, production sync scaffolding, governed backfill plans, offline fake smoke, gated online smoke/backfill, permission/rate diagnostics, audit summary, incremental recovery checks, baseline comparison, dataset versioning, and research freezes are available; production use still requires real token/quota operation, real full-market performance runs, incremental matrix refresh, and more provider pairs.
 - Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
 - Local daily simulation supports A-share constraints, pre-trade risk controls, local kill switch, override approvals, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, settlement-aware paper accounting, lot cost, realized PnL, NAV reconciliation, generic statement import, external account mirroring, EOD break management, and execution quality reports; future work should add finer real-world matching, minute-level volume modeling, verified real broker statement mappings, richer limit policies, and real broker connectivity.
 - Local formula search, batch formula evaluation, formula corpus construction, offline AlphaGPT supervised pretraining, and a first neural-guided policy-search path are available; future work should add stronger reinforcement learning, larger offline corpora, more operators, GPU performance tuning, and broader stability validation.

@@ -63,6 +63,11 @@ class BatchResearchConfig:
     target_return_mode: str = "adjusted_close"
     corporate_action_dir: str | None = None
     corporate_action_cash_field: str = "cash_div"
+    data_freeze_dir: str | None = None
+    data_freeze_id: str | None = None
+    data_version_manifest_path: str | None = None
+    require_data_freeze: bool = False
+    freeze_validation_report_path: str | None = None
 
 
 @dataclass(frozen=True)

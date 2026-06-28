@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from dataclasses import replace
 from pathlib import Path
 from typing import Iterable
 
+from artifact_schema.writer import utc_now
 from data_pipeline.ashare.config import AShareDataConfig
 from data_pipeline.ashare.manager import AShareDataManager
 from data_pipeline.ashare.pipeline import ASHARE_DATASETS
@@ -14,6 +16,11 @@ from data_pipeline.ashare.providers.tushare import TushareAShareDataProvider
 from data_pipeline.ashare.quality import validate_all_datasets, write_quality_report
 from data_pipeline.ashare.stats import compute_all_dataset_stats, write_dataset_stats
 from data_pipeline.ashare.storage import LocalAshareStorage
+from data_lake import LocalDataLakeRegistry, create_research_freeze, validate_research_input
+from data_lake.fingerprint import content_hash_for_fingerprints, fingerprint_data_dir
+from data_lake.freeze import write_freeze_validation_report
+from data_lake.models import DatasetVersionRecord
+from data_lake.report import write_data_lake_report, write_dataset_version_manifest
 
 from .audit_summary import summarize_api_audit
 from .baseline_compare import compare_to_baseline
@@ -54,6 +61,10 @@ def run_data_source_smoke(
     compare_baseline: bool = False,
     run_incremental_recovery: bool = False,
     run_online_incremental: bool = False,
+    data_lake_registry_dir: str | Path | None = None,
+    write_data_version: bool = False,
+    create_data_freeze: bool = False,
+    freeze_dir: str | Path | None = None,
 ) -> DataSourceSmokeReport:
     selected = list(ASHARE_DATASETS if datasets is None else datasets)
     root = Path(output_dir)
@@ -79,6 +90,10 @@ def run_data_source_smoke(
         snapshot=snapshot,
         compact=compact,
         run_incremental_recovery=run_incremental_recovery,
+        write_data_version=write_data_version,
+        create_research_freeze=create_data_freeze,
+        data_lake_registry_dir=str(data_lake_registry_dir) if data_lake_registry_dir else None,
+        freeze_dir=str(freeze_dir) if freeze_dir else None,
     )
 
     diagnostics = probe_provider(
@@ -206,6 +221,19 @@ def run_data_source_smoke(
         config=smoke_config,
     )
     paths = write_data_source_smoke_report(report, root)
+    data_lake_summary: dict[str, object] = {}
+    if write_data_version:
+        lake_summary, lake_paths = _write_data_lake_version_and_freeze(
+            config=config,
+            datasets=selected,
+            output_dir=root,
+            registry_dir=data_lake_registry_dir,
+            freeze_dir=freeze_dir,
+            create_data_freeze=create_data_freeze,
+            paths=paths,
+        )
+        data_lake_summary = lake_summary
+        paths.update(lake_paths)
     report = DataSourceSmokeReport(
         provider=report.provider,
         status=report.status,
@@ -218,6 +246,7 @@ def run_data_source_smoke(
         quality_summary=report.quality_summary,
         stats_summary=report.stats_summary,
         config=report.config,
+        data_lake_summary=data_lake_summary,
         paths=paths,
     )
     write_data_source_smoke_report(report, root)
@@ -332,3 +361,88 @@ def _securities_status_summary(storage: LocalAshareStorage) -> dict[str, object]
         "missing_delist_date_count": missing_delist,
         "current_only_security_master_warning": bool(records and set(distribution) <= {"L", "UNKNOWN"}),
     }
+
+
+def _write_data_lake_version_and_freeze(
+    config: AShareDataConfig,
+    datasets: list[str],
+    output_dir: Path,
+    registry_dir: str | Path | None,
+    freeze_dir: str | Path | None,
+    create_data_freeze: bool,
+    paths: dict[str, str],
+) -> tuple[dict[str, object], dict[str, str]]:
+    registry = LocalDataLakeRegistry(registry_dir or (output_dir / "data_lake_registry"))
+    fingerprints = fingerprint_data_dir(config.data_dir, datasets)
+    content_hash = content_hash_for_fingerprints(fingerprints)
+    version_id = f"dsver_{hashlib.sha256(content_hash.encode('utf-8')).hexdigest()[:16]}"
+    version = DatasetVersionRecord(
+        dataset_version_id=version_id,
+        provider=config.provider,
+        data_dir=str(config.data_dir),
+        start_date=config.start_date,
+        end_date=config.end_date,
+        datasets=[item.dataset for item in fingerprints],
+        dataset_fingerprints=[item.to_dict() for item in fingerprints],
+        quality_report_path=str(Path(config.data_dir) / "quality_report.json"),
+        dataset_stats_path=str(Path(config.data_dir) / "dataset_stats.json"),
+        api_audit_path=str(Path(config.data_dir) / "api_audit.jsonl"),
+        data_source_smoke_report_path=paths.get("data_source_smoke_report_path"),
+        created_at=utc_now(),
+        status="validated",
+        content_hash=content_hash,
+        metadata={"source": "data_source_validation"},
+    )
+    version = registry.register_dataset_version(version)
+    lake_output = output_dir / "data_lake"
+    version_manifest = write_dataset_version_manifest(version, lake_output)
+    lake_json, lake_md = write_data_lake_report(registry, lake_output)
+    summary: dict[str, object] = {
+        "dataset_version_id": version.dataset_version_id,
+        "dataset_content_hash": version.content_hash,
+        "data_lake_registry_dir": str(registry.root_dir),
+    }
+    output_paths = {
+        "dataset_version_manifest_path": str(version_manifest),
+        "data_lake_report_path": str(lake_json),
+        "data_lake_report_md_path": str(lake_md),
+        "data_lake_registry_path": str(registry.registry_path),
+        "dataset_versions_path": str(registry.versions_path),
+    }
+    if create_data_freeze:
+        target_freeze_dir = Path(freeze_dir) if freeze_dir else output_dir / "research_freeze"
+        freeze = create_research_freeze(
+            config.data_dir,
+            target_freeze_dir,
+            version,
+            freeze_name=target_freeze_dir.name,
+            artifact_paths={
+                "data_source_smoke_report_path": paths.get("data_source_smoke_report_path"),
+                "quality_report_path": str(Path(config.data_dir) / "quality_report.json"),
+                "dataset_stats_path": str(Path(config.data_dir) / "dataset_stats.json"),
+            },
+        )
+        freeze = registry.register_freeze(freeze)
+        validation = validate_research_input(data_freeze_dir=freeze.freeze_dir, require_freeze=True)
+        validation_path = write_freeze_validation_report(validation, lake_output)
+        lake_json, lake_md = write_data_lake_report(registry, lake_output)
+        summary.update(
+            {
+                "data_freeze_id": freeze.freeze_id,
+                "data_freeze_dir": freeze.freeze_dir,
+                "data_freeze_hash": freeze.content_hash,
+                "freeze_validation_status": validation.status,
+                "data_hash_drift_count": validation.error_count,
+            }
+        )
+        output_paths.update(
+            {
+                "research_data_freeze_path": str(Path(freeze.freeze_dir) / "research_data_freeze.json"),
+                "freeze_manifest_path": str(Path(freeze.freeze_dir) / "freeze_manifest.json"),
+                "freeze_validation_report_path": str(validation_path),
+                "research_freezes_path": str(registry.freezes_path),
+                "data_lake_report_path": str(lake_json),
+                "data_lake_report_md_path": str(lake_md),
+            }
+        )
+    return summary, output_paths

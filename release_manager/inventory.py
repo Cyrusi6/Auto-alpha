@@ -18,6 +18,8 @@ PLATFORM_MODULES = [
     "corporate_actions",
     "cross_source_checks",
     "dashboard",
+    "data_backfill",
+    "data_lake",
     "data_pipeline",
     "data_source_validation",
     "evaluation",

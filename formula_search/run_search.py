@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from factor_engine import SUPPORTED_TRANSFORMS
+from data_lake import validate_research_input
 from neural_search.models import NeuralSearchConfig
 from neural_search.trainer import NeuralFormulaTrainer
 from research.composite import COMPOSITE_METHODS
@@ -19,6 +20,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run local formula search for A-share factors.")
     parser.add_argument("--search-mode", choices=["random", "neural", "hybrid"], default="random")
     parser.add_argument("--data-dir", required=True)
+    parser.add_argument("--data-freeze-dir")
+    parser.add_argument("--data-freeze-id")
+    parser.add_argument("--data-version-manifest-path")
+    parser.add_argument("--require-data-freeze", action="store_true")
+    parser.add_argument("--freeze-validation-report-path")
     parser.add_argument("--universe-name")
     parser.add_argument("--universe-file")
     parser.add_argument("--factor-store-dir", required=True)
@@ -79,6 +85,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    freeze_payload = _apply_data_freeze_args(args)
     search_config = FormulaSearchConfig(
         seed=args.seed,
         population_size=args.population_size,
@@ -99,11 +106,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.search_mode == "neural":
         result = _run_neural(args)
+        result.update(freeze_payload)
         _attach_pit_metadata(result, args)
         print(json.dumps(result, ensure_ascii=False, indent=2 if args.pretty else None))
         return 0
     if args.search_mode == "hybrid":
         result = _run_hybrid(args, search_config)
+        result.update(freeze_payload)
         _attach_pit_metadata(result, args)
         print(json.dumps(result, ensure_ascii=False, indent=2 if args.pretty else None))
         return 0
@@ -142,8 +151,14 @@ def main(argv: list[str] | None = None) -> int:
         target_return_mode=args.target_return_mode,
         corporate_action_dir=args.corporate_action_dir,
         corporate_action_cash_field=args.corporate_action_cash_field,
+        data_freeze_dir=args.data_freeze_dir,
+        data_freeze_id=args.data_freeze_id,
+        data_version_manifest_path=args.data_version_manifest_path,
+        require_data_freeze=args.require_data_freeze,
+        freeze_validation_report_path=args.freeze_validation_report_path,
     ).run()
     payload = result.to_dict()
+    payload.update(freeze_payload)
     _attach_pit_metadata(payload, args)
     print(json.dumps(payload, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0
@@ -215,6 +230,11 @@ def _run_hybrid(args: argparse.Namespace, search_config: FormulaSearchConfig) ->
         target_return_mode=args.target_return_mode,
         corporate_action_dir=args.corporate_action_dir,
         corporate_action_cash_field=args.corporate_action_cash_field,
+        data_freeze_dir=args.data_freeze_dir,
+        data_freeze_id=args.data_freeze_id,
+        data_version_manifest_path=args.data_version_manifest_path,
+        require_data_freeze=args.require_data_freeze,
+        freeze_validation_report_path=args.freeze_validation_report_path,
     ).run()
     payload = random_result.to_dict()
     neural_payload = neural_result.to_dict()
@@ -292,6 +312,31 @@ def _attach_pit_metadata(payload: dict[str, object], args: argparse.Namespace) -
         payload["corporate_action_dir"] = args.corporate_action_dir
     if args.leakage_audit_dir:
         payload["leakage_audit_dir"] = args.leakage_audit_dir
+    if args.data_freeze_dir:
+        payload["data_freeze_dir"] = args.data_freeze_dir
+    if args.data_freeze_id:
+        payload["data_freeze_id"] = args.data_freeze_id
+    if args.data_version_manifest_path:
+        payload["data_version_manifest_path"] = args.data_version_manifest_path
+
+
+def _apply_data_freeze_args(args: argparse.Namespace) -> dict[str, object]:
+    report = validate_research_input(
+        data_dir=args.data_dir,
+        data_freeze_dir=args.data_freeze_dir,
+        require_freeze=args.require_data_freeze,
+    )
+    if report.error_count > 0:
+        raise RuntimeError(f"data freeze validation failed: {report.status}")
+    if args.data_freeze_dir:
+        args.data_dir = str(Path(args.data_freeze_dir) / "data")
+    return {
+        "data_freeze_id": args.data_freeze_id or report.freeze_id,
+        "data_freeze_hash": report.content_hash,
+        "freeze_validation_status": report.status,
+        "freeze_validation_report_path": args.freeze_validation_report_path,
+        "data_version_manifest_path": args.data_version_manifest_path,
+    }
 
 
 if __name__ == "__main__":

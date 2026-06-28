@@ -22,6 +22,7 @@ from factor_store import (
 from model_core.backtest import AShareFactorEvaluator
 from model_core.data_loader import AShareDataLoader
 from model_core.vm import StackVM
+from data_lake import validate_research_input
 
 from .candidates import default_candidates
 from .composite import build_composite_factor_matrix, register_composite_factor, select_approved_factors
@@ -42,8 +43,16 @@ class BatchFactorResearchRunner:
         self.config = config
         self.candidates = candidates or default_candidates()
         self.store = LocalFactorStore(config.factor_store_dir)
-        self.loader = AShareDataLoader(
+        self.freeze_validation = validate_research_input(
             data_dir=config.data_dir,
+            data_freeze_dir=config.data_freeze_dir,
+            require_freeze=config.require_data_freeze,
+        )
+        if self.freeze_validation.error_count > 0:
+            raise RuntimeError(f"data freeze validation failed: {self.freeze_validation.status}")
+        self.effective_data_dir = str(Path(config.data_freeze_dir) / "data") if config.data_freeze_dir else config.data_dir
+        self.loader = AShareDataLoader(
+            data_dir=self.effective_data_dir,
             device="cpu",
             universe_name=config.universe_name,
             universe_file=config.universe_file,
@@ -134,7 +143,7 @@ class BatchFactorResearchRunner:
         eval_output_dir = Path(self.config.batch_eval_output_dir) if self.config.batch_eval_output_dir else output_dir / "batch_eval"
         eval_result = FormulaBatchEvaluator(
             FormulaBatchEvalConfig(
-                data_dir=self.config.data_dir,
+                data_dir=self.effective_data_dir,
                 universe_name=self.config.universe_name,
                 universe_file=self.config.universe_file,
                 factor_store_dir=self.config.factor_store_dir,
@@ -188,7 +197,7 @@ class BatchFactorResearchRunner:
         approved_ids = [result.factor_id for result in results if result.factor_id is not None and result.status == "approved"]
         rejected_ids = [result.factor_id for result in results if result.factor_id is not None and result.status == "rejected"]
         self.loader = AShareDataLoader(
-            data_dir=self.config.data_dir,
+            data_dir=self.effective_data_dir,
             device="cpu",
             universe_name=self.config.universe_name,
             universe_file=self.config.universe_file,
@@ -331,6 +340,12 @@ class BatchFactorResearchRunner:
                     if self.loader.raw_data_cache.get("corporate_action_flag") is not None
                     else 0
                 ),
+                "dataset_version_id": _dataset_version_id(self.config.data_version_manifest_path),
+                "data_freeze_id": self.config.data_freeze_id or self.freeze_validation.freeze_id,
+                "data_freeze_hash": self.freeze_validation.content_hash,
+                "freeze_validation_status": self.freeze_validation.status,
+                "data_version_manifest_path": self.config.data_version_manifest_path,
+                "freeze_validation_report_path": self.config.freeze_validation_report_path,
             },
             factor_type="single",
             batch_id=batch_id,
@@ -338,7 +353,7 @@ class BatchFactorResearchRunner:
         experiment = ExperimentRecord(
             experiment_id=experiment_id,
             factor_id=factor_id,
-            data_dir=self.config.data_dir,
+            data_dir=self.effective_data_dir,
             output_dir=self.config.output_dir,
             train_dates=split_result.train_dates,
             valid_dates=split_result.valid_dates,
@@ -443,7 +458,7 @@ class BatchFactorResearchRunner:
         audit_dir = Path(self.config.leakage_audit_dir) if self.config.leakage_audit_dir else output_dir / "leakage_audit"
         argv = [
             "--data-dir",
-            self.config.data_dir,
+            self.effective_data_dir,
             "--factor-store-dir",
             self.config.factor_store_dir,
             "--output-dir",
@@ -521,3 +536,16 @@ def _utc_now() -> str:
 def _make_batch_id(created_at: str) -> str:
     safe = "".join(char if char.isalnum() else "_" for char in created_at).strip("_")
     return f"batch_{safe}"
+
+
+def _dataset_version_id(path: str | None) -> str | None:
+    if not path:
+        return None
+    target = Path(path)
+    if not target.exists():
+        return None
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    return payload.get("dataset_version_id")

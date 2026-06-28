@@ -1,0 +1,150 @@
+"""CLI for governed A-share backfill planning and execution."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from dataclasses import replace
+from pathlib import Path
+
+from data_pipeline.ashare.config import AShareDataConfig
+from data_pipeline.ashare.pipeline import ASHARE_DATASETS
+
+from .coverage import analyze_backfill_coverage, write_backfill_coverage
+from .executor import execute_backfill_plan
+from .models import BackfillPlan
+from .planner import build_backfill_plan, write_backfill_plan
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Plan and run governed local A-share backfills.")
+    sub = parser.add_subparsers(dest="command", required=True)
+    for name in ["plan", "execute", "resume", "coverage", "validate", "report", "smoke"]:
+        _add_common(sub.add_parser(name))
+    return parser
+
+
+def _add_common(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--provider", choices=["sample", "tushare"], default="sample")
+    parser.add_argument("--fake-tushare-scenario", choices=["success", "permission_denied", "rate_limited", "missing_fields", "empty_response", "malformed_payload", "network_error"])
+    parser.add_argument("--data-dir", required=True)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--staging-dir")
+    parser.add_argument("--cache-dir")
+    parser.add_argument("--audit-path")
+    parser.add_argument("--plan-path")
+    parser.add_argument("--state-path")
+    parser.add_argument("--start-date", default="20240102")
+    parser.add_argument("--end-date", default="20240104")
+    parser.add_argument("--datasets", default=",".join(ASHARE_DATASETS))
+    parser.add_argument("--index-codes", default="000300.SH")
+    parser.add_argument("--security-list-statuses", default="L")
+    parser.add_argument("--corporate-action-query-date-field", default="ex_date")
+    parser.add_argument("--chunk-days", type=int, default=30)
+    parser.add_argument("--mode", choices=["overwrite", "append"], default="append")
+    parser.add_argument("--cache", dest="cache", action="store_true")
+    parser.add_argument("--no-cache", dest="cache", action="store_false")
+    parser.set_defaults(cache=False)
+    parser.add_argument("--audit", action="store_true")
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--validate", action="store_true")
+    parser.add_argument("--stats", action="store_true")
+    parser.add_argument("--compact", action="store_true")
+    parser.add_argument("--snapshot", action="store_true")
+    parser.add_argument("--allow-network", action="store_true")
+    parser.add_argument("--require-token", action="store_true")
+    parser.add_argument("--max-requests", type=int)
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--fail-fast", action="store_true")
+    parser.add_argument("--fail-on-error", action="store_true")
+    parser.add_argument("--pretty", action="store_true")
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _build_parser().parse_args(argv)
+    datasets = [item.strip() for item in args.datasets.split(",") if item.strip()]
+    index_codes = tuple(item.strip() for item in args.index_codes.split(",") if item.strip())
+    statuses = tuple(item.strip().upper() for item in args.security_list_statuses.split(",") if item.strip())
+    base = AShareDataConfig.from_env()
+    config = replace(
+        base,
+        provider=args.provider,
+        data_dir=Path(args.data_dir),
+        start_date=args.start_date,
+        end_date=args.end_date,
+        index_codes=index_codes or base.index_codes,
+        security_list_statuses=statuses or base.security_list_statuses,
+        corporate_action_query_date_field=args.corporate_action_query_date_field,
+    )
+    if args.command == "coverage":
+        plan = _load_or_build_plan(args, config, datasets)
+        matrix = analyze_backfill_coverage(config.data_dir, plan)
+        paths = write_backfill_coverage(matrix, args.output_dir)
+        payload = {"status": "warning" if matrix.gap_count else "ok", "coverage": matrix.to_dict(), "paths": paths}
+        print(json.dumps(payload, ensure_ascii=False, indent=2 if args.pretty else None, sort_keys=args.pretty))
+        return 1 if args.fail_on_error and matrix.gap_count else 0
+    if args.command in {"plan", "validate", "report"}:
+        plan = build_backfill_plan(config, datasets=datasets, chunk_days=args.chunk_days, max_requests=args.max_requests)
+        plan_json, plan_md = write_backfill_plan(plan, args.output_dir)
+        payload = plan.to_dict() | {"paths": {"backfill_plan_path": str(plan_json), "backfill_plan_md_path": str(plan_md)}}
+        print(json.dumps(payload, ensure_ascii=False, indent=2 if args.pretty else None, sort_keys=args.pretty))
+        return 0
+
+    plan = _load_or_build_plan(args, config, datasets)
+    report = execute_backfill_plan(
+        plan,
+        config,
+        data_dir=args.data_dir,
+        output_dir=args.output_dir,
+        staging_dir=args.staging_dir,
+        state_path=args.state_path,
+        mode=args.mode,
+        cache_enabled=args.cache,
+        audit_enabled=args.audit,
+        resume=args.resume or args.command == "resume",
+        validate=args.validate,
+        write_stats=args.stats,
+        compact=args.compact,
+        snapshot=args.snapshot,
+        allow_network=args.allow_network,
+        require_token=args.require_token,
+        max_requests=args.max_requests,
+        fail_fast=args.fail_fast,
+        fake_tushare_scenario=args.fake_tushare_scenario,
+        dry_run=args.dry_run or args.command == "smoke" and False,
+    )
+    payload = report.to_dict()
+    print(json.dumps(payload, ensure_ascii=False, indent=2 if args.pretty else None, sort_keys=args.pretty))
+    return 1 if args.fail_on_error and report.status in {"failed", "blocked"} else 0
+
+
+def _load_or_build_plan(args: argparse.Namespace, config: AShareDataConfig, datasets: list[str]) -> BackfillPlan:
+    if args.plan_path and Path(args.plan_path).exists():
+        payload = json.loads(Path(args.plan_path).read_text(encoding="utf-8"))
+        from .models import BackfillJob, BackfillScope
+
+        scope = BackfillScope(**payload["scope"])
+        jobs = [BackfillJob(**job) for job in payload.get("jobs", [])]
+        return BackfillPlan(
+            plan_id=payload["plan_id"],
+            scope=scope,
+            jobs=jobs,
+            dataset_count=int(payload.get("dataset_count", len(scope.datasets))),
+            job_count=int(payload.get("job_count", len(jobs))),
+            estimated_request_count=int(payload.get("estimated_request_count", len(jobs))),
+            expected_artifacts=list(payload.get("expected_artifacts", [])),
+            online_required=bool(payload.get("online_required", config.provider == "tushare")),
+            token_required=bool(payload.get("token_required", config.provider == "tushare")),
+            max_requests=payload.get("max_requests"),
+            created_at=str(payload.get("created_at") or ""),
+        )
+    return build_backfill_plan(
+        config,
+        datasets=datasets,
+        chunk_days=args.chunk_days,
+        max_requests=args.max_requests,
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

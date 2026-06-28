@@ -18,6 +18,18 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--suite-name", default="sample_suite")
     parser.add_argument("--provider", default="sample")
     parser.add_argument("--data-dir")
+    parser.add_argument("--data-freeze-dir")
+    parser.add_argument("--data-freeze-id")
+    parser.add_argument("--data-version-manifest-path")
+    parser.add_argument("--freeze-validation-report-path")
+    parser.add_argument("--require-data-freeze", action="store_true")
+    parser.add_argument("--create-data-version", action="store_true")
+    parser.add_argument("--data-lake-registry-dir")
+    parser.add_argument("--create-research-freeze", action="store_true")
+    parser.add_argument("--research-freeze-dir")
+    parser.add_argument("--freeze-mode", choices=["copy", "hardlink", "manifest_only"], default="copy")
+    parser.add_argument("--validate-data-freeze", action="store_true")
+    parser.add_argument("--fail-on-freeze-error", action="store_true")
     parser.add_argument("--universe-name", default="csi300_sample")
     parser.add_argument("--index-code", default="000300.SH")
     parser.add_argument("--factor-store-dir")
@@ -149,6 +161,18 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
     return ResearchSuiteConfig(
         suite_name=args.suite_name,
         data_dir=str(args.data_dir or base_dir / "data"),
+        data_freeze_dir=args.data_freeze_dir,
+        data_freeze_id=args.data_freeze_id,
+        data_version_manifest_path=args.data_version_manifest_path,
+        freeze_validation_report_path=args.freeze_validation_report_path,
+        require_data_freeze=args.require_data_freeze,
+        create_data_version=args.create_data_version,
+        data_lake_registry_dir=args.data_lake_registry_dir,
+        create_research_freeze=args.create_research_freeze,
+        research_freeze_dir=args.research_freeze_dir,
+        freeze_mode=args.freeze_mode,
+        validate_data_freeze=args.validate_data_freeze,
+        fail_on_freeze_error=args.fail_on_freeze_error,
         universe_name=args.universe_name,
         index_code=args.index_code,
         factor_store_dir=str(args.factor_store_dir or base_dir / "store"),

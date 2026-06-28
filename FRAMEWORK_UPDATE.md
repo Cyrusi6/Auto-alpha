@@ -1653,3 +1653,13 @@
 - Expand policy templates with sector, account, ADV, issuer, concentration, and intraday usage dimensions.
 - Add richer override expiry/usage enforcement and ownership workflows.
 - Add production-grade limit calibration, intraday state refresh, and verified broker-side pre-trade controls before any real broker onboarding.
+
+## Task 032 - Production Data Lake, Full-Market Backfill, Data Versioning, And Research Freezes
+
+- Added `data_backfill/` for governed A-share backfill plans, chunked jobs, staging records, resumable state, quota/readiness checks, coverage matrices, coverage gaps, and run reports.
+- Added `data_lake/` for dataset fingerprints, deterministic dataset versions, local data lake registry, copy/hardlink/manifest-only research freezes, freeze hash validation, lineage graphs, and retention reports.
+- Extended data-source smoke validation with optional dataset-version and research-freeze creation while keeping fake/offline smoke as the default path and redacting all token material.
+- Extended matrix build, formula search, batch research, research suite, backtest, strategy runner, and operations with optional `--data-freeze-dir` / `--require-data-freeze` inputs and freeze metadata in summaries.
+- Extended monitoring and dashboard data service to read backfill, dataset version, freeze validation, and data lineage artifacts.
+- Extended artifact schema registry, release inventory, packaging metadata, README, CATREADME, and `.env.example` for the new production data lake and backfill modules.
+- This remains a local governed-data and research-freeze layer. Real full-market backfill still requires explicit Tushare token/network access, quota checks, operational review, and full-scale performance validation.

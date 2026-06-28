@@ -19,10 +19,13 @@ from .checks import (
     check_broker_statement_import,
     check_broker_rejected_orders,
     check_baseline_compare,
+    check_backfill_coverage,
+    check_backfill_run,
     check_open_broker_orders,
     check_capacity_warnings,
     check_data_source_audit,
     check_data_source_smoke,
+    check_data_lake_version,
     check_data_freshness,
     check_corporate_action_ledger,
     check_corporate_action_report,
@@ -53,6 +56,7 @@ from .checks import (
     check_provider_readiness,
     check_quality_report,
     check_release_gate,
+    check_research_freeze,
     check_risk_limit_usage,
     check_kill_switch_state,
     check_risk_overrides,
@@ -100,6 +104,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--field-coverage-path")
     parser.add_argument("--audit-summary-path")
     parser.add_argument("--baseline-compare-path")
+    parser.add_argument("--backfill-run-report-path")
+    parser.add_argument("--backfill-coverage-report-path")
+    parser.add_argument("--dataset-version-manifest-path")
+    parser.add_argument("--freeze-validation-report-path")
     parser.add_argument("--artifact-validation-report-path")
     parser.add_argument("--release-gate-report-path")
     parser.add_argument("--release-manifest-path")
@@ -196,6 +204,10 @@ def main(argv: list[str] | None = None) -> int:
         ("total_return_report", lambda: check_total_return_report(args.total_return_report_path or _default_corporate_action_path(args.orders_dir, "total_return_report.json"))),
         ("corporate_action_ledger", lambda: check_corporate_action_ledger(args.corporate_action_ledger_path or args.paper_account_dir)),
         ("baseline_compare", lambda: check_baseline_compare(args.baseline_compare_path)),
+        ("backfill_run", lambda: check_backfill_run(args.backfill_run_report_path)),
+        ("backfill_coverage", lambda: check_backfill_coverage(args.backfill_coverage_report_path)),
+        ("data_lake_version", lambda: check_data_lake_version(args.dataset_version_manifest_path)),
+        ("research_freeze", lambda: check_research_freeze(args.freeze_validation_report_path)),
         ("artifact_schema_validation", lambda: check_artifact_schema_validation(args.artifact_validation_report_path)),
         ("release_gate", lambda: check_release_gate(args.release_gate_report_path)),
         ("package_build_artifacts", lambda: check_package_build_artifacts(args.release_manifest_path)),

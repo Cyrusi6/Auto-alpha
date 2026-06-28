@@ -12,6 +12,7 @@ import numpy as np
 import torch
 
 from model_core.data_loader import AShareDataLoader
+from data_lake import validate_research_input
 
 from .models import MatrixCacheBuildResult, MatrixFieldInfo
 
@@ -67,10 +68,17 @@ def build_matrix_cache(
     corporate_action_aware: bool = False,
     target_return_mode: str = "adjusted_close",
     corporate_action_dir: str | Path | None = None,
+    data_freeze_dir: str | Path | None = None,
+    data_freeze_id: str | None = None,
+    data_version_manifest_path: str | Path | None = None,
+    require_data_freeze: bool = False,
 ) -> MatrixCacheBuildResult:
     """Build a deterministic local matrix cache from JSONL datasets."""
 
-    data_path = Path(data_dir)
+    freeze_report = validate_research_input(data_dir=data_dir, data_freeze_dir=data_freeze_dir, require_freeze=require_data_freeze)
+    if freeze_report.error_count > 0:
+        raise RuntimeError(f"data freeze validation failed: {freeze_report.status}")
+    data_path = Path(data_freeze_dir) / "data" if data_freeze_dir is not None else Path(data_dir)
     cache_dir = Path(output_dir) if output_dir is not None else data_path / "matrix_cache"
     requested_fields = list(fields or DEFAULT_MATRIX_FIELDS)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -167,6 +175,11 @@ def build_matrix_cache(
         "corporate_action_event_count": int(raw.get("corporate_action_flag", torch.zeros_like(raw["close"])).sum().item())
         if corporate_action_aware
         else 0,
+        "dataset_version_id": _dataset_version_id(data_version_manifest_path),
+        "data_freeze_id": data_freeze_id or freeze_report.freeze_id,
+        "data_freeze_hash": freeze_report.content_hash,
+        "freeze_validation_status": freeze_report.status,
+        "source_data_hashes": _source_hashes(data_version_manifest_path),
     }
     metadata_path = cache_dir / "metadata.json"
     metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
@@ -200,6 +213,36 @@ def _file_hash(path: Path) -> str | None:
     digest = hashlib.sha256()
     digest.update(path.read_bytes())
     return digest.hexdigest()
+
+
+def _dataset_version_id(path: str | Path | None) -> str | None:
+    if path is None:
+        return None
+    target = Path(path)
+    if not target.exists():
+        return None
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    return payload.get("dataset_version_id")
+
+
+def _source_hashes(path: str | Path | None) -> dict[str, str]:
+    if path is None:
+        return {}
+    target = Path(path)
+    if not target.exists():
+        return {}
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return {
+        str(item.get("dataset")): str(item.get("sha256") or "")
+        for item in payload.get("dataset_fingerprints", [])
+        if isinstance(item, dict)
+    }
 
 
 def _stable_cache_hash(

@@ -11,6 +11,11 @@ from .daily_runner import ProductionDailyRunner
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a local daily production workflow.")
     parser.add_argument("--data-dir", required=True)
+    parser.add_argument("--data-freeze-dir")
+    parser.add_argument("--data-freeze-id")
+    parser.add_argument("--data-version-manifest-path")
+    parser.add_argument("--require-data-freeze", action="store_true")
+    parser.add_argument("--freeze-validation-report-path")
     parser.add_argument("--factor-store-dir", required=True)
     parser.add_argument("--approval-store-dir", required=True)
     parser.add_argument("--paper-account-dir", required=True)
@@ -195,6 +200,11 @@ def main(argv: list[str] | None = None) -> int:
         risk_override_approval_id=args.risk_override_approval_id,
         block_on_kill_switch=args.block_on_kill_switch,
         force_risk_local_override=args.force_risk_local_override,
+        data_freeze_dir=args.data_freeze_dir,
+        data_freeze_id=args.data_freeze_id,
+        data_version_manifest_path=args.data_version_manifest_path,
+        require_data_freeze=args.require_data_freeze,
+        freeze_validation_report_path=args.freeze_validation_report_path,
     )
     result = runner.run(
         require_approval=args.require_approval,

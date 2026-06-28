@@ -58,6 +58,11 @@ class FormulaSearchRunner:
         target_return_mode: str = "adjusted_close",
         corporate_action_dir: str | None = None,
         corporate_action_cash_field: str = "cash_div",
+        data_freeze_dir: str | None = None,
+        data_freeze_id: str | None = None,
+        data_version_manifest_path: str | None = None,
+        require_data_freeze: bool = False,
+        freeze_validation_report_path: str | None = None,
     ):
         self.search_config = search_config
         self.data_dir = data_dir
@@ -93,6 +98,11 @@ class FormulaSearchRunner:
         self.target_return_mode = target_return_mode
         self.corporate_action_dir = corporate_action_dir
         self.corporate_action_cash_field = corporate_action_cash_field
+        self.data_freeze_dir = data_freeze_dir
+        self.data_freeze_id = data_freeze_id
+        self.data_version_manifest_path = data_version_manifest_path
+        self.require_data_freeze = bool(require_data_freeze)
+        self.freeze_validation_report_path = freeze_validation_report_path
         self.rng = random.Random(search_config.seed)
 
     def run(self) -> FormulaSearchResult:
@@ -177,6 +187,10 @@ class FormulaSearchRunner:
                 "corporate_action_aware": self.corporate_action_aware,
                 "target_return_mode": self.target_return_mode,
                 "corporate_action_dir": self.corporate_action_dir,
+                "data_freeze_dir": self.data_freeze_dir,
+                "data_freeze_id": self.data_freeze_id,
+                "data_version_manifest_path": self.data_version_manifest_path,
+                "require_data_freeze": self.require_data_freeze,
             },
         )
         self._write_outputs(result, generated)
@@ -230,6 +244,11 @@ class FormulaSearchRunner:
             target_return_mode=self.target_return_mode,
             corporate_action_dir=self.corporate_action_dir,
             corporate_action_cash_field=self.corporate_action_cash_field,
+            data_freeze_dir=self.data_freeze_dir,
+            data_freeze_id=self.data_freeze_id,
+            data_version_manifest_path=self.data_version_manifest_path,
+            require_data_freeze=self.require_data_freeze,
+            freeze_validation_report_path=self.freeze_validation_report_path,
         )
         return BatchFactorResearchRunner(config=config, candidates=from_formula_search_candidates(candidates)).run()
 
