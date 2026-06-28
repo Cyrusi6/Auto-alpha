@@ -279,6 +279,114 @@ def check_broker_file_outbox(outbox_manifest_path: str | Path | None) -> tuple[d
     }, alerts
 
 
+def check_broker_statement_import(import_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not import_report_path:
+        return {"exists": False, "broker_statement_imported": False, "broker_statement_parse_error_count": 0}, []
+    payload = _read_json(Path(import_report_path))
+    validation = payload.get("validation", {}) if payload else {}
+    errors = int(validation.get("error_count", 0) or 0) if isinstance(validation, dict) else 0
+    warnings = int(validation.get("warning_count", 0) or 0) if isinstance(validation, dict) else 0
+    alerts = []
+    if errors:
+        alerts.append(MonitoringAlert("error", "broker_statement_import", "broker statement import has parse or validation errors", {"errors": errors}))
+    elif warnings:
+        alerts.append(MonitoringAlert("warning", "broker_statement_import", "broker statement import has warnings", {"warnings": warnings}))
+    return {
+        "exists": bool(payload),
+        "broker_statement_imported": bool(payload),
+        "status": payload.get("status", "") if payload else "",
+        "broker_statement_parse_error_count": errors,
+        "broker_statement_warning_count": warnings,
+        "record_counts": ((payload.get("manifest") or {}).get("record_counts") if payload else {}) or {},
+    }, alerts
+
+
+def check_statement_staleness(manifest_path: str | Path | None, as_of_date: str) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not manifest_path:
+        return {"exists": False, "statement_stale": False}, []
+    payload = _read_json(Path(manifest_path))
+    statement_date = str(payload.get("as_of_date") or payload.get("trade_date") or "") if payload else ""
+    stale = bool(statement_date and as_of_date and statement_date < as_of_date)
+    alerts = [MonitoringAlert("warning", "statement_staleness", "broker statement is older than monitoring as_of_date", {"statement_as_of_date": statement_date})] if stale else []
+    return {"exists": bool(payload), "statement_stale": stale, "statement_as_of_date": statement_date, "synthetic": bool((payload.get("metadata") or {}).get("synthetic")) if payload else False}, alerts
+
+
+def check_eod_reconciliation(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    if not payload:
+        return {"exists": False, "eod_reconciliation_status": ""}, []
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    status = str(payload.get("status") or summary.get("status") or "")
+    errors = int(summary.get("error_count", 0) or 0)
+    blockers = int(summary.get("blocker_count", 0) or 0)
+    alerts = []
+    if blockers or status == "blocker":
+        alerts.append(MonitoringAlert("error", "eod_reconciliation", "EOD reconciliation has blocker breaks", {"blockers": blockers}))
+    elif errors or status == "error":
+        alerts.append(MonitoringAlert("error", "eod_reconciliation", "EOD reconciliation has errors", {"errors": errors}))
+    elif status == "warning":
+        alerts.append(MonitoringAlert("warning", "eod_reconciliation", "EOD reconciliation has warnings"))
+    return {
+        "exists": True,
+        "eod_reconciliation_status": status,
+        "reconciliation_break_count": int(summary.get("break_count", 0) or 0),
+        "material_break_count": int(summary.get("material_break_count", 0) or 0),
+        "unresolved_break_count": int(summary.get("unresolved_break_count", 0) or 0),
+        "unmatched_external_fill_count": int(summary.get("unmatched_external_fill_count", 0) or 0),
+        "unmatched_internal_fill_count": int(summary.get("unmatched_internal_fill_count", 0) or 0),
+        "fee_tax_difference": float(summary.get("fee_tax_difference", 0.0) or 0.0),
+    }, alerts
+
+
+def check_unresolved_reconciliation_breaks(breaks_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(breaks_path)) if breaks_path else []
+    unresolved = [row for row in rows if not row.get("resolved")]
+    alerts = [MonitoringAlert("warning", "unresolved_reconciliation_breaks", "unresolved EOD reconciliation breaks exist", {"count": len(unresolved)})] if unresolved else []
+    return {"exists": bool(rows), "unresolved_break_count": len(unresolved), "break_count": len(rows)}, alerts
+
+
+def check_material_reconciliation_breaks(breaks_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(breaks_path)) if breaks_path else []
+    material = [row for row in rows if row.get("material")]
+    alerts = [MonitoringAlert("error", "material_reconciliation_breaks", "material EOD reconciliation breaks exist", {"count": len(material)})] if material else []
+    return {"exists": bool(rows), "material_break_count": len(material)}, alerts
+
+
+def check_external_cash_difference(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    summary = _eod_summary(report_path)
+    diff = float(summary.get("cash_difference", 0.0) or 0.0)
+    alerts = [MonitoringAlert("warning", "external_cash_difference", "external cash differs from internal account", {"difference": diff})] if abs(diff) > 0.01 else []
+    return {"exists": bool(summary), "external_cash_difference": diff}, alerts
+
+
+def check_external_position_difference(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    summary = _eod_summary(report_path)
+    diff = float(summary.get("position_share_difference", 0.0) or 0.0)
+    alerts = [MonitoringAlert("warning", "external_position_difference", "external position shares differ from internal account", {"difference": diff})] if abs(diff) > 0 else []
+    return {"exists": bool(summary), "external_position_difference": diff}, alerts
+
+
+def check_external_nav_difference(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    summary = _eod_summary(report_path)
+    diff = float(summary.get("nav_difference", 0.0) or 0.0)
+    alerts = [MonitoringAlert("warning", "external_nav_difference", "external equity differs from internal NAV", {"difference": diff})] if abs(diff) > 0.01 else []
+    return {"exists": bool(summary), "external_nav_difference": diff}, alerts
+
+
+def check_adjustment_proposals(proposals_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(proposals_path)) if proposals_path else []
+    pending = sum(1 for row in rows if row.get("requires_approval", True))
+    alerts = [MonitoringAlert("warning", "adjustment_proposals", "adjustment proposals require approval", {"count": pending})] if pending else []
+    return {"exists": bool(rows), "adjustment_proposal_count": len(rows), "adjustment_pending_approval_count": pending}, alerts
+
+
+def check_adjustment_application(result_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(result_path)) if result_path else {}
+    applied = int(payload.get("applied_count", 0) or 0) if payload else 0
+    skipped = int(payload.get("skipped_duplicate_count", 0) or 0) if payload else 0
+    return {"exists": bool(payload), "adjustment_application_count": applied, "adjustment_skipped_duplicate_count": skipped}, []
+
+
 def check_data_source_smoke(smoke_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     if not smoke_report_path:
         return {"exists": False, "provider_status": ""}, []
@@ -832,6 +940,12 @@ def check_settlement_fee_tax(fee_tax_report_path: str | Path | None) -> tuple[di
     if total < 0:
         alerts.append(MonitoringAlert("error", "settlement_fee_tax", "fee and tax total is negative"))
     return {"exists": True, "total_fee_tax": total, **payload}, alerts
+
+
+def _eod_summary(report_path: str | Path | None) -> dict[str, Any]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    return dict(summary)
 
 
 def _read_json(path: Path) -> dict[str, Any]:

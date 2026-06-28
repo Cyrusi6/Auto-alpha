@@ -8,6 +8,7 @@ from model_registry import LocalModelRegistry
 from operations import ProductionDailyRunner
 from operations import run_daily
 from paper_account import LocalPaperAccount
+from broker_statement import import_statement, synthesize_statement_from_internal
 
 
 def _prepare_data_and_factor(tmp_path, status="production_candidate"):
@@ -188,6 +189,69 @@ def test_daily_run_simulated_broker_is_idempotent(tmp_path):
     assert len(first_state["settlement_events"]) == len(second_state["settlement_events"])
     assert executed.summary["settlement_report_path"]
     assert (tmp_path / "settlement" / "settlement_report.json").exists()
+
+
+def test_daily_run_reconcile_only_writes_eod_summary(tmp_path):
+    data_dir, store_dir, _factor_id = _prepare_data_and_factor(tmp_path)
+    propose_runner = ProductionDailyRunner(
+        data_dir=data_dir,
+        factor_store_dir=store_dir,
+        approval_store_dir=tmp_path / "approvals",
+        paper_account_dir=tmp_path / "account",
+        output_dir=tmp_path / "production",
+        orders_dir=tmp_path / "orders",
+        latest_production=True,
+        rebalance_date="20240104",
+        capacity_aware=True,
+    )
+    proposed = propose_runner.run(require_approval=True)
+    LocalApprovalStore(tmp_path / "approvals").approve(proposed.approval_id, reviewer="reviewer")
+    execute_runner = ProductionDailyRunner(
+        data_dir=data_dir,
+        factor_store_dir=store_dir,
+        approval_store_dir=tmp_path / "approvals",
+        paper_account_dir=tmp_path / "account",
+        output_dir=tmp_path / "production_execute",
+        orders_dir=tmp_path / "orders_execute",
+        rebalance_date="20240104",
+        capacity_aware=True,
+        broker_adapter="simulated",
+        broker_store_dir=tmp_path / "broker",
+        broker_reconcile=True,
+        settlement_aware=True,
+        settlement_dir=tmp_path / "settlement",
+    )
+    execute_runner.run(approval_id=proposed.approval_id, execute_approved=True)
+    synthesize_statement_from_internal(
+        tmp_path / "statement_source",
+        broker_store_dir=tmp_path / "broker",
+        broker_batch_id=proposed.approval_id,
+        paper_account_dir=tmp_path / "account",
+        trade_date="20240104",
+        as_of_date="20240104",
+    )
+    import_statement(tmp_path / "statement_source", tmp_path / "statement_import", trade_date="20240104", as_of_date="20240104")
+    reconcile_runner = ProductionDailyRunner(
+        data_dir=data_dir,
+        factor_store_dir=store_dir,
+        approval_store_dir=tmp_path / "approvals",
+        paper_account_dir=tmp_path / "account",
+        output_dir=tmp_path / "production_reconcile",
+        orders_dir=tmp_path / "orders_reconcile",
+        rebalance_date="20240104",
+        broker_adapter="simulated",
+        broker_store_dir=tmp_path / "broker",
+        broker_statement_dir=tmp_path / "statement_import",
+        run_eod_reconciliation=True,
+        eod_reconciliation_dir=tmp_path / "operations_eod",
+        settlement_dir=tmp_path / "settlement",
+    )
+    result = reconcile_runner.run(reconcile_only=True)
+
+    assert result.status == "reconciled"
+    assert result.summary["eod_reconciliation_status"] == "ok"
+    assert result.summary["reconciliation_break_count"] == 0
+    assert result.paths["eod_reconciliation_report_path"]
 
 
 def test_daily_run_file_broker_exports_without_account_update(tmp_path):

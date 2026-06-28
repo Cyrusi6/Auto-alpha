@@ -218,6 +218,120 @@ def test_monitoring_report_cli_writes_alerts(tmp_path, capsys):
     payload = json.loads(capsys.readouterr().out)
 
     assert exit_code == 0
+
+
+def test_monitoring_reads_statement_reconciliation_adjustment_artifacts(tmp_path, capsys):
+    data_dir, store_dir, account_dir, orders_dir, broker_dir, release_dir = _prepare_monitoring_artifacts(tmp_path)
+    statement_dir = tmp_path / "statement"
+    statement_dir.mkdir()
+    (statement_dir / "broker_statement_manifest.json").write_text(
+        '{"statement_id":"stmt_1","account_id":"paper_ashare","schema_name":"generic_broker_statement","trade_date":"20240104","as_of_date":"20240104","record_counts":{"cash":1}}',
+        encoding="utf-8",
+    )
+    (statement_dir / "broker_statement_import_report.json").write_text(
+        '{"statement_id":"stmt_1","status":"ok","manifest":{"record_counts":{"cash":1}},"validation":{"error_count":0,"warning_count":0}}',
+        encoding="utf-8",
+    )
+    reconcile_dir = tmp_path / "reconcile"
+    reconcile_dir.mkdir()
+    (reconcile_dir / "eod_reconciliation_report.json").write_text(
+        '{"statement_id":"stmt_1","status":"error","summary":{"status":"error","break_count":1,"error_count":1,"blocker_count":0,"material_break_count":1,"unresolved_break_count":1,"cash_difference":100.0,"position_share_difference":0,"nav_difference":100.0,"unmatched_external_fill_count":0,"unmatched_internal_fill_count":0,"fee_tax_difference":0.0}}',
+        encoding="utf-8",
+    )
+    (reconcile_dir / "reconciliation_breaks.jsonl").write_text(
+        '{"break_id":"brk_1","break_type":"cash_balance_mismatch","severity":"error","material":true,"resolved":false}\n',
+        encoding="utf-8",
+    )
+    (reconcile_dir / "adjustment_proposals.jsonl").write_text(
+        '{"adjustment_id":"adj_1","adjustment_type":"cash_manual_adjustment","requires_approval":true}\n',
+        encoding="utf-8",
+    )
+    apply_dir = tmp_path / "apply"
+    apply_dir.mkdir()
+    (apply_dir / "adjustment_application_result.json").write_text(
+        '{"approval_id":"appr_1","applied_count":1,"skipped_duplicate_count":0}',
+        encoding="utf-8",
+    )
+    registry_dir = tmp_path / "model_registry"
+    registry = LocalModelRegistry(registry_dir)
+    model = registry.register_factor_record(LocalFactorStore(store_dir).load_factors()[0])
+    active, _deployment = registry.activate(model.model_version_id, approval_id="model_approval")
+    write_model_registry_report(registry)
+    lifecycle_dir = tmp_path / "model_lifecycle"
+    lifecycle_dir.mkdir()
+    (lifecycle_dir / "factor_lifecycle_report.json").write_text(
+        json.dumps(
+            {
+                "evaluation": {
+                    "decision": {"recommended_action": "keep_active"},
+                    "checks": [{"name": "recent_coverage", "severity": "info", "passed": True}],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = run_monitor.main(
+        [
+            "--data-dir",
+            str(data_dir),
+            "--factor-store-dir",
+            str(store_dir),
+            "--paper-account-dir",
+            str(account_dir),
+            "--orders-dir",
+            str(orders_dir),
+            "--output-dir",
+            str(tmp_path / "monitoring"),
+            "--as-of-date",
+            "20240104",
+            "--broker-store-dir",
+            str(broker_dir),
+            "--broker-batch-id",
+            "batch_monitor",
+            "--broker-statement-manifest-path",
+            str(statement_dir / "broker_statement_manifest.json"),
+            "--broker-statement-import-report-path",
+            str(statement_dir / "broker_statement_import_report.json"),
+            "--eod-reconciliation-report-path",
+            str(reconcile_dir / "eod_reconciliation_report.json"),
+            "--reconciliation-breaks-path",
+            str(reconcile_dir / "reconciliation_breaks.jsonl"),
+            "--adjustment-proposals-path",
+            str(reconcile_dir / "adjustment_proposals.jsonl"),
+            "--adjustment-application-result-path",
+            str(apply_dir / "adjustment_application_result.json"),
+            "--artifact-validation-report-path",
+            str(release_dir / "artifact_validation_report.json"),
+            "--release-gate-report-path",
+            str(release_dir / "release_gate_report.json"),
+            "--release-manifest-path",
+            str(release_dir / "release_manifest.json"),
+            "--settlement-report-path",
+            str(tmp_path / "settlement" / "settlement_report.json"),
+            "--account-reconciliation-report-path",
+            str(tmp_path / "settlement" / "account_reconciliation_report.json"),
+            "--fee-tax-report-path",
+            str(tmp_path / "settlement" / "fee_tax_report.json"),
+            "--model-registry-dir",
+            str(registry_dir),
+            "--model-version-id",
+            active.model_version_id,
+            "--factor-lifecycle-report-path",
+            str(lifecycle_dir / "factor_lifecycle_report.json"),
+            "--model-lineage-graph-path",
+            str(registry_dir / "model_lineage_graph.json"),
+            "--pretty",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert payload["broker_statement_imported"] is True
+    assert payload["eod_reconciliation_status"] == "error"
+    assert payload["reconciliation_break_count"] == 1
+    assert payload["adjustment_proposal_count"] == 1
+    assert payload["adjustment_application_count"] == 1
     assert payload["checks"]["data_freshness"]["ok"] is True
     assert payload["checks"]["style_exposure_drift"]["exists"] is True
     assert payload["checks"]["active_risk_drift"]["exists"] is True

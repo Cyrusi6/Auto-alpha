@@ -121,6 +121,39 @@ def test_paper_account_broker_fill_idempotency(tmp_path):
     assert second.trade_ledger[0].broker_fill_id == "bf_1"
 
 
+def test_paper_account_manual_adjustments_are_idempotent(tmp_path):
+    account = LocalPaperAccount(tmp_path)
+    account.reset(10000.0)
+    adjustments = [
+        {
+            "adjustment_id": "adj_cash_1",
+            "adjustment_type": "cash_manual_adjustment",
+            "cash_amount": 100.0,
+            "reason": "external cash reconciliation",
+        },
+        {
+            "adjustment_id": "adj_pos_1",
+            "adjustment_type": "position_manual_adjustment",
+            "ts_code": "000001.SZ",
+            "share_delta": 100,
+            "reason": "external position reconciliation",
+        },
+    ]
+    first, applied, skipped = account.apply_adjustments(adjustments, "approval_1", "20240104")
+    second, replay_applied, replay_skipped = account.apply_adjustments(adjustments, "approval_1", "20240104")
+
+    assert first.cash == 10100.0
+    assert first.positions["000001.SZ"].shares == 100
+    assert len(applied) == 2
+    assert skipped == 0
+    assert second.cash == first.cash
+    assert replay_applied == []
+    assert replay_skipped == 2
+    assert second.adjustment_ledger[0]["approval_id"] == "approval_1"
+    assert (tmp_path / "adjustment_ledger.jsonl").exists()
+    assert any(event["event_type"] == "manual_adjustment" for event in second.settlement_events)
+
+
 def test_paper_account_loads_legacy_state_and_settlement_idempotent(tmp_path):
     data_dir = tmp_path / "data"
     cal_dir = data_dir / "trade_calendar"

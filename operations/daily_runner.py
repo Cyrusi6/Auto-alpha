@@ -97,6 +97,16 @@ class ProductionDailyRunner:
         enforce_available_shares: bool = False,
         allow_unsettled_cash_for_buy: bool = False,
         allow_unsettled_shares_for_sell: bool = False,
+        run_eod_reconciliation: bool = False,
+        broker_statement_dir: str | Path | None = None,
+        broker_statement_schema: str = "generic_broker_statement",
+        broker_statement_schema_config: str | Path | None = None,
+        eod_reconciliation_dir: str | Path | None = None,
+        fail_on_reconciliation_error: bool = False,
+        create_adjustment_proposals: bool = False,
+        create_adjustment_approval: bool = False,
+        apply_approved_adjustments: bool = False,
+        adjustment_approval_id: str | None = None,
     ):
         self.data_dir = Path(data_dir)
         self.factor_store_dir = Path(factor_store_dir)
@@ -159,6 +169,16 @@ class ProductionDailyRunner:
         self.enforce_available_shares = bool(enforce_available_shares)
         self.allow_unsettled_cash_for_buy = bool(allow_unsettled_cash_for_buy)
         self.allow_unsettled_shares_for_sell = bool(allow_unsettled_shares_for_sell)
+        self.run_eod_reconciliation = bool(run_eod_reconciliation)
+        self.broker_statement_dir = Path(broker_statement_dir) if broker_statement_dir is not None else None
+        self.broker_statement_schema = broker_statement_schema
+        self.broker_statement_schema_config = broker_statement_schema_config
+        self.eod_reconciliation_dir = Path(eod_reconciliation_dir) if eod_reconciliation_dir is not None else self.output_dir / "eod_reconciliation"
+        self.fail_on_reconciliation_error = bool(fail_on_reconciliation_error)
+        self.create_adjustment_proposals = bool(create_adjustment_proposals)
+        self.create_adjustment_approval = bool(create_adjustment_approval)
+        self.apply_approved_adjustments = bool(apply_approved_adjustments)
+        self.adjustment_approval_id = adjustment_approval_id
         self._model_context: dict[str, Any] = {}
 
     def run(
@@ -166,11 +186,14 @@ class ProductionDailyRunner:
         require_approval: bool = False,
         approval_id: str | None = None,
         execute_approved: bool = False,
+        reconcile_only: bool = False,
     ) -> ProductionRunResult:
         created_at = _utc_now()
         run_id = f"prod_{_safe_time(created_at)}"
         try:
-            if approval_id or execute_approved:
+            if reconcile_only:
+                result = self._reconcile_only(run_id, created_at, approval_id)
+            elif approval_id or execute_approved:
                 result = self._execute_approved(run_id, created_at, approval_id)
             else:
                 result = self._propose(run_id, created_at, require_approval=require_approval)
@@ -462,6 +485,11 @@ class ProductionDailyRunner:
         }
         if self.apply_corporate_actions:
             summary.update(corporate_summary if "corporate_summary" in locals() else {})
+        if self.run_eod_reconciliation or self.apply_approved_adjustments:
+            eod_summary = self._run_eod_reconciliation_workflow(batch.rebalance_date, broker_batch_id=batch.approval_id)
+            summary.update(eod_summary)
+            if self.fail_on_reconciliation_error and summary.get("eod_reconciliation_status") in {"error", "blocker"}:
+                raise ValueError("EOD reconciliation produced error or blocker breaks")
         self._attach_model_metadata_to_summary(summary, batch=batch)
         production_status = "broker_exported" if self.broker_adapter == "file" and broker_summary.get("inbox_fills", 0) == 0 else "executed"
         return ProductionRunResult(
@@ -475,6 +503,26 @@ class ProductionDailyRunner:
             executed=production_status == "executed",
             paths=_paths_from_summary(summary),
             summary=summary,
+        )
+
+    def _reconcile_only(self, run_id: str, created_at: str, approval_id: str | None) -> ProductionRunResult:
+        trade_date = self.rebalance_date or self.settle_through_date or ""
+        summary = self._run_eod_reconciliation_workflow(trade_date, broker_batch_id=approval_id)
+        status = "reconciled"
+        if self.fail_on_reconciliation_error and summary.get("eod_reconciliation_status") in {"error", "blocker"}:
+            status = "failed"
+        return ProductionRunResult(
+            run_id=run_id,
+            created_at=created_at,
+            status=status,
+            factor_id=self.factor_id,
+            rebalance_date=trade_date,
+            approval_id=approval_id,
+            approval_status="",
+            executed=False,
+            paths=_paths_from_summary(summary),
+            summary=summary,
+            error="EOD reconciliation produced error or blocker breaks" if status == "failed" else "",
         )
 
     def _execute_with_broker_adapter(
@@ -752,6 +800,120 @@ class ProductionDailyRunner:
             "realized_pnl": sum(float(record.get("realized_pnl", 0.0) or 0.0) for record in state.realized_pnl_ledger),
         }
 
+    def _run_eod_reconciliation_workflow(self, trade_date: str, broker_batch_id: str | None = None) -> dict[str, Any]:
+        from broker_statement import import_statement
+        from reconciliation_center import run_eod_reconciliation
+        from reconciliation_center.adjustments import apply_approved_adjustments, create_adjustment_approval
+
+        root = self.eod_reconciliation_dir
+        root.mkdir(parents=True, exist_ok=True)
+        statement_dir = self._prepare_statement_dir(root, trade_date)
+        summary: dict[str, Any] = {
+            "external_statement_imported": bool(statement_dir),
+            "statement_synthetic": False,
+        }
+        if statement_dir:
+            summary.update(_statement_paths(statement_dir))
+        if self.run_eod_reconciliation and statement_dir:
+            report, _mirror, paths = run_eod_reconciliation(
+                statement_dir=statement_dir,
+                output_dir=root,
+                broker_store_dir=self.broker_store_dir,
+                broker_batch_id=broker_batch_id,
+                paper_account_dir=self.paper_account_dir,
+                settlement_dir=self.settlement_dir,
+                corporate_action_dir=self._corporate_action_dir(),
+                account_id="paper_ashare",
+                trade_date=trade_date,
+                as_of_date=trade_date,
+                strict=False,
+                create_adjustment_proposals=self.create_adjustment_proposals or self.create_adjustment_approval,
+            )
+            report_summary = report.summary
+            summary.update(
+                {
+                    "eod_reconciliation_status": report.status,
+                    "statement_id": report.statement_id,
+                    "reconciliation_break_count": int(report_summary.get("break_count", 0) or 0),
+                    "material_break_count": int(report_summary.get("material_break_count", 0) or 0),
+                    "unresolved_break_count": int(report_summary.get("unresolved_break_count", 0) or 0),
+                    "adjustment_proposal_count": int(report_summary.get("adjustment_proposal_count", 0) or 0),
+                    "external_cash_difference": float(report_summary.get("cash_difference", 0.0) or 0.0),
+                    "external_position_difference": float(report_summary.get("position_share_difference", 0.0) or 0.0),
+                    "external_nav_difference": float(report_summary.get("nav_difference", 0.0) or 0.0),
+                    "statement_synthetic": bool(report_summary.get("synthetic_statement", False)),
+                    **{key: str(value) for key, value in paths.items()},
+                }
+            )
+            if self.create_adjustment_approval:
+                batch_path = paths.get("adjustment_proposal_batch_path")
+                if batch_path and Path(batch_path).exists():
+                    batch_payload = json.loads(Path(batch_path).read_text(encoding="utf-8"))
+                    from reconciliation_center.models import AdjustmentProposal, AdjustmentProposalBatch
+
+                    batch = AdjustmentProposalBatch(
+                        adjustment_batch_id=str(batch_payload.get("adjustment_batch_id") or ""),
+                        account_id=str(batch_payload.get("account_id") or "paper_ashare"),
+                        trade_date=str(batch_payload.get("trade_date") or trade_date),
+                        as_of_date=str(batch_payload.get("as_of_date") or trade_date),
+                        proposals=[AdjustmentProposal(**proposal) for proposal in batch_payload.get("proposals", [])],
+                        status=str(batch_payload.get("status") or "pending_approval"),
+                        metadata=dict(batch_payload.get("metadata") or {}),
+                    )
+                    approval = create_adjustment_approval(
+                        batch,
+                        self.approval_store_dir,
+                        reconciliation_report_path=str(paths.get("eod_reconciliation_report_path", "")),
+                        adjustment_proposals_path=str(paths.get("adjustment_proposals_path", "")),
+                        metadata={
+                            "eod_reconciliation_status": report.status,
+                            "unresolved_break_count": report_summary.get("unresolved_break_count", 0),
+                            "material_break_count": report_summary.get("material_break_count", 0),
+                        },
+                    )
+                    summary["adjustment_approval_id"] = approval.approval_id
+                    summary["adjustment_approval_status"] = approval.status
+        if self.apply_approved_adjustments:
+            approval_id = self.adjustment_approval_id
+            if not approval_id:
+                raise ValueError("adjustment_approval_id is required when applying approved adjustments")
+            result, paths = apply_approved_adjustments(
+                self.approval_store_dir,
+                approval_id,
+                self.paper_account_dir,
+                root / "adjustment_apply",
+                trade_date=trade_date,
+            )
+            summary.update(
+                {
+                    "adjustment_approval_id": approval_id,
+                    "adjustment_application_count": result.applied_count,
+                    "adjustment_skipped_duplicate_count": result.skipped_duplicate_count,
+                    **{key: str(value) for key, value in paths.items()},
+                }
+            )
+        return summary
+
+    def _prepare_statement_dir(self, output_root: Path, trade_date: str) -> Path | None:
+        from broker_statement import import_statement
+
+        if self.broker_statement_dir is None:
+            return None
+        source = self.broker_statement_dir
+        if (source / "broker_statement_manifest.json").exists() or any(source.glob("normalized_external_*.jsonl")):
+            return source
+        imported = output_root / "statement_import"
+        result = import_statement(
+            source_dir=source,
+            output_dir=imported,
+            schema_config=self.broker_statement_schema_config,
+            schema_name=self.broker_statement_schema,
+            account_id="paper_ashare",
+            trade_date=trade_date,
+            as_of_date=trade_date,
+        )
+        return Path(result.paths.get("broker_statement_manifest_path", imported)).parent if result.paths else imported
+
 
 def _paths_from_summary(summary: dict[str, Any]) -> dict[str, str]:
     keys = [
@@ -802,8 +964,34 @@ def _paths_from_summary(summary: dict[str, Any]) -> dict[str, str]:
         "account_performance_report_path",
         "account_reconciliation_report_path",
         "fee_tax_report_path",
+        "broker_statement_manifest_path",
+        "broker_statement_import_report_path",
+        "broker_statement_validation_report_path",
+        "broker_statement_parse_issues_path",
+        "eod_reconciliation_report_path",
+        "eod_reconciliation_report_md_path",
+        "reconciliation_breaks_path",
+        "external_account_mirror_path",
+        "external_cash_mirror_path",
+        "external_position_mirror_path",
+        "external_fill_mirror_path",
+        "external_settlement_mirror_path",
+        "adjustment_proposals_path",
+        "adjustment_proposal_batch_path",
+        "adjustment_application_result_path",
+        "adjustment_ledger_path",
     ]
     return {key: str(summary[key]) for key in keys if summary.get(key)}
+
+
+def _statement_paths(statement_dir: Path) -> dict[str, str]:
+    candidates = {
+        "broker_statement_manifest_path": statement_dir / "broker_statement_manifest.json",
+        "broker_statement_import_report_path": statement_dir / "broker_statement_import_report.json",
+        "broker_statement_validation_report_path": statement_dir / "broker_statement_validation_report.json",
+        "broker_statement_parse_issues_path": statement_dir / "broker_statement_parse_issues.jsonl",
+    }
+    return {key: str(path) for key, path in candidates.items() if path.exists()}
 
 
 def _prices_for_date(

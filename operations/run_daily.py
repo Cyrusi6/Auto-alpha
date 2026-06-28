@@ -82,6 +82,17 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--enforce-available-shares", action="store_true")
     parser.add_argument("--allow-unsettled-cash-for-buy", action="store_true")
     parser.add_argument("--allow-unsettled-shares-for-sell", action="store_true")
+    parser.add_argument("--run-eod-reconciliation", action="store_true")
+    parser.add_argument("--broker-statement-dir")
+    parser.add_argument("--broker-statement-schema", choices=["generic_broker_statement", "qmt_statement_skeleton"], default="generic_broker_statement")
+    parser.add_argument("--broker-statement-schema-config")
+    parser.add_argument("--eod-reconciliation-dir")
+    parser.add_argument("--fail-on-reconciliation-error", action="store_true")
+    parser.add_argument("--create-adjustment-proposals", action="store_true")
+    parser.add_argument("--create-adjustment-approval", action="store_true")
+    parser.add_argument("--apply-approved-adjustments", action="store_true")
+    parser.add_argument("--adjustment-approval-id")
+    parser.add_argument("--reconcile-only", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -150,11 +161,22 @@ def main(argv: list[str] | None = None) -> int:
         enforce_available_shares=args.enforce_available_shares,
         allow_unsettled_cash_for_buy=args.allow_unsettled_cash_for_buy,
         allow_unsettled_shares_for_sell=args.allow_unsettled_shares_for_sell,
+        run_eod_reconciliation=args.run_eod_reconciliation,
+        broker_statement_dir=args.broker_statement_dir,
+        broker_statement_schema=args.broker_statement_schema,
+        broker_statement_schema_config=args.broker_statement_schema_config,
+        eod_reconciliation_dir=args.eod_reconciliation_dir,
+        fail_on_reconciliation_error=args.fail_on_reconciliation_error,
+        create_adjustment_proposals=args.create_adjustment_proposals,
+        create_adjustment_approval=args.create_adjustment_approval,
+        apply_approved_adjustments=args.apply_approved_adjustments,
+        adjustment_approval_id=args.adjustment_approval_id,
     )
     result = runner.run(
         require_approval=args.require_approval,
         approval_id=args.approval_id,
         execute_approved=args.execute_approved,
+        reconcile_only=args.reconcile_only,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))
     return 0 if result.status != "failed" else 1

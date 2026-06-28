@@ -1585,3 +1585,44 @@
 - Integrated settlement-aware mode into backtest, strategy runner, operations, corporate action account application, factor lifecycle review, monitoring, dashboard, artifact schema, release inventory, local CI, and packaging.
 - Settlement-aware artifacts include `settlement_report.json/md`, `settlement_events.jsonl`, `cash_buckets.jsonl`, `position_lots.jsonl`, `position_availability.jsonl`, `realized_pnl.jsonl`, `account_nav.jsonl`, `account_performance_report.json`, `account_reconciliation_report.json`, and `fee_tax_report.json`.
 - This remains local paper accounting only; no real broker clearing interface, tax reporting interface, default network access, or live trading path was added.
+
+## Task 030 - Broker Statement Import, External Account Mirror, And EOD Reconciliation
+
+- Added `broker_statement/` for local generic broker statement import, QMT-style skeleton field mapping, normalized external orders/trades/fills/positions/cash/settlements/corporate actions, source hashes, parse issues, validation reports, import reports, and synthetic statement generation for smoke tests.
+- Added `reconciliation_center/` for EOD reconciliation across external statement mirrors, broker adapter orders/fills/events, paper account ledgers, settlement artifacts, and corporate-action ledgers.
+- Added structured reconciliation breaks for cash, available cash, positions, available shares, fills, fees/taxes, settlements, corporate actions, NAV, stale statements, duplicate external ids, and schema parse issues.
+- Added adjustment proposals plus `account_reconciliation_adjustment` approval batches. Approved adjustments apply idempotently to paper account cash/positions, write manual adjustment ledger rows, and record manual settlement events for audit.
+- Extended `paper_account` with `adjustment_ledger`, idempotent manual adjustment application, `apply-adjustments`, `show-adjustments`, and `reconcile-external` CLI actions.
+- Extended `operations.run_daily` with `--run-eod-reconciliation`, `--reconcile-only`, statement import, EOD reconciliation, adjustment proposal/approval creation, and approved adjustment application.
+- Extended monitoring and dashboard to display statement import status, external account mirror, EOD break counts, materiality, adjustment proposal/application status, and adjustment ledger rows.
+- Extended artifact schema, release/module inventory, local CI, package metadata, README, and CATREADME with broker statement and EOD reconciliation artifacts.
+- This remains a local generic statement and reconciliation skeleton only. No real broker API, real broker SDK, credential handling, verified QMT file compatibility, network submission, or live trading path was added.
+
+### New Artifacts
+- `broker_statement_manifest.json`
+- `broker_statement_import_report.json/md`
+- `broker_statement_validation_report.json`
+- `broker_statement_parse_issues.jsonl`
+- `normalized_external_orders.jsonl`
+- `normalized_external_trades.jsonl`
+- `normalized_external_fills.jsonl`
+- `normalized_external_positions.jsonl`
+- `normalized_external_cash.jsonl`
+- `normalized_external_settlements.jsonl`
+- `normalized_external_corporate_actions.jsonl`
+- `eod_reconciliation_report.json/md`
+- `reconciliation_breaks.jsonl`
+- `external_account_mirror.json`
+- `external_cash_mirror.jsonl`
+- `external_position_mirror.jsonl`
+- `external_fill_mirror.jsonl`
+- `external_settlement_mirror.jsonl`
+- `adjustment_proposals.jsonl`
+- `adjustment_proposal_batch.json`
+- `adjustment_application_result.json/md`
+- `adjustment_ledger.jsonl`
+
+### Follow-Ups
+- Add richer configurable broker-statement field mapping templates and manual mapping review reports.
+- Extend reconciliation matching across multi-day partial fills, cancelled/replaced orders, and settlement calendars.
+- Add break lifecycle ownership, aging, SLA, and persistent resolution status before any real broker onboarding.

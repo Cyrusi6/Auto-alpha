@@ -507,6 +507,20 @@ def render_app(config: DashboardConfig | None = None) -> None:
         monitoring_alerts = service.load_monitoring_alerts()
         broker_report = service.load_broker_report()
         broker_reconciliation = service.load_broker_reconciliation()
+        statement_manifest = service.load_broker_statement_manifest()
+        statement_import_report = service.load_broker_statement_import_report()
+        statement_validation = service.load_broker_statement_validation_report()
+        statement_parse_issues = service.load_broker_statement_parse_issues()
+        eod_reconciliation = service.load_eod_reconciliation_report()
+        reconciliation_breaks = service.load_reconciliation_breaks()
+        external_mirror = service.load_external_account_mirror()
+        external_cash = service.load_external_mirror_table("cash")
+        external_positions = service.load_external_mirror_table("position")
+        external_fills = service.load_external_mirror_table("fill")
+        adjustment_proposals = service.load_adjustment_proposals()
+        adjustment_batch = service.load_adjustment_proposal_batch()
+        adjustment_application = service.load_adjustment_application_result()
+        adjustment_ledger = service.load_adjustment_ledger()
         model_registry_report = service.load_model_registry_report()
         lifecycle_report = service.load_factor_lifecycle_report()
         st.subheader("Production Run")
@@ -567,6 +581,34 @@ def render_app(config: DashboardConfig | None = None) -> None:
                 "reconciliation": broker_reconciliation,
             }
         )
+        st.subheader("Broker Statement And EOD Reconciliation")
+        st.json(
+            {
+                "statement_id": statement_manifest.get("statement_id", "") if statement_manifest else "",
+                "statement_schema": statement_manifest.get("schema_name", "") if statement_manifest else "",
+                "synthetic": statement_manifest.get("metadata", {}).get("synthetic") if statement_manifest else None,
+                "import_status": statement_import_report.get("status", "") if statement_import_report else "",
+                "parse_issues": len(statement_parse_issues),
+                "validation_status": statement_validation.get("status", "") if statement_validation else "",
+                "eod_status": eod_reconciliation.get("status", "") if eod_reconciliation else "",
+                "break_count": eod_reconciliation.get("break_count", 0) if eod_reconciliation else 0,
+                "material_break_count": eod_reconciliation.get("material_break_count", 0) if eod_reconciliation else 0,
+                "unresolved_break_count": eod_reconciliation.get("unresolved_break_count", 0) if eod_reconciliation else 0,
+                "cash_difference": eod_reconciliation.get("cash_difference", 0.0) if eod_reconciliation else 0.0,
+                "position_share_difference": eod_reconciliation.get("position_share_difference", 0.0) if eod_reconciliation else 0.0,
+                "nav_difference": eod_reconciliation.get("nav_difference", 0.0) if eod_reconciliation else 0.0,
+                "external_account_mirror": external_mirror,
+                "adjustment_batch": adjustment_batch,
+                "adjustment_application": adjustment_application,
+            }
+        )
+        _show_dataframe_or_empty("Statement Parse Issues", statement_parse_issues)
+        _show_dataframe_or_empty("External Cash Mirror", external_cash)
+        _show_dataframe_or_empty("External Position Mirror", external_positions)
+        _show_dataframe_or_empty("External Fill Mirror", external_fills)
+        _show_dataframe_or_empty("Reconciliation Breaks", reconciliation_breaks)
+        _show_dataframe_or_empty("Adjustment Proposals", adjustment_proposals)
+        _show_dataframe_or_empty("Adjustment Ledger", adjustment_ledger)
         st.subheader("Model Lifecycle")
         st.json(
             {

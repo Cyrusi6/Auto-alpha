@@ -27,6 +27,8 @@ The current implementation is local-first. It uses deterministic sample data and
 - `execution/`: Paper broker and order/fill export utilities.
 - `execution_plan/`: Parent-order to child-order slicing, schedule simulation, and execution quality reports.
 - `broker_adapter/`: Local broker contract, simulated broker state machine, file instruction outbox/inbox skeleton, broker events, fills, and reconciliation.
+- `broker_statement/`: Generic broker statement import, QMT-style skeleton mapping, normalized external account mirror inputs, validation, and synthetic statement smoke generation.
+- `reconciliation_center/`: End-of-day reconciliation across external statements, broker fills, paper account, settlement artifacts, corporate actions, break management, and approved manual adjustments.
 - `strategy_manager/`: Target position and paper order generation.
 - `approval/`: Local proposed-order batch approval, rejection, expiration, and audit log.
 - `settlement_engine/`: Local paper settlement profiles, settlement events, cash/share availability, position lots, fee/tax breakdown, realized PnL, NAV, and account reconciliation.
@@ -456,6 +458,10 @@ The capacity layer writes `capacity_report.json/md`; execution planning writes `
 
 The file adapter uses an internal generic schema and optional config-driven `field_mapping`. `schema_name=qmt_skeleton` is only a configurable skeleton for manual mapping review. It does not guarantee compatibility with any real QMT installation or broker desk file format.
 
+`broker_statement/` imports local end-of-day statement files into a normalized external account mirror. It supports generic CSV/JSON/JSONL inputs for orders, trades, fills, positions, cash, settlements, and corporate actions. The QMT mode is a field-mapping skeleton only; real broker files must be manually mapped and reviewed before use. Import writes `broker_statement_manifest.json`, `broker_statement_import_report.json/md`, `broker_statement_validation_report.json`, `broker_statement_parse_issues.jsonl`, and `normalized_external_*.jsonl`.
+
+`reconciliation_center/` compares the external mirror with broker-adapter fills/events, paper-account ledgers, settlement artifacts, and corporate-action ledgers. It writes `eod_reconciliation_report.json/md`, `reconciliation_breaks.jsonl`, `external_account_mirror.json`, external mirror JSONL files, optional `adjustment_proposals.jsonl`, optional `adjustment_proposal_batch.json`, and `adjustment_application_result.json/md`. Adjustment proposals are not applied automatically; they require an `account_reconciliation_adjustment` approval and are idempotent when applied to the paper account.
+
 Dashboard-specific overrides:
 
 - `ASHARE_DASHBOARD_DATA_DIR`
@@ -584,6 +590,64 @@ uv run python -m monitoring.run_monitor \
 ```
 
 Daily production writes `production_run.json/md`; approvals are stored under `approvals/<approval_id>.json` plus `approval_log.jsonl`; the paper account writes `account_state.json`, `positions.jsonl`, `cash_ledger.jsonl`, `trade_ledger.jsonl`, settlement artifacts, and `account_snapshots.jsonl`; broker-enabled runs write `broker_report.json/md`, `broker_orders.jsonl`, `broker_events.jsonl`, `broker_fills.jsonl`, and `broker_reconciliation.json/md`; model-governed runs record model version/deployment context; monitoring writes `monitoring_report.json/md` and `alerts.jsonl`.
+
+End-of-day statement reconciliation can run after execution or as a standalone reconcile-only step. A local smoke statement can be synthesized from internal broker and paper-account artifacts:
+
+```bash
+uv run python -m broker_statement.run_statement synthesize-from-internal \
+  --broker-store-dir /tmp/auto-alpha-demo/broker \
+  --broker-batch-id <APPROVAL_ID> \
+  --paper-account-dir /tmp/auto-alpha-demo/account \
+  --settlement-dir /tmp/auto-alpha-demo/settlement \
+  --output-dir /tmp/auto-alpha-demo/external_statement \
+  --account-id paper_ashare \
+  --broker-name local_simulated \
+  --trade-date 20240104 \
+  --as-of-date 20240104 \
+  --pretty
+
+uv run python -m broker_statement.run_statement import \
+  --source-dir /tmp/auto-alpha-demo/external_statement \
+  --output-dir /tmp/auto-alpha-demo/statement_import \
+  --schema-name generic_broker_statement \
+  --account-id paper_ashare \
+  --broker-name local_simulated \
+  --trade-date 20240104 \
+  --as-of-date 20240104 \
+  --pretty
+
+uv run python -m reconciliation_center.run_reconcile eod \
+  --statement-dir /tmp/auto-alpha-demo/statement_import \
+  --broker-store-dir /tmp/auto-alpha-demo/broker \
+  --broker-batch-id <APPROVAL_ID> \
+  --paper-account-dir /tmp/auto-alpha-demo/account \
+  --settlement-dir /tmp/auto-alpha-demo/settlement \
+  --output-dir /tmp/auto-alpha-demo/eod_reconciliation \
+  --account-id paper_ashare \
+  --trade-date 20240104 \
+  --as-of-date 20240104 \
+  --create-adjustment-proposals \
+  --pretty
+```
+
+Operations can run only reconciliation without generating orders:
+
+```bash
+uv run python -m operations.run_daily \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --approval-store-dir /tmp/auto-alpha-demo/approvals \
+  --paper-account-dir /tmp/auto-alpha-demo/account \
+  --output-dir /tmp/auto-alpha-demo/production_reconcile_only \
+  --orders-dir /tmp/auto-alpha-demo/daily_orders \
+  --reconcile-only \
+  --run-eod-reconciliation \
+  --broker-statement-dir /tmp/auto-alpha-demo/statement_import \
+  --eod-reconciliation-dir /tmp/auto-alpha-demo/production_reconcile_only/eod_reconciliation \
+  --create-adjustment-proposals \
+  --create-adjustment-approval \
+  --pretty
+```
 
 To export generic file instructions without local fills:
 
@@ -756,8 +820,8 @@ Current PIT boundaries:
 
 - Tushare HTTP provider, production sync scaffolding, offline fake smoke, gated online smoke, permission/rate diagnostics, audit summary, incremental recovery checks, and baseline comparison are available; production use still requires real token/quota operation, real full-market performance runs, and more provider pairs.
 - Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
-- Local daily simulation supports A-share constraints, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, settlement-aware paper accounting, lot cost, realized PnL, NAV reconciliation, and execution quality reports; future work should add finer real-world matching, minute-level volume modeling, and real broker statement reconciliation.
+- Local daily simulation supports A-share constraints, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, settlement-aware paper accounting, lot cost, realized PnL, NAV reconciliation, generic statement import, external account mirroring, EOD break management, and execution quality reports; future work should add finer real-world matching, minute-level volume modeling, verified real broker statement mappings, and real broker connectivity.
 - Local formula search, batch formula evaluation, formula corpus construction, offline AlphaGPT supervised pretraining, and a first neural-guided policy-search path are available; future work should add stronger reinforcement learning, larger offline corpora, more operators, GPU performance tuning, and broader stability validation.
 - Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.
 - One-click research suites now provide local walk-forward, promotion gates, model registry records, lifecycle review packages, active deployment state, and rollback artifacts; daily operations can require an active governed model. Future work should add richer lifecycle policies and external review workflow integrations.
-- Broker adapter, file instructions, settlement profiles, and account ledger are local only. No real broker integration, credential handling, network submission, verified QMT/broker file compatibility, or tax reporting interface is implemented.
+- Broker adapter, file instructions, broker statement import, settlement profiles, EOD reconciliation, and account ledger are local only. No real broker integration, credential handling, network submission, verified QMT/broker file compatibility, or tax reporting interface is implemented.

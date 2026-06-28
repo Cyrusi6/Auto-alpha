@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
@@ -38,6 +39,7 @@ class LocalPaperAccount:
         self.realized_pnl_path = self.root_dir / "realized_pnl.jsonl"
         self.account_nav_path = self.root_dir / "account_nav.jsonl"
         self.account_performance_report_path = self.root_dir / "account_performance_report.json"
+        self.adjustment_ledger_path = self.root_dir / "adjustment_ledger.jsonl"
 
     def load_state(self) -> PaperAccountState:
         if not self.state_path.exists():
@@ -68,6 +70,7 @@ class LocalPaperAccount:
             settlement_events=state.settlement_events or state.settlement_ledger,
             realized_pnl_ledger=state.realized_pnl_ledger,
             account_nav=state.account_nav,
+            adjustment_ledger=state.adjustment_ledger,
         )
         self.root_dir.mkdir(parents=True, exist_ok=True)
         write_json_artifact(self.state_path, updated.to_dict(), artifact_type="paper_account_state", producer="paper_account")
@@ -77,6 +80,7 @@ class LocalPaperAccount:
         self.export_corporate_action_ledger(updated)
         self.export_settlement_ledger(updated)
         self.export_settlement_artifacts(updated)
+        self.export_adjustment_ledger(updated)
         self._export_cash_ledger(updated)
         return updated
 
@@ -205,6 +209,7 @@ class LocalPaperAccount:
             settlement_events=state.settlement_events,
             realized_pnl_ledger=state.realized_pnl_ledger,
             account_nav=state.account_nav,
+            adjustment_ledger=state.adjustment_ledger,
             updated_at=_utc_now(),
         )
         if prices:
@@ -321,7 +326,137 @@ class LocalPaperAccount:
             settlement_events=state.settlement_events,
             realized_pnl_ledger=state.realized_pnl_ledger,
             account_nav=state.account_nav,
+            adjustment_ledger=state.adjustment_ledger,
         )
+
+    def apply_adjustments(self, adjustments: Sequence[dict[str, Any]], approval_id: str, trade_date: str) -> tuple[PaperAccountState, list[dict[str, Any]], int]:
+        state = self.load_state()
+        existing_ids = {str(entry.get("adjustment_id") or "") for entry in state.adjustment_ledger}
+        cash = float(state.cash)
+        available_cash = float(state.available_cash if state.available_cash is not None else state.cash)
+        withdrawable_cash = float(state.withdrawable_cash if state.withdrawable_cash is not None else state.cash)
+        positions = dict(state.positions)
+        settlement_events = [dict(entry) for entry in (state.settlement_events or state.settlement_ledger)]
+        position_lots = [dict(entry) for entry in state.position_lots]
+        cash_ledger = list(state.cash_ledger)
+        ledger = list(state.adjustment_ledger)
+        applied: list[dict[str, Any]] = []
+        skipped = 0
+        for adjustment in adjustments:
+            adjustment_id = str(adjustment.get("adjustment_id") or "")
+            if not adjustment_id or adjustment_id in existing_ids:
+                skipped += 1
+                continue
+            existing_ids.add(adjustment_id)
+            adjustment_type = str(adjustment.get("adjustment_type") or "")
+            ts_code = adjustment.get("ts_code")
+            cash_amount = float(adjustment.get("cash_amount", 0.0) or 0.0)
+            share_delta = int(adjustment.get("share_delta", 0) or 0)
+            if adjustment_type == "cash_manual_adjustment" and abs(cash_amount) > 1e-12:
+                cash += cash_amount
+                available_cash += cash_amount
+                withdrawable_cash += cash_amount
+                cash_ledger.append(
+                    PaperCashLedgerEntry(
+                        trade_date=trade_date,
+                        amount=float(cash_amount),
+                        balance=float(cash),
+                        reason="manual_reconciliation_adjustment",
+                        ts_code=None,
+                    )
+                )
+                settlement_events.append(_manual_adjustment_event(state.account_id, adjustment_id, trade_date, None, 0, cash_amount, adjustment))
+            elif adjustment_type == "position_manual_adjustment" and ts_code and share_delta:
+                existing = positions.get(str(ts_code), PaperPosition(ts_code=str(ts_code), shares=0, avg_cost=0.0))
+                new_shares = max(int(existing.shares) + share_delta, 0)
+                positions[str(ts_code)] = PaperPosition(
+                    ts_code=str(ts_code),
+                    shares=new_shares,
+                    avg_cost=float(existing.avg_cost),
+                    market_price=float(existing.market_price),
+                    market_value=float(existing.market_price) * new_shares,
+                    unrealized_pnl=float(existing.unrealized_pnl),
+                    available_shares=max(int(existing.available_shares) + share_delta, 0),
+                    frozen_shares=existing.frozen_shares,
+                    unsettled_buy_shares=existing.unsettled_buy_shares,
+                    pending_sell_shares=existing.pending_sell_shares,
+                    realized_pnl=existing.realized_pnl,
+                    lot_count=existing.lot_count,
+                )
+                settlement_events.append(_manual_adjustment_event(state.account_id, adjustment_id, trade_date, str(ts_code), share_delta, 0.0, adjustment))
+                if share_delta > 0:
+                    position_lots.append(
+                        {
+                            "lot_id": _stable_id("lot_manual", state.account_id, adjustment_id, str(ts_code)),
+                            "account_id": state.account_id,
+                            "ts_code": str(ts_code),
+                            "source_id": adjustment_id,
+                            "source_type": "manual_reconciliation_adjustment",
+                            "open_date": trade_date,
+                            "settle_date": trade_date,
+                            "available_date": trade_date,
+                            "shares_original": int(share_delta),
+                            "shares_remaining": int(share_delta),
+                            "unit_cost": float(existing.avg_cost),
+                            "total_cost": float(existing.avg_cost) * int(share_delta),
+                            "realized_pnl": 0.0,
+                            "status": "open",
+                            "metadata": {"approval_id": approval_id, "adjustment_id": adjustment_id},
+                        }
+                    )
+            entry = {
+                **dict(adjustment),
+                "approval_id": approval_id,
+                "trade_date": trade_date,
+                "applied_at": _utc_now(),
+                "status": "APPLIED",
+            }
+            ledger.append(entry)
+            applied.append(entry)
+        account_nav = list(state.account_nav)
+        if applied:
+            positions_value = sum(float(position.market_value) for position in positions.values())
+            account_nav.append(
+                {
+                    "trade_date": trade_date,
+                    "equity": float(cash + positions_value),
+                    "cash": float(cash),
+                    "positions_value": float(positions_value),
+                    "unsettled_cash": float(state.unsettled_receivable - state.unsettled_payable),
+                    "frozen_cash": float(state.frozen_cash),
+                    "realized_pnl": sum(float(record.get("realized_pnl", 0.0) or 0.0) for record in state.realized_pnl_ledger),
+                    "unrealized_pnl": sum(float(position.unrealized_pnl) for position in positions.values()),
+                    "fees": 0.0,
+                    "taxes": 0.0,
+                    "corporate_action_cash": 0.0,
+                    "daily_return": 0.0,
+                    "source": "manual_reconciliation_adjustment",
+                    "approval_id": approval_id,
+                }
+            )
+        updated = PaperAccountState(
+            account_id=state.account_id,
+            initial_cash=state.initial_cash,
+            cash=cash,
+            positions=positions,
+            cash_ledger=cash_ledger,
+            trade_ledger=state.trade_ledger,
+            corporate_action_ledger=state.corporate_action_ledger,
+            settlement_ledger=settlement_events,
+            snapshots=state.snapshots,
+            available_cash=available_cash,
+            withdrawable_cash=withdrawable_cash,
+            frozen_cash=state.frozen_cash,
+            unsettled_receivable=state.unsettled_receivable,
+            unsettled_payable=state.unsettled_payable,
+            position_lots=position_lots,
+            settlement_events=settlement_events,
+            realized_pnl_ledger=state.realized_pnl_ledger,
+            account_nav=account_nav,
+            adjustment_ledger=ledger,
+            updated_at=_utc_now(),
+        )
+        return self.save_state(updated), applied, skipped
 
     def settle(
         self,
@@ -380,6 +515,7 @@ class LocalPaperAccount:
             settlement_events=state.settlement_events,
             realized_pnl_ledger=state.realized_pnl_ledger,
             account_nav=state.account_nav,
+            adjustment_ledger=state.adjustment_ledger,
             updated_at=_utc_now(),
         )
         return self.save_state(updated)
@@ -415,6 +551,10 @@ class LocalPaperAccount:
         date = _latest_date(state)
         _write_jsonl(self.cash_buckets_path, [update_cash_buckets(state, date).to_dict()])
         _write_jsonl(self.position_availability_path, [entry.to_dict() for entry in update_position_availability(state, date)])
+
+    def export_adjustment_ledger(self, state: PaperAccountState | None = None) -> Path:
+        state = state or self.load_state()
+        return _write_jsonl(self.adjustment_ledger_path, [dict(entry) for entry in state.adjustment_ledger])
 
     def apply_corporate_actions(
         self,
@@ -469,6 +609,7 @@ class LocalPaperAccount:
             settlement_events=state.settlement_events,
             realized_pnl_ledger=state.realized_pnl_ledger,
             account_nav=state.account_nav,
+            adjustment_ledger=state.adjustment_ledger,
             updated_at=state.updated_at,
         )
 
@@ -495,6 +636,7 @@ def _state_from_payload(payload: dict[str, Any]) -> PaperAccountState:
         settlement_events=[dict(entry) for entry in payload.get("settlement_events", payload.get("settlement_ledger", []))],
         realized_pnl_ledger=[dict(entry) for entry in payload.get("realized_pnl_ledger", [])],
         account_nav=[dict(entry) for entry in payload.get("account_nav", [])],
+        adjustment_ledger=[dict(entry) for entry in payload.get("adjustment_ledger", [])],
     )
 
 
@@ -521,6 +663,34 @@ def _fill_key(payload: dict[str, Any]) -> str:
             str(payload.get("status") or ""),
         ]
     )
+
+
+def _manual_adjustment_event(account_id: str, adjustment_id: str, trade_date: str, ts_code: str | None, shares: int, cash_amount: float, adjustment: dict[str, Any]) -> dict[str, Any]:
+    event_id = _stable_id("se_manual", account_id, adjustment_id)
+    return {
+        "settlement_event_id": event_id,
+        "account_id": account_id,
+        "source_type": "manual_reconciliation_adjustment",
+        "source_id": adjustment_id,
+        "trade_date": trade_date,
+        "settle_date": trade_date,
+        "available_date": trade_date,
+        "withdrawable_date": trade_date,
+        "ts_code": ts_code,
+        "side": None,
+        "event_type": "manual_adjustment",
+        "shares": int(shares),
+        "cash_amount": float(cash_amount),
+        "fee_tax": {},
+        "status": "settled",
+        "reason": str(adjustment.get("reason") or "manual_reconciliation_adjustment"),
+        "metadata": dict(adjustment),
+    }
+
+
+def _stable_id(prefix: str, *parts: str) -> str:
+    digest = hashlib.sha256("|".join(str(part) for part in parts).encode("utf-8")).hexdigest()[:24]
+    return f"{prefix}_{digest}"
 
 
 def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> Path:

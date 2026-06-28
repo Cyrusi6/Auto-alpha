@@ -140,3 +140,48 @@ def test_settlement_artifacts_are_registered(tmp_path):
     assert validate_artifact(settlement_events, strict=True).valid is True
     manifest = build_artifact_manifest([settlement_report, settlement_events], root_dir=tmp_path)
     assert {entry.artifact_type for entry in manifest.entries} == {"settlement_report", "settlement_events"}
+
+
+def test_broker_statement_and_eod_artifacts_are_registered(tmp_path):
+    statement_report = tmp_path / "broker_statement_import_report.json"
+    write_json_artifact(
+        statement_report,
+            {
+                "statement_id": "stmt_1",
+                "status": "ok",
+                "record_counts": {"cash": 1},
+                "paths": {"broker_statement_manifest_path": "broker_statement_manifest.json"},
+            },
+            artifact_type="broker_statement_import_report",
+            producer="test",
+    )
+    eod_report = tmp_path / "eod_reconciliation_report.json"
+    write_json_artifact(
+        eod_report,
+        {"statement_id": "stmt_1", "status": "ok", "summary": {"break_count": 0}},
+        artifact_type="eod_reconciliation_report",
+        producer="test",
+    )
+    breaks = tmp_path / "reconciliation_breaks.jsonl"
+    write_jsonl_artifact(
+        breaks,
+        [{"break_id": "brk_1", "break_type": "cash_balance_mismatch", "severity": "error"}],
+        artifact_type="reconciliation_breaks",
+        producer="test",
+    )
+    proposals = tmp_path / "adjustment_proposals.jsonl"
+    write_jsonl_artifact(
+        proposals,
+        [{"adjustment_id": "adj_1", "adjustment_type": "cash_manual_adjustment"}],
+        artifact_type="adjustment_proposals",
+        producer="test",
+    )
+
+    assert validate_artifact(statement_report, strict=True).valid is True
+    assert validate_artifact(eod_report, strict=True).valid is True
+    assert validate_artifact(breaks, strict=True).valid is True
+    assert validate_artifact(proposals, strict=True).valid is True
+    manifest = build_artifact_manifest([statement_report, eod_report, breaks, proposals], root_dir=tmp_path)
+    assert {"broker_statement_import_report", "eod_reconciliation_report", "reconciliation_breaks", "adjustment_proposals"} <= {
+        entry.artifact_type for entry in manifest.entries
+    }

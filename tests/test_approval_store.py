@@ -88,3 +88,33 @@ def test_approval_store_loads_legacy_order_batch_without_lifecycle_fields(tmp_pa
     assert batch.approval_type == ApprovalType.order_batch
     assert batch.model_version_id is None
     assert batch.lifecycle_summary == {}
+
+
+def test_approval_store_account_reconciliation_adjustment_fields_roundtrip(tmp_path):
+    store = LocalApprovalStore(tmp_path)
+    batch = ApprovalBatch(
+        approval_id="approval_adjustment",
+        created_at="2026-06-27T00:00:00Z",
+        factor_id="account_reconciliation",
+        factor_type="account_adjustment",
+        rebalance_date="20240104",
+        portfolio_method="eod_reconciliation",
+        orders=[],
+        approval_type=ApprovalType.account_reconciliation_adjustment,
+        reconciliation_report_path="/tmp/eod_reconciliation_report.json",
+        adjustment_proposals_path="/tmp/adjustment_proposals.jsonl",
+        adjustment_summary={"proposal_count": 1, "cash_adjustment": 100.0},
+        eod_reconciliation_status="error",
+        unresolved_break_count=1,
+        material_break_count=1,
+    )
+
+    store.save_batch(batch)
+    approved = store.approve("approval_adjustment", "reviewer", "ok")
+    loaded = store.load_batch("approval_adjustment")
+
+    assert approved.approval_type == ApprovalType.account_reconciliation_adjustment
+    assert loaded.reconciliation_report_path == "/tmp/eod_reconciliation_report.json"
+    assert loaded.adjustment_summary["cash_adjustment"] == 100.0
+    assert loaded.material_break_count == 1
+    assert loaded.status == ApprovalStatus.approved

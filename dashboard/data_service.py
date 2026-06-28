@@ -397,6 +397,99 @@ class AshareDashboardService:
                 return payload
         return {}
 
+    def load_broker_statement_manifest(self) -> dict[str, Any]:
+        for path in self._statement_artifact_candidates("broker_statement_manifest.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_broker_statement_import_report(self) -> dict[str, Any]:
+        for path in self._statement_artifact_candidates("broker_statement_import_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_broker_statement_parse_issues(self) -> pd.DataFrame:
+        for path in self._statement_artifact_candidates("broker_statement_parse_issues.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_broker_statement_validation_report(self) -> dict[str, Any]:
+        for path in self._statement_artifact_candidates("broker_statement_validation_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_normalized_external(self, dataset: str) -> pd.DataFrame:
+        filename = f"normalized_external_{dataset}.jsonl"
+        for path in self._statement_artifact_candidates(filename):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_eod_reconciliation_report(self) -> dict[str, Any]:
+        for path in self._reconciliation_artifact_candidates("eod_reconciliation_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_reconciliation_breaks(self) -> pd.DataFrame:
+        for path in self._reconciliation_artifact_candidates("reconciliation_breaks.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_external_account_mirror(self) -> dict[str, Any]:
+        for path in self._reconciliation_artifact_candidates("external_account_mirror.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_external_mirror_table(self, name: str) -> pd.DataFrame:
+        filename = f"external_{name}_mirror.jsonl"
+        for path in self._reconciliation_artifact_candidates(filename):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_adjustment_proposals(self) -> pd.DataFrame:
+        for path in self._reconciliation_artifact_candidates("adjustment_proposals.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_adjustment_proposal_batch(self) -> dict[str, Any]:
+        for path in self._reconciliation_artifact_candidates("adjustment_proposal_batch.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_adjustment_application_result(self) -> dict[str, Any]:
+        for path in self._reconciliation_artifact_candidates("adjustment_application_result.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_adjustment_ledger(self) -> pd.DataFrame:
+        for path in self._account_candidates("adjustment_ledger.jsonl") + self._reconciliation_artifact_candidates("adjustment_ledger.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
     def load_production_run(self) -> dict[str, Any]:
         for path in self._production_candidates("production_run.json"):
             payload = self._read_json(path)
@@ -1139,6 +1232,32 @@ class AshareDashboardService:
             root / "production_execute_replay" / "broker" / filename,
             root / "broker" / filename,
             root / "broker_file" / "outbox" / filename,
+        ]
+
+    def _statement_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            root / "statement_import_zero" / filename,
+            root / "statement_import_mismatch" / filename,
+            root / "statement_import" / filename,
+            root / "external_statement_zero" / filename,
+            root / "external_statement_mismatch" / filename,
+            root / "production_reconcile_only" / "eod_reconciliation" / "statement_import" / filename,
+            root / "production_execute" / "eod_reconciliation" / "statement_import" / filename,
+        ]
+
+    def _reconciliation_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            root / "eod_reconciliation_zero" / filename,
+            root / "eod_reconciliation_mismatch" / filename,
+            root / "eod_adjustment_approval" / filename,
+            root / "eod_adjustment_apply" / filename,
+            root / "operations_eod_reconciliation" / filename,
+            root / "production_reconcile_only" / filename,
+            root / "production_reconcile_only" / "eod_reconciliation" / filename,
+            root / "production_execute" / "eod_reconciliation" / filename,
+            root / "monitoring" / filename,
         ]
 
     @staticmethod

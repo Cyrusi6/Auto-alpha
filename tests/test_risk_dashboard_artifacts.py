@@ -155,6 +155,33 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
     (model_lifecycle_dir / "factor_health_checks.jsonl").write_text('{"name":"recent_coverage","passed":true}\n', encoding="utf-8")
     (model_lifecycle_dir / "lifecycle_decisions.jsonl").write_text('{"factor_id":"factor_x","recommended_action":"approve_for_activation"}\n', encoding="utf-8")
     (model_lifecycle_dir / "model_review_package.json").write_text('{"model_version_id":"model_1","factor_id":"factor_x"}', encoding="utf-8")
+    statement_dir = tmp_path / "statement_import_mismatch"
+    statement_dir.mkdir()
+    (statement_dir / "broker_statement_manifest.json").write_text(
+        '{"statement_id":"stmt_1","account_id":"paper_ashare","schema_name":"generic_broker_statement","record_counts":{"cash":1}}',
+        encoding="utf-8",
+    )
+    (statement_dir / "broker_statement_import_report.json").write_text(
+        '{"statement_id":"stmt_1","status":"ok","manifest":{"record_counts":{"cash":1}},"validation":{"error_count":0,"warning_count":0}}',
+        encoding="utf-8",
+    )
+    (statement_dir / "broker_statement_parse_issues.jsonl").write_text('{"severity":"warning","code":"sample","message":"sample"}\n', encoding="utf-8")
+    (statement_dir / "broker_statement_validation_report.json").write_text('{"statement_id":"stmt_1","issues":[]}', encoding="utf-8")
+    (statement_dir / "normalized_external_cash.jsonl").write_text('{"account_id":"paper_ashare","cash_balance":100.0}\n', encoding="utf-8")
+    reconciliation_dir = tmp_path / "eod_reconciliation_mismatch"
+    reconciliation_dir.mkdir()
+    (reconciliation_dir / "eod_reconciliation_report.json").write_text(
+        '{"statement_id":"stmt_1","status":"error","summary":{"break_count":1,"cash_difference":100.0}}',
+        encoding="utf-8",
+    )
+    (reconciliation_dir / "reconciliation_breaks.jsonl").write_text('{"break_id":"brk_1","break_type":"cash_balance_mismatch","severity":"error"}\n', encoding="utf-8")
+    (reconciliation_dir / "external_account_mirror.json").write_text('{"statement_id":"stmt_1","account_id":"paper_ashare"}', encoding="utf-8")
+    (reconciliation_dir / "external_cash_mirror.jsonl").write_text('{"account_id":"paper_ashare","cash_balance":100.0}\n', encoding="utf-8")
+    (reconciliation_dir / "adjustment_proposals.jsonl").write_text('{"adjustment_id":"adj_1","adjustment_type":"cash_manual_adjustment"}\n', encoding="utf-8")
+    (reconciliation_dir / "adjustment_proposal_batch.json").write_text('{"adjustment_batch_id":"batch_1","proposals":[]}', encoding="utf-8")
+    (reconciliation_dir / "adjustment_application_result.json").write_text('{"approval_id":"appr_1","applied_count":1}', encoding="utf-8")
+    (tmp_path / "account").mkdir(exist_ok=True)
+    (tmp_path / "account" / "adjustment_ledger.jsonl").write_text('{"adjustment_id":"adj_1","approval_id":"appr_1"}\n', encoding="utf-8")
     service = AshareDashboardService(
         DashboardConfig(
             data_dir=tmp_path / "data",
@@ -218,6 +245,19 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
     assert service.load_ci_report()["status"] == "passed"
     assert service.load_formula_corpus_stats()["valid_records"] == 2
     assert not service.load_formula_corpus().empty
+    assert service.load_broker_statement_manifest()["statement_id"] == "stmt_1"
+    assert service.load_broker_statement_import_report()["status"] == "ok"
+    assert not service.load_broker_statement_parse_issues().empty
+    assert service.load_broker_statement_validation_report()["statement_id"] == "stmt_1"
+    assert not service.load_normalized_external("cash").empty
+    assert service.load_eod_reconciliation_report()["status"] == "error"
+    assert not service.load_reconciliation_breaks().empty
+    assert service.load_external_account_mirror()["statement_id"] == "stmt_1"
+    assert not service.load_external_mirror_table("cash").empty
+    assert not service.load_adjustment_proposals().empty
+    assert service.load_adjustment_proposal_batch()["adjustment_batch_id"] == "batch_1"
+    assert service.load_adjustment_application_result()["approval_id"] == "appr_1"
+    assert not service.load_adjustment_ledger().empty
     assert service.load_formula_batch_eval_result()["batch_id"] == "b1"
     assert not service.load_formula_eval_results().empty
     assert service.load_alphagpt_pretrain_result()["status"] == "success"

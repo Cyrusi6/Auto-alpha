@@ -16,6 +16,7 @@ from .checks import (
     check_broker_file_outbox,
     check_broker_idempotency,
     check_broker_reconciliation,
+    check_broker_statement_import,
     check_broker_rejected_orders,
     check_baseline_compare,
     check_open_broker_orders,
@@ -25,7 +26,13 @@ from .checks import (
     check_data_freshness,
     check_corporate_action_ledger,
     check_corporate_action_report,
+    check_adjustment_application,
+    check_adjustment_proposals,
     check_execution_quality,
+    check_eod_reconciliation,
+    check_external_cash_difference,
+    check_external_nav_difference,
+    check_external_position_difference,
     check_factor_risk_concentration,
     check_factor_drift,
     check_field_coverage,
@@ -58,7 +65,10 @@ from .checks import (
     check_feature_cutoff_policy,
     check_settlement_fee_tax,
     check_settlement_report,
+    check_statement_staleness,
     check_unfilled_orders,
+    check_unresolved_reconciliation_breaks,
+    check_material_reconciliation_breaks,
 )
 from .report import build_monitoring_report, write_monitoring_report
 
@@ -116,6 +126,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--account-reconciliation-report-path")
     parser.add_argument("--account-performance-report-path")
     parser.add_argument("--fee-tax-report-path")
+    parser.add_argument("--broker-statement-manifest-path")
+    parser.add_argument("--broker-statement-import-report-path")
+    parser.add_argument("--eod-reconciliation-report-path")
+    parser.add_argument("--reconciliation-breaks-path")
+    parser.add_argument("--external-account-mirror-path")
+    parser.add_argument("--adjustment-proposals-path")
+    parser.add_argument("--adjustment-application-result-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -148,6 +165,16 @@ def main(argv: list[str] | None = None) -> int:
             "broker_file_outbox",
             lambda: check_broker_file_outbox(args.broker_outbox_manifest_path or _default_broker_outbox_manifest(args.orders_dir)),
         ),
+        ("broker_statement_import", lambda: check_broker_statement_import(args.broker_statement_import_report_path)),
+        ("statement_staleness", lambda: check_statement_staleness(args.broker_statement_manifest_path, args.as_of_date)),
+        ("eod_reconciliation", lambda: check_eod_reconciliation(args.eod_reconciliation_report_path)),
+        ("unresolved_reconciliation_breaks", lambda: check_unresolved_reconciliation_breaks(args.reconciliation_breaks_path)),
+        ("material_reconciliation_breaks", lambda: check_material_reconciliation_breaks(args.reconciliation_breaks_path)),
+        ("external_cash_difference", lambda: check_external_cash_difference(args.eod_reconciliation_report_path)),
+        ("external_position_difference", lambda: check_external_position_difference(args.eod_reconciliation_report_path)),
+        ("external_nav_difference", lambda: check_external_nav_difference(args.eod_reconciliation_report_path)),
+        ("adjustment_proposals", lambda: check_adjustment_proposals(args.adjustment_proposals_path)),
+        ("adjustment_application", lambda: check_adjustment_application(args.adjustment_application_result_path)),
         ("data_source_smoke", lambda: check_data_source_smoke(args.data_source_smoke_report_path)),
         ("provider_readiness", lambda: check_provider_readiness(args.data_source_smoke_report_path)),
         ("field_coverage", lambda: check_field_coverage(args.field_coverage_path)),

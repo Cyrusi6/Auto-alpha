@@ -109,6 +109,19 @@ def _build_parser() -> argparse.ArgumentParser:
     recon.add_argument("--as-of-date", required=True)
     recon.add_argument("--settlement-dir")
     recon.add_argument("--pretty", action="store_true", default=argparse.SUPPRESS)
+
+    apply_adjustments = sub.add_parser("apply-adjustments")
+    apply_adjustments.add_argument("--adjustments-path", required=True)
+    apply_adjustments.add_argument("--approval-id", required=True)
+    apply_adjustments.add_argument("--trade-date", required=True)
+    apply_adjustments.add_argument("--pretty", action="store_true", default=argparse.SUPPRESS)
+
+    show_adjustments = sub.add_parser("show-adjustments")
+    show_adjustments.add_argument("--pretty", action="store_true", default=argparse.SUPPRESS)
+
+    reconcile_external = sub.add_parser("reconcile-external")
+    reconcile_external.add_argument("--eod-reconciliation-report-path", required=True)
+    reconcile_external.add_argument("--pretty", action="store_true", default=argparse.SUPPRESS)
     return parser
 
 
@@ -247,6 +260,22 @@ def main(argv: list[str] | None = None) -> int:
 
                 settlement_paths = write_settlement_report(account.load_state(), args.settlement_dir, args.as_of_date)
             payload = report | {"settlement_paths": settlement_paths}
+        elif args.command == "apply-adjustments":
+            from corporate_actions.report import read_jsonl
+
+            state, applied, skipped = account.apply_adjustments(read_jsonl(args.adjustments_path), args.approval_id, args.trade_date)
+            payload = {
+                "account_id": state.account_id,
+                "cash": state.cash,
+                "positions": len(state.positions),
+                "applied_count": len(applied),
+                "skipped_duplicate_count": skipped,
+                "adjustment_ledger_path": str(account.adjustment_ledger_path),
+            }
+        elif args.command == "show-adjustments":
+            payload = {"adjustment_ledger": account.load_state().adjustment_ledger, "adjustment_ledger_path": str(account.adjustment_ledger_path)}
+        elif args.command == "reconcile-external":
+            payload = json.loads(Path(args.eod_reconciliation_report_path).read_text(encoding="utf-8"))
         else:  # pragma: no cover
             raise ValueError(f"unsupported command: {args.command}")
     except Exception as exc:

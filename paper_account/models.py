@@ -124,6 +124,7 @@ class PaperAccountState:
     settlement_events: list[dict[str, Any]] = field(default_factory=list)
     realized_pnl_ledger: list[dict[str, Any]] = field(default_factory=list)
     account_nav: list[dict[str, Any]] = field(default_factory=list)
+    adjustment_ledger: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -146,4 +147,5 @@ class PaperAccountState:
             "settlement_events": [dict(entry) for entry in self.settlement_events],
             "realized_pnl_ledger": [dict(entry) for entry in self.realized_pnl_ledger],
             "account_nav": [dict(entry) for entry in self.account_nav],
+            "adjustment_ledger": [dict(entry) for entry in self.adjustment_ledger],
         }

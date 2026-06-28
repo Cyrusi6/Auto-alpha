@@ -16,6 +16,7 @@ class ApprovalStatus:
 class ApprovalType:
     order_batch = "order_batch"
     model_lifecycle = "model_lifecycle"
+    account_reconciliation_adjustment = "account_reconciliation_adjustment"
 
 
 @dataclass(frozen=True)
@@ -61,6 +62,12 @@ class ApprovalBatch:
     model_lifecycle_action: str | None = None
     model_review_package_path: str | None = None
     lifecycle_summary: dict[str, Any] = field(default_factory=dict)
+    reconciliation_report_path: str | None = None
+    adjustment_proposals_path: str | None = None
+    adjustment_summary: dict[str, Any] = field(default_factory=dict)
+    eod_reconciliation_status: str | None = None
+    unresolved_break_count: int = 0
+    material_break_count: int = 0
     status: str = ApprovalStatus.pending
     decision: ApprovalDecision | None = None
     metadata: dict[str, Any] = field(default_factory=dict)

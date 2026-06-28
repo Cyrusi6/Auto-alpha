@@ -103,6 +103,10 @@ Planned sync splits large daily datasets by date windows and splits index consti
 
 `broker_adapter/` defines the local broker contract. It stores broker order requests, statuses, events, fills, batch summaries, and reconciliation reports in JSON/JSONL. `SimulatedBrokerAdapter` applies local A-share trading rules to approved child orders and supports idempotent submit, cancel, replace, status, fills, and reconciliation. `FileInstructionBrokerAdapter` writes generic outbox CSV/JSONL/manifest files and can import optional inbox statuses/fills. Its `qmt_skeleton` mode is only a field-mapping skeleton and does not claim real QMT or broker file compatibility.
 
+`broker_statement/` imports local generic broker statement files into normalized external orders, trades, fills, positions, cash, settlement, and corporate-action mirrors. It writes source hashes, import reports, parse issues, validation reports, and synthetic statements for local smoke tests. Its QMT mode is only a configurable skeleton and requires manual real-file verification.
+
+`reconciliation_center/` performs end-of-day reconciliation between external statement mirrors, broker-adapter fills/events, paper-account ledgers, settlement artifacts, and corporate-action ledgers. It creates structured cash, position, fill, fee, settlement, corporate-action, NAV, stale-statement, and duplicate-id breaks, then can generate approval-gated adjustment proposals without mutating the paper account until explicitly approved.
+
 `settlement_engine/` provides local paper clearing and account accounting. It turns trade fills and corporate action applications into deterministic settlement events, applies settlement profiles such as `cn_ashare_paper_default`, tracks available and withdrawable cash, unsettled receivable/payable, available shares, position lots, realized PnL, unrealized PnL, fee/tax breakdown, account NAV, and reconciliation reports. The profiles are local simulation assumptions, not real broker clearing rules or tax advice.
 
 ## Factor Store And Experiments
@@ -177,7 +181,7 @@ With `--portfolio-method risk_aware`, target positions include optimized weight,
 - `approvals/<approval_id>.json`
 - `approval_log.jsonl`
 
-Batches move through `pending`, `approved`, `rejected`, and `expired`. Approved batches cannot be rejected later, and every decision is logged.
+Batches move through `pending`, `approved`, `rejected`, and `expired`. Approved batches cannot be rejected later, and every decision is logged. Approval types include order batches, model lifecycle activation, and account reconciliation adjustments.
 
 `paper_account/` maintains a persistent local paper ledger. It writes:
 
@@ -195,10 +199,13 @@ Filled and partial fills update cash and positions. Rejected fills are recorded 
 2. Generate target positions and proposed orders with `strategy_manager`.
 3. If approval is required, write a pending approval batch and stop.
 4. After approval, execute local paper fills, update the paper account, and write `production_run.json` plus `production_run.md`.
+5. Optionally import a broker statement, run EOD reconciliation, create adjustment proposals, create an `account_reconciliation_adjustment` approval, and apply approved manual adjustments idempotently.
 
 Capacity-aware daily runs store parent and child order schedules inside approval batches. Approved child orders can keep the default paper simulator path, route through the simulated broker state machine, or export generic file instructions. Broker-enabled runs write `broker_report.json/md`, `broker_orders.jsonl`, `broker_events.jsonl`, `broker_fills.jsonl`, and `broker_reconciliation.json/md`. Repeated execution of the same approved child orders is idempotent at the broker order and paper-account fill layers.
 
 Settlement-aware daily runs can settle pending events before trading, precheck orders against available cash and available shares, apply approved broker fills into settlement events, advance settlement through a chosen date, and write `settlement_report.json/md`, `settlement_events.jsonl`, `cash_buckets.jsonl`, `position_lots.jsonl`, `position_availability.jsonl`, `realized_pnl.jsonl`, `account_nav.jsonl`, `account_performance_report.json`, `account_reconciliation_report.json`, and `fee_tax_report.json`.
+
+EOD reconciliation writes `eod_reconciliation_report.json/md`, `reconciliation_breaks.jsonl`, `external_account_mirror.json`, external mirror JSONL files, `adjustment_proposals.jsonl`, optional `adjustment_proposal_batch.json`, and optional `adjustment_application_result.json/md`. The external account mirror never mutates internal paper state; approved adjustments are applied through `paper_account` with an idempotent `adjustment_ledger.jsonl`.
 
 `model_registry/` stores governed model versions and active deployments:
 
@@ -232,6 +239,11 @@ Settlement-aware daily runs can settle pending events before trading, precheck o
 - broker reconciliation issues
 - open, rejected, and idempotent replayed broker orders
 - file instruction outbox status
+- broker statement import and validation status
+- external statement staleness
+- unresolved/material EOD reconciliation breaks
+- cash, position, NAV, fill, fee, settlement, and corporate-action external differences
+- pending/applied account reconciliation adjustments
 - pending or failed settlement events
 - cash/share availability and lot reconciliation
 - realized/unrealized PnL and NAV reconciliation
@@ -313,7 +325,7 @@ GitHub Actions are split by risk boundary:
 
 ## Dashboard
 
-`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, data-source smoke reports, provider probes, field coverage, audit summaries, incremental recovery reports, baseline summaries, matrix cache metadata, matrix validation reports, benchmark reports, data-source comparison reports, factor store, factor reports, batch reports, search reports, neural search reports, neural training history, checkpoint lists, suite reports, artifact catalog, promotion decisions, model registry reports, model deployments, lifecycle events, factor lifecycle reports, health checks, review packages, lineage graphs, risk reports, risk model reports, risk exposures, risk decomposition, return attribution, capacity reports, execution plans, parent orders, child orders, child fills, execution quality, broker reports, broker order states, broker events, broker fills, reconciliation reports, file outbox manifests, settlement reports, cash buckets, position lots, position availability, realized PnL, account NAV, fee/tax reports, optimization results, backtest outputs, target positions, orders, paper fills, production runs, approvals, paper account state, account ledgers, monitoring reports, artifact schema validation reports, release gate reports, release manifests, dependency/module/CLI inventories, local CI reports, and alerts. Missing artifacts produce empty states instead of errors.
+`dashboard/` is a Streamlit artifact viewer. It reads local data, sync plans, request audit, dataset statistics, snapshot summaries, data-source smoke reports, provider probes, field coverage, audit summaries, incremental recovery reports, baseline summaries, matrix cache metadata, matrix validation reports, benchmark reports, data-source comparison reports, factor store, factor reports, batch reports, search reports, neural search reports, neural training history, checkpoint lists, suite reports, artifact catalog, promotion decisions, model registry reports, model deployments, lifecycle events, factor lifecycle reports, health checks, review packages, lineage graphs, risk reports, risk model reports, risk exposures, risk decomposition, return attribution, capacity reports, execution plans, parent orders, child orders, child fills, execution quality, broker reports, broker order states, broker events, broker fills, broker reconciliation reports, file outbox manifests, broker statement imports, external account mirrors, EOD reconciliation breaks, adjustment proposals/applications, settlement reports, cash buckets, position lots, position availability, realized PnL, account NAV, fee/tax reports, optimization results, backtest outputs, target positions, orders, paper fills, production runs, approvals, paper account state, account ledgers, monitoring reports, artifact schema validation reports, release gate reports, release manifests, dependency/module/CLI inventories, local CI reports, and alerts. Missing artifacts produce empty states instead of errors.
 
 ## Research Suite Outputs
 
@@ -331,4 +343,4 @@ When lifecycle governance is enabled, it also indexes model registry files, life
 
 ## Development Notes
 
-The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton plus a data-source smoke validator for offline fake Tushare scenarios and gated real-token diagnostics. Artifact schema versioning, release gate reports, local CI, and package build artifacts are available. Matrix cache, local benchmark, and data-source comparison skeletons are available. Formula corpus construction, matrix-aware batch formula evaluation, and offline AlphaGPT pretraining are available. Barra-like risk model v1 and benchmark-aware portfolio optimization now have a local implementation. Capacity-aware execution planning, broker adapter state, file instruction export, paper child-order simulation, settlement-aware paper accounting, lot-cost PnL, and NAV reconciliation are available. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Daily production now has local approvals, model registry activation gates, paper account ledger, settlement reports, broker reconciliation, and monitoring reports. Real full-market token/quota operation, full-market stress runs, incremental matrix refresh, richer provider comparisons, production Barra definitions, robust full-market covariance calibration, a professional optimizer, stronger reinforcement learning, larger offline corpora, richer lifecycle policies, external review workflow integrations, broader neural training stability validation, finer matching realism, minute-level volume modeling, real broker statement reconciliation, verified broker file mappings, and real broker connectivity are future work.
+The platform is local-first and deterministic by default. Production sync now has a local plan/cache/audit/resume/snapshot/statistics skeleton plus a data-source smoke validator for offline fake Tushare scenarios and gated real-token diagnostics. Artifact schema versioning, release gate reports, local CI, and package build artifacts are available. Matrix cache, local benchmark, and data-source comparison skeletons are available. Formula corpus construction, matrix-aware batch formula evaluation, and offline AlphaGPT pretraining are available. Barra-like risk model v1 and benchmark-aware portfolio optimization now have a local implementation. Capacity-aware execution planning, broker adapter state, file instruction export, paper child-order simulation, settlement-aware paper accounting, lot-cost PnL, NAV reconciliation, broker statement import, external account mirroring, and EOD break management are available. Neural-guided formula search now has a local AlphaGPT policy-search implementation. Daily production now has local approvals, model registry activation gates, paper account ledger, settlement reports, broker reconciliation, EOD reconciliation, and monitoring reports. Real full-market token/quota operation, full-market stress runs, incremental matrix refresh, richer provider comparisons, production Barra definitions, robust full-market covariance calibration, a professional optimizer, stronger reinforcement learning, larger offline corpora, richer lifecycle policies, external review workflow integrations, broader neural training stability validation, finer matching realism, minute-level volume modeling, verified broker statement mappings, and real broker connectivity are future work.

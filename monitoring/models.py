@@ -36,6 +36,14 @@ class MonitoringReport:
         settlement = self.checks.get("settlement_report", {}) if isinstance(self.checks, dict) else {}
         account_reconciliation = self.checks.get("account_reconciliation", {}) if isinstance(self.checks, dict) else {}
         fee_tax = self.checks.get("settlement_fee_tax", {}) if isinstance(self.checks, dict) else {}
+        statement_import = self.checks.get("broker_statement_import", {}) if isinstance(self.checks, dict) else {}
+        statement_staleness = self.checks.get("statement_staleness", {}) if isinstance(self.checks, dict) else {}
+        eod = self.checks.get("eod_reconciliation", {}) if isinstance(self.checks, dict) else {}
+        cash_diff = self.checks.get("external_cash_difference", {}) if isinstance(self.checks, dict) else {}
+        position_diff = self.checks.get("external_position_difference", {}) if isinstance(self.checks, dict) else {}
+        nav_diff = self.checks.get("external_nav_difference", {}) if isinstance(self.checks, dict) else {}
+        proposals = self.checks.get("adjustment_proposals", {}) if isinstance(self.checks, dict) else {}
+        application = self.checks.get("adjustment_application", {}) if isinstance(self.checks, dict) else {}
         return {
             "created_at": self.created_at,
             "as_of_date": self.as_of_date,
@@ -62,4 +70,20 @@ class MonitoringReport:
             "settlement_nav_difference": float(settlement.get("nav_difference", 0.0) or 0.0) if isinstance(settlement, dict) else 0.0,
             "account_reconciliation_error_count": int(account_reconciliation.get("error_count", 0) or 0) if isinstance(account_reconciliation, dict) else 0,
             "total_fee_tax": float(fee_tax.get("total_fee_tax", 0.0) or 0.0) if isinstance(fee_tax, dict) else 0.0,
+            "broker_statement_imported": bool(statement_import.get("broker_statement_imported", False)) if isinstance(statement_import, dict) else False,
+            "broker_statement_parse_error_count": int(statement_import.get("broker_statement_parse_error_count", 0) or 0) if isinstance(statement_import, dict) else 0,
+            "statement_stale": bool(statement_staleness.get("statement_stale", False)) if isinstance(statement_staleness, dict) else False,
+            "eod_reconciliation_status": str(eod.get("eod_reconciliation_status", "")) if isinstance(eod, dict) else "",
+            "reconciliation_break_count": int(eod.get("reconciliation_break_count", 0) or 0) if isinstance(eod, dict) else 0,
+            "material_break_count": int(eod.get("material_break_count", 0) or 0) if isinstance(eod, dict) else 0,
+            "unresolved_break_count": int(eod.get("unresolved_break_count", 0) or 0) if isinstance(eod, dict) else 0,
+            "external_cash_difference": float(cash_diff.get("external_cash_difference", 0.0) or 0.0) if isinstance(cash_diff, dict) else 0.0,
+            "external_position_difference": float(position_diff.get("external_position_difference", 0.0) or 0.0) if isinstance(position_diff, dict) else 0.0,
+            "external_nav_difference": float(nav_diff.get("external_nav_difference", 0.0) or 0.0) if isinstance(nav_diff, dict) else 0.0,
+            "unmatched_external_fill_count": int(eod.get("unmatched_external_fill_count", 0) or 0) if isinstance(eod, dict) else 0,
+            "unmatched_internal_fill_count": int(eod.get("unmatched_internal_fill_count", 0) or 0) if isinstance(eod, dict) else 0,
+            "fee_tax_difference": float(eod.get("fee_tax_difference", 0.0) or 0.0) if isinstance(eod, dict) else 0.0,
+            "adjustment_proposal_count": int(proposals.get("adjustment_proposal_count", 0) or 0) if isinstance(proposals, dict) else 0,
+            "adjustment_application_count": int(application.get("adjustment_application_count", 0) or 0) if isinstance(application, dict) else 0,
+            "adjustment_pending_approval_count": int(proposals.get("adjustment_pending_approval_count", 0) or 0) if isinstance(proposals, dict) else 0,
         }
