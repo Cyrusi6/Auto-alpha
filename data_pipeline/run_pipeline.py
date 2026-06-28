@@ -51,6 +51,20 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--universe", help="Override the configured universe.")
     parser.add_argument("--index-codes", help="Comma-separated index codes for index_members sync.")
     parser.add_argument("--security-list-statuses", help="Comma-separated Tushare stock_basic list_status values, e.g. L,D,P.")
+    parser.add_argument("--include-corporate-actions", dest="include_corporate_actions", action="store_true")
+    parser.add_argument("--no-corporate-actions", dest="include_corporate_actions", action="store_false")
+    parser.set_defaults(include_corporate_actions=None)
+    parser.add_argument(
+        "--corporate-action-query-date-field",
+        choices=("ex_date", "ann_date", "record_date", "imp_ann_date"),
+        help="Date field used for Tushare dividend queries.",
+    )
+    parser.add_argument("--corporate-action-apply-statuses", help="Comma-separated implemented statuses.")
+    parser.add_argument(
+        "--corporate-action-cash-field",
+        choices=("cash_div", "cash_div_tax"),
+        help="Cash dividend field used by downstream accounting.",
+    )
     parser.add_argument("--chunk-days", type=int, default=30, help="Date chunk size for planned sync jobs.")
     parser.add_argument(
         "--datasets",
@@ -110,6 +124,8 @@ def main(argv: list[str] | None = None) -> int:
         args = parser.parse_args(argv)
         config = _config_from_args(args)
         selected_datasets = _parse_datasets(args.datasets)
+        if selected_datasets is None and not config.include_corporate_actions:
+            selected_datasets = [dataset for dataset in ASHARE_DATASETS if dataset != "corporate_actions"]
     except SystemExit as exc:
         return int(exc.code)
     except ValueError as exc:
@@ -198,6 +214,16 @@ def _config_from_args(args: argparse.Namespace) -> AShareDataConfig:
         overrides["security_list_statuses"] = tuple(
             item.strip().upper() for item in args.security_list_statuses.split(",") if item.strip()
         )
+    if args.include_corporate_actions is not None:
+        overrides["include_corporate_actions"] = bool(args.include_corporate_actions)
+    if args.corporate_action_query_date_field is not None:
+        overrides["corporate_action_query_date_field"] = args.corporate_action_query_date_field
+    if args.corporate_action_apply_statuses is not None:
+        overrides["corporate_action_apply_statuses"] = tuple(
+            item.strip() for item in args.corporate_action_apply_statuses.split(",") if item.strip()
+        )
+    if args.corporate_action_cash_field is not None:
+        overrides["corporate_action_cash_field"] = args.corporate_action_cash_field
 
     return replace(config, **overrides)
 

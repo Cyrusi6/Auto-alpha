@@ -36,9 +36,10 @@ def compute_dataset_stats(storage: LocalAshareStorage, dataset_name: str) -> Dat
     keys = [_record_key(record, key_fields) for record in records if key_fields]
     unique_keys = len(set(keys)) if key_fields else len(records)
     trade_dates = sorted(
-        str(record["trade_date"])
+        str(value)
         for record in records
-        if record.get("trade_date") not in {None, ""}
+        for value in [_record_date_value(record)]
+        if value not in {None, ""}
     )
     ts_codes = {
         str(record["ts_code"])
@@ -88,3 +89,11 @@ def _null_counts(records: list[dict[str, Any]]) -> dict[str, int]:
     for field in fields:
         counts[field] = sum(record.get(field) in {None, ""} for record in records)
     return counts
+
+
+def _record_date_value(record: dict[str, Any]) -> Any:
+    for field in ("trade_date", "ex_date", "pay_date", "ann_date", "announce_date", "record_date"):
+        value = record.get(field)
+        if value not in {None, ""}:
+            return value
+    return None

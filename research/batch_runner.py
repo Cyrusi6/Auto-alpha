@@ -53,6 +53,10 @@ class BatchFactorResearchRunner:
             feature_cutoff_mode=config.feature_cutoff_mode,
             min_listing_days=config.min_listing_days,
             exclude_st=config.exclude_st,
+            corporate_action_aware=config.corporate_action_aware,
+            target_return_mode=config.target_return_mode,
+            corporate_action_dir=config.corporate_action_dir,
+            corporate_action_cash_field=config.corporate_action_cash_field,
         )
         self.vm = StackVM()
         self.evaluator = AShareFactorEvaluator()
@@ -194,6 +198,10 @@ class BatchFactorResearchRunner:
             feature_cutoff_mode=self.config.feature_cutoff_mode,
             min_listing_days=self.config.min_listing_days,
             exclude_st=self.config.exclude_st,
+            corporate_action_aware=self.config.corporate_action_aware,
+            target_return_mode=self.config.target_return_mode,
+            corporate_action_dir=self.config.corporate_action_dir,
+            corporate_action_cash_field=self.config.corporate_action_cash_field,
         )
         self.loader.load_data()
         composite_info = None if self.config.disable_composite else self._build_composite(batch_id, created_at)
@@ -313,6 +321,16 @@ class BatchFactorResearchRunner:
                 "feature_cutoff_mode": self.config.feature_cutoff_mode,
                 "pit_contract_version": "1.0" if self.config.point_in_time else None,
                 "active_mask_applied": self.config.point_in_time,
+                "corporate_action_aware": self.config.corporate_action_aware,
+                "target_return_mode": self.config.target_return_mode,
+                "total_return_mode": self.config.target_return_mode,
+                "corporate_action_dir": self.config.corporate_action_dir,
+                "corporate_action_cash_field": self.config.corporate_action_cash_field,
+                "corporate_action_event_count": int(
+                    self.loader.raw_data_cache.get("corporate_action_flag").sum().item()
+                    if self.loader.raw_data_cache.get("corporate_action_flag") is not None
+                    else 0
+                ),
             },
             factor_type="single",
             batch_id=batch_id,

@@ -91,6 +91,8 @@ def validate_dataset(dataset_name: str, records: Sequence[dict[str, Any]]) -> Da
         _validate_adjustment_factors(records, issues)
     elif dataset_name == "index_members":
         _validate_index_members(records, issues)
+    elif dataset_name == "corporate_actions":
+        _validate_corporate_actions(records, issues)
 
     errors = sum(issue.severity == "error" for issue in issues)
     warnings = sum(issue.severity == "warning" for issue in issues)
@@ -348,6 +350,114 @@ def _validate_index_members(records: Sequence[dict[str, Any]], issues: list[Data
                     key=key,
                 )
             )
+
+
+def _validate_corporate_actions(records: Sequence[dict[str, Any]], issues: list[DataQualityIssue]) -> None:
+    implemented = 0
+    for record in records:
+        dataset = "corporate_actions"
+        key = _record_key(record, ("ts_code", "ann_date", "end_date", "ex_date", "div_proc"))
+        _require_ts_code(dataset, str(record.get("ts_code", "")), issues)
+        valid_any_date = False
+        for field_name in (
+            "end_date",
+            "ann_date",
+            "record_date",
+            "ex_date",
+            "pay_date",
+            "div_listdate",
+            "imp_ann_date",
+            "base_date",
+        ):
+            value = record.get(field_name)
+            if value not in {None, ""}:
+                valid_any_date = _require_date(dataset, field_name, value, issues, key) or valid_any_date
+        if record.get("ann_date") in {None, ""} and record.get("ex_date") in {None, ""}:
+            issues.append(
+                DataQualityIssue(
+                    dataset=dataset,
+                    severity="error",
+                    code="missing_action_date",
+                    message="corporate action requires at least ann_date or ex_date",
+                    key=key,
+                )
+            )
+        if not valid_any_date:
+            issues.append(
+                DataQualityIssue(
+                    dataset=dataset,
+                    severity="warning",
+                    code="no_valid_action_date",
+                    message="corporate action has no valid lifecycle date",
+                    key=key,
+                )
+            )
+        status = str(record.get("div_proc") or record.get("raw_status") or "")
+        if "实施" in status:
+            implemented += 1
+        if record.get("ex_date") in {None, ""}:
+            issues.append(
+                DataQualityIssue(
+                    dataset=dataset,
+                    severity="warning",
+                    code="missing_ex_date",
+                    message="corporate action missing ex_date",
+                    key=key,
+                )
+            )
+        if record.get("record_date") in {None, ""}:
+            issues.append(
+                DataQualityIssue(
+                    dataset=dataset,
+                    severity="warning",
+                    code="missing_record_date",
+                    message="corporate action missing record_date",
+                    key=key,
+                )
+            )
+        if record.get("pay_date") in {None, ""} and _to_float(record.get("cash_div")) not in {None, 0.0}:
+            issues.append(
+                DataQualityIssue(
+                    dataset=dataset,
+                    severity="warning",
+                    code="missing_pay_date",
+                    message="cash dividend action missing pay_date",
+                    key=key,
+                )
+            )
+        for field_name in ("cash_div", "cash_div_tax"):
+            value = _to_float(record.get(field_name))
+            if value is not None and value < 0:
+                issues.append(
+                    DataQualityIssue(
+                        dataset=dataset,
+                        severity="error",
+                        code="negative_cash_dividend",
+                        message=f"{field_name} must be non-negative",
+                        key=key,
+                    )
+                )
+        for field_name in ("stk_div", "stk_bo_rate", "stk_co_rate"):
+            value = _to_float(record.get(field_name))
+            if value is not None and value < 0:
+                issues.append(
+                    DataQualityIssue(
+                        dataset=dataset,
+                        severity="error",
+                        code="negative_stock_distribution",
+                        message=f"{field_name} must be non-negative",
+                        key=key,
+                    )
+                )
+    if records and implemented == 0:
+        issues.append(
+            DataQualityIssue(
+                dataset="corporate_actions",
+                severity="warning",
+                code="no_implemented_actions",
+                message="corporate_actions has no implemented events",
+            )
+        )
 
 
 def _require_ts_code(dataset: str, ts_code: str, issues: list[DataQualityIssue]) -> bool:

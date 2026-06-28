@@ -12,6 +12,7 @@ EXPECTED_DATASETS = [
     "daily_limits",
     "adjustment_factors",
     "index_members",
+    "corporate_actions",
 ]
 
 
@@ -63,4 +64,5 @@ def test_ashare_data_manager_append_mode_deduplicates_records(tmp_path):
     assert len(storage.read_dataset("daily_limits")) == 6
     assert len(storage.read_dataset("adjustment_factors")) == 6
     assert len(storage.read_dataset("index_members")) == 3
+    assert len(storage.read_dataset("corporate_actions")) == 4
     assert next(dataset for dataset in result.datasets if dataset.dataset == "daily_bars").records == 6

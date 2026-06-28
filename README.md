@@ -188,6 +188,30 @@ Smoke reports include `data_source_smoke_report.json/md`, `provider_probe.json`,
 
 Market constraint datasets include `daily_limits`, `adjustment_factors`, and `index_members`. The research and backtest stack uses `adjusted_close` for returns and raw `close` for local order simulation. The portfolio simulator applies local A-share constraints for suspension, limit up/down, T+1 selling, board lots, volume participation, and trading costs.
 
+Corporate action governance is available through `corporate_actions/`. The data pipeline can sync a `corporate_actions` dataset from sample or Tushare `dividend`, normalize cash dividends, bonus shares, transfers, combined distributions, and proposal-only events, then write reports for point-in-time availability, total-return series, and adjustment-factor reconciliation. The default research target remains `adjusted_close`; enable the explicit total-return path with `--corporate-action-aware --target-return-mode corporate_action_total_return`.
+
+```bash
+uv run python -m corporate_actions.run_actions report \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --output-dir /tmp/auto-alpha-demo/corporate_actions \
+  --start-date 20240102 \
+  --end-date 20240104 \
+  --reconcile-adjustment \
+  --pretty
+```
+
+Paper accounts can apply eligible events idempotently and export `corporate_action_ledger.jsonl`:
+
+```bash
+uv run python -m paper_account.run_account \
+  --account-dir /tmp/auto-alpha-demo/account \
+  apply-corporate-actions \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --corporate-action-dir /tmp/auto-alpha-demo/corporate_actions \
+  --trade-date 20240104 \
+  --pretty
+```
+
 Build a matrix cache after governed data and universe are available:
 
 ```bash

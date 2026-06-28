@@ -23,6 +23,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-listing-days", type=int, default=0)
     parser.add_argument("--exclude-st", action="store_true")
     parser.add_argument("--active-mask-path")
+    parser.add_argument("--corporate-action-aware", action="store_true")
+    parser.add_argument(
+        "--target-return-mode",
+        choices=("adjusted_close", "raw_close", "corporate_action_total_return"),
+        default="adjusted_close",
+    )
+    parser.add_argument("--corporate-action-dir")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -41,6 +48,9 @@ def main(argv: list[str] | None = None) -> int:
         min_listing_days=args.min_listing_days,
         exclude_st=args.exclude_st,
         active_mask_path=args.active_mask_path,
+        corporate_action_aware=args.corporate_action_aware,
+        target_return_mode=args.target_return_mode,
+        corporate_action_dir=args.corporate_action_dir,
     )
     if args.validate:
         report = validate_matrix_cache(result.cache_dir)

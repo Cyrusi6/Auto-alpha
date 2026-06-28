@@ -81,6 +81,47 @@ def validate_point_in_time_data(
                     key,
                 )
             )
+    corporate_actions = storage.read_dataset("corporate_actions")
+    corporate_summary = {
+        "records": len(corporate_actions),
+        "future_event_count": 0,
+        "missing_availability_date_count": 0,
+        "invalid_date_order_count": 0,
+        "non_implemented_count": 0,
+    }
+    for item in corporate_actions:
+        key = "|".join(str(item.get(field) or "") for field in ("ts_code", "ann_date", "end_date", "ex_date", "div_proc"))
+        ann_date = str(item.get("ann_date") or "")
+        imp_ann_date = str(item.get("imp_ann_date") or "")
+        availability_date = imp_ann_date or ann_date
+        ex_date = str(item.get("ex_date") or "")
+        pay_date = str(item.get("pay_date") or "")
+        record_date = str(item.get("record_date") or "")
+        if not availability_date:
+            corporate_summary["missing_availability_date_count"] += 1
+            issues.append(PITValidationIssue("warning", "missing_corporate_action_availability_date", "corporate action missing ann_date/imp_ann_date", "corporate_actions", key))
+        elif not is_valid_yyyymmdd(availability_date):
+            issues.append(PITValidationIssue("error", "invalid_corporate_action_availability_date", "ann_date/imp_ann_date must be YYYYMMDD", "corporate_actions", key))
+        if as_of_date and availability_date and availability_date > as_of_date:
+            corporate_summary["future_event_count"] += 1
+            issues.append(PITValidationIssue("blocker", "future_corporate_action_unavailable", "corporate action availability_date is after as_of_date", "corporate_actions", key))
+        for field_name, value in {"ex_date": ex_date, "pay_date": pay_date, "record_date": record_date}.items():
+            if value and not is_valid_yyyymmdd(value):
+                issues.append(PITValidationIssue("error", f"invalid_{field_name}", f"{field_name} must be YYYYMMDD", "corporate_actions", key))
+        if availability_date and ex_date and availability_date > ex_date:
+            corporate_summary["invalid_date_order_count"] += 1
+            issues.append(PITValidationIssue("warning", "availability_after_ex_date", "corporate action availability_date is after ex_date", "corporate_actions", key))
+        if pay_date and ex_date and pay_date < ex_date:
+            corporate_summary["invalid_date_order_count"] += 1
+            issues.append(PITValidationIssue("error", "pay_date_before_ex_date", "corporate action pay_date is before ex_date", "corporate_actions", key))
+        if record_date and ex_date and record_date > ex_date:
+            corporate_summary["invalid_date_order_count"] += 1
+            issues.append(PITValidationIssue("warning", "record_date_after_ex_date", "corporate action record_date is after ex_date", "corporate_actions", key))
+        status = str(item.get("div_proc") or item.get("raw_status") or "")
+        if "实施" not in status:
+            corporate_summary["non_implemented_count"] += 1
+    if "corporate_actions" in summaries:
+        summaries["corporate_actions"]["corporate_action_summary"] = corporate_summary
     trade_dates = _trade_dates(storage, start_date, end_date)
     mask = build_active_security_mask(
         lifecycle,

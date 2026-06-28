@@ -4,7 +4,7 @@ from pathlib import Path
 from data_source_validation.run_smoke import main
 
 
-ALL_DATASETS = "securities,trade_calendar,daily_bars,daily_basic,financial_features,daily_limits,adjustment_factors,index_members"
+ALL_DATASETS = "securities,trade_calendar,daily_bars,daily_basic,financial_features,daily_limits,adjustment_factors,index_members,corporate_actions"
 
 
 def test_sample_smoke_cli_writes_reports(tmp_path, capsys):

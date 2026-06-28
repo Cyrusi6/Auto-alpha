@@ -22,6 +22,7 @@ def write_leakage_audit_report(report: LeakageAuditReport, output_dir: str | Pat
         "truncation_consistency_report_path": root / "truncation_consistency_report.json",
         "factor_value_leakage_report_path": root / "factor_value_leakage_report.json",
         "backtest_leakage_report_path": root / "backtest_leakage_report.json",
+        "corporate_action_leakage_report_path": root / "corporate_action_leakage_report.json",
     }
     payload = report.to_dict()
     write_json_artifact(paths["leakage_audit_report_path"], payload, "leakage_audit_report", "leakage_audit")
@@ -31,6 +32,7 @@ def write_leakage_audit_report(report: LeakageAuditReport, output_dir: str | Pat
     write_json_artifact(paths["truncation_consistency_report_path"], report.truncation_consistency.to_dict(), "truncation_consistency_report", "leakage_audit")
     write_json_artifact(paths["factor_value_leakage_report_path"], report.factor_value_leakage.to_dict(), "factor_value_leakage_report", "leakage_audit")
     write_json_artifact(paths["backtest_leakage_report_path"], report.backtest_leakage.to_dict(), "backtest_leakage_report", "leakage_audit")
+    write_json_artifact(paths["corporate_action_leakage_report_path"], report.corporate_action_leakage.to_dict(), "corporate_action_leakage_report", "leakage_audit")
     return {key: str(path) for key, path in paths.items()}
 
 

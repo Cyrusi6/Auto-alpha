@@ -43,6 +43,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-leakage-audit", action="store_true")
     parser.add_argument("--leakage-audit-dir")
     parser.add_argument("--fail-on-leakage-blocker", action="store_true")
+    parser.add_argument("--corporate-action-aware", action="store_true")
+    parser.add_argument(
+        "--target-return-mode",
+        choices=("adjusted_close", "raw_close", "corporate_action_total_return"),
+        default="adjusted_close",
+    )
+    parser.add_argument("--corporate-action-dir")
+    parser.add_argument("--corporate-action-cash-field", choices=("cash_div", "cash_div_tax"), default="cash_div")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -79,6 +87,10 @@ def main(argv: list[str] | None = None) -> int:
         run_leakage_audit=args.run_leakage_audit,
         leakage_audit_dir=args.leakage_audit_dir,
         fail_on_leakage_blocker=args.fail_on_leakage_blocker,
+        corporate_action_aware=args.corporate_action_aware,
+        target_return_mode=args.target_return_mode,
+        corporate_action_dir=args.corporate_action_dir,
+        corporate_action_cash_field=args.corporate_action_cash_field,
     )
     result = BatchFactorResearchRunner(config=config, candidates=candidates).run()
     payload = result.to_dict()

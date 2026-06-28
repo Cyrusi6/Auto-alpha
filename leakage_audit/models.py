@@ -91,6 +91,19 @@ class SurvivorshipAuditResult:
 
 
 @dataclass(frozen=True)
+class CorporateActionLeakageResult:
+    checked_events: int
+    corporate_action_future_event_count: int
+    unavailable_action_used_count: int
+    adjustment_reconciliation_warning_count: int
+    total_return_mismatch_count: int
+    issues: list[LeakageIssue]
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class LeakageAuditConfig:
     data_dir: str
     factor_store_dir: str | None
@@ -118,6 +131,7 @@ class LeakageAuditReport:
     factor_value_leakage: FactorValueLeakageResult
     backtest_leakage: BacktestLeakageResult
     survivorship: SurvivorshipAuditResult
+    corporate_action_leakage: CorporateActionLeakageResult
     issues: list[LeakageIssue]
     paths: dict[str, str] = field(default_factory=dict)
 
@@ -134,6 +148,11 @@ class LeakageAuditReport:
             "factor_value_leakage": self.factor_value_leakage.to_dict(),
             "backtest_leakage": self.backtest_leakage.to_dict(),
             "survivorship": self.survivorship.to_dict(),
+            "corporate_action_leakage": self.corporate_action_leakage.to_dict(),
+            "corporate_action_future_event_count": self.corporate_action_leakage.corporate_action_future_event_count,
+            "unavailable_action_used_count": self.corporate_action_leakage.unavailable_action_used_count,
+            "adjustment_reconciliation_warning_count": self.corporate_action_leakage.adjustment_reconciliation_warning_count,
+            "total_return_mismatch_count": self.corporate_action_leakage.total_return_mismatch_count,
             "issues": [issue.to_dict() for issue in self.issues],
             "paths": self.paths,
             "leakage_gate_status": "blocked" if self.blocker_count else ("warning" if self.warning_count else "passed"),

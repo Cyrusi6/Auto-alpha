@@ -40,6 +40,10 @@ def validate_matrix_cache(cache_dir: str | Path) -> MatrixValidationReport:
             errors.append(f"missing required matrix fields: {', '.join(missing)}")
         if metadata.get("point_in_time") and not metadata.get("active_mask_included"):
             warnings.append("point_in_time metadata is enabled but active_mask_included is false")
+        if metadata.get("target_return_mode") == "corporate_action_total_return" and "total_return_close" not in fields:
+            errors.append("target_return_mode corporate_action_total_return requires total_return_close field")
+        if metadata.get("corporate_action_aware") and "corporate_action_flag" not in fields:
+            warnings.append("corporate_action_aware metadata is enabled but corporate_action_flag is missing")
         for field in fields:
             try:
                 array = reader.load_field(field)

@@ -54,6 +54,10 @@ class FormulaSearchRunner:
         run_leakage_audit: bool = False,
         leakage_audit_dir: str | None = None,
         fail_on_leakage_blocker: bool = False,
+        corporate_action_aware: bool = False,
+        target_return_mode: str = "adjusted_close",
+        corporate_action_dir: str | None = None,
+        corporate_action_cash_field: str = "cash_div",
     ):
         self.search_config = search_config
         self.data_dir = data_dir
@@ -85,6 +89,10 @@ class FormulaSearchRunner:
         self.run_leakage_audit = bool(run_leakage_audit)
         self.leakage_audit_dir = leakage_audit_dir
         self.fail_on_leakage_blocker = bool(fail_on_leakage_blocker)
+        self.corporate_action_aware = bool(corporate_action_aware)
+        self.target_return_mode = target_return_mode
+        self.corporate_action_dir = corporate_action_dir
+        self.corporate_action_cash_field = corporate_action_cash_field
         self.rng = random.Random(search_config.seed)
 
     def run(self) -> FormulaSearchResult:
@@ -166,6 +174,9 @@ class FormulaSearchRunner:
                 "min_listing_days": self.min_listing_days,
                 "exclude_st": self.exclude_st,
                 "run_leakage_audit": self.run_leakage_audit,
+                "corporate_action_aware": self.corporate_action_aware,
+                "target_return_mode": self.target_return_mode,
+                "corporate_action_dir": self.corporate_action_dir,
             },
         )
         self._write_outputs(result, generated)
@@ -215,6 +226,10 @@ class FormulaSearchRunner:
                 else None
             ),
             fail_on_leakage_blocker=self.fail_on_leakage_blocker,
+            corporate_action_aware=self.corporate_action_aware,
+            target_return_mode=self.target_return_mode,
+            corporate_action_dir=self.corporate_action_dir,
+            corporate_action_cash_field=self.corporate_action_cash_field,
         )
         return BatchFactorResearchRunner(config=config, candidates=from_formula_search_candidates(candidates)).run()
 
@@ -270,6 +285,9 @@ class FormulaSearchRunner:
             feature_cutoff_mode=self.feature_cutoff_mode,
             min_listing_days=self.min_listing_days,
             exclude_st=self.exclude_st,
+            corporate_action_aware=self.corporate_action_aware,
+            target_return_mode=self.target_return_mode,
+            corporate_action_dir=self.corporate_action_dir,
         ).load_data()
         values = build_composite_factor_matrix(
             store,

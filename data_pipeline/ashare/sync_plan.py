@@ -19,6 +19,7 @@ WINDOWED_DATASETS = {
     "financial_features",
     "daily_limits",
     "adjustment_factors",
+    "corporate_actions",
 }
 
 

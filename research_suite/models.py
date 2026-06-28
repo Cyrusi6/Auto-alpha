@@ -104,6 +104,16 @@ class ResearchSuiteConfig:
     leakage_audit_dir: str | None = None
     fail_on_pit_blocker: bool = False
     fail_on_leakage_blocker: bool = False
+    include_corporate_actions: bool = True
+    corporate_action_output_dir: str | None = None
+    run_corporate_action_report: bool = False
+    corporate_action_aware: bool = False
+    target_return_mode: str = "adjusted_close"
+    corporate_action_dir: str | None = None
+    corporate_action_cash_field: str = "cash_div"
+    corporate_action_application_date_mode: str = "pay_date"
+    reconcile_adjustment_factors: bool = False
+    fail_on_corporate_action_error: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

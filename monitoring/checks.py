@@ -361,6 +361,62 @@ def check_data_source_audit(audit_summary_path: str | Path | None) -> tuple[dict
     }, alerts
 
 
+def check_corporate_action_report(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not report_path:
+        return {"exists": False, "corporate_action_event_count": 0}, []
+    payload = _read_json(Path(report_path))
+    errors = int(payload.get("corporate_action_error_count", 0) or 0) if payload else 0
+    warnings = int(payload.get("corporate_action_warning_count", 0) or 0) if payload else 0
+    unprocessed = int(payload.get("unprocessed_corporate_action_count", 0) or 0) if payload else 0
+    alerts = []
+    if errors:
+        alerts.append(MonitoringAlert("error", "corporate_action_report", "corporate action report contains errors", {"errors": errors}))
+    elif warnings:
+        alerts.append(MonitoringAlert("warning", "corporate_action_report", "corporate action report contains warnings", {"warnings": warnings}))
+    return {
+        "exists": bool(payload),
+        "corporate_action_event_count": int(payload.get("event_count", 0) or 0) if payload else 0,
+        "implemented_action_count": int(payload.get("implemented_action_count", 0) or 0) if payload else 0,
+        "unprocessed_corporate_action_count": unprocessed,
+        "corporate_action_error_count": errors,
+        "corporate_action_warning_count": warnings,
+        "total_return_mode": payload.get("total_return_mode", "") if payload else "",
+    }, alerts
+
+
+def check_total_return_report(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not report_path:
+        return {"exists": False, "total_return_records": 0}, []
+    payload = _read_json(Path(report_path))
+    records = int(payload.get("records", 0) or 0) if payload else 0
+    alerts = []
+    if payload and records == 0:
+        alerts.append(MonitoringAlert("warning", "total_return_report", "total return report has no records"))
+    return {
+        "exists": bool(payload),
+        "total_return_records": records,
+        "action_days": int(payload.get("action_days", 0) or 0) if payload else 0,
+        "cash_dividend_amount": float(payload.get("cash_dividend_amount", 0.0) or 0.0) if payload else 0.0,
+        "stock_distribution_ratio_sum": float(payload.get("stock_distribution_ratio_sum", 0.0) or 0.0) if payload else 0.0,
+    }, alerts
+
+
+def check_corporate_action_ledger(account_dir: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not account_dir:
+        return {"exists": False, "corporate_action_ledger_entries": 0}, []
+    rows = _read_jsonl(Path(account_dir) / "corporate_action_ledger.jsonl")
+    applied = sum(1 for row in rows if row.get("status") == "APPLIED")
+    skipped = sum(1 for row in rows if row.get("status") != "APPLIED")
+    cash = sum(float(row.get("cash_amount", 0.0) or 0.0) for row in rows if row.get("status") == "APPLIED")
+    return {
+        "exists": bool(rows),
+        "corporate_action_ledger_entries": len(rows),
+        "corporate_action_applied_count": applied,
+        "corporate_action_skipped_count": skipped,
+        "corporate_action_cash_amount": float(cash),
+    }, []
+
+
 def check_baseline_compare(baseline_compare_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     if not baseline_compare_path:
         return {"exists": False, "baseline_diff_count": 0}, []

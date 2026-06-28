@@ -14,6 +14,7 @@ PLATFORM_MODULES = [
     "backtest",
     "broker_adapter",
     "capacity_model",
+    "corporate_actions",
     "cross_source_checks",
     "dashboard",
     "data_pipeline",

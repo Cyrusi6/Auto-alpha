@@ -1569,3 +1569,10 @@
 - 引入历史 ST 状态、真实暂停上市历史、指数成分公告日/生效日字段和更严格复权因子 as-of 策略。
 - 将 truncation consistency 从持久化 artifact 检查升级为公式重算对比，并覆盖更多 batch/neural search 场景。
 - 为生产模型审批增加更细的 PIT policy、人工复核 SLA 和跨数据源 survivorship 对照。
+## Task 028 - Corporate Actions, Total Return, And Paper Account Equity
+
+- Added `corporate_actions/` for normalized dividend/stock-distribution events, PIT-aware schedules, account applications, total-return series, adjustment-factor reconciliation, reports, and CLI actions.
+- Added `corporate_actions` to A-share schema/storage/provider contracts, sample data, Tushare dividend mapping, data quality, stats, source validation, PIT contracts, and leakage audit.
+- Extended `AShareDataLoader`, `matrix_store`, research/search/suite, backtest, strategy, operations, lifecycle review, monitoring, dashboard, artifact schema, release inventory, and local CI with opt-in corporate-action-aware / total-return mode.
+- Added paper-account corporate action and settlement ledgers with idempotent cash-dividend and stock-distribution application.
+- Default research remains `adjusted_close`; explicit total return uses `--corporate-action-aware --target-return-mode corporate_action_total_return`.

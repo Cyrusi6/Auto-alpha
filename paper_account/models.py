@@ -56,6 +56,26 @@ class PaperTradeLedgerEntry:
 
 
 @dataclass(frozen=True)
+class PaperCorporateActionLedgerEntry:
+    apply_date: str
+    action_id: str
+    ts_code: str
+    event_type: str
+    shares_before: int
+    shares_after: int
+    cash_amount: float
+    tax_amount: float
+    avg_cost_before: float
+    avg_cost_after: float
+    status: str
+    reason: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class PaperAccountSnapshot:
     trade_date: str
     equity: float
@@ -78,6 +98,8 @@ class PaperAccountState:
     positions: dict[str, PaperPosition] = field(default_factory=dict)
     cash_ledger: list[PaperCashLedgerEntry] = field(default_factory=list)
     trade_ledger: list[PaperTradeLedgerEntry] = field(default_factory=list)
+    corporate_action_ledger: list[PaperCorporateActionLedgerEntry] = field(default_factory=list)
+    settlement_ledger: list[dict[str, Any]] = field(default_factory=list)
     snapshots: list[PaperAccountSnapshot] = field(default_factory=list)
     updated_at: str | None = None
 
@@ -89,6 +111,8 @@ class PaperAccountState:
             "positions": {key: value.to_dict() for key, value in self.positions.items()},
             "cash_ledger": [entry.to_dict() for entry in self.cash_ledger],
             "trade_ledger": [entry.to_dict() for entry in self.trade_ledger],
+            "corporate_action_ledger": [entry.to_dict() for entry in self.corporate_action_ledger],
+            "settlement_ledger": [dict(entry) for entry in self.settlement_ledger],
             "snapshots": [snapshot.to_dict() for snapshot in self.snapshots],
             "updated_at": self.updated_at,
         }

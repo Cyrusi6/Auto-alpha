@@ -20,6 +20,8 @@ This repository is now organized as a local A-share factor research platform. Th
 
 `data_source_validation/` is the production-readiness layer for data sources. It defines dataset contracts for the currently implemented Tushare APIs, runs offline fake Tushare scenarios, gates real Tushare probes behind `--allow-network`, redacts tokens in reports, summarizes field coverage and request audit, verifies append/resume/cache/compact/snapshot/stat recovery, and can compare a smoke run against a local baseline.
 
+`corporate_actions/` normalizes cash dividends, stock bonuses, transfers, combined distributions, and proposal-only events. It writes point-in-time-aware event schedules, total-return series, adjustment-factor reconciliation reports, and paper-account corporate action ledgers. Existing research keeps the `adjusted_close` target return by default; explicit total-return runs use `--corporate-action-aware --target-return-mode corporate_action_total_return`.
+
 The sample provider writes:
 
 - `securities/records.jsonl`
@@ -30,6 +32,7 @@ The sample provider writes:
 - `daily_limits/records.jsonl`
 - `adjustment_factors/records.jsonl`
 - `index_members/records.jsonl`
+- `corporate_actions/records.jsonl`
 - `manifest.json`
 - `pipeline_state.json`
 - `quality_report.json` when validation is enabled

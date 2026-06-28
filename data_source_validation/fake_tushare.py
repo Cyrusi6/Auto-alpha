@@ -118,6 +118,26 @@ def _rows_for_api(api_name: str) -> list[dict[str, Any]]:
         "index_weight": [
             {"index_code": "000300.SH", "con_code": "000001.SZ", "trade_date": "20240103", "weight": 0.42}
         ],
+        "dividend": [
+            {
+                "ts_code": "000001.SZ",
+                "end_date": "20231231",
+                "ann_date": "20240101",
+                "div_proc": "实施",
+                "stk_div": 0.0,
+                "stk_bo_rate": 0.0,
+                "stk_co_rate": 0.0,
+                "cash_div": 0.12,
+                "cash_div_tax": 0.12,
+                "record_date": "20240102",
+                "ex_date": "20240103",
+                "pay_date": "20240104",
+                "div_listdate": None,
+                "imp_ann_date": "20240101",
+                "base_date": "20231231",
+                "base_share": 19405918198.0,
+            }
+        ],
     }
     if api_name not in mapping:
         raise TushareApiError(f"unsupported fake api_name: {api_name}")

@@ -18,6 +18,9 @@ def build_model_review_package(
 ) -> ModelReviewPackage:
     pit_summary = _summary_from_checks(health_checks, "point_in_time")
     leakage_summary = _summary_from_checks(health_checks, "leakage")
+    corporate_action_summary = _summary_from_checks(health_checks, "corporate_action")
+    corporate_action_summary["adjustment_reconciliation"] = _summary_from_checks(health_checks, "adjustment_reconciliation")
+    corporate_action_summary["total_return"] = _summary_from_checks(health_checks, "total_return")
     return ModelReviewPackage(
         model_version_id=model_version.model_version_id if model_version else None,
         factor_id=factor_record.factor_id,
@@ -38,9 +41,11 @@ def build_model_review_package(
             {"item": "broker_or_paper_execution_reviewed", "required": False, "checked": False},
             {"item": "rollback_plan_reviewed", "required": True, "checked": False},
             {"item": "point_in_time_and_leakage_reviewed", "required": True, "checked": False},
+            {"item": "corporate_actions_and_total_return_reviewed", "required": True, "checked": False},
         ],
         pit_summary=pit_summary,
         leakage_summary=leakage_summary,
+        corporate_action_summary=corporate_action_summary,
         lineage_graph_path=lineage_graph_path,
     )
 

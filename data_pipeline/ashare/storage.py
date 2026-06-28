@@ -21,6 +21,7 @@ DATASET_PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
     "daily_limits": ("ts_code", "trade_date"),
     "adjustment_factors": ("ts_code", "trade_date"),
     "index_members": ("index_code", "ts_code", "trade_date"),
+    "corporate_actions": ("ts_code", "ann_date", "end_date", "ex_date", "div_proc"),
 }
 
 

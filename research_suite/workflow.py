@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from backtest import run_backtest
+from corporate_actions.run_actions import main as run_corporate_actions_main
 from data_pipeline import run_pipeline
 from factor_store import LocalFactorStore
 from factor_lifecycle.run_lifecycle import main as run_lifecycle_main
@@ -46,6 +47,7 @@ class ResearchSuiteRunner:
         self.model_lifecycle_summary: dict[str, Any] = {}
         self.pit_summary: dict[str, Any] = {}
         self.leakage_summary: dict[str, Any] = {}
+        self.corporate_action_summary: dict[str, Any] = {}
 
     def run(self) -> ResearchSuiteResult:
         started_at = _utc_now()
@@ -53,6 +55,8 @@ class ResearchSuiteRunner:
         try:
             if not self.config.skip_data_sync:
                 self._append_stage("data_sync", self._stage_data_sync)
+            if self.config.run_corporate_action_report:
+                self._append_stage("corporate_actions", self._stage_corporate_actions)
             if not self.config.skip_universe:
                 self._append_stage("universe", self._stage_universe)
             if self.config.run_pit_validation:
@@ -120,6 +124,14 @@ class ResearchSuiteRunner:
                 "truncation_consistency_passed": (self.leakage_summary.get("truncation_consistency") or {}).get("passed"),
                 "survivorship_warning_count": (self.pit_summary.get("survivorship") or {}).get("warning_count", 0),
                 "active_universe_coverage": self.pit_summary.get("active_universe_coverage", 0.0),
+                "corporate_action_aware": self.config.corporate_action_aware,
+                "target_return_mode": self.config.target_return_mode,
+                "corporate_action_event_count": self.corporate_action_summary.get("event_count", 0),
+                "implemented_action_count": self.corporate_action_summary.get("implemented_action_count", 0),
+                "corporate_action_error_count": self.corporate_action_summary.get("error_count", 0),
+                "adjustment_reconciliation_warning_count": self.corporate_action_summary.get(
+                    "adjustment_reconciliation_warning_count", 0
+                ),
             },
         )
         suite_json, suite_md = write_suite_report(result, self.output_dir)
@@ -158,21 +170,23 @@ class ResearchSuiteRunner:
             raise
 
     def _stage_data_sync(self) -> tuple[dict[str, Any], dict[str, str]]:
-        payload = _run_json_main(
-            run_pipeline.main,
-            [
-                "--sync",
-                "--provider",
-                self.config.provider,
-                "--data-dir",
-                self.config.data_dir,
-                "--validate",
-                "--mode",
-                "overwrite",
-                "--index-codes",
-                self.config.index_code,
-            ],
-        )
+        argv = [
+            "--sync",
+            "--provider",
+            self.config.provider,
+            "--data-dir",
+            self.config.data_dir,
+            "--validate",
+            "--mode",
+            "overwrite",
+            "--index-codes",
+            self.config.index_code,
+        ]
+        if self.config.include_corporate_actions:
+            argv.extend(["--include-corporate-actions", "--corporate-action-cash-field", self.config.corporate_action_cash_field])
+        else:
+            argv.append("--no-corporate-actions")
+        payload = _run_json_main(run_pipeline.main, argv)
         output_paths = {
             "manifest": str(Path(self.config.data_dir) / "manifest.json"),
             "quality_report": str(Path(self.config.data_dir) / "quality_report.json"),
@@ -180,6 +194,40 @@ class ResearchSuiteRunner:
         }
         for name, path in output_paths.items():
             self.catalog = register_artifact(self.catalog, name, path, "json", "data_sync")
+        return payload, output_paths
+
+    def _stage_corporate_actions(self) -> tuple[dict[str, Any], dict[str, str]]:
+        action_dir = self._corporate_action_dir()
+        argv = [
+            "report",
+            "--data-dir",
+            self.config.data_dir,
+            "--output-dir",
+            str(action_dir),
+            "--start-date",
+            "00000000",
+            "--end-date",
+            self.config.as_of_date,
+            "--cash-field",
+            self.config.corporate_action_cash_field,
+        ]
+        if self.config.reconcile_adjustment_factors:
+            argv.append("--reconcile-adjustment")
+        if self.config.fail_on_corporate_action_error:
+            argv.append("--fail-on-error")
+        payload = _run_json_main(run_corporate_actions_main, argv)
+        summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else payload
+        self.corporate_action_summary = dict(summary)
+        paths = payload.get("paths", {}) if isinstance(payload.get("paths"), dict) else {}
+        output_paths = {name: str(path) for name, path in paths.items()}
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(
+                self.catalog,
+                name.replace("_path", ""),
+                path,
+                _artifact_kind(path),
+                "corporate_actions",
+            )
         return payload, output_paths
 
     def _stage_universe(self) -> tuple[dict[str, Any], dict[str, str]]:
@@ -255,6 +303,16 @@ class ResearchSuiteRunner:
                 self.config.universe_name,
                 "--validate",
             ]
+        if self.config.corporate_action_aware:
+            argv.extend(
+                [
+                    "--corporate-action-aware",
+                    "--target-return-mode",
+                    self.config.target_return_mode,
+                    "--corporate-action-dir",
+                    str(self._corporate_action_dir()),
+                ]
+            )
         if self.config.point_in_time:
             argv.extend(
                 [
@@ -464,6 +522,19 @@ class ResearchSuiteRunner:
             + (["--matrix-cache-dir", str(self._matrix_cache_dir()), "--use-matrix-cache"] if self.config.use_matrix_cache else [])
             + (
                 [
+                    "--corporate-action-aware",
+                    "--target-return-mode",
+                    self.config.target_return_mode,
+                    "--corporate-action-dir",
+                    str(self._corporate_action_dir()),
+                    "--corporate-action-cash-field",
+                    self.config.corporate_action_cash_field,
+                ]
+                if self.config.corporate_action_aware
+                else []
+            )
+            + (
+                [
                     "--point-in-time",
                     "--feature-cutoff-mode",
                     self.config.feature_cutoff_mode,
@@ -586,6 +657,24 @@ class ResearchSuiteRunner:
             )
             if self.config.exclude_st:
                 argv.append("--exclude-st")
+        if self.config.corporate_action_aware:
+            argv.extend(
+                [
+                    "--corporate-action-aware",
+                    "--target-return-mode",
+                    self.config.target_return_mode,
+                    "--corporate-action-dir",
+                    str(self._corporate_action_dir()),
+                    "--corporate-action-report-dir",
+                    str(self._corporate_action_dir()),
+                    "--corporate-action-cash-field",
+                    self.config.corporate_action_cash_field,
+                    "--corporate-action-application-date-mode",
+                    self.config.corporate_action_application_date_mode,
+                ]
+            )
+            if self.config.reconcile_adjustment_factors:
+                argv.append("--reconcile-adjustment-factors")
         if self.config.run_leakage_audit:
             argv.extend(["--run-leakage-audit", "--leakage-audit-dir", str(self._backtest_leakage_dir())])
             if self.config.fail_on_leakage_blocker:
@@ -615,6 +704,12 @@ class ResearchSuiteRunner:
             output_paths["backtest_leakage_audit_report"] = str(payload["leakage_audit_report_path"])
         if payload.get("truncation_consistency_report_path"):
             output_paths["backtest_truncation_consistency"] = str(payload["truncation_consistency_report_path"])
+        if payload.get("corporate_action_report_path"):
+            output_paths["backtest_corporate_action_report"] = str(payload["corporate_action_report_path"])
+        if payload.get("total_return_report_path"):
+            output_paths["backtest_total_return_report"] = str(payload["total_return_report_path"])
+        if payload.get("adjustment_reconciliation_path"):
+            output_paths["backtest_adjustment_reconciliation"] = str(payload["adjustment_reconciliation_path"])
         if self.selected_factor_id:
             output_paths["selected_factor_values"] = str(
                 Path(self.config.factor_store_dir) / "factor_values" / f"{self.selected_factor_id}.jsonl"
@@ -711,6 +806,18 @@ class ResearchSuiteRunner:
             )
             if self.config.exclude_st:
                 argv.append("--exclude-st")
+        if self.config.corporate_action_aware:
+            argv.extend(
+                [
+                    "--corporate-action-aware",
+                    "--target-return-mode",
+                    self.config.target_return_mode,
+                    "--corporate-action-dir",
+                    str(self._corporate_action_dir()),
+                    "--corporate-action-cash-field",
+                    self.config.corporate_action_cash_field,
+                ]
+            )
 
         payload = _run_json_main(strategy_runner.main, argv)
         output_paths = {
@@ -722,6 +829,8 @@ class ResearchSuiteRunner:
             output_paths["orders_risk_report"] = str(payload["risk_report_path"])
         if payload.get("optimization_result_path"):
             output_paths["orders_optimization_result"] = str(payload["optimization_result_path"])
+        if payload.get("corporate_action_report_path"):
+            output_paths["orders_corporate_action_report"] = str(payload["corporate_action_report_path"])
         for name, path in output_paths.items():
             self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "orders")
         return payload, output_paths
@@ -739,6 +848,10 @@ class ResearchSuiteRunner:
             feature_cutoff_mode=self.config.feature_cutoff_mode,
             min_listing_days=self.config.min_listing_days,
             exclude_st=self.config.exclude_st,
+            corporate_action_aware=self.config.corporate_action_aware,
+            corporate_action_dir=str(self._corporate_action_dir()),
+            target_return_mode=self.config.target_return_mode,
+            corporate_action_cash_field=self.config.corporate_action_cash_field,
         ).load_data()
         store = LocalFactorStore(self.config.factor_store_dir)
         windows = build_walk_forward_windows(
@@ -807,6 +920,9 @@ class ResearchSuiteRunner:
                 "feature_cutoff_mode": self.config.feature_cutoff_mode,
                 "pit_summary": self.pit_summary,
                 "leakage_summary": self.leakage_summary,
+                "corporate_action_summary": self.corporate_action_summary,
+                "corporate_action_aware": self.config.corporate_action_aware,
+                "target_return_mode": self.config.target_return_mode,
             },
             lifecycle_status=lifecycle_status,
         )
@@ -858,6 +974,10 @@ class ResearchSuiteRunner:
         survivorship_report = self._pit_dir() / "survivorship_bias_report.json"
         leakage_report = self._leakage_dir() / "leakage_audit_report.json"
         truncation_report = self._leakage_dir() / "truncation_consistency_report.json"
+        ca_report = self._corporate_action_dir() / "corporate_actions_report.json"
+        tr_report = self._corporate_action_dir() / "total_return_report.json"
+        ca_validation = self._corporate_action_dir() / "corporate_action_validation_report.json"
+        ca_reconciliation = self._corporate_action_dir() / "adjustment_factor_reconciliation.json"
         if pit_report.exists():
             argv.extend(["--pit-validation-report-path", str(pit_report)])
         if survivorship_report.exists():
@@ -866,6 +986,14 @@ class ResearchSuiteRunner:
             argv.extend(["--leakage-audit-report-path", str(leakage_report)])
         if truncation_report.exists():
             argv.extend(["--truncation-consistency-report-path", str(truncation_report)])
+        if ca_report.exists():
+            argv.extend(["--corporate-action-report-path", str(ca_report)])
+        if tr_report.exists():
+            argv.extend(["--total-return-report-path", str(tr_report)])
+        if ca_validation.exists():
+            argv.extend(["--corporate-action-validation-path", str(ca_validation)])
+        if ca_reconciliation.exists():
+            argv.extend(["--adjustment-reconciliation-path", str(ca_reconciliation)])
         if self.config.model_lifecycle_policy_path:
             argv.extend(["--policy-path", self.config.model_lifecycle_policy_path])
         if self.config.require_model_approval:
@@ -924,6 +1052,13 @@ class ResearchSuiteRunner:
 
     def _backtest_leakage_dir(self) -> Path:
         return Path(self.config.backtest_dir) / "leakage_audit"
+
+    def _corporate_action_dir(self) -> Path:
+        if self.config.corporate_action_dir:
+            return Path(self.config.corporate_action_dir)
+        if self.config.corporate_action_output_dir:
+            return Path(self.config.corporate_action_output_dir)
+        return Path(self.config.output_dir) / "corporate_actions"
 
 
 def _run_json_main(main_func: Callable[[list[str] | None], int], argv: list[str]) -> dict[str, Any]:

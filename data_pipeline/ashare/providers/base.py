@@ -12,6 +12,7 @@ from ..schema import (
     DailyLimit,
     FinancialFeature,
     IndexMember,
+    CorporateAction,
     Security,
     TradeCalendarRecord,
 )
@@ -40,4 +41,7 @@ class AShareDataProvider(Protocol):
         ...
 
     def fetch_index_members(self, config: AShareDataConfig) -> list[IndexMember]:
+        ...
+
+    def fetch_corporate_actions(self, config: AShareDataConfig) -> list[CorporateAction]:
         ...

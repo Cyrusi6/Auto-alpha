@@ -133,6 +133,58 @@ def _artifact_checks(paths: dict[str, str], policy: LifecyclePolicy) -> list[Fac
     truncation = _read_json(paths.get("truncation_consistency_report_path") or paths.get("truncation_consistency_report"))
     if truncation:
         checks.append(_check("truncation_consistency", bool(truncation.get("passed", True)), truncation.get("max_abs_diff", 0.0), "passed", "error"))
+    corporate = _read_json(paths.get("corporate_action_report_path") or paths.get("corporate_action_report"))
+    if corporate:
+        errors = int(corporate.get("corporate_action_error_count", 0) or 0)
+        warnings = int(corporate.get("corporate_action_warning_count", 0) or 0)
+        checks.append(
+            _check(
+                "corporate_action_errors",
+                errors <= policy.max_corporate_action_error_count,
+                errors,
+                policy.max_corporate_action_error_count,
+                "error",
+            )
+        )
+        checks.append(FactorHealthCheck("corporate_action_warnings", "info", True, warnings, None, "corporate action warnings"))
+    elif policy.require_corporate_action_report:
+        checks.append(FactorHealthCheck("corporate_action_report", "error", False, message="corporate action report required but missing"))
+    else:
+        checks.append(FactorHealthCheck("corporate_action_report", "info", True, message="corporate action report not provided"))
+    reconciliation = _read_json(paths.get("adjustment_reconciliation_path") or paths.get("adjustment_reconciliation"))
+    if reconciliation:
+        errors = int(reconciliation.get("error_count", 0) or 0)
+        warnings = int(reconciliation.get("warning_count", 0) or 0)
+        checks.append(
+            _check(
+                "adjustment_reconciliation_errors",
+                errors <= policy.max_adjustment_reconciliation_error_count,
+                errors,
+                policy.max_adjustment_reconciliation_error_count,
+                "error",
+            )
+        )
+        checks.append(
+            _check(
+                "adjustment_reconciliation_warnings",
+                warnings <= policy.max_adjustment_reconciliation_warning_count,
+                warnings,
+                policy.max_adjustment_reconciliation_warning_count,
+                "warning",
+            )
+        )
+    total_return = _read_json(paths.get("total_return_report_path") or paths.get("total_return_report"))
+    if total_return:
+        checks.append(
+            FactorHealthCheck(
+                "total_return_report",
+                "info",
+                True,
+                total_return.get("records", 0),
+                None,
+                f"total return mode {total_return.get('total_return_mode', '')}",
+            )
+        )
     return checks
 
 

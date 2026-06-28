@@ -21,6 +21,7 @@ from .quality import (
 )
 from .schema import (
     AdjustmentFactor,
+    CorporateAction,
     DailyBar,
     DailyBasic,
     DailyLimit,
@@ -48,6 +49,7 @@ __all__ = [
     "AShareDataConfig",
     "AShareDataProvider",
     "AdjustmentFactor",
+    "CorporateAction",
     "DatasetPlan",
     "DatasetQualitySummary",
     "DatasetSyncState",

@@ -11,6 +11,7 @@ EXPECTED_DATASETS = [
     "daily_limits",
     "adjustment_factors",
     "index_members",
+    "corporate_actions",
 ]
 
 

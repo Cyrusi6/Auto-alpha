@@ -23,6 +23,8 @@ from .checks import (
     check_data_source_audit,
     check_data_source_smoke,
     check_data_freshness,
+    check_corporate_action_ledger,
+    check_corporate_action_report,
     check_execution_quality,
     check_factor_risk_concentration,
     check_factor_drift,
@@ -50,6 +52,7 @@ from .checks import (
     check_survivorship_bias,
     check_leakage_audit,
     check_truncation_consistency,
+    check_total_return_report,
     check_active_universe_coverage,
     check_feature_cutoff_policy,
     check_unfilled_orders,
@@ -96,6 +99,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--survivorship-report-path")
     parser.add_argument("--leakage-audit-report-path")
     parser.add_argument("--truncation-consistency-report-path")
+    parser.add_argument("--corporate-action-report-path")
+    parser.add_argument("--total-return-report-path")
+    parser.add_argument("--adjustment-reconciliation-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -132,6 +138,9 @@ def main(argv: list[str] | None = None) -> int:
         ("provider_readiness", lambda: check_provider_readiness(args.data_source_smoke_report_path)),
         ("field_coverage", lambda: check_field_coverage(args.field_coverage_path)),
         ("data_source_audit", lambda: check_data_source_audit(args.audit_summary_path)),
+        ("corporate_action_report", lambda: check_corporate_action_report(args.corporate_action_report_path or _default_corporate_action_path(args.orders_dir, "corporate_actions_report.json"))),
+        ("total_return_report", lambda: check_total_return_report(args.total_return_report_path or _default_corporate_action_path(args.orders_dir, "total_return_report.json"))),
+        ("corporate_action_ledger", lambda: check_corporate_action_ledger(args.paper_account_dir)),
         ("baseline_compare", lambda: check_baseline_compare(args.baseline_compare_path)),
         ("artifact_schema_validation", lambda: check_artifact_schema_validation(args.artifact_validation_report_path)),
         ("release_gate", lambda: check_release_gate(args.release_gate_report_path)),
@@ -216,6 +225,21 @@ def _default_broker_outbox_manifest(orders_dir: str | Path) -> str:
         root / "broker_instruction_manifest.json",
         root / "outbox" / "broker_instruction_manifest.json",
         root.parent / "broker_file" / "outbox" / "broker_instruction_manifest.json",
+    ):
+        if path.exists():
+            return str(path)
+    return ""
+
+
+def _default_corporate_action_path(orders_dir: str | Path, filename: str) -> str:
+    root = Path(orders_dir)
+    for path in (
+        root / filename,
+        root / "corporate_actions" / filename,
+        root.parent / "corporate_actions" / filename,
+        root.parent / "production" / "corporate_actions" / filename,
+        root.parent / "production_execute" / "corporate_actions" / filename,
+        root.parent / "suite" / "corporate_actions" / filename,
     ):
         if path.exists():
             return str(path)

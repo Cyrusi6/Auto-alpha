@@ -14,6 +14,7 @@ EXPECTED_DATASETS = [
     "daily_limits",
     "adjustment_factors",
     "index_members",
+    "corporate_actions",
 ]
 
 
@@ -114,6 +115,7 @@ def test_run_pipeline_sync_sample_append_deduplicates(tmp_path, capsys):
     assert len(storage.read_dataset("daily_bars")) == 6
     assert len(storage.read_dataset("daily_limits")) == 6
     assert len(storage.read_dataset("index_members")) == 3
+    assert len(storage.read_dataset("corporate_actions")) == 4
     assert next(dataset for dataset in payload["datasets"] if dataset["dataset"] == "daily_bars")["records"] == 6
 
 

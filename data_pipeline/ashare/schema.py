@@ -84,6 +84,28 @@ class IndexMember:
 
 
 @dataclass(frozen=True)
+class CorporateAction:
+    ts_code: str
+    end_date: str | None = None
+    ann_date: str | None = None
+    div_proc: str | None = None
+    stk_div: float | None = None
+    stk_bo_rate: float | None = None
+    stk_co_rate: float | None = None
+    cash_div: float | None = None
+    cash_div_tax: float | None = None
+    record_date: str | None = None
+    ex_date: str | None = None
+    pay_date: str | None = None
+    div_listdate: str | None = None
+    imp_ann_date: str | None = None
+    base_date: str | None = None
+    base_share: float | None = None
+    source: str | None = None
+    raw_status: str | None = None
+
+
+@dataclass(frozen=True)
 class FinancialFeature:
     ts_code: str
     report_period: str

@@ -44,6 +44,12 @@ DEFAULT_MATRIX_FIELDS = (
     "active_mask",
     "listing_age_days",
     "pit_available_mask",
+    "cash_dividend",
+    "cash_dividend_tax",
+    "stock_distribution_ratio",
+    "corporate_action_flag",
+    "total_return_close",
+    "total_return",
 )
 
 
@@ -58,6 +64,9 @@ def build_matrix_cache(
     min_listing_days: int = 0,
     exclude_st: bool = False,
     active_mask_path: str | Path | None = None,
+    corporate_action_aware: bool = False,
+    target_return_mode: str = "adjusted_close",
+    corporate_action_dir: str | Path | None = None,
 ) -> MatrixCacheBuildResult:
     """Build a deterministic local matrix cache from JSONL datasets."""
 
@@ -83,6 +92,9 @@ def build_matrix_cache(
         min_listing_days=min_listing_days,
         exclude_st=exclude_st,
         active_security_mask_path=active_mask_path,
+        corporate_action_aware=corporate_action_aware,
+        target_return_mode=target_return_mode,
+        corporate_action_dir=corporate_action_dir,
     ).load_data()
 
     raw = dict(loader.raw_data_cache)
@@ -148,6 +160,13 @@ def build_matrix_cache(
         "min_listing_days": int(min_listing_days),
         "exclude_st": bool(exclude_st),
         "pit_contract_version": "1.0",
+        "corporate_action_aware": bool(corporate_action_aware),
+        "target_return_mode": target_return_mode,
+        "corporate_action_dir": str(corporate_action_dir) if corporate_action_dir is not None else None,
+        "corporate_action_contract_version": "1.0",
+        "corporate_action_event_count": int(raw.get("corporate_action_flag", torch.zeros_like(raw["close"])).sum().item())
+        if corporate_action_aware
+        else 0,
     }
     metadata_path = cache_dir / "metadata.json"
     metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")

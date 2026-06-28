@@ -20,6 +20,7 @@ def test_sample_provider_returns_all_dataset_types():
     assert provider.fetch_daily_limits(config)
     assert provider.fetch_adjustment_factors(config)
     assert provider.fetch_index_members(config)
+    assert provider.fetch_corporate_actions(config)
 
 
 def test_sample_provider_contains_required_securities():
@@ -56,6 +57,7 @@ def test_sample_provider_payload_excludes_old_business_terms():
         *provider.fetch_daily_limits(config),
         *provider.fetch_adjustment_factors(config),
         *provider.fetch_index_members(config),
+        *provider.fetch_corporate_actions(config),
     ]
     payload = json.dumps([asdict(record) for record in records], ensure_ascii=False).lower()
 
@@ -75,3 +77,12 @@ def test_sample_provider_market_constraint_data_has_expected_scenarios():
     assert any(limit.ts_code == "600000.SH" and limit.trade_date == "20240103" and limit.down_limit == 6.70 for limit in limits)
     assert any(record.adj_factor != 1.0 for record in factors)
     assert {record.index_code for record in members} == {"000300.SH"}
+
+
+def test_sample_provider_corporate_actions_cover_cash_stock_and_proposals():
+    records = SampleAShareDataProvider().fetch_corporate_actions(AShareDataConfig(provider="sample"))
+
+    assert any(record.cash_div and record.div_proc == "实施" for record in records)
+    assert any((record.stk_div or 0.0) > 0 or (record.stk_bo_rate or 0.0) > 0 for record in records)
+    assert any(record.cash_div and ((record.stk_div or 0.0) > 0 or (record.stk_co_rate or 0.0) > 0) for record in records)
+    assert any(record.div_proc != "实施" for record in records)

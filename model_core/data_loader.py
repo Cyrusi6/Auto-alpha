@@ -29,6 +29,11 @@ class AShareDataLoader:
         active_security_mask_path: str | Path | None = None,
         allow_inactive_securities: bool = True,
         leakage_guard: bool = False,
+        corporate_action_aware: bool = False,
+        corporate_action_dir: str | Path | None = None,
+        target_return_mode: str = "adjusted_close",
+        corporate_action_cash_field: str = "cash_div",
+        corporate_action_application_mode: str = "ex_date",
     ):
         self.data_dir = Path(data_dir) if data_dir is not None else Path(ModelConfig.DATA_DIR)
         self.device = torch.device(device) if device is not None else ModelConfig.DEVICE
@@ -44,11 +49,18 @@ class AShareDataLoader:
         self.active_security_mask_path = Path(active_security_mask_path) if active_security_mask_path is not None else None
         self.allow_inactive_securities = bool(allow_inactive_securities)
         self.leakage_guard = bool(leakage_guard)
+        self.corporate_action_aware = bool(corporate_action_aware)
+        self.corporate_action_dir = Path(corporate_action_dir) if corporate_action_dir is not None else None
+        self.target_return_mode = target_return_mode
+        self.corporate_action_cash_field = corporate_action_cash_field
+        self.corporate_action_application_mode = corporate_action_application_mode
         self.ts_codes: list[str] = []
         self.trade_dates: list[str] = []
         self.security_metadata: dict[str, dict[str, object]] = {}
         self.industry_codes: torch.Tensor | None = None
         self.raw_data_cache: dict[str, torch.Tensor] = {}
+        self.raw_corporate_actions: list[dict[str, object]] = []
+        self.corporate_action_events: list[dict[str, object]] = []
         self.feat_tensor: torch.Tensor | None = None
         self.target_ret: torch.Tensor | None = None
 
@@ -64,6 +76,8 @@ class AShareDataLoader:
         daily_limits = self._read_optional_jsonl("daily_limits")
         adjustment_factors = self._read_optional_jsonl("adjustment_factors")
         index_members = self._read_optional_jsonl("index_members")
+        corporate_actions = self._read_optional_jsonl("corporate_actions") if self.corporate_action_aware else []
+        self.raw_corporate_actions = list(corporate_actions)
 
         universe_codes = self._load_universe_codes()
         selected_securities = [
@@ -125,13 +139,15 @@ class AShareDataLoader:
             direction="down",
         )
         self.raw_data_cache["log_mkt_cap"] = torch.log1p(torch.clamp(self.raw_data_cache["total_mv"], min=0.0))
+        if self.corporate_action_aware:
+            self._attach_corporate_action_matrices(corporate_actions)
         self.industry_codes = self._build_industry_codes()
         self.raw_data_cache["industry_codes"] = self.industry_codes
         self.raw_data_cache["industry_code_matrix"] = self.industry_codes.unsqueeze(1).expand(-1, len(self.trade_dates))
         if self.point_in_time:
             self._attach_point_in_time_masks(securities)
         self.feat_tensor = AShareFeatureEngineer.compute_features(self.raw_data_cache)
-        self.target_ret = self._compute_target_ret(self.raw_data_cache["adjusted_close"])
+        self.target_ret = self._compute_target_ret(self._target_price_matrix())
         return self
 
     def _load_from_matrix_cache(self) -> "AShareDataLoader":
@@ -159,6 +175,8 @@ class AShareDataLoader:
             self.raw_data_cache["adjusted_close"] = self.raw_data_cache["close"] * self.raw_data_cache["adj_factor"]
         if "adjusted_open" not in self.raw_data_cache and "open" in self.raw_data_cache:
             self.raw_data_cache["adjusted_open"] = self.raw_data_cache["open"] * self.raw_data_cache["adj_factor"]
+        if self.corporate_action_aware and "total_return_close" not in self.raw_data_cache:
+            self._attach_corporate_action_matrices([])
         if "limit_up_flag" not in self.raw_data_cache and {"close", "up_limit"} <= set(self.raw_data_cache):
             self.raw_data_cache["limit_up_flag"] = self._limit_flag(
                 self.raw_data_cache["close"],
@@ -186,7 +204,7 @@ class AShareDataLoader:
             self._attach_point_in_time_masks(None)
 
         self.feat_tensor = AShareFeatureEngineer.compute_features(self.raw_data_cache)
-        self.target_ret = self._compute_target_ret(self.raw_data_cache["adjusted_close"])
+        self.target_ret = self._compute_target_ret(self._target_price_matrix())
         return self
 
     def _read_jsonl(self, dataset: str) -> list[dict[str, object]]:
@@ -293,6 +311,55 @@ class AShareDataLoader:
             aligned.append(values)
         return aligned
 
+    def _attach_corporate_action_matrices(self, records: list[dict[str, object]]) -> None:
+        if self.corporate_action_dir is not None:
+            event_path = self.corporate_action_dir / "corporate_action_events.jsonl"
+            if event_path.exists():
+                records = [json.loads(line) for line in event_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        if records and "action_id" in records[0]:
+            events = records
+        else:
+            from corporate_actions.normalizer import normalize_corporate_action_records
+
+            events = [event.to_dict() for event in normalize_corporate_action_records(records, cash_field=self.corporate_action_cash_field)]
+        if self.point_in_time:
+            filtered = []
+            for event in events:
+                availability_date = event.get("availability_date") or event.get("imp_ann_date") or event.get("ann_date")
+                if self.as_of_date and availability_date and str(availability_date) > self.as_of_date:
+                    continue
+                filtered.append(event)
+            events = filtered
+        self.corporate_action_events = [dict(event) for event in events]
+        shape = self.raw_data_cache["close"].shape
+        cash = torch.zeros(shape, dtype=torch.float32, device=self.device)
+        cash_tax = torch.zeros_like(cash)
+        stock_ratio = torch.zeros_like(cash)
+        flag = torch.zeros_like(cash)
+        stock_index = {ts_code: idx for idx, ts_code in enumerate(self.ts_codes)}
+        date_index = {trade_date: idx for idx, trade_date in enumerate(self.trade_dates)}
+        for event in events:
+            action_type = str(event.get("action_type") or "")
+            if action_type == "proposal_only":
+                continue
+            ts_code = str(event.get("ts_code") or "")
+            event_date = str(event.get("effective_date") or event.get("ex_date") or "")
+            si = stock_index.get(ts_code)
+            di = date_index.get(event_date)
+            if si is None or di is None:
+                continue
+            cash[si, di] += float(event.get("cash_div_per_share") or event.get("cash_div") or 0.0)
+            cash_tax[si, di] += float(event.get("cash_div_tax_per_share") or event.get("cash_div_tax") or 0.0)
+            stock_ratio[si, di] += float(event.get("stock_distribution_ratio") or 0.0)
+            flag[si, di] = 1.0
+        total_return_close = self.raw_data_cache["close"] * (1.0 + stock_ratio) + cash
+        self.raw_data_cache["cash_dividend"] = cash
+        self.raw_data_cache["cash_dividend_tax"] = cash_tax
+        self.raw_data_cache["stock_distribution_ratio"] = stock_ratio
+        self.raw_data_cache["corporate_action_flag"] = flag
+        self.raw_data_cache["total_return_close"] = total_return_close
+        self.raw_data_cache["total_return"] = self._compute_target_ret(total_return_close)
+
     def _build_industry_codes(self) -> torch.Tensor:
         industries = [
             str(self.security_metadata.get(ts_code, {}).get("industry") or "UNKNOWN")
@@ -353,6 +420,13 @@ class AShareDataLoader:
             active[si, di] = 1.0 if record.get("is_active") else 0.0
             age[si, di] = float(record.get("listing_age_days", 0) or 0)
         return active, age
+
+    def _target_price_matrix(self) -> torch.Tensor:
+        if self.target_return_mode == "raw_close":
+            return self.raw_data_cache["close"]
+        if self.target_return_mode == "corporate_action_total_return":
+            return self.raw_data_cache.get("total_return_close", self.raw_data_cache["adjusted_close"])
+        return self.raw_data_cache["adjusted_close"]
 
     @staticmethod
     def _compute_target_ret(close: torch.Tensor) -> torch.Tensor:

@@ -28,6 +28,10 @@ class LifecyclePolicy:
     max_leakage_blocker_count: int = 0
     max_pit_blocker_count: int = 0
     max_survivorship_warning_count: int = 999
+    require_corporate_action_report: bool = False
+    max_corporate_action_error_count: int = 0
+    max_adjustment_reconciliation_error_count: int = 0
+    max_adjustment_reconciliation_warning_count: int = 999
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -79,6 +83,7 @@ class ModelReviewPackage:
     reviewer_checklist: list[dict[str, Any]]
     pit_summary: dict[str, Any] = field(default_factory=dict)
     leakage_summary: dict[str, Any] = field(default_factory=dict)
+    corporate_action_summary: dict[str, Any] = field(default_factory=dict)
     lineage_graph_path: str | None = None
 
     def to_dict(self) -> dict[str, Any]:

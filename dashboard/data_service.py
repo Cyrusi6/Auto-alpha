@@ -271,6 +271,41 @@ class AshareDashboardService:
     def load_paper_fills(self) -> pd.DataFrame:
         return self._read_jsonl(self.config.orders_dir / "paper_fills.jsonl")
 
+    def load_corporate_actions_report(self) -> dict[str, Any]:
+        for path in self._corporate_action_candidates("corporate_actions_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_corporate_action_events(self) -> pd.DataFrame:
+        for path in self._corporate_action_candidates("corporate_action_events.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_total_return_report(self) -> dict[str, Any]:
+        for path in self._corporate_action_candidates("total_return_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_total_return_series(self) -> pd.DataFrame:
+        for path in self._corporate_action_candidates("total_return_series.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_adjustment_reconciliation(self) -> dict[str, Any]:
+        for path in self._corporate_action_candidates("adjustment_factor_reconciliation.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
     def load_capacity_report(self) -> dict[str, Any]:
         for path in self._execution_plan_candidates("capacity_report.json"):
             payload = self._read_json(path)
@@ -416,6 +451,13 @@ class AshareDashboardService:
 
     def load_trade_ledger(self) -> pd.DataFrame:
         for path in self._account_candidates("trade_ledger.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_corporate_action_ledger(self) -> pd.DataFrame:
+        for path in self._account_candidates("corporate_action_ledger.jsonl"):
             frame = self._read_jsonl(path)
             if not frame.empty:
                 return frame
@@ -980,6 +1022,24 @@ class AshareDashboardService:
             root / "daily_orders" / "plan" / filename,
             root / "daily_orders_execute" / "plan" / filename,
         ]
+
+    def _corporate_action_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        candidates = [
+            self.config.report_dir / filename,
+            self.config.report_dir / "corporate_actions" / filename,
+            self.config.backtest_dir / "corporate_actions" / filename,
+            self.config.orders_dir / "corporate_actions" / filename,
+            root / "corporate_actions" / filename,
+            root / "suite" / "corporate_actions" / filename,
+            root / "production" / "corporate_actions" / filename,
+            root / "production_execute" / "corporate_actions" / filename,
+        ]
+        if filename == "corporate_action_events.jsonl":
+            candidates.append(self.config.data_dir / "corporate_actions" / "records.jsonl")
+        else:
+            candidates.append(self.config.data_dir / filename)
+        return candidates
 
     def _broker_artifact_candidates(self, filename: str) -> list[Path]:
         root = self.config.report_dir.parent

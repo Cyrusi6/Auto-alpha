@@ -25,6 +25,10 @@ class AShareDataConfig:
     universe: str = "all_a"
     index_codes: tuple[str, ...] = ("000300.SH",)
     security_list_statuses: tuple[str, ...] = ("L",)
+    include_corporate_actions: bool = True
+    corporate_action_query_date_field: str = "ex_date"
+    corporate_action_apply_statuses: tuple[str, ...] = ("实施",)
+    corporate_action_cash_field: str = "cash_div"
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "AShareDataConfig":
@@ -50,6 +54,11 @@ class AShareDataConfig:
             universe=env.get("ASHARE_UNIVERSE", "all_a"),
             index_codes=_parse_csv_tuple(env.get("ASHARE_INDEX_CODES")) or ("000300.SH",),
             security_list_statuses=_parse_csv_tuple(env.get("ASHARE_SECURITY_LIST_STATUSES")) or ("L",),
+            include_corporate_actions=_parse_bool(env.get("ASHARE_INCLUDE_CORPORATE_ACTIONS"), default=True),
+            corporate_action_query_date_field=env.get("ASHARE_CORPORATE_ACTION_QUERY_DATE_FIELD") or "ex_date",
+            corporate_action_apply_statuses=_parse_csv_tuple(env.get("ASHARE_CORPORATE_ACTION_APPLY_STATUSES"))
+            or ("实施",),
+            corporate_action_cash_field=env.get("ASHARE_CORPORATE_ACTION_CASH_FIELD") or "cash_div",
         )
 
     def __post_init__(self) -> None:
@@ -85,6 +94,12 @@ class AShareDataConfig:
         if unsupported:
             raise ValueError(f"security_list_statuses only supports L,D,P: {', '.join(unsupported)}")
         object.__setattr__(self, "security_list_statuses", statuses)
+        if self.corporate_action_query_date_field not in {"ex_date", "ann_date", "record_date", "imp_ann_date"}:
+            raise ValueError("corporate_action_query_date_field must be one of: ex_date, ann_date, record_date, imp_ann_date")
+        if self.corporate_action_cash_field not in {"cash_div", "cash_div_tax"}:
+            raise ValueError("corporate_action_cash_field must be one of: cash_div, cash_div_tax")
+        apply_statuses = tuple(str(status).strip() for status in self.corporate_action_apply_statuses if str(status).strip())
+        object.__setattr__(self, "corporate_action_apply_statuses", apply_statuses or ("实施",))
 
     @staticmethod
     def _coerce_positive_int(value: int | str, field_name: str) -> int:
@@ -102,3 +117,9 @@ def _parse_csv_tuple(value: str | None) -> tuple[str, ...] | None:
         return None
     parsed = tuple(item.strip() for item in value.split(",") if item.strip())
     return parsed or None
+
+
+def _parse_bool(value: str | None, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}

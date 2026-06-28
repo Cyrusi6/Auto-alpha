@@ -11,6 +11,7 @@ from artifact_schema.writer import write_jsonl_artifact
 from point_in_time.validator import validate_point_in_time_data
 
 from .backtest_audit import audit_backtest_artifacts
+from .corporate_actions import audit_corporate_actions
 from .factor_audit import audit_factor_values
 from .models import LeakageAuditConfig, LeakageAuditReport, LeakageIssue, SurvivorshipAuditResult
 from .report import write_leakage_audit_report
@@ -76,12 +77,14 @@ def main(argv: list[str] | None = None) -> int:
         )
     factor_audit = audit_factor_values(args.factor_store_dir, args.factor_id, args.as_of_date, active_mask_path, args.point_in_time)
     backtest_audit = audit_backtest_artifacts(args.backtest_result_path, strict=args.strict)
+    corporate_action_audit = audit_corporate_actions(args.data_dir, args.as_of_date)
     issues = [
         *formula_scan.issues,
         *truncation.issues,
         *factor_audit.issues,
         *backtest_audit.issues,
         *survivorship.issues,
+        *corporate_action_audit.issues,
     ]
     blocker_count = sum(issue.severity == "blocker" for issue in issues)
     error_count = sum(issue.severity == "error" for issue in issues)
@@ -108,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
         factor_value_leakage=factor_audit,
         backtest_leakage=backtest_audit,
         survivorship=survivorship,
+        corporate_action_leakage=corporate_action_audit,
         issues=issues,
     )
     paths = write_leakage_audit_report(report, args.output_dir)

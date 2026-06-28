@@ -74,6 +74,10 @@ class AShareStrategyRunner:
         feature_cutoff_mode: str = "same_day_after_close",
         min_listing_days: int = 0,
         exclude_st: bool = False,
+        corporate_action_aware: bool = False,
+        target_return_mode: str = "adjusted_close",
+        corporate_action_dir: str | Path | None = None,
+        corporate_action_cash_field: str = "cash_div",
     ):
         self.data_dir = Path(data_dir)
         self.factor_store_dir = Path(factor_store_dir)
@@ -110,6 +114,10 @@ class AShareStrategyRunner:
         self.feature_cutoff_mode = feature_cutoff_mode
         self.min_listing_days = int(min_listing_days)
         self.exclude_st = bool(exclude_st)
+        self.corporate_action_aware = bool(corporate_action_aware)
+        self.target_return_mode = target_return_mode
+        self.corporate_action_dir = Path(corporate_action_dir) if corporate_action_dir is not None else None
+        self.corporate_action_cash_field = corporate_action_cash_field
         self.loader: AShareDataLoader | None = None
         self.selected_factor_id: str | None = None
         self.selected_factor_meta: dict[str, object] = {}
@@ -126,6 +134,10 @@ class AShareStrategyRunner:
             feature_cutoff_mode=self.feature_cutoff_mode,
             min_listing_days=self.min_listing_days,
             exclude_st=self.exclude_st,
+            corporate_action_aware=self.corporate_action_aware,
+            corporate_action_dir=self.corporate_action_dir,
+            target_return_mode=self.target_return_mode,
+            corporate_action_cash_field=self.corporate_action_cash_field,
         ).load_data()
         store = LocalFactorStore(self.factor_store_dir)
         self.selected_factor_id = select_factor_id(
@@ -385,6 +397,9 @@ class AShareStrategyRunner:
             "execution_quality_path": execution_paths.get("execution_quality_path"),
             "point_in_time": self.point_in_time,
             "feature_cutoff_mode": self.feature_cutoff_mode,
+            "corporate_action_aware": self.corporate_action_aware,
+            "target_return_mode": self.target_return_mode,
+            "corporate_action_event_count": len(getattr(self.loader, "corporate_action_events", []) or []),
         }
 
     def _build_execution_plan(self, orders, trade_date: str) -> tuple[ExecutionPlanResult, dict[str, object], dict[str, str]]:
@@ -454,6 +469,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--feature-cutoff-mode", default="same_day_after_close")
     parser.add_argument("--min-listing-days", type=int, default=0)
     parser.add_argument("--exclude-st", action="store_true")
+    parser.add_argument("--corporate-action-aware", action="store_true")
+    parser.add_argument("--corporate-action-dir")
+    parser.add_argument(
+        "--target-return-mode",
+        choices=["adjusted_close", "raw_close", "corporate_action_total_return"],
+        default="adjusted_close",
+    )
+    parser.add_argument("--corporate-action-cash-field", default="cash_div")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -496,6 +519,10 @@ def main(argv: list[str] | None = None) -> int:
         feature_cutoff_mode=args.feature_cutoff_mode,
         min_listing_days=args.min_listing_days,
         exclude_st=args.exclude_st,
+        corporate_action_aware=args.corporate_action_aware,
+        corporate_action_dir=args.corporate_action_dir,
+        target_return_mode=args.target_return_mode,
+        corporate_action_cash_field=args.corporate_action_cash_field,
     ).generate_orders()
     print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0

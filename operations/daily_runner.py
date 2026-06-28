@@ -8,6 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from corporate_actions.models import CorporateActionEvent
+from corporate_actions.normalizer import normalize_corporate_action_records
+from corporate_actions.report import read_jsonl, write_corporate_action_report
 from approval import ApprovalStatus, LocalApprovalStore
 from broker_adapter import (
     BrokerAdapterConfig,
@@ -76,6 +79,14 @@ class ProductionDailyRunner:
         feature_cutoff_mode: str = "same_day_after_close",
         min_listing_days: int = 0,
         exclude_st: bool = False,
+        corporate_action_aware: bool = False,
+        apply_corporate_actions: bool = False,
+        corporate_action_dir: str | Path | None = None,
+        corporate_action_output_dir: str | Path | None = None,
+        target_return_mode: str = "adjusted_close",
+        corporate_action_application_date_mode: str = "pay_date",
+        corporate_action_cash_field: str = "cash_div",
+        reconcile_adjustment_factors: bool = False,
     ):
         self.data_dir = Path(data_dir)
         self.factor_store_dir = Path(factor_store_dir)
@@ -120,6 +131,14 @@ class ProductionDailyRunner:
         self.feature_cutoff_mode = feature_cutoff_mode
         self.min_listing_days = int(min_listing_days)
         self.exclude_st = bool(exclude_st)
+        self.corporate_action_aware = bool(corporate_action_aware)
+        self.apply_corporate_actions = bool(apply_corporate_actions)
+        self.corporate_action_dir = Path(corporate_action_dir) if corporate_action_dir is not None else None
+        self.corporate_action_output_dir = Path(corporate_action_output_dir) if corporate_action_output_dir is not None else self.output_dir / "corporate_actions"
+        self.target_return_mode = target_return_mode
+        self.corporate_action_application_date_mode = corporate_action_application_date_mode
+        self.corporate_action_cash_field = corporate_action_cash_field
+        self.reconcile_adjustment_factors = bool(reconcile_adjustment_factors)
         self._model_context: dict[str, Any] = {}
 
     def run(
@@ -185,10 +204,31 @@ class ProductionDailyRunner:
             feature_cutoff_mode=self.feature_cutoff_mode,
             min_listing_days=self.min_listing_days,
             exclude_st=self.exclude_st,
+            corporate_action_aware=self.corporate_action_aware,
+            corporate_action_dir=self._corporate_action_dir(),
+            target_return_mode=self.target_return_mode,
+            corporate_action_cash_field=self.corporate_action_cash_field,
         ).generate_orders()
+        if self.apply_corporate_actions:
+            prices = _prices_for_date(
+                self.data_dir,
+                str(summary["rebalance_date"]),
+                corporate_action_aware=self.corporate_action_aware,
+                corporate_action_dir=self._corporate_action_dir(),
+                target_return_mode=self.target_return_mode,
+                cash_field=self.corporate_action_cash_field,
+            )
+            summary.update(self._apply_corporate_actions(str(summary["rebalance_date"]), prices))
         if not require_approval:
             fills = _read_jsonl(Path(str(summary.get("fills_path"))))
-            prices = _prices_for_date(self.data_dir, str(summary["rebalance_date"]))
+            prices = _prices_for_date(
+                self.data_dir,
+                str(summary["rebalance_date"]),
+                corporate_action_aware=self.corporate_action_aware,
+                corporate_action_dir=self._corporate_action_dir(),
+                target_return_mode=self.target_return_mode,
+                cash_field=self.corporate_action_cash_field,
+            )
             account_state = LocalPaperAccount(self.paper_account_dir).apply_fills(fills, prices, str(summary["rebalance_date"]))
             account_state = LocalPaperAccount(self.paper_account_dir).mark_to_market(prices, str(summary["rebalance_date"]))
             summary["account"] = {
@@ -227,6 +267,10 @@ class ProductionDailyRunner:
             feature_cutoff_mode=self.feature_cutoff_mode,
             min_listing_days=self.min_listing_days,
             exclude_st=self.exclude_st,
+            corporate_action_aware=self.corporate_action_aware,
+            corporate_action_dir=self._corporate_action_dir(),
+            target_return_mode=self.target_return_mode,
+            corporate_action_cash_field=self.corporate_action_cash_field,
         ).load_data()
         prices, volumes, suspended, limit_up, limit_down = _market_context(loader, batch.rebalance_date)
         orders = [
@@ -304,6 +348,9 @@ class ProductionDailyRunner:
             state = account.load_state()
         else:
             account.apply_child_fills(fills, prices, batch.rebalance_date)
+            corporate_summary = {}
+            if self.apply_corporate_actions:
+                corporate_summary = self._apply_corporate_actions(batch.rebalance_date, prices)
             state = account.mark_to_market(prices, batch.rebalance_date)
         rejected = sum(1 for fill in fills if fill.status == "REJECTED")
         partial = sum(1 for fill in fills if fill.status == "PARTIAL")
@@ -351,6 +398,8 @@ class ProductionDailyRunner:
                 "performance": compute_account_performance(state),
             },
         }
+        if self.apply_corporate_actions:
+            summary.update(corporate_summary if "corporate_summary" in locals() else {})
         self._attach_model_metadata_to_summary(summary, batch=batch)
         production_status = "broker_exported" if self.broker_adapter == "file" and broker_summary.get("inbox_fills", 0) == 0 else "executed"
         return ProductionRunResult(
@@ -567,6 +616,47 @@ class ProductionDailyRunner:
                 "model_registry_warning_count": 0,
             }
 
+    def _apply_corporate_actions(self, trade_date: str, prices: dict[str, float]) -> dict[str, Any]:
+        events = _load_corporate_action_events(self.data_dir, self._corporate_action_dir(), self.corporate_action_cash_field)
+        report_paths = write_corporate_action_report(
+            self.data_dir,
+            events,
+            self.corporate_action_output_dir,
+            start_date="00000000",
+            end_date=trade_date,
+            total_return_mode="cash_reinvested",
+            reconcile_adjustment=self.reconcile_adjustment_factors,
+        )
+        state, applications = LocalPaperAccount(self.paper_account_dir).apply_corporate_actions(
+            events,
+            trade_date=trade_date,
+            prices=prices,
+            mode=self.corporate_action_application_date_mode,
+        )
+        applied = [item for item in applications if getattr(item, "status", "") == "APPLIED"]
+        skipped = [item for item in applications if getattr(item, "status", "") != "APPLIED"]
+        summary = json.loads(Path(report_paths["corporate_actions_report_path"]).read_text(encoding="utf-8"))
+        return {
+            "corporate_action_aware": self.corporate_action_aware,
+            "target_return_mode": self.target_return_mode,
+            "corporate_action_event_count": summary.get("event_count", 0),
+            "implemented_action_count": summary.get("implemented_action_count", 0),
+            "corporate_action_applications": len(applications),
+            "corporate_action_applied_count": len(applied),
+            "corporate_action_skipped_count": len(skipped),
+            "corporate_action_cash": sum(float(getattr(item, "cash_amount", 0.0) or 0.0) for item in applied),
+            "corporate_action_ledger_path": str(LocalPaperAccount(self.paper_account_dir).corporate_action_ledger_path),
+            "cash_ledger_path": str(LocalPaperAccount(self.paper_account_dir).cash_ledger_path),
+            "corporate_action_report_path": report_paths["corporate_actions_report_path"],
+            "corporate_action_report_md_path": report_paths["corporate_actions_report_md_path"],
+            "total_return_report_path": report_paths["total_return_report_path"],
+            "adjustment_reconciliation_path": report_paths["adjustment_reconciliation_path"],
+            "account_cash_after_corporate_actions": state.cash,
+        }
+
+    def _corporate_action_dir(self) -> Path:
+        return self.corporate_action_dir or self.corporate_action_output_dir
+
 
 def _paths_from_summary(summary: dict[str, Any]) -> dict[str, str]:
     keys = [
@@ -600,13 +690,42 @@ def _paths_from_summary(summary: dict[str, Any]) -> dict[str, str]:
         "broker_outbox_summary_path",
         "model_registry_report_path",
         "model_lineage_graph_path",
+        "corporate_action_report_path",
+        "corporate_action_report_md_path",
+        "total_return_report_path",
+        "adjustment_reconciliation_path",
+        "corporate_action_ledger_path",
+        "cash_ledger_path",
     ]
     return {key: str(summary[key]) for key in keys if summary.get(key)}
 
 
-def _prices_for_date(data_dir: Path, trade_date: str) -> dict[str, float]:
-    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+def _prices_for_date(
+    data_dir: Path,
+    trade_date: str,
+    *,
+    corporate_action_aware: bool = False,
+    corporate_action_dir: Path | None = None,
+    target_return_mode: str = "adjusted_close",
+    cash_field: str = "cash_div",
+) -> dict[str, float]:
+    loader = AShareDataLoader(
+        data_dir=data_dir,
+        device="cpu",
+        corporate_action_aware=corporate_action_aware,
+        corporate_action_dir=corporate_action_dir,
+        target_return_mode=target_return_mode,
+        corporate_action_cash_field=cash_field,
+    ).load_data()
     return _market_context(loader, trade_date)[0]
+
+
+def _load_corporate_action_events(data_dir: Path, corporate_action_dir: Path, cash_field: str) -> list[CorporateActionEvent]:
+    event_path = corporate_action_dir / "corporate_action_events.jsonl"
+    if event_path.exists():
+        return [CorporateActionEvent(**record) for record in read_jsonl(event_path)]
+    records = read_jsonl(data_dir / "corporate_actions" / "records.jsonl")
+    return normalize_corporate_action_records(records, cash_field=cash_field)
 
 
 def _market_context(loader: AShareDataLoader, trade_date: str):

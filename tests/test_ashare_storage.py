@@ -53,6 +53,7 @@ def test_local_storage_append_deduplicates_new_market_constraint_datasets(tmp_pa
         "daily_limits": provider.fetch_daily_limits(config),
         "adjustment_factors": provider.fetch_adjustment_factors(config),
         "index_members": provider.fetch_index_members(config),
+        "corporate_actions": provider.fetch_corporate_actions(config),
     }.items():
         storage.write_dataset(dataset, records, mode="append")
         result = storage.write_dataset(dataset, records, mode="append")

@@ -9,6 +9,9 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
+from corporate_actions.models import CorporateActionEvent
+from corporate_actions.normalizer import normalize_corporate_action_records
+from corporate_actions.report import read_jsonl, write_corporate_action_report
 from factor_store import LocalFactorStore
 from model_core.data_loader import AShareDataLoader
 from capacity_model import write_capacity_report
@@ -77,6 +80,18 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-leakage-audit", action="store_true")
     parser.add_argument("--leakage-audit-dir")
     parser.add_argument("--fail-on-leakage-blocker", action="store_true")
+    parser.add_argument("--corporate-action-aware", action="store_true")
+    parser.add_argument("--corporate-action-dir")
+    parser.add_argument(
+        "--target-return-mode",
+        choices=["adjusted_close", "raw_close", "corporate_action_total_return"],
+        default="adjusted_close",
+    )
+    parser.add_argument("--apply-corporate-actions", action="store_true")
+    parser.add_argument("--corporate-action-application-date-mode", default="pay_date")
+    parser.add_argument("--corporate-action-report-dir")
+    parser.add_argument("--corporate-action-cash-field", default="cash_div")
+    parser.add_argument("--reconcile-adjustment-factors", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -92,6 +107,11 @@ def main(argv: list[str] | None = None) -> int:
         min_listing_days=args.min_listing_days,
         exclude_st=args.exclude_st,
         active_security_mask_path=args.active_mask_path,
+        corporate_action_aware=args.corporate_action_aware,
+        corporate_action_dir=args.corporate_action_dir,
+        target_return_mode=args.target_return_mode,
+        corporate_action_cash_field=args.corporate_action_cash_field,
+        corporate_action_application_mode=args.corporate_action_application_date_mode,
     ).load_data()
     store = LocalFactorStore(args.factor_store_dir)
     factor_id = select_factor_id(
@@ -135,6 +155,29 @@ def main(argv: list[str] | None = None) -> int:
     if args.point_in_time and "active_mask" in loader.raw_data_cache:
         active_mask = loader.raw_data_cache["active_mask"]
         result.metrics["active_universe_coverage"] = float(active_mask.mean().item()) if active_mask.numel() else 0.0
+    corporate_paths: dict[str, str | None] = {
+        "corporate_action_report_path": None,
+        "total_return_report_path": None,
+        "adjustment_reconciliation_path": None,
+    }
+    if args.corporate_action_aware or args.corporate_action_report_dir:
+        corporate_paths, corporate_summary = _write_corporate_action_artifacts(args, loader)
+        result.metrics.update(
+            {
+                "corporate_action_event_count": float(corporate_summary.get("event_count", 0) or 0),
+                "implemented_action_count": float(corporate_summary.get("implemented_action_count", 0) or 0),
+                "cash_dividend_amount": float(corporate_summary.get("cash_dividend_amount_per_share", 0.0) or 0.0),
+                "stock_distribution_event_count": float(corporate_summary.get("stock_distribution_event_count", 0) or 0),
+                "corporate_action_warning_count": float(corporate_summary.get("corporate_action_warning_count", 0) or 0),
+                "corporate_action_error_count": float(corporate_summary.get("corporate_action_error_count", 0) or 0),
+                "adjustment_reconciliation_warning_count": float(
+                    corporate_summary.get("adjustment_reconciliation_warning_count", 0) or 0
+                ),
+                "adjustment_reconciliation_error_count": float(
+                    corporate_summary.get("adjustment_reconciliation_error_count", 0) or 0
+                ),
+            }
+        )
 
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "backtest_result.json").write_text(
@@ -274,12 +317,38 @@ def main(argv: list[str] | None = None) -> int:
         "point_in_time": bool(args.point_in_time),
         "feature_cutoff_mode": args.feature_cutoff_mode,
         "signal_lag_days": args.signal_lag_days,
+        "corporate_action_aware": bool(args.corporate_action_aware),
+        "target_return_mode": args.target_return_mode,
         "leakage_gate_status": leakage_gate_status,
         **leakage_paths,
+        **corporate_paths,
         **execution_plan_paths,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0
+
+
+def _write_corporate_action_artifacts(args: argparse.Namespace, loader: AShareDataLoader) -> tuple[dict[str, str | None], dict[str, object]]:
+    output_dir = Path(args.corporate_action_report_dir) if args.corporate_action_report_dir else Path(args.output_dir) / "corporate_actions"
+    events_path = Path(args.corporate_action_dir) / "corporate_action_events.jsonl" if args.corporate_action_dir else None
+    if events_path is not None and events_path.exists():
+        events = [CorporateActionEvent(**record) for record in read_jsonl(events_path)]
+    else:
+        events = normalize_corporate_action_records(
+            getattr(loader, "raw_corporate_actions", []),
+            cash_field=args.corporate_action_cash_field,
+        )
+    paths = write_corporate_action_report(
+        args.data_dir,
+        events,
+        output_dir,
+        start_date=loader.trade_dates[0] if loader.trade_dates else "00000000",
+        end_date=loader.trade_dates[-1] if loader.trade_dates else "99999999",
+        total_return_mode="cash_reinvested",
+        reconcile_adjustment=args.reconcile_adjustment_factors,
+    )
+    summary = json.loads(Path(paths["corporate_actions_report_path"]).read_text(encoding="utf-8"))
+    return paths, summary
 
 
 if __name__ == "__main__":

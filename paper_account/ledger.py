@@ -14,6 +14,7 @@ from .models import (
     PaperAccountSnapshot,
     PaperAccountState,
     PaperCashLedgerEntry,
+    PaperCorporateActionLedgerEntry,
     PaperPosition,
     PaperTradeLedgerEntry,
 )
@@ -28,6 +29,8 @@ class LocalPaperAccount:
         self.cash_ledger_path = self.root_dir / "cash_ledger.jsonl"
         self.trade_ledger_path = self.root_dir / "trade_ledger.jsonl"
         self.snapshots_path = self.root_dir / "account_snapshots.jsonl"
+        self.corporate_action_ledger_path = self.root_dir / "corporate_action_ledger.jsonl"
+        self.settlement_ledger_path = self.root_dir / "settlement_ledger.jsonl"
 
     def load_state(self) -> PaperAccountState:
         if not self.state_path.exists():
@@ -45,6 +48,8 @@ class LocalPaperAccount:
             positions=state.positions,
             cash_ledger=state.cash_ledger,
             trade_ledger=state.trade_ledger,
+            corporate_action_ledger=state.corporate_action_ledger,
+            settlement_ledger=state.settlement_ledger,
             snapshots=state.snapshots,
             updated_at=_utc_now(),
         )
@@ -53,6 +58,8 @@ class LocalPaperAccount:
         self.export_positions(updated)
         self.export_snapshots(updated)
         self.export_trade_ledger(updated)
+        self.export_corporate_action_ledger(updated)
+        self.export_settlement_ledger(updated)
         self._export_cash_ledger(updated)
         return updated
 
@@ -160,6 +167,8 @@ class LocalPaperAccount:
             positions=positions,
             cash_ledger=cash_ledger,
             trade_ledger=trade_ledger,
+            corporate_action_ledger=state.corporate_action_ledger,
+            settlement_ledger=state.settlement_ledger,
             snapshots=state.snapshots,
             updated_at=_utc_now(),
         )
@@ -199,6 +208,8 @@ class LocalPaperAccount:
             positions=state.positions,
             cash_ledger=state.cash_ledger,
             trade_ledger=state.trade_ledger,
+            corporate_action_ledger=state.corporate_action_ledger,
+            settlement_ledger=state.settlement_ledger,
             snapshots=state.snapshots + [snapshot],
             updated_at=_utc_now(),
         )
@@ -215,6 +226,32 @@ class LocalPaperAccount:
     def export_trade_ledger(self, state: PaperAccountState | None = None) -> Path:
         state = state or self.load_state()
         return _write_jsonl(self.trade_ledger_path, [entry.to_dict() for entry in state.trade_ledger])
+
+    def export_corporate_action_ledger(self, state: PaperAccountState | None = None) -> Path:
+        state = state or self.load_state()
+        return _write_jsonl(self.corporate_action_ledger_path, [entry.to_dict() for entry in state.corporate_action_ledger])
+
+    def export_settlement_ledger(self, state: PaperAccountState | None = None) -> Path:
+        state = state or self.load_state()
+        return _write_jsonl(self.settlement_ledger_path, [dict(entry) for entry in state.settlement_ledger])
+
+    def apply_corporate_actions(
+        self,
+        events: Sequence[object],
+        trade_date: str,
+        prices: dict[str, float] | None = None,
+        mode: str = "pay_date",
+    ) -> tuple[PaperAccountState, list[object]]:
+        from corporate_actions.accounting import apply_corporate_actions_to_positions
+
+        updated, applications = apply_corporate_actions_to_positions(
+            self.load_state(),
+            events,
+            trade_date=trade_date,
+            prices=prices,
+            config={"application_date_mode": mode},
+        )
+        return self.save_state(updated), applications
 
     def _export_cash_ledger(self, state: PaperAccountState) -> Path:
         return _write_jsonl(self.cash_ledger_path, [entry.to_dict() for entry in state.cash_ledger])
@@ -239,6 +276,8 @@ class LocalPaperAccount:
             positions=positions,
             cash_ledger=state.cash_ledger,
             trade_ledger=state.trade_ledger,
+            corporate_action_ledger=state.corporate_action_ledger,
+            settlement_ledger=state.settlement_ledger,
             snapshots=state.snapshots,
             updated_at=state.updated_at,
         )
@@ -252,6 +291,8 @@ def _state_from_payload(payload: dict[str, Any]) -> PaperAccountState:
         positions={key: PaperPosition(**value) for key, value in dict(payload.get("positions") or {}).items()},
         cash_ledger=[PaperCashLedgerEntry(**entry) for entry in payload.get("cash_ledger", [])],
         trade_ledger=[PaperTradeLedgerEntry(**entry) for entry in payload.get("trade_ledger", [])],
+        corporate_action_ledger=[PaperCorporateActionLedgerEntry(**entry) for entry in payload.get("corporate_action_ledger", [])],
+        settlement_ledger=[dict(entry) for entry in payload.get("settlement_ledger", [])],
         snapshots=[PaperAccountSnapshot(**entry) for entry in payload.get("snapshots", [])],
         updated_at=payload.get("updated_at"),
     )

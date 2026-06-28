@@ -93,10 +93,32 @@ class FakeTushareClient:
                     "weight": "0.42",
                 }
             ],
+            "dividend": [
+                {
+                    "ts_code": "000001.SZ",
+                    "end_date": "20231231",
+                    "ann_date": "20240102",
+                    "div_proc": "实施",
+                    "stk_div": "0",
+                    "stk_bo_rate": "0.05",
+                    "stk_co_rate": "0.02",
+                    "cash_div": "0.12",
+                    "cash_div_tax": "0.10",
+                    "record_date": "20240102",
+                    "ex_date": "20240103",
+                    "pay_date": "20240104",
+                    "div_listdate": "20240104",
+                    "imp_ann_date": "20240102",
+                    "base_date": "20231231",
+                    "base_share": "1000000",
+                }
+            ],
         }
 
     def post(self, api_name, params=None, fields=None):
         self.calls.append({"api_name": api_name, "params": params, "fields": fields})
+        if api_name == "dividend" and (params or {}).get("ex_date") != "20240102":
+            return []
         return self.responses[api_name]
 
 
@@ -119,6 +141,7 @@ def test_tushare_provider_maps_all_dataset_types():
     limits = provider.fetch_daily_limits(config)
     factors = provider.fetch_adjustment_factors(config)
     members = provider.fetch_index_members(config)
+    actions = provider.fetch_corporate_actions(config)
 
     assert securities[0].ts_code == "000001.SZ"
     assert securities[0].board == "主板"
@@ -144,6 +167,10 @@ def test_tushare_provider_maps_all_dataset_types():
     assert members[0].index_code == "000300.SH"
     assert members[0].ts_code == "000001.SZ"
     assert members[0].weight == 0.42
+    assert actions[0].cash_div == 0.12
+    assert actions[0].stk_bo_rate == 0.05
+    assert actions[0].stk_co_rate == 0.02
+    assert actions[0].source == "tushare"
 
 
 def test_tushare_provider_uses_expected_api_names_and_params():
@@ -165,8 +192,9 @@ def test_tushare_provider_uses_expected_api_names_and_params():
     provider.fetch_daily_limits(config)
     provider.fetch_adjustment_factors(config)
     provider.fetch_index_members(config)
+    provider.fetch_corporate_actions(config)
 
-    assert [call["api_name"] for call in client.calls] == [
+    assert [call["api_name"] for call in client.calls[:8]] == [
         "stock_basic",
         "trade_cal",
         "daily",
@@ -176,12 +204,14 @@ def test_tushare_provider_uses_expected_api_names_and_params():
         "adj_factor",
         "index_weight",
     ]
+    assert [call["api_name"] for call in client.calls[8:]] == ["dividend", "dividend", "dividend"]
     assert client.calls[0]["params"] == {"list_status": "L"}
     assert client.calls[1]["params"] == {
         "start_date": "20240101",
         "exchange": "SSE",
         "end_date": "20240103",
     }
+    assert client.calls[8]["params"] == {"ex_date": "20240101"}
 
 
 def test_factory_returns_tushare_provider():

@@ -96,6 +96,21 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--leakage-audit-dir")
     parser.add_argument("--fail-on-pit-blocker", action="store_true")
     parser.add_argument("--fail-on-leakage-blocker", action="store_true")
+    parser.add_argument("--include-corporate-actions", action="store_true", default=True)
+    parser.add_argument("--no-corporate-actions", action="store_true")
+    parser.add_argument("--corporate-action-output-dir")
+    parser.add_argument("--run-corporate-action-report", action="store_true")
+    parser.add_argument("--corporate-action-aware", action="store_true")
+    parser.add_argument(
+        "--target-return-mode",
+        choices=["adjusted_close", "raw_close", "corporate_action_total_return"],
+        default="adjusted_close",
+    )
+    parser.add_argument("--corporate-action-dir")
+    parser.add_argument("--corporate-action-cash-field", default="cash_div")
+    parser.add_argument("--corporate-action-application-date-mode", default="pay_date")
+    parser.add_argument("--reconcile-adjustment-factors", action="store_true")
+    parser.add_argument("--fail-on-corporate-action-error", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -206,6 +221,16 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
         leakage_audit_dir=args.leakage_audit_dir,
         fail_on_pit_blocker=args.fail_on_pit_blocker,
         fail_on_leakage_blocker=args.fail_on_leakage_blocker,
+        include_corporate_actions=not args.no_corporate_actions,
+        corporate_action_output_dir=args.corporate_action_output_dir,
+        run_corporate_action_report=args.run_corporate_action_report,
+        corporate_action_aware=args.corporate_action_aware,
+        target_return_mode=args.target_return_mode,
+        corporate_action_dir=args.corporate_action_dir,
+        corporate_action_cash_field=args.corporate_action_cash_field,
+        corporate_action_application_date_mode=args.corporate_action_application_date_mode,
+        reconcile_adjustment_factors=args.reconcile_adjustment_factors,
+        fail_on_corporate_action_error=args.fail_on_corporate_action_error,
     )
 
 

@@ -31,6 +31,8 @@ class MonitoringReport:
         truncation = self.checks.get("truncation_consistency", {}) if isinstance(self.checks, dict) else {}
         cutoff = self.checks.get("feature_cutoff_policy", {}) if isinstance(self.checks, dict) else {}
         backtest = self.checks.get("backtest", {}) if isinstance(self.checks, dict) else {}
+        corporate = self.checks.get("corporate_action_report", {}) if isinstance(self.checks, dict) else {}
+        ca_ledger = self.checks.get("corporate_action_ledger", {}) if isinstance(self.checks, dict) else {}
         return {
             "created_at": self.created_at,
             "as_of_date": self.as_of_date,
@@ -47,4 +49,8 @@ class MonitoringReport:
             "active_universe_coverage": float(pit.get("active_universe_coverage", 0.0) or 0.0) if isinstance(pit, dict) else 0.0,
             "inactive_security_order_count": int(backtest.get("inactive_security_order_count", 0) or 0) if isinstance(backtest, dict) else 0,
             "feature_cutoff_mode": str(cutoff.get("feature_cutoff_mode", "")) if isinstance(cutoff, dict) else "",
+            "corporate_action_event_count": int(corporate.get("corporate_action_event_count", 0) or 0) if isinstance(corporate, dict) else 0,
+            "unprocessed_corporate_action_count": int(corporate.get("unprocessed_corporate_action_count", 0) or 0) if isinstance(corporate, dict) else 0,
+            "corporate_action_ledger_entries": int(ca_ledger.get("corporate_action_ledger_entries", 0) or 0) if isinstance(ca_ledger, dict) else 0,
+            "corporate_action_cash_amount": float(ca_ledger.get("corporate_action_cash_amount", 0.0) or 0.0) if isinstance(ca_ledger, dict) else 0.0,
         }

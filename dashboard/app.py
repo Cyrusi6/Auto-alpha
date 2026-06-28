@@ -108,9 +108,27 @@ def render_app(config: DashboardConfig | None = None) -> None:
             _show_dataframe_or_empty("Securities", service.load_dataset("securities"))
             _show_dataframe_or_empty("Daily Limits", service.load_dataset("daily_limits"))
             _show_dataframe_or_empty("Index Members", service.load_dataset("index_members"))
+            _show_dataframe_or_empty("Corporate Actions", service.load_dataset("corporate_actions"))
         with col2:
             _show_dataframe_or_empty("Daily Bars", service.load_dataset("daily_bars"))
             _show_dataframe_or_empty("Adjustment Factors", service.load_dataset("adjustment_factors"))
+        corporate_report = service.load_corporate_actions_report()
+        total_return_report = service.load_total_return_report()
+        adjustment_reconciliation = service.load_adjustment_reconciliation()
+        st.subheader("Corporate Actions And Total Return")
+        st.json(
+            {
+                "events": corporate_report.get("event_count", 0) if corporate_report else 0,
+                "implemented": corporate_report.get("implemented_action_count", 0) if corporate_report else 0,
+                "unprocessed": corporate_report.get("unprocessed_corporate_action_count", 0) if corporate_report else 0,
+                "total_return_mode": corporate_report.get("total_return_mode", "") if corporate_report else "",
+                "total_return_records": total_return_report.get("records", 0) if total_return_report else 0,
+                "cash_dividend_amount": total_return_report.get("cash_dividend_amount", 0.0) if total_return_report else 0.0,
+                "adjustment_reconciliation_warnings": adjustment_reconciliation.get("warning_count", 0) if adjustment_reconciliation else 0,
+            }
+        )
+        _show_dataframe_or_empty("Corporate Action Events", service.load_corporate_action_events())
+        _show_dataframe_or_empty("Total Return Series", service.load_total_return_series())
         smoke_report = service.load_data_source_smoke_report()
         provider_probe = service.load_provider_probe()
         field_coverage = service.load_field_coverage_report()
@@ -473,6 +491,7 @@ def render_app(config: DashboardConfig | None = None) -> None:
         positions = service.load_paper_positions()
         snapshots = service.load_account_snapshots()
         trade_ledger = service.load_trade_ledger()
+        corporate_action_ledger = service.load_corporate_action_ledger()
         monitoring_report = service.load_monitoring_report()
         monitoring_markdown = service.load_monitoring_report_markdown()
         monitoring_alerts = service.load_monitoring_alerts()
@@ -505,6 +524,7 @@ def render_app(config: DashboardConfig | None = None) -> None:
         _show_dataframe_or_empty("Paper Positions", positions)
         _show_dataframe_or_empty("Account Snapshots", snapshots)
         _show_dataframe_or_empty("Trade Ledger", trade_ledger)
+        _show_dataframe_or_empty("Corporate Action Ledger", corporate_action_ledger)
         st.subheader("Broker")
         st.json(
             {

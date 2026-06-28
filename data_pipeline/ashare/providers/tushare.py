@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import replace
+from datetime import datetime, timedelta
 from typing import Any
 
 from ..audit import ApiRequestAuditEntry, ApiRequestAuditor, utc_now
@@ -11,6 +12,7 @@ from ..cache import TushareResponseCache
 from ..config import AShareDataConfig
 from ..schema import (
     AdjustmentFactor,
+    CorporateAction,
     DailyBar,
     DailyBasic,
     DailyLimit,
@@ -283,6 +285,52 @@ class TushareAShareDataProvider:
                 )
         return records
 
+    def fetch_corporate_actions(self, config: AShareDataConfig) -> list[CorporateAction]:
+        records: list[CorporateAction] = []
+        fields = (
+            "ts_code,end_date,ann_date,div_proc,stk_div,stk_bo_rate,stk_co_rate,"
+            "cash_div,cash_div_tax,record_date,ex_date,pay_date,div_listdate,"
+            "imp_ann_date,base_date,base_share"
+        )
+        for query_date in _date_range(config.start_date, config.end_date or config.start_date):
+            rows = self._post(
+                config,
+                "dividend",
+                params={config.corporate_action_query_date_field: query_date},
+                fields=fields,
+            )
+            for row in rows:
+                ts_code = _text(row.get("ts_code"))
+                if not is_valid_ts_code(ts_code):
+                    continue
+                ann_date = _valid_optional_date(row.get("ann_date"))
+                ex_date = _valid_optional_date(row.get("ex_date"))
+                if ann_date is None and ex_date is None:
+                    continue
+                records.append(
+                    CorporateAction(
+                        ts_code=ts_code,
+                        end_date=_valid_optional_date(row.get("end_date")),
+                        ann_date=ann_date,
+                        div_proc=_optional_text(row.get("div_proc")),
+                        stk_div=_optional_float(row.get("stk_div")),
+                        stk_bo_rate=_optional_float(row.get("stk_bo_rate")),
+                        stk_co_rate=_optional_float(row.get("stk_co_rate")),
+                        cash_div=_optional_float(row.get("cash_div")),
+                        cash_div_tax=_optional_float(row.get("cash_div_tax")),
+                        record_date=_valid_optional_date(row.get("record_date")),
+                        ex_date=ex_date,
+                        pay_date=_valid_optional_date(row.get("pay_date")),
+                        div_listdate=_valid_optional_date(row.get("div_listdate")),
+                        imp_ann_date=_valid_optional_date(row.get("imp_ann_date")),
+                        base_date=_valid_optional_date(row.get("base_date")),
+                        base_share=_optional_float(row.get("base_share")),
+                        source="tushare",
+                        raw_status=_optional_text(row.get("div_proc")),
+                    )
+                )
+        return records
+
     def _post(
         self,
         config: AShareDataConfig,
@@ -299,6 +347,21 @@ def _date_params(config: AShareDataConfig, **extra: str) -> dict[str, str]:
     if config.end_date:
         params["end_date"] = config.end_date
     return params
+
+
+def _date_range(start_date: str, end_date: str) -> list[str]:
+    if not is_valid_yyyymmdd(start_date) or not is_valid_yyyymmdd(end_date):
+        return [start_date]
+    start = datetime.strptime(start_date, "%Y%m%d").date()
+    end = datetime.strptime(end_date, "%Y%m%d").date()
+    if start > end:
+        return [start_date]
+    values: list[str] = []
+    current = start
+    while current <= end:
+        values.append(current.strftime("%Y%m%d"))
+        current += timedelta(days=1)
+    return values
 
 
 def _config_for_job(config: AShareDataConfig, job: SyncJob) -> AShareDataConfig:

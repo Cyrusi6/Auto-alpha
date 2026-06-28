@@ -23,6 +23,7 @@ def test_quality_report_for_sample_data_has_no_errors(tmp_path):
         "daily_limits",
         "adjustment_factors",
         "index_members",
+        "corporate_actions",
     }
 
 
@@ -108,6 +109,29 @@ def test_quality_detects_market_constraint_dataset_errors():
     assert "up_limit_less_than_down_limit" in {issue.code for issue in limit_summary.issues}
     assert "invalid_adjustment_factor" in {issue.code for issue in factor_summary.issues}
     assert "invalid_index_weight" in {issue.code for issue in member_summary.issues}
+
+
+def test_quality_detects_corporate_action_errors():
+    summary = validate_dataset(
+        "corporate_actions",
+        [
+            {
+                "ts_code": "BAD",
+                "ann_date": "",
+                "end_date": "20240101",
+                "ex_date": "",
+                "div_proc": "实施",
+                "cash_div": -1.0,
+                "stk_div": -0.1,
+            }
+        ],
+    )
+    codes = {issue.code for issue in summary.issues}
+
+    assert "invalid_ts_code" in codes
+    assert "missing_action_date" in codes
+    assert "negative_cash_dividend" in codes
+    assert "negative_stock_distribution" in codes
 
 
 def test_write_quality_report_writes_json(tmp_path):

@@ -59,6 +59,10 @@ class BatchResearchConfig:
     run_leakage_audit: bool = False
     leakage_audit_dir: str | None = None
     fail_on_leakage_blocker: bool = False
+    corporate_action_aware: bool = False
+    target_return_mode: str = "adjusted_close"
+    corporate_action_dir: str | None = None
+    corporate_action_cash_field: str = "cash_div"
 
 
 @dataclass(frozen=True)
