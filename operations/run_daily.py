@@ -116,6 +116,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--risk-override-approval-id")
     parser.add_argument("--block-on-kill-switch", action="store_true")
     parser.add_argument("--force-risk-local-override", action="store_true")
+    parser.add_argument("--production-run-id")
+    parser.add_argument("--production-state-dir")
+    parser.add_argument("--run-mode", choices=["shadow_only", "paper_simulated", "file_outbox", "dry_run"])
+    parser.add_argument("--orchestrator-artifact-dir")
+    parser.add_argument("--shadow-dir")
     parser.add_argument("--reconcile-only", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
@@ -214,6 +219,11 @@ def main(argv: list[str] | None = None) -> int:
         risk_override_approval_id=args.risk_override_approval_id,
         block_on_kill_switch=args.block_on_kill_switch,
         force_risk_local_override=args.force_risk_local_override,
+        production_run_id=args.production_run_id,
+        production_state_dir=args.production_state_dir,
+        run_mode=args.run_mode,
+        orchestrator_artifact_dir=args.orchestrator_artifact_dir,
+        shadow_dir=args.shadow_dir,
         data_freeze_dir=args.data_freeze_dir,
         data_freeze_id=args.data_freeze_id,
         data_version_manifest_path=args.data_version_manifest_path,

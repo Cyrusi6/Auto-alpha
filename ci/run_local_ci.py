@@ -43,6 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     quick_dir = output_dir / "quick_artifacts"
     smoke_dir = quick_dir / "sample_smoke"
     sample_data_dir = quick_dir / "sample_data"
+    _prepare_shadow_smoke_orders(quick_dir / "shadow_orders" / "plan")
     commands = [
         (
             "data_source_sample_smoke",
@@ -99,6 +100,82 @@ def main(argv: list[str] | None = None) -> int:
                 "reset",
                 "--initial-cash",
                 "1000000",
+                "--pretty",
+            ],
+        ),
+        (
+            "production_orchestrator_plan_smoke",
+            [
+                sys.executable,
+                "-m",
+                "production_orchestrator.run_production",
+                "plan-day",
+                "--production-state-dir",
+                str(quick_dir / "production_state"),
+                "--output-dir",
+                str(quick_dir / "production_plan"),
+                "--run-mode",
+                "shadow_only",
+                "--trade-date",
+                "20240104",
+                "--as-of-date",
+                "20240104",
+                "--data-dir",
+                str(sample_data_dir),
+                "--factor-store-dir",
+                str(quick_dir / "factor_store"),
+                "--approval-store-dir",
+                str(quick_dir / "approvals"),
+                "--paper-account-dir",
+                str(quick_dir / "account"),
+                "--orders-dir",
+                str(quick_dir / "shadow_orders"),
+                "--pretty",
+            ],
+        ),
+        (
+            "shadow_trading_smoke",
+            [
+                sys.executable,
+                "-m",
+                "shadow_trading.run_shadow",
+                "smoke",
+                "--production-run-id",
+                "ci_shadow_20240104",
+                "--orders-dir",
+                str(quick_dir / "shadow_orders"),
+                "--execution-plan-dir",
+                str(quick_dir / "shadow_orders" / "plan"),
+                "--output-dir",
+                str(quick_dir / "shadow_trading"),
+                "--trade-date",
+                "20240104",
+                "--as-of-date",
+                "20240104",
+                "--pretty",
+            ],
+        ),
+        (
+            "incident_response_smoke",
+            [
+                sys.executable,
+                "-m",
+                "incident_response.run_incident",
+                "--incident-store-dir",
+                str(quick_dir / "incidents"),
+                "create",
+                "--production-run-id",
+                "ci_shadow_20240104",
+                "--trade-date",
+                "20240104",
+                "--severity",
+                "warning",
+                "--code",
+                "ci_smoke",
+                "--title",
+                "CI Smoke",
+                "--description",
+                "local ci incident smoke",
                 "--pretty",
             ],
         ),
@@ -671,6 +748,24 @@ def main(argv: list[str] | None = None) -> int:
         if args.fail_fast and not result.success:
             break
     return _finish(args, output_dir, mode, results)
+
+
+def _prepare_shadow_smoke_orders(plan_dir: Path) -> None:
+    records = [
+        {
+            "parent_order_id": "ci_parent_000001",
+            "child_order_id": "ci_child_000001_open",
+            "trade_date": "20240104",
+            "ts_code": "000001.SZ",
+            "side": "BUY",
+            "shares": 100,
+            "order_value": 1000.0,
+            "bucket": "open",
+            "target_weight": 0.10,
+            "price": 10.0,
+        }
+    ]
+    write_jsonl_artifact(plan_dir / "child_orders.jsonl", records, artifact_type="child_orders", producer="ci")
 
 
 def _finish(args: argparse.Namespace, output_dir: Path, mode: str, results: list[CiCommandResult]) -> int:

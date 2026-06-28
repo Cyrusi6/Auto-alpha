@@ -69,6 +69,11 @@ from .checks import (
     check_paper_account,
     check_package_build_artifacts,
     check_pre_trade_risk_controls,
+    check_production_close_day_status,
+    check_production_gate_blockers,
+    check_production_orchestrator,
+    check_production_phase_failures,
+    check_production_readiness,
     check_point_in_time_validation,
     check_provider_readiness,
     check_quality_report,
@@ -100,9 +105,14 @@ from .checks import (
     check_validation_lab,
     check_settlement_fee_tax,
     check_settlement_report,
+    check_shadow_drift,
+    check_shadow_trading_run,
     check_statement_staleness,
     check_stale_gpu_leases,
     check_unfilled_orders,
+    check_incidents,
+    check_runbook_completion,
+    check_unresolved_critical_incidents,
     check_unresolved_reconciliation_breaks,
     check_material_reconciliation_breaks,
 )
@@ -212,6 +222,17 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--portfolio-certification-decision-path")
     parser.add_argument("--portfolio-certification-scorecard-path")
     parser.add_argument("--certified-portfolio-policy-path")
+    parser.add_argument("--production-orchestrator-report-path")
+    parser.add_argument("--production-run-plan-path")
+    parser.add_argument("--production-readiness-report-path")
+    parser.add_argument("--production-phase-runs-path")
+    parser.add_argument("--production-gate-results-path")
+    parser.add_argument("--production-runbook-path")
+    parser.add_argument("--shadow-run-report-path")
+    parser.add_argument("--shadow-drift-report-path")
+    parser.add_argument("--incident-report-path")
+    parser.add_argument("--incident-records-path")
+    parser.add_argument("--incident-runbook-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -301,6 +322,19 @@ def main(argv: list[str] | None = None) -> int:
             "uncertified_production_candidate",
             lambda: check_uncertified_production_candidate(LocalFactorStore(args.factor_store_dir), args.factor_certification_decision_path),
         ),
+        ("production_orchestrator", lambda: check_production_orchestrator(args.production_orchestrator_report_path)),
+        (
+            "production_readiness",
+            lambda: check_production_readiness(args.production_readiness_report_path, args.production_gate_results_path),
+        ),
+        ("production_phase_failures", lambda: check_production_phase_failures(args.production_phase_runs_path)),
+        ("production_gate_blockers", lambda: check_production_gate_blockers(args.production_gate_results_path)),
+        ("production_close_day_status", lambda: check_production_close_day_status(args.production_orchestrator_report_path)),
+        ("shadow_trading_run", lambda: check_shadow_trading_run(args.shadow_run_report_path)),
+        ("shadow_drift", lambda: check_shadow_drift(args.shadow_drift_report_path)),
+        ("incidents", lambda: check_incidents(args.incident_report_path, args.incident_records_path)),
+        ("unresolved_critical_incidents", lambda: check_unresolved_critical_incidents(args.incident_report_path)),
+        ("runbook_completion", lambda: check_runbook_completion(args.incident_runbook_path or args.production_runbook_path)),
         ("corporate_action_report", lambda: check_corporate_action_report(args.corporate_action_report_path or _default_corporate_action_path(args.orders_dir, "corporate_actions_report.json"))),
         ("total_return_report", lambda: check_total_return_report(args.total_return_report_path or _default_corporate_action_path(args.orders_dir, "total_return_report.json"))),
         ("corporate_action_ledger", lambda: check_corporate_action_ledger(args.corporate_action_ledger_path or args.paper_account_dir)),

@@ -485,6 +485,21 @@ def render_app(config: DashboardConfig | None = None) -> None:
     with production_tab:
         production_run = service.load_production_run()
         production_markdown = service.load_production_run_markdown()
+        production_orchestrator = service.load_production_orchestrator_report()
+        production_plan = service.load_production_run_plan()
+        production_readiness = service.load_production_readiness_report()
+        production_phases = service.load_production_phase_runs()
+        production_gates = service.load_production_gate_results()
+        shadow_report = service.load_shadow_run_report()
+        shadow_orders = service.load_shadow_orders()
+        shadow_fills = service.load_shadow_fills()
+        shadow_positions = service.load_shadow_positions()
+        shadow_drift = service.load_shadow_drift_report()
+        shadow_performance = service.load_shadow_performance_report()
+        incident_report = service.load_incident_report()
+        incident_records = service.load_incident_records()
+        incident_events = service.load_incident_events()
+        incident_runbook = service.load_incident_runbook()
         approvals = service.load_approvals()
         approval_log = service.load_approval_log()
         account_state = service.load_paper_account_state()
@@ -536,6 +551,48 @@ def render_app(config: DashboardConfig | None = None) -> None:
         )
         if production_markdown:
             st.markdown(production_markdown)
+        st.subheader("Production Orchestrator")
+        st.json(
+            {
+                "production_run_id": production_orchestrator.get("production_run_id"),
+                "status": production_orchestrator.get("status"),
+                "run_mode": production_orchestrator.get("run_mode"),
+                "plan_phases": len(production_plan.get("phases", [])) if production_plan else 0,
+                "readiness_status": production_readiness.get("status") if production_readiness else "",
+                "gate_summary": production_readiness.get("summary", {}) if production_readiness else {},
+                "incident_summary": production_orchestrator.get("incident_summary", {}) if production_orchestrator else {},
+            }
+            if production_orchestrator or production_plan or production_readiness
+            else {"status": "No production orchestrator artifacts found"}
+        )
+        _show_dataframe_or_empty("Production Phase Runs", production_phases)
+        _show_dataframe_or_empty("Production Gate Results", production_gates)
+        st.subheader("Shadow Trading")
+        st.json(
+            {
+                "status": shadow_report.get("status", "") if shadow_report else "",
+                "execution_mode": shadow_report.get("execution_mode", "") if shadow_report else "",
+                "summary": shadow_report.get("summary", {}) if shadow_report else {},
+                "drift": shadow_drift.get("summary", {}) if shadow_drift else {},
+                "performance": shadow_performance.get("metrics", {}) if shadow_performance else {},
+            }
+            if shadow_report or shadow_drift or shadow_performance
+            else {"status": "No shadow trading artifacts found"}
+        )
+        _show_dataframe_or_empty("Shadow Orders", shadow_orders)
+        _show_dataframe_or_empty("Shadow Fills", shadow_fills)
+        _show_dataframe_or_empty("Shadow Positions", shadow_positions)
+        st.subheader("Incidents")
+        st.json(
+            {
+                "summary": incident_report.get("summary", {}) if incident_report else {},
+                "runbook_steps": len(incident_runbook.get("steps", [])) if incident_runbook else 0,
+            }
+            if incident_report or incident_runbook
+            else {"status": "No incident artifacts found"}
+        )
+        _show_dataframe_or_empty("Incident Records", incident_records)
+        _show_dataframe_or_empty("Incident Events", incident_events)
         st.subheader("Approvals")
         _show_dataframe_or_empty("Approval Batches", approvals)
         _show_dataframe_or_empty("Approval Log", approval_log)

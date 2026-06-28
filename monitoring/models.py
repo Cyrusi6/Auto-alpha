@@ -86,6 +86,13 @@ class MonitoringReport:
         portfolio_lab = self.checks.get("portfolio_lab", {}) if isinstance(self.checks, dict) else {}
         portfolio_certification = self.checks.get("portfolio_certification", {}) if isinstance(self.checks, dict) else {}
         uncertified = self.checks.get("uncertified_production_candidate", {}) if isinstance(self.checks, dict) else {}
+        production = self.checks.get("production_orchestrator", {}) if isinstance(self.checks, dict) else {}
+        production_readiness = self.checks.get("production_readiness", {}) if isinstance(self.checks, dict) else {}
+        production_phases = self.checks.get("production_phase_failures", {}) if isinstance(self.checks, dict) else {}
+        shadow_run = self.checks.get("shadow_trading_run", {}) if isinstance(self.checks, dict) else {}
+        shadow_drift = self.checks.get("shadow_drift", {}) if isinstance(self.checks, dict) else {}
+        incidents = self.checks.get("incidents", {}) if isinstance(self.checks, dict) else {}
+        close_day = self.checks.get("production_close_day_status", {}) if isinstance(self.checks, dict) else {}
         return {
             "created_at": self.created_at,
             "as_of_date": self.as_of_date,
@@ -214,4 +221,20 @@ class MonitoringReport:
             "portfolio_certification_status": str(portfolio_certification.get("portfolio_certification_status", "")) if isinstance(portfolio_certification, dict) else "",
             "portfolio_certification_passed": bool(portfolio_certification.get("portfolio_certification_passed", False)) if isinstance(portfolio_certification, dict) else False,
             "portfolio_certification_blocker_count": int(portfolio_certification.get("portfolio_certification_blocker_count", 0) or 0) if isinstance(portfolio_certification, dict) else 0,
+            "production_run_id": production.get("production_run_id") if isinstance(production, dict) else None,
+            "production_run_status": str(production.get("production_run_status", "")) if isinstance(production, dict) else "",
+            "production_run_mode": str(production.get("production_run_mode", "")) if isinstance(production, dict) else "",
+            "production_phase_failed_count": int(production_phases.get("production_phase_failed_count", production.get("production_phase_failed_count", 0)) or 0) if isinstance(production_phases, dict) else 0,
+            "production_phase_blocked_count": int(production_phases.get("production_phase_blocked_count", production.get("production_phase_blocked_count", 0)) or 0) if isinstance(production_phases, dict) else 0,
+            "production_gate_blocker_count": int(production_readiness.get("production_gate_blocker_count", 0) or 0) if isinstance(production_readiness, dict) else 0,
+            "production_gate_warning_count": int(production_readiness.get("production_gate_warning_count", 0) or 0) if isinstance(production_readiness, dict) else 0,
+            "shadow_run_status": str(shadow_run.get("shadow_run_status", "")) if isinstance(shadow_run, dict) else "",
+            "shadow_order_count": int(shadow_run.get("shadow_order_count", 0) or 0) if isinstance(shadow_run, dict) else 0,
+            "shadow_fill_rate": float(shadow_run.get("shadow_fill_rate", 0.0) or 0.0) if isinstance(shadow_run, dict) else 0.0,
+            "shadow_target_weight_drift": float(shadow_drift.get("shadow_target_weight_drift", 0.0) or 0.0) if isinstance(shadow_drift, dict) else 0.0,
+            "shadow_position_weight_drift": float(shadow_drift.get("shadow_position_weight_drift", 0.0) or 0.0) if isinstance(shadow_drift, dict) else 0.0,
+            "incident_open_count": int(incidents.get("incident_open_count", 0) or 0) if isinstance(incidents, dict) else 0,
+            "incident_critical_count": int(incidents.get("incident_critical_count", 0) or 0) if isinstance(incidents, dict) else 0,
+            "incident_unresolved_count": int(incidents.get("incident_unresolved_count", 0) or 0) if isinstance(incidents, dict) else 0,
+            "close_day_status": str(close_day.get("close_day_status", production.get("close_day_status", "")) or "") if isinstance(close_day, dict) else "",
         }

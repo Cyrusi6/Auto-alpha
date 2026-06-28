@@ -129,6 +129,11 @@ class ProductionDailyRunner:
         risk_override_approval_id: str | None = None,
         block_on_kill_switch: bool = False,
         force_risk_local_override: bool = False,
+        production_run_id: str | None = None,
+        production_state_dir: str | Path | None = None,
+        run_mode: str | None = None,
+        orchestrator_artifact_dir: str | Path | None = None,
+        shadow_dir: str | Path | None = None,
         data_freeze_dir: str | Path | None = None,
         data_freeze_id: str | None = None,
         data_version_manifest_path: str | Path | None = None,
@@ -234,6 +239,11 @@ class ProductionDailyRunner:
         self.risk_override_approval_id = risk_override_approval_id
         self.block_on_kill_switch = bool(block_on_kill_switch)
         self.force_risk_local_override = bool(force_risk_local_override)
+        self.production_run_id = production_run_id
+        self.production_state_dir = Path(production_state_dir) if production_state_dir is not None else None
+        self.run_mode = run_mode
+        self.orchestrator_artifact_dir = Path(orchestrator_artifact_dir) if orchestrator_artifact_dir is not None else None
+        self.shadow_dir = Path(shadow_dir) if shadow_dir is not None else None
         self._model_context: dict[str, Any] = {}
         self.portfolio_policy = None
         self.portfolio_policy_gate: dict[str, Any] = {}
@@ -288,16 +298,18 @@ class ProductionDailyRunner:
         reconcile_only: bool = False,
     ) -> ProductionRunResult:
         created_at = _utc_now()
-        run_id = f"prod_{_safe_time(created_at)}"
+        run_id = self.production_run_id or f"prod_{_safe_time(created_at)}"
         try:
             if self.freeze_validation.error_count > 0:
                 result = self._data_freeze_failed(run_id, created_at)
             elif reconcile_only:
                 result = self._reconcile_only(run_id, created_at, approval_id)
+            elif self.run_mode == "shadow_only" and (approval_id or execute_approved):
+                raise ValueError("shadow_only mode does not execute approved orders")
             elif approval_id or execute_approved:
                 result = self._execute_approved(run_id, created_at, approval_id)
             else:
-                result = self._propose(run_id, created_at, require_approval=require_approval)
+                result = self._propose(run_id, created_at, require_approval=require_approval or self.run_mode == "shadow_only")
         except Exception as exc:
             result = ProductionRunResult(
                 run_id=run_id,
@@ -377,6 +389,9 @@ class ProductionDailyRunner:
             risk_allow_clipping=self.risk_allow_clipping,
             create_risk_override_approval=self.create_risk_override_approval,
             risk_override_approval_store_dir=self.risk_override_approval_store_dir,
+            production_run_id=self.production_run_id,
+            run_mode=self.run_mode,
+            orchestrator_artifact_dir=self.orchestrator_artifact_dir,
         ).generate_orders()
         if self.apply_corporate_actions:
             prices = _prices_for_date(
@@ -422,6 +437,15 @@ class ProductionDailyRunner:
         self._attach_model_metadata_to_summary(summary)
         self._attach_portfolio_policy_metadata_to_summary(summary)
         self._attach_data_freeze_metadata(summary)
+        summary.update(
+            {
+                "production_run_id": self.production_run_id,
+                "run_mode": self.run_mode,
+                "production_state_dir": str(self.production_state_dir) if self.production_state_dir else None,
+                "orchestrator_artifact_dir": str(self.orchestrator_artifact_dir) if self.orchestrator_artifact_dir else None,
+                "shadow_dir": str(self.shadow_dir) if self.shadow_dir else None,
+            }
+        )
         if require_approval and summary.get("approval_id"):
             self._attach_model_metadata_to_approval(str(summary["approval_id"]))
             self._attach_portfolio_policy_metadata_to_approval(str(summary["approval_id"]))
@@ -635,6 +659,11 @@ class ProductionDailyRunner:
             **settlement_summary,
             "point_in_time": self.point_in_time,
             "feature_cutoff_mode": self.feature_cutoff_mode,
+            "production_run_id": self.production_run_id,
+            "run_mode": self.run_mode,
+            "production_state_dir": str(self.production_state_dir) if self.production_state_dir else None,
+            "orchestrator_artifact_dir": str(self.orchestrator_artifact_dir) if self.orchestrator_artifact_dir else None,
+            "shadow_dir": str(self.shadow_dir) if self.shadow_dir else None,
             "account": {
                 "cash": state.cash,
                 "positions": len(state.positions),
@@ -935,6 +964,11 @@ class ProductionDailyRunner:
                 "portfolio_policy_gate": self.portfolio_policy_gate,
                 "portfolio_policy_model_version_id": self.portfolio_policy_model_version_id,
                 "require_certified_portfolio_policy": self.require_certified_portfolio_policy,
+                "production_run_id": self.production_run_id,
+                "run_mode": self.run_mode,
+                "production_state_dir": str(self.production_state_dir) if self.production_state_dir else None,
+                "orchestrator_artifact_dir": str(self.orchestrator_artifact_dir) if self.orchestrator_artifact_dir else None,
+                "shadow_dir": str(self.shadow_dir) if self.shadow_dir else None,
             }
         )
         store.save_batch(replace(batch, metadata=metadata))

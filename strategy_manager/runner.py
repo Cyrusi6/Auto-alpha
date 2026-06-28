@@ -107,6 +107,9 @@ class AShareStrategyRunner:
         risk_allow_clipping: bool = False,
         create_risk_override_approval: bool = False,
         risk_override_approval_store_dir: str | Path | None = None,
+        production_run_id: str | None = None,
+        run_mode: str | None = None,
+        orchestrator_artifact_dir: str | Path | None = None,
         data_freeze_dir: str | Path | None = None,
         data_freeze_id: str | None = None,
         data_version_manifest_path: str | Path | None = None,
@@ -187,6 +190,9 @@ class AShareStrategyRunner:
         self.risk_allow_clipping = bool(risk_allow_clipping)
         self.create_risk_override_approval = bool(create_risk_override_approval)
         self.risk_override_approval_store_dir = Path(risk_override_approval_store_dir) if risk_override_approval_store_dir is not None else self.approval_store_dir
+        self.production_run_id = production_run_id
+        self.run_mode = run_mode
+        self.orchestrator_artifact_dir = Path(orchestrator_artifact_dir) if orchestrator_artifact_dir is not None else None
         self.loader: AShareDataLoader | None = None
         self.selected_factor_id: str | None = None
         self.selected_factor_meta: dict[str, object] = {}
@@ -479,6 +485,9 @@ class AShareStrategyRunner:
                     "settlement_aware": self.settlement_aware,
                     "settlement_profile": self.settlement_profile,
                     "settlement_precheck": settlement_precheck,
+                    "production_run_id": self.production_run_id,
+                    "run_mode": self.run_mode,
+                    "orchestrator_artifact_dir": str(self.orchestrator_artifact_dir) if self.orchestrator_artifact_dir else None,
                     **execution_paths,
                     **risk_control_paths,
                 },
@@ -562,6 +571,9 @@ class AShareStrategyRunner:
             "enforce_available_cash": self.enforce_available_cash,
             "enforce_available_shares": self.enforce_available_shares,
             "risk_controls": self.risk_controls,
+            "production_run_id": self.production_run_id,
+            "run_mode": self.run_mode,
+            "orchestrator_artifact_dir": str(self.orchestrator_artifact_dir) if self.orchestrator_artifact_dir else None,
             "risk_control_status": risk_control_summary.get("status", "not_run"),
             "risk_control_rejected_orders": risk_control_summary.get("rejected_orders", 0),
             "risk_control_clipped_orders": risk_control_summary.get("clipped_orders", 0),

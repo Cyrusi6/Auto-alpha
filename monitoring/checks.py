@@ -1398,6 +1398,168 @@ def check_uncertified_production_candidate(store: LocalFactorStore, certificatio
     }, alerts
 
 
+def check_production_orchestrator(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    status = str(payload.get("status", "") if payload else "")
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    alerts = []
+    if status in {"blocked", "failed"}:
+        alerts.append(MonitoringAlert("error", "production_orchestrator", "production run is not successful", {"status": status}))
+    elif status == "waiting_approval":
+        alerts.append(MonitoringAlert("info", "production_orchestrator", "production run is waiting for order approval"))
+    return {
+        "exists": bool(payload),
+        "production_run_id": payload.get("production_run_id") if payload else None,
+        "production_run_status": status,
+        "production_run_mode": payload.get("run_mode", "") if payload else "",
+        "production_phase_failed_count": int(summary.get("phase_failed_count", 0) or 0) if isinstance(summary, dict) else 0,
+        "production_phase_blocked_count": int(summary.get("phase_blocked_count", 0) or 0) if isinstance(summary, dict) else 0,
+        "close_day_status": str(summary.get("close_day_status", "") or "") if isinstance(summary, dict) else "",
+    }, alerts
+
+
+def check_production_readiness(readiness_path: str | Path | None, gate_results_path: str | Path | None = None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(readiness_path)) if readiness_path else {}
+    gates = payload.get("gates", []) if isinstance(payload.get("gates"), list) else []
+    if not gates and gate_results_path:
+        gates = _read_jsonl(Path(gate_results_path))
+    blocker_count = sum(1 for gate in gates if gate.get("status") in {"blocked", "failed"})
+    warning_count = sum(1 for gate in gates if gate.get("status") == "warning")
+    alerts = []
+    if blocker_count:
+        alerts.append(MonitoringAlert("error", "production_readiness", "production readiness has blocker gates", {"blocker_count": blocker_count}))
+    elif warning_count:
+        alerts.append(MonitoringAlert("warning", "production_readiness", "production readiness has warnings", {"warning_count": warning_count}))
+    return {
+        "exists": bool(payload or gates),
+        "production_gate_blocker_count": blocker_count,
+        "production_gate_warning_count": warning_count,
+        "gate_count": len(gates),
+        "status": payload.get("status", "") if payload else "",
+    }, alerts
+
+
+def check_production_phase_failures(phase_runs_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(phase_runs_path)) if phase_runs_path else []
+    failed = [row for row in rows if row.get("status") == "failed"]
+    blocked = [row for row in rows if row.get("status") == "blocked"]
+    waiting = [row for row in rows if row.get("status") == "waiting_approval"]
+    alerts = []
+    if failed or blocked:
+        alerts.append(
+            MonitoringAlert(
+                "error",
+                "production_phase_failures",
+                "production phases failed or blocked",
+                {"failed": len(failed), "blocked": len(blocked)},
+            )
+        )
+    return {
+        "exists": bool(rows),
+        "production_phase_count": len(rows),
+        "production_phase_failed_count": len(failed),
+        "production_phase_blocked_count": len(blocked),
+        "production_phase_waiting_count": len(waiting),
+    }, alerts
+
+
+def check_production_gate_blockers(gate_results_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(gate_results_path)) if gate_results_path else []
+    blockers = [row for row in rows if row.get("status") in {"blocked", "failed"}]
+    warnings = [row for row in rows if row.get("status") == "warning"]
+    alerts = []
+    if blockers:
+        alerts.append(MonitoringAlert("error", "production_gate_blockers", "production gate blockers exist", {"count": len(blockers)}))
+    return {
+        "exists": bool(rows),
+        "production_gate_blocker_count": len(blockers),
+        "production_gate_warning_count": len(warnings),
+        "gate_count": len(rows),
+    }, alerts
+
+
+def check_shadow_trading_run(shadow_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(shadow_report_path)) if shadow_report_path else {}
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    status = str(payload.get("status", "") if payload else "")
+    fill_rate = float(summary.get("fill_rate", 0.0) or summary.get("shadow_fill_rate", 0.0) or 0.0) if isinstance(summary, dict) else 0.0
+    alerts = []
+    if payload and status not in {"success", "warning"}:
+        alerts.append(MonitoringAlert("warning", "shadow_trading_run", "shadow trading run needs review", {"status": status}))
+    return {
+        "exists": bool(payload),
+        "shadow_run_status": status,
+        "shadow_order_count": int(summary.get("shadow_order_count", 0) or summary.get("order_count", 0) or summary.get("orders", 0) or 0) if isinstance(summary, dict) else 0,
+        "shadow_fill_count": int(summary.get("shadow_fill_count", 0) or summary.get("fill_count", 0) or summary.get("fills", 0) or 0) if isinstance(summary, dict) else 0,
+        "shadow_fill_rate": fill_rate,
+    }, alerts
+
+
+def check_shadow_drift(drift_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(drift_report_path)) if drift_report_path else {}
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    drift_rows = payload.get("drift", []) if isinstance(payload.get("drift"), list) else []
+    target_drift = float(summary.get("target_weight_drift", 0.0) or summary.get("max_target_weight_drift", 0.0) or 0.0) if isinstance(summary, dict) else 0.0
+    position_drift = float(summary.get("position_weight_drift", 0.0) or summary.get("max_position_weight_drift", 0.0) or 0.0) if isinstance(summary, dict) else 0.0
+    alerts = []
+    if max(abs(target_drift), abs(position_drift)) > 0.05:
+        alerts.append(MonitoringAlert("warning", "shadow_drift", "shadow drift is elevated", {"target_weight_drift": target_drift, "position_weight_drift": position_drift}))
+    return {
+        "exists": bool(payload),
+        "shadow_drift_count": len(drift_rows),
+        "shadow_target_weight_drift": target_drift,
+        "shadow_position_weight_drift": position_drift,
+    }, alerts
+
+
+def check_incidents(incident_report_path: str | Path | None, incident_records_path: str | Path | None = None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(incident_report_path)) if incident_report_path else {}
+    incidents = payload.get("incidents", []) if isinstance(payload.get("incidents"), list) else []
+    if not incidents and incident_records_path:
+        incidents = _read_jsonl(Path(incident_records_path))
+    open_items = [item for item in incidents if item.get("status") in {"open", "acknowledged"}]
+    critical = [item for item in incidents if item.get("severity") == "critical"]
+    alerts = []
+    if critical:
+        alerts.append(MonitoringAlert("error", "incidents", "critical incidents exist", {"count": len(critical)}))
+    elif open_items:
+        alerts.append(MonitoringAlert("warning", "incidents", "open incidents exist", {"count": len(open_items)}))
+    return {
+        "exists": bool(payload or incidents),
+        "incident_count": len(incidents),
+        "incident_open_count": len(open_items),
+        "incident_critical_count": len(critical),
+        "incident_unresolved_count": len(open_items),
+    }, alerts
+
+
+def check_unresolved_critical_incidents(incident_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    result, _alerts = check_incidents(incident_report_path)
+    unresolved_critical = int(result.get("incident_critical_count", 0) or 0)
+    alerts = [
+        MonitoringAlert("error", "unresolved_critical_incidents", "unresolved critical incidents require action", {"count": unresolved_critical})
+    ] if unresolved_critical else []
+    return {"exists": result.get("exists", False), "incident_unresolved_critical_count": unresolved_critical}, alerts
+
+
+def check_runbook_completion(runbook_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(runbook_path)) if runbook_path else {}
+    steps = payload.get("steps", []) if isinstance(payload.get("steps"), list) else []
+    pending = [step for step in steps if step.get("status") in {"pending", "open"}]
+    alerts = [MonitoringAlert("warning", "runbook_completion", "runbook has pending steps", {"count": len(pending)})] if pending else []
+    return {"exists": bool(payload), "runbook_step_count": len(steps), "runbook_pending_step_count": len(pending)}, alerts
+
+
+def check_production_close_day_status(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    status = str(summary.get("close_day_status", "") or "")
+    alerts = []
+    if payload and payload.get("status") not in {"closed", "success", "waiting_approval"} and not status:
+        alerts.append(MonitoringAlert("warning", "production_close_day_status", "production run has not reached close day"))
+    return {"exists": bool(payload), "close_day_status": status, "production_run_status": payload.get("status", "") if payload else ""}, alerts
+
+
 def _eod_summary(report_path: str | Path | None) -> dict[str, Any]:
     payload = _read_json(Path(report_path)) if report_path else {}
     summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}

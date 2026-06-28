@@ -1777,3 +1777,39 @@
 - Calibrate portfolio certification thresholds on long real-data freezes and production-scale policy grids.
 - Add richer scenario matrices for slippage, liquidity droughts, settlement delays, and risk-control override workflows.
 - Keep optimizer policy activation approval-gated until production review and external operational controls are mature.
+
+## Task 037 - Production Calendar, Shadow Trading, Orchestration, And Incident Recovery
+
+- Added `production_orchestrator/` for local production calendars, run plans, readiness gates, phase state, resume-aware reports, day packages, and `production_orchestrator.run_production`.
+- Added `shadow_trading/` for a separate local shadow book, shadow orders/fills/positions/snapshots, drift and performance reports, and `shadow_trading.run_shadow`.
+- Added `incident_response/` for local incident records, runbook steps, detection from production artifacts, acknowledge/resolve/suppress lifecycle, and `incident_response.run_incident`.
+- Extended `operations` and `strategy_manager` with `production_run_id`, orchestrator metadata, and `shadow_only` safety mode so shadow proposals do not execute broker/file/account mutations.
+- Extended monitoring, dashboard, artifact schema, release inventory, local CI, package metadata, README, CATREADME, and `.env.example` for production orchestrator, shadow trading, and incident artifacts.
+- Default paths remain offline/local and do not connect to a real broker or Tushare. `shadow_only` is a fail-safe observation mode; `paper_simulated` reuses the existing approval, simulated broker, paper account, settlement, and reconciliation stack.
+
+### New Artifacts
+- `production_run_plan.json/md`
+- `production_orchestrator_report.json/md`
+- `production_readiness_report.json`
+- `production_phase_runs.jsonl`
+- `production_gate_results.jsonl`
+- `production_run_events.jsonl`
+- `production_runbook.json`
+- `production_day_package.json`
+- `shadow_run_report.json/md`
+- `shadow_orders.jsonl`
+- `shadow_fills.jsonl`
+- `shadow_positions.jsonl`
+- `shadow_account_snapshots.jsonl`
+- `shadow_drift_report.json`
+- `shadow_performance_report.json`
+- `shadow_vs_production_comparison.json`
+- `incident_report.json/md`
+- `incident_records.jsonl`
+- `incident_events.jsonl`
+- `incident_runbook.json`
+
+### Follow-Ups
+- Add richer phase-level resume hash checks and operator assignment metadata.
+- Wire production close-day to larger real-data freeze governance once production calendars and data freezes are reviewed with real Tushare data.
+- Keep real broker connectivity out of scope until broker adapter, risk controls, approval, and incident procedures are reviewed in a controlled environment.

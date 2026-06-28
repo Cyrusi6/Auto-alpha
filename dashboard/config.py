@@ -17,6 +17,9 @@ class DashboardConfig:
     approval_store_dir: Path = Path("artifacts/approvals")
     paper_account_dir: Path = Path("artifacts/account")
     production_dir: Path = Path("artifacts/production")
+    production_orchestrator_dir: Path = Path("artifacts/production_orchestrator")
+    shadow_trading_dir: Path = Path("artifacts/shadow_trading")
+    incident_dir: Path = Path("artifacts/incidents")
     monitoring_dir: Path = Path("artifacts/monitoring")
     matrix_cache_dir: Path = Path("data/ashare/matrix_cache")
     benchmark_dir: Path = Path("artifacts/benchmark")
@@ -58,6 +61,11 @@ class DashboardConfig:
             approval_store_dir=Path(os.getenv("ASHARE_DASHBOARD_APPROVAL_STORE_DIR") or "artifacts/approvals"),
             paper_account_dir=Path(os.getenv("ASHARE_DASHBOARD_PAPER_ACCOUNT_DIR") or "artifacts/account"),
             production_dir=Path(os.getenv("ASHARE_DASHBOARD_PRODUCTION_DIR") or "artifacts/production"),
+            production_orchestrator_dir=Path(
+                os.getenv("ASHARE_DASHBOARD_PRODUCTION_ORCHESTRATOR_DIR") or "artifacts/production_orchestrator"
+            ),
+            shadow_trading_dir=Path(os.getenv("ASHARE_DASHBOARD_SHADOW_TRADING_DIR") or "artifacts/shadow_trading"),
+            incident_dir=Path(os.getenv("ASHARE_DASHBOARD_INCIDENT_DIR") or "artifacts/incidents"),
             monitoring_dir=Path(os.getenv("ASHARE_DASHBOARD_MONITORING_DIR") or "artifacts/monitoring"),
             matrix_cache_dir=Path(os.getenv("ASHARE_DASHBOARD_MATRIX_CACHE_DIR") or "data/ashare/matrix_cache"),
             benchmark_dir=Path(os.getenv("ASHARE_DASHBOARD_BENCHMARK_DIR") or "artifacts/benchmark"),

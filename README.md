@@ -45,6 +45,9 @@ The current implementation is local-first. It uses deterministic sample data and
 - `settlement_engine/`: Local paper settlement profiles, settlement events, cash/share availability, position lots, fee/tax breakdown, realized PnL, NAV, and account reconciliation.
 - `paper_account/`: Persistent local paper cash, positions, trades, settlement artifacts, snapshots, and performance ledger.
 - `operations/`: Daily production run orchestration from production factor to proposed orders, approval-gated execution, account update, and production report.
+- `production_orchestrator/`: Trading-day production calendar, readiness gates, phase plan/state, resume packaging, fail-safe close-day reports, and orchestration CLI.
+- `shadow_trading/`: Local shadow-only order book, simulated shadow fills, shadow snapshots, drift reports, and performance artifacts.
+- `incident_response/`: Local incident records, runbook steps, acknowledge/resolve/suppress lifecycle, detection from production artifacts, and incident reports.
 - `monitoring/`: Local production checks for data freshness, quality, factor drift, fill quality, account performance, and alerts.
 - `release_manager/`: Local release manifest, dependency/module/CLI inventory, package build summary, release gate report, and release notes draft.
 - `ci/`: Offline local CI runner shared by developers and GitHub Actions.
@@ -686,6 +689,9 @@ Dashboard-specific overrides:
 - `ASHARE_DASHBOARD_DATA_LAKE_DIR`
 - `ASHARE_DASHBOARD_PORTFOLIO_LAB_DIR`
 - `ASHARE_DASHBOARD_PORTFOLIO_CERTIFICATION_DIR`
+- `ASHARE_DASHBOARD_PRODUCTION_ORCHESTRATOR_DIR`
+- `ASHARE_DASHBOARD_SHADOW_TRADING_DIR`
+- `ASHARE_DASHBOARD_INCIDENT_DIR`
 - `ASHARE_DASHBOARD_SCHEMA_VALIDATION_DIR`
 - `ASHARE_DASHBOARD_RELEASE_DIR`
 - `ASHARE_DASHBOARD_CI_DIR`
@@ -805,6 +811,50 @@ uv run python -m monitoring.run_monitor \
 ```
 
 Daily production writes `production_run.json/md`; approvals are stored under `approvals/<approval_id>.json` plus `approval_log.jsonl`; the paper account writes `account_state.json`, `positions.jsonl`, `cash_ledger.jsonl`, `trade_ledger.jsonl`, settlement artifacts, and `account_snapshots.jsonl`; broker-enabled runs write `broker_report.json/md`, `broker_orders.jsonl`, `broker_events.jsonl`, `broker_fills.jsonl`, and `broker_reconciliation.json/md`; model-governed runs record model version/deployment context; monitoring writes `monitoring_report.json/md` and `alerts.jsonl`.
+
+`production_orchestrator/` wraps the daily path with a trading-day plan, readiness gates, phase state, resume metadata, incident creation, and a production day package. `shadow_only` generates approvals and a shadow book without broker/file submission or paper-account mutation. `paper_simulated` routes an approved batch through the existing simulated broker, paper account, settlement, and reconciliation path.
+
+```bash
+uv run python -m production_orchestrator.run_production plan-day \
+  --production-state-dir /tmp/auto-alpha-demo/production_state \
+  --output-dir /tmp/auto-alpha-demo/production_plan \
+  --run-mode shadow_only \
+  --trade-date 20240104 \
+  --as-of-date 20240104 \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --model-registry-dir /tmp/auto-alpha-demo/model_registry \
+  --approval-store-dir /tmp/auto-alpha-demo/approvals \
+  --paper-account-dir /tmp/auto-alpha-demo/account \
+  --orders-dir /tmp/auto-alpha-demo/daily_orders \
+  --pretty
+
+uv run python -m production_orchestrator.run_production run-day \
+  --production-state-dir /tmp/auto-alpha-demo/production_state \
+  --output-dir /tmp/auto-alpha-demo/production_shadow \
+  --run-mode shadow_only \
+  --trade-date 20240104 \
+  --as-of-date 20240104 \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --approval-store-dir /tmp/auto-alpha-demo/approvals \
+  --paper-account-dir /tmp/auto-alpha-demo/account \
+  --orders-dir /tmp/auto-alpha-demo/daily_orders \
+  --shadow-dir /tmp/auto-alpha-demo/shadow \
+  --top-n 2 \
+  --max-weight 0.10 \
+  --pretty
+
+uv run python -m incident_response.run_incident \
+  --incident-store-dir /tmp/auto-alpha-demo/incidents \
+  detect \
+  --production-run-id <PRODUCTION_RUN_ID> \
+  --trade-date 20240104 \
+  --production-orchestrator-report-path /tmp/auto-alpha-demo/production_shadow/production_orchestrator_report.json \
+  --pretty
+```
+
+The orchestrator writes `production_run_plan.json/md`, `production_orchestrator_report.json/md`, `production_readiness_report.json`, `production_phase_runs.jsonl`, `production_gate_results.jsonl`, `production_run_events.jsonl`, `production_runbook.json`, and `production_day_package.json`. Shadow trading writes `shadow_run_report.json/md`, shadow orders/fills/positions/snapshots, drift, performance, and comparison reports. Incidents write `incident_report.json/md`, `incident_records.jsonl`, `incident_events.jsonl`, and `incident_runbook.json`.
 
 End-of-day statement reconciliation can run after execution or as a standalone reconcile-only step. A local smoke statement can be synthesized from internal broker and paper-account artifacts:
 
@@ -1130,4 +1180,4 @@ Current PIT boundaries:
 - Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.
 - One-click research suites now provide local walk-forward, promotion gates, model registry records, lifecycle review packages, active deployment state, and rollback artifacts; daily operations can require an active governed model. Future work should add richer lifecycle policies and external review workflow integrations.
 - Portfolio Lab and Portfolio Certification provide local policy-grid robustness checks, certified portfolio policy packages, optimizer-policy registration, and activation approval gates. Sample certification is only a smoke path; real certification should be tied to a governed data freeze and longer production review windows.
-- Broker adapter, file instructions, broker statement import, settlement profiles, EOD reconciliation, and account ledger are local only. No real broker integration, credential handling, network submission, verified QMT/broker file compatibility, or tax reporting interface is implemented.
+- Broker adapter, file instructions, broker statement import, settlement profiles, EOD reconciliation, account ledger, production-day orchestration, shadow-only simulation, and incident response are local only. No real broker integration, credential handling, network submission, verified QMT/broker file compatibility, or tax reporting interface is implemented.

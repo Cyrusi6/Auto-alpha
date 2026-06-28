@@ -726,6 +726,60 @@ class AshareDashboardService:
                 return path.read_text(encoding="utf-8")
         return ""
 
+    def load_production_orchestrator_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._production_orchestrator_candidates("production_orchestrator_report.json"))
+
+    def load_production_run_plan(self) -> dict[str, Any]:
+        return self._read_first_json(self._production_orchestrator_candidates("production_run_plan.json"))
+
+    def load_production_readiness_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._production_orchestrator_candidates("production_readiness_report.json"))
+
+    def load_production_phase_runs(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._production_orchestrator_candidates("production_phase_runs.jsonl"))
+
+    def load_production_gate_results(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._production_orchestrator_candidates("production_gate_results.jsonl"))
+
+    def load_production_run_events(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._production_orchestrator_candidates("production_run_events.jsonl"))
+
+    def load_production_day_package(self) -> dict[str, Any]:
+        return self._read_first_json(self._production_orchestrator_candidates("production_day_package.json"))
+
+    def load_shadow_run_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._shadow_artifact_candidates("shadow_run_report.json"))
+
+    def load_shadow_orders(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._shadow_artifact_candidates("shadow_orders.jsonl"))
+
+    def load_shadow_fills(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._shadow_artifact_candidates("shadow_fills.jsonl"))
+
+    def load_shadow_positions(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._shadow_artifact_candidates("shadow_positions.jsonl"))
+
+    def load_shadow_account_snapshots(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._shadow_artifact_candidates("shadow_account_snapshots.jsonl"))
+
+    def load_shadow_drift_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._shadow_artifact_candidates("shadow_drift_report.json"))
+
+    def load_shadow_performance_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._shadow_artifact_candidates("shadow_performance_report.json"))
+
+    def load_incident_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._incident_artifact_candidates("incident_report.json"))
+
+    def load_incident_records(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._incident_artifact_candidates("incident_records.jsonl"))
+
+    def load_incident_events(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._incident_artifact_candidates("incident_events.jsonl"))
+
+    def load_incident_runbook(self) -> dict[str, Any]:
+        return self._read_first_json(self._incident_artifact_candidates("incident_runbook.json"))
+
     def load_approvals(self) -> pd.DataFrame:
         records: list[dict[str, Any]] = []
         for approvals_dir in self._approval_dir_candidates():
@@ -1411,6 +1465,43 @@ class AshareDashboardService:
             self.config.production_dir / filename,
             root / "production" / filename,
             root / "production_execute" / filename,
+        ]
+
+    def _production_orchestrator_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.production_orchestrator_dir / filename,
+            self.config.production_dir / filename,
+            root / "production_orchestrator" / filename,
+            root / "production_plan" / filename,
+            root / "production_propose" / filename,
+            root / "production_shadow" / filename,
+            root / "production_execute" / filename,
+            root / "production_execute_replay" / filename,
+            root / "production_close" / filename,
+        ]
+
+    def _shadow_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.shadow_trading_dir / filename,
+            self.config.production_orchestrator_dir / "shadow" / filename,
+            root / "shadow" / filename,
+            root / "shadow_trading" / filename,
+            root / "production_shadow" / "shadow" / filename,
+            root / "production_propose" / "shadow" / filename,
+        ]
+
+    def _incident_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.incident_dir / filename,
+            self.config.production_orchestrator_dir / "incidents" / filename,
+            root / "incidents" / filename,
+            root / "production_orchestrator" / "incidents" / filename,
+            root / "production_propose" / "incidents" / filename,
+            root / "production_execute" / "incidents" / filename,
+            root / "production_close" / "incidents" / filename,
         ]
 
     def _approval_dir_candidates(self) -> list[Path]:
