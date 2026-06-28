@@ -60,6 +60,16 @@ def _build_parser() -> argparse.ArgumentParser:
         cmd.add_argument("--account-performance-report-path")
         cmd.add_argument("--cash-buckets-path")
         cmd.add_argument("--realized-pnl-path")
+        cmd.add_argument("--validation-lab-report-path")
+        cmd.add_argument("--factor-validation-summary-path")
+        cmd.add_argument("--multiple-testing-report-path")
+        cmd.add_argument("--overfit-risk-report-path")
+        cmd.add_argument("--placebo-test-report-path")
+        cmd.add_argument("--regime-validation-report-path")
+        cmd.add_argument("--sensitivity-report-path")
+        cmd.add_argument("--stress-backtest-report-path")
+        cmd.add_argument("--factor-certification-decision-path")
+        cmd.add_argument("--factor-certification-scorecard-path")
         cmd.add_argument("--create-review-package", action="store_true")
         cmd.add_argument("--propose-activation", action="store_true")
         cmd.add_argument("--require-approval", action="store_true")
@@ -141,6 +151,16 @@ def _evaluate(args, registry, store, factor, model):
         "account_performance_report": args.account_performance_report_path,
         "cash_buckets": args.cash_buckets_path,
         "realized_pnl": args.realized_pnl_path,
+        "validation_lab_report": args.validation_lab_report_path,
+        "factor_validation_summary": args.factor_validation_summary_path,
+        "multiple_testing_report": args.multiple_testing_report_path,
+        "overfit_risk_report": args.overfit_risk_report_path,
+        "placebo_test_report": args.placebo_test_report_path,
+        "regime_validation_report": args.regime_validation_report_path,
+        "sensitivity_report": args.sensitivity_report_path,
+        "stress_backtest_report": args.stress_backtest_report_path,
+        "factor_certification_decision": args.factor_certification_decision_path,
+        "factor_certification_scorecard": args.factor_certification_scorecard_path,
     }
     metrics, checks = evaluate_factor_health(loader, store, factor.factor_id, args.as_of_date, policy, artifact_paths)
     current_status = model.lifecycle_status if model else factor.status

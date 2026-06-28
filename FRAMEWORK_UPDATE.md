@@ -1706,3 +1706,41 @@
 - Calibrate proxy scoring and diversity thresholds on longer real-data freezes.
 - Expand feature-space v2 with validated full-market PIT and corporate-action fields.
 - Run optional multi-GPU campaign stress tests outside default CI before promoting large-scale Alpha Factory workloads.
+
+## Task 035 - Out-Of-Sample Validation, Anti-Overfit Governance, And Factor Certification
+
+- Added `validation_lab/` for deterministic validation splits, split-level factor metrics, multiple-testing summaries, PBO/deflated IC-like overfit diagnostics, placebo/null tests, regime robustness, sensitivity checks, and stress backtest validation artifacts.
+- Added `factor_certification/` for certification policies, factor scorecards, certification decisions, review packages, explicit factor-store status application, and sample/research/production policy profiles.
+- Integrated validation and certification into `research_suite` so `--run-validation-lab --run-factor-certification --require-certification` executes before promotion and records validation/certification summaries in suite output, artifact catalog, model registry metadata, and lifecycle review artifacts.
+- Extended `backtest.run_backtest` with validation-bundle stress report output, and extended `formula_search`, `alpha_factory`, and `formula_batch_eval` summaries with trial and selection-bias metadata.
+- Extended monitoring, dashboard artifact service, artifact schema registry, release inventory, local CI, performance benchmarks, package metadata, README, and CATREADME for validation and certification artifacts.
+- Defaults remain sample/offline/CPU. PBO, deflated IC-like, and multiple-testing diagnostics are local approximations for governance review and do not guarantee future returns.
+
+### New Artifacts
+- `validation_lab_report.json/md`
+- `validation_splits.jsonl`
+- `factor_validation_results.jsonl`
+- `factor_validation_summary.json`
+- `multiple_testing_report.json`
+- `overfit_risk_report.json`
+- `placebo_test_report.json`
+- `placebo_trials.jsonl`
+- `regime_validation_report.json`
+- `regime_results.jsonl`
+- `sensitivity_report.json`
+- `sensitivity_results.jsonl`
+- `robustness_surface.json`
+- `stress_backtest_report.json`
+- `stress_backtest_results.jsonl`
+- `validation_issues.jsonl`
+- `factor_certification_policy.json`
+- `factor_certification_scorecard.json`
+- `factor_certification_decision.json`
+- `factor_certification_package.json`
+- `factor_certification_report.md`
+- `factor_certification_checks.jsonl`
+
+### Follow-Ups
+- Calibrate validation thresholds on longer real-data freezes and production-sized Alpha Factory campaigns.
+- Replace approximate deflated IC/PBO diagnostics with richer statistical estimators once enough live research history exists.
+- Add reviewer ownership, expiry, and remediation workflow for conditional certification before any automated activation policy.

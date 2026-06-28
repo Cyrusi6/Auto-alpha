@@ -51,6 +51,7 @@ from .checks import (
     check_field_coverage,
     check_formula_batch_eval,
     check_formula_corpus,
+    check_factor_certification,
     check_experiment_merge_status,
     check_experiment_shard_failures,
     check_alphagpt_pretrain,
@@ -78,6 +79,7 @@ from .checks import (
     check_account_reconciliation,
     check_pending_model_reviews,
     check_quarantined_or_paused_model_usage,
+    check_multiple_testing,
     check_style_exposure_drift,
     check_survivorship_bias,
     check_leakage_audit,
@@ -87,6 +89,13 @@ from .checks import (
     check_feature_coverage,
     check_feature_cutoff_policy,
     check_feature_set_manifest,
+    check_overfit_risk,
+    check_placebo_tests,
+    check_regime_validation,
+    check_sensitivity_validation,
+    check_stress_backtest_validation,
+    check_uncertified_production_candidate,
+    check_validation_lab,
     check_settlement_fee_tax,
     check_settlement_report,
     check_statement_staleness,
@@ -184,6 +193,16 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--alpha-shortlist-path")
     parser.add_argument("--feature-set-manifest-path")
     parser.add_argument("--feature-coverage-report-path")
+    parser.add_argument("--validation-lab-report-path")
+    parser.add_argument("--factor-validation-summary-path")
+    parser.add_argument("--multiple-testing-report-path")
+    parser.add_argument("--overfit-risk-report-path")
+    parser.add_argument("--placebo-test-report-path")
+    parser.add_argument("--regime-validation-report-path")
+    parser.add_argument("--sensitivity-report-path")
+    parser.add_argument("--stress-backtest-report-path")
+    parser.add_argument("--factor-certification-decision-path")
+    parser.add_argument("--factor-certification-scorecard-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -241,6 +260,21 @@ def main(argv: list[str] | None = None) -> int:
         ("alpha_shortlist", lambda: check_alpha_shortlist(args.alpha_shortlist_path)),
         ("feature_set_manifest", lambda: check_feature_set_manifest(args.feature_set_manifest_path)),
         ("feature_coverage", lambda: check_feature_coverage(args.feature_coverage_report_path)),
+        ("validation_lab", lambda: check_validation_lab(args.validation_lab_report_path, args.factor_validation_summary_path)),
+        ("multiple_testing", lambda: check_multiple_testing(args.multiple_testing_report_path)),
+        ("overfit_risk", lambda: check_overfit_risk(args.overfit_risk_report_path)),
+        ("placebo_tests", lambda: check_placebo_tests(args.placebo_test_report_path)),
+        ("regime_validation", lambda: check_regime_validation(args.regime_validation_report_path)),
+        ("sensitivity_validation", lambda: check_sensitivity_validation(args.sensitivity_report_path)),
+        ("stress_backtest_validation", lambda: check_stress_backtest_validation(args.stress_backtest_report_path)),
+        (
+            "factor_certification",
+            lambda: check_factor_certification(args.factor_certification_decision_path, args.factor_certification_scorecard_path),
+        ),
+        (
+            "uncertified_production_candidate",
+            lambda: check_uncertified_production_candidate(LocalFactorStore(args.factor_store_dir), args.factor_certification_decision_path),
+        ),
         ("corporate_action_report", lambda: check_corporate_action_report(args.corporate_action_report_path or _default_corporate_action_path(args.orders_dir, "corporate_actions_report.json"))),
         ("total_return_report", lambda: check_total_return_report(args.total_return_report_path or _default_corporate_action_path(args.orders_dir, "total_return_report.json"))),
         ("corporate_action_ledger", lambda: check_corporate_action_ledger(args.corporate_action_ledger_path or args.paper_account_dir)),

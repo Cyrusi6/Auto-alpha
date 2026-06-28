@@ -344,16 +344,35 @@ class AlphaFactoryRunner:
             source_counts[item.source] = source_counts.get(item.source, 0) + 1
             for family in item.family_tags:
                 family_counts[family] = family_counts.get(family, 0) + 1
+        unique_hashes = {item.formula_hash for item in candidates if item.formula_hash}
+        scores = [float(item.final_score) for item in candidates]
+        proxy_scores = [float(item.proxy_score) for item in candidates]
         return {
             "alpha_factory_enabled": True,
             "alpha_campaign_id": campaign_id,
+            "total_trials": len(candidates),
+            "evaluated_trials": int(full_summary.get("evaluated", 0) or proxy_passed),
+            "selected_trials": len(shortlist),
+            "unique_formula_hash_count": len(unique_hashes),
+            "generator_attempts": len(candidates),
             "candidates_generated": len(candidates),
             "static_passed": static_passed,
             "static_error_count": len(static_rows) - static_passed,
             "proxy_passed": proxy_passed,
             "full_eval_count": int(full_summary.get("evaluated", 0) or 0),
             "shortlist_count": len(shortlist),
+            "shortlisted_candidate_ids": [item.alpha_candidate_id for item in shortlist],
             "best_score": float(best_score),
+            "score_distribution": _distribution(scores),
+            "proxy_score_distribution": _distribution(proxy_scores),
+            "source_budgets": {
+                "template": self.config.template_budget,
+                "random": self.config.random_budget,
+                "mutation": self.config.mutation_budget,
+                "crossover": self.config.crossover_budget,
+                "corpus": self.config.corpus_budget,
+                "neural": self.config.neural_budget,
+            },
             "feature_set_name": manifest.feature_set_name,
             "feature_count": manifest.feature_count,
             "family_distribution": family_counts,
@@ -384,3 +403,15 @@ def _file_hash(path: str | None) -> str | None:
 
 def _utc_now() -> str:
     return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+
+def _distribution(values: list[float]) -> dict[str, float]:
+    if not values:
+        return {"count": 0.0, "min": 0.0, "median": 0.0, "max": 0.0}
+    ordered = sorted(values)
+    return {
+        "count": float(len(values)),
+        "min": float(ordered[0]),
+        "median": float(ordered[len(ordered) // 2]),
+        "max": float(ordered[-1]),
+    }

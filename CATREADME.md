@@ -75,6 +75,10 @@ Planned sync splits large daily datasets by date windows and splits index consti
 
 `alpha_factory/` is the large-candidate campaign layer. It records campaign ids, data-freeze/feature-set lineage, generator budgets, random seed, compute config, and PIT/corporate/risk snapshots. It builds candidates from default formulas, templates, formula corpus, random generation, mutation, crossover, imported JSON, and optional neural sources; then applies static DSL checks, cheap proxy evaluation, optional `formula_batch_eval`, novelty/diversity scoring, and family caps before writing a shortlist.
 
+`validation_lab/` is the out-of-sample and anti-overfit governance layer. It builds deterministic walk-forward, purged/embargo, and CSCV-style splits; evaluates train/test decay, OOS score, IC stability, turnover, and robustness; summarizes multiple-testing exposure from Alpha Factory/search/batch artifacts; estimates PBO and deflated IC-like scores; and runs placebo, regime, sensitivity, and stress-backtest checks. Sample data is only a smoke path; real promotion-grade validation should be tied to a data-lake freeze.
+
+`factor_certification/` converts validation, data-freeze, PIT/leakage, Alpha Factory, stress, settlement, risk-control, EOD reconciliation, and lifecycle artifacts into a policy scorecard and certification decision. Profiles include `sample_lenient_certification`, `research_standard`, and `production_strict`. Certification gates promotion and review; it is not a performance guarantee.
+
 `research/` orchestrates batch factor experiments. It loads default or JSON-defined candidate formulas, executes StackVM, applies transforms and gates, skips duplicate formula hashes, writes per-factor reports, ranks candidates, and can register a composite factor. Composite methods include equal weight, score weight, and rank average.
 
 `formula_search/` adds local formula discovery. It uses StackVM metadata to generate legal RPN formulas, estimate arity/lookback/complexity, mutate formulas, cross over parent formulas, remove duplicate hashes, and run multi-generation search through the same batch research pipeline.
@@ -90,6 +94,8 @@ Planned sync splits large daily datasets by date windows and splits index consti
 `research_suite/` orchestrates the complete local workflow. It can run data sync, universe construction, formula search, backtest, paper orders, walk-forward robustness, promotion, suite report writing, and artifact catalog generation in one command.
 
 When enabled, `research_suite.run_suite --run-alpha-factory` runs the Alpha Factory before formula search, registers feature and alpha artifacts in the suite catalog, and can continue search from the alpha shortlist with `--use-alpha-shortlist-for-search`.
+
+When enabled, `research_suite.run_suite --run-validation-lab --run-factor-certification --require-certification` runs validation before promotion. A rejected or insufficient certification blocks production-candidate promotion; conditional certification is kept for manual review instead of automatic activation.
 
 ## Risk Model And Portfolio Optimization
 

@@ -19,6 +19,8 @@ The current implementation is local-first. It uses deterministic sample data and
 - `evaluation/`: Time-series sample split, split-level metrics, and factor reports.
 - `research/`: Batch candidate execution, factor ranking, composite factor construction, and batch research reports.
 - `alpha_factory/`: Campaign-level large candidate generation, template/random/mutation/crossover/corpus source budgets, static checks, proxy eval, full eval, novelty/diversity scoring, and shortlist reports.
+- `validation_lab/`: Out-of-sample validation, walk-forward/purged/CSCV splits, multiple-testing diagnostics, overfit-risk estimates, placebo tests, regime robustness, sensitivity checks, and stress-validation reports.
+- `factor_certification/`: Factor production certification policies, scorecards, decisions, review packages, and optional factor-store status application.
 - `formula_search/`: Formula metadata, random generation, mutation, crossover, multi-generation search, and search reports.
 - `neural_search/`: AlphaGPT warm-start training, action-mask constrained formula sampling, lightweight policy search, checkpointing, and neural search reports.
 - `compute_cluster/`: Local CPU/GPU probe, GPU leases, job queue, subprocess runner, heartbeat, retry/resume state, and compute resource reports.
@@ -79,6 +81,16 @@ uv run python -m research_suite.run_suite \
   --top-k 5 \
   --composite-method rank_average \
   --promote-latest-composite \
+  --run-validation-lab \
+  --run-multiple-testing \
+  --run-overfit-risk \
+  --run-placebo \
+  --run-regime-validation \
+  --run-sensitivity-validation \
+  --run-stress-backtest-validation \
+  --run-factor-certification \
+  --certification-policy-profile sample_lenient_certification \
+  --require-certification \
   --walk-forward-train-size 1 \
   --walk-forward-test-size 1 \
   --walk-forward-step-size 1 \
@@ -199,6 +211,58 @@ uv run python -m data_lake.run_lake create-freeze \
 ```
 
 `data_source_validation.run_smoke` can also write a dataset version and research freeze in one offline smoke run with `--write-data-version --create-research-freeze`. Real Tushare backfills remain gated by explicit allow-network/token parameters and reports never store raw tokens.
+
+## Validation And Certification
+
+Alpha Factory and formula search can generate many candidates, so production promotion should include explicit anti-overfit governance. `validation_lab/` evaluates a selected single or composite factor across deterministic out-of-sample splits and writes:
+
+- `validation_lab_report.json/md`
+- `validation_splits.jsonl`
+- `factor_validation_results.jsonl`
+- `factor_validation_summary.json`
+- `multiple_testing_report.json`
+- `overfit_risk_report.json`
+- `placebo_test_report.json` and `placebo_trials.jsonl`
+- `regime_validation_report.json` and `regime_results.jsonl`
+- `sensitivity_report.json` and `sensitivity_results.jsonl`
+- `stress_backtest_report.json` and `stress_backtest_results.jsonl`
+
+The implementation is intentionally local and conservative. PBO, deflated IC-like scores, and multiple-testing penalties are approximate diagnostics for review, not proof of future profitability.
+
+`factor_certification/` turns validation, PIT/leakage, data-freeze, Alpha Factory, settlement, risk-control, and lifecycle artifacts into a scorecard and decision:
+
+```bash
+uv run python -m validation_lab.run_validation run-suite \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --latest-approved \
+  --output-dir /tmp/auto-alpha-demo/validation \
+  --run-multiple-testing \
+  --run-overfit-risk \
+  --run-placebo \
+  --placebo-trials 3 \
+  --run-regime \
+  --run-sensitivity \
+  --run-stress-backtest \
+  --pretty
+
+uv run python -m factor_certification.run_certify run \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --latest-approved \
+  --output-dir /tmp/auto-alpha-demo/certification \
+  --policy-profile sample_lenient_certification \
+  --validation-lab-report-path /tmp/auto-alpha-demo/validation/validation_lab_report.json \
+  --factor-validation-summary-path /tmp/auto-alpha-demo/validation/factor_validation_summary.json \
+  --multiple-testing-report-path /tmp/auto-alpha-demo/validation/multiple_testing_report.json \
+  --overfit-risk-report-path /tmp/auto-alpha-demo/validation/overfit_risk_report.json \
+  --placebo-test-report-path /tmp/auto-alpha-demo/validation/placebo_test_report.json \
+  --regime-validation-report-path /tmp/auto-alpha-demo/validation/regime_validation_report.json \
+  --sensitivity-report-path /tmp/auto-alpha-demo/validation/sensitivity_report.json \
+  --stress-backtest-report-path /tmp/auto-alpha-demo/validation/stress_backtest_report.json \
+  --pretty
+```
+
+Certification policy profiles are `sample_lenient_certification`, `research_standard`, and `production_strict`. Certification is a governance gate and review artifact; it does not guarantee returns. Large real-data validation should run against an immutable `data_lake` research freeze.
 
 Before using a real data token in production, run the data source smoke validator. It is offline by default and can use fake Tushare scenarios without network access:
 

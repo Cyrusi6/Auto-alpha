@@ -31,6 +31,7 @@ PLATFORM_MODULES = [
     "factor_engine",
     "factor_store",
     "factor_lifecycle",
+    "factor_certification",
     "feature_factory",
     "formula_batch_eval",
     "formula_corpus",
@@ -54,6 +55,7 @@ PLATFORM_MODULES = [
     "leakage_audit",
     "strategy_manager",
     "universe",
+    "validation_lab",
 ]
 
 

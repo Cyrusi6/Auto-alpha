@@ -56,6 +56,7 @@ packages = [
     "experiment_orchestrator",
     "factor_engine",
     "factor_store",
+    "factor_certification",
     "factor_lifecycle",
     "feature_factory",
     "formula_search",
@@ -81,6 +82,7 @@ packages = [
     "settlement_engine",
     "strategy_manager",
     "universe",
+    "validation_lab",
 ]
 
 [tool.hatch.build.targets.sdist]
@@ -107,6 +109,7 @@ include = [
     "experiment_orchestrator",
     "factor_engine",
     "factor_store",
+    "factor_certification",
     "factor_lifecycle",
     "feature_factory",
     "formula_search",
@@ -132,6 +135,7 @@ include = [
     "settlement_engine",
     "strategy_manager",
     "universe",
+    "validation_lab",
     "README.md",
     "CATREADME.md",
     "FRAMEWORK_UPDATE.md",

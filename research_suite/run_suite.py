@@ -66,6 +66,37 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--alpha-min-novelty-score", type=float, default=0.0)
     parser.add_argument("--alpha-register-shortlist", action="store_true")
     parser.add_argument("--use-alpha-shortlist-for-search", action="store_true")
+    parser.add_argument("--run-validation-lab", action="store_true")
+    parser.add_argument("--validation-lab-dir")
+    parser.add_argument(
+        "--validation-split-method",
+        choices=["simple_walk_forward", "rolling_walk_forward", "anchored_walk_forward", "purged_embargo", "cscv"],
+        default="simple_walk_forward",
+    )
+    parser.add_argument("--validation-train-size", type=int, default=1)
+    parser.add_argument("--validation-size", type=int, default=0)
+    parser.add_argument("--validation-test-size", type=int, default=1)
+    parser.add_argument("--validation-step-size", type=int, default=1)
+    parser.add_argument("--validation-embargo-size", type=int, default=0)
+    parser.add_argument("--validation-cscv-groups", type=int, default=2)
+    parser.add_argument("--validation-max-cscv-combinations", type=int, default=6)
+    parser.add_argument("--run-multiple-testing", action="store_true")
+    parser.add_argument("--run-overfit-risk", action="store_true")
+    parser.add_argument("--run-placebo", action="store_true")
+    parser.add_argument("--placebo-trials", type=int, default=12)
+    parser.add_argument("--run-regime-validation", action="store_true")
+    parser.add_argument("--run-sensitivity-validation", action="store_true")
+    parser.add_argument("--run-stress-backtest-validation", action="store_true")
+    parser.add_argument("--run-factor-certification", action="store_true")
+    parser.add_argument("--factor-certification-dir")
+    parser.add_argument("--certification-policy-path")
+    parser.add_argument(
+        "--certification-policy-profile",
+        choices=["sample_lenient_certification", "research_standard", "production_strict"],
+        default="sample_lenient_certification",
+    )
+    parser.add_argument("--require-certification", action="store_true")
+    parser.add_argument("--fail-on-certification-rejected", action="store_true")
     parser.add_argument("--universe-name", default="csi300_sample")
     parser.add_argument("--index-code", default="000300.SH")
     parser.add_argument("--factor-store-dir")
@@ -245,6 +276,29 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
         alpha_min_novelty_score=args.alpha_min_novelty_score,
         alpha_register_shortlist=args.alpha_register_shortlist,
         use_alpha_shortlist_for_search=args.use_alpha_shortlist_for_search,
+        run_validation_lab=args.run_validation_lab,
+        validation_lab_dir=args.validation_lab_dir,
+        validation_split_method=args.validation_split_method,
+        validation_train_size=args.validation_train_size,
+        validation_size=args.validation_size,
+        validation_test_size=args.validation_test_size,
+        validation_step_size=args.validation_step_size,
+        validation_embargo_size=args.validation_embargo_size,
+        validation_cscv_groups=args.validation_cscv_groups,
+        validation_max_cscv_combinations=args.validation_max_cscv_combinations,
+        run_multiple_testing=args.run_multiple_testing,
+        run_overfit_risk=args.run_overfit_risk,
+        run_placebo=args.run_placebo,
+        placebo_trials=args.placebo_trials,
+        run_regime_validation=args.run_regime_validation,
+        run_sensitivity_validation=args.run_sensitivity_validation,
+        run_stress_backtest_validation=args.run_stress_backtest_validation,
+        run_factor_certification=args.run_factor_certification,
+        factor_certification_dir=args.factor_certification_dir,
+        certification_policy_path=args.certification_policy_path,
+        certification_policy_profile=args.certification_policy_profile,
+        require_certification=args.require_certification,
+        fail_on_certification_rejected=args.fail_on_certification_rejected,
         universe_name=args.universe_name,
         index_code=args.index_code,
         factor_store_dir=str(args.factor_store_dir or base_dir / "store"),

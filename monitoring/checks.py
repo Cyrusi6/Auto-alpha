@@ -1222,6 +1222,126 @@ def check_feature_coverage(path: str | Path | None) -> tuple[dict[str, Any], lis
     return {"exists": bool(payload), "feature_coverage_warning_count": warnings}, alerts
 
 
+def check_validation_lab(
+    path: str | Path | None,
+    factor_validation_summary_path: str | Path | None = None,
+) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    summary = payload.get("validation_summary", {}) if isinstance(payload.get("validation_summary"), dict) else {}
+    if not summary and factor_validation_summary_path:
+        summary = _read_json(Path(factor_validation_summary_path))
+    blocker_count = int(summary.get("blocker_count", 0) or 0) if summary else 0
+    warning_count = int(summary.get("warning_count", 0) or 0) if summary else 0
+    status = str(payload.get("status", "missing") if payload else "missing")
+    if status == "missing" and summary:
+        status = str(summary.get("status", "summary_only"))
+    alerts = []
+    if blocker_count:
+        alerts.append(MonitoringAlert("error", "validation_lab", "validation blockers exist", {"blocker_count": blocker_count}))
+    elif warning_count:
+        alerts.append(MonitoringAlert("warning", "validation_lab", "validation warnings exist", {"warning_count": warning_count}))
+    return {
+        "exists": bool(payload),
+        "validation_status": status,
+        "validation_blocker_count": blocker_count,
+        "validation_warning_count": warning_count,
+        "out_of_sample_score": float(summary.get("out_of_sample_score", 0.0) or 0.0) if summary else 0.0,
+        "window_pass_ratio": float(summary.get("window_pass_ratio", 0.0) or 0.0) if summary else 0.0,
+    }, alerts
+
+
+def check_multiple_testing(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    warning = bool(payload.get("selection_bias_warning", False)) if payload else False
+    alerts = [MonitoringAlert("warning", "multiple_testing", "selection bias warning is active")] if warning else []
+    return {
+        "exists": bool(payload),
+        "effective_trial_count": int(payload.get("effective_trial_count", 0) or 0) if payload else 0,
+        "selection_bias_warning": warning,
+    }, alerts
+
+
+def check_overfit_risk(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    pbo = float(payload.get("pbo_estimate", 0.0) or 0.0) if payload else 0.0
+    level = str(payload.get("overfit_risk_level", "") if payload else "")
+    alerts = [MonitoringAlert("warning", "overfit_risk", "overfit risk is elevated", {"pbo": pbo})] if level == "high" else []
+    return {
+        "exists": bool(payload),
+        "pbo_estimate": pbo,
+        "deflated_ic_score": float(payload.get("deflated_ic_like_score", 0.0) or 0.0) if payload else 0.0,
+        "overfit_risk_level": level,
+    }, alerts
+
+
+def check_placebo_tests(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    percentile = float(payload.get("candidate_vs_placebo_percentile", 0.0) or 0.0) if payload else 0.0
+    null_ratio = float(payload.get("null_exceedance_ratio", 0.0) or 0.0) if payload else 0.0
+    alerts = [MonitoringAlert("warning", "placebo_tests", "candidate does not beat placebo strongly", {"percentile": percentile})] if payload and percentile < 0.5 else []
+    return {"exists": bool(payload), "placebo_percentile": percentile, "null_exceedance_ratio": null_ratio}, alerts
+
+
+def check_regime_validation(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    ratio = float(payload.get("regime_pass_ratio", 0.0) or 0.0) if payload else 0.0
+    alerts = [MonitoringAlert("warning", "regime_validation", "regime pass ratio is low", {"ratio": ratio})] if payload and ratio < 0.5 else []
+    return {"exists": bool(payload), "regime_pass_ratio": ratio, "regime_count": int(payload.get("regime_count", 0) or 0) if payload else 0}, alerts
+
+
+def check_sensitivity_validation(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    ratio = float(payload.get("sensitivity_pass_ratio", 0.0) or 0.0) if payload else 0.0
+    alerts = [MonitoringAlert("warning", "sensitivity_validation", "sensitivity pass ratio is low", {"ratio": ratio})] if payload and ratio < 0.5 else []
+    return {"exists": bool(payload), "sensitivity_pass_ratio": ratio, "scenario_count": int(payload.get("scenario_count", 0) or 0) if payload else 0}, alerts
+
+
+def check_stress_backtest_validation(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    ratio = float(payload.get("stress_backtest_pass_ratio", 0.0) or 0.0) if payload else 0.0
+    alerts = [MonitoringAlert("warning", "stress_backtest_validation", "stress backtest pass ratio is low", {"ratio": ratio})] if payload and ratio < 0.5 else []
+    return {"exists": bool(payload), "stress_backtest_pass_ratio": ratio, "stress_scenario_count": int(payload.get("stress_scenario_count", 0) or 0) if payload else 0}, alerts
+
+
+def check_factor_certification(
+    path: str | Path | None,
+    scorecard_path: str | Path | None = None,
+) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    scorecard = _read_json(Path(scorecard_path)) if scorecard_path else {}
+    status = str(payload.get("status", "") if payload else "")
+    remediation = len(payload.get("required_remediation", []) or []) if payload else 0
+    blocker_count = int((payload.get("checks") or {}).get("blocker_count", 0) or 0) if payload else 0
+    if not blocker_count and isinstance(scorecard.get("summary"), dict):
+        blocker_count = int(scorecard["summary"].get("blocker_count", 0) or 0)
+    alerts = []
+    if status in {"rejected", "insufficient_data"}:
+        alerts.append(MonitoringAlert("error", "factor_certification", "factor certification did not pass", {"status": status}))
+    elif status == "conditional":
+        alerts.append(MonitoringAlert("warning", "factor_certification", "factor certification is conditional", {"remediation": remediation}))
+    return {
+        "exists": bool(payload),
+        "certification_status": status,
+        "certification_passed": bool(payload.get("passed", False)) if payload else False,
+        "certification_required_remediation_count": remediation,
+        "certification_blocker_count": blocker_count,
+    }, alerts
+
+
+def check_uncertified_production_candidate(store: LocalFactorStore, certification_decision_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    latest = store.load_latest_factor(status="production_candidate", factor_type="composite") or store.load_latest_factor(status="production_candidate")
+    decision = _read_json(Path(certification_decision_path)) if certification_decision_path else {}
+    status = str(decision.get("status", "")) if decision else ""
+    uncertified = latest is not None and status not in {"certified", "conditional"}
+    alerts = [MonitoringAlert("warning", "uncertified_production_candidate", "production candidate has no passing certification")] if uncertified else []
+    return {
+        "exists": latest is not None,
+        "factor_id": latest.factor_id if latest else None,
+        "certification_status": status,
+        "uncertified_production_candidate": bool(uncertified),
+    }, alerts
+
+
 def _eod_summary(report_path: str | Path | None) -> dict[str, Any]:
     payload = _read_json(Path(report_path)) if report_path else {}
     summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}

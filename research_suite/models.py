@@ -166,6 +166,29 @@ class ResearchSuiteConfig:
     alpha_min_novelty_score: float = 0.0
     alpha_register_shortlist: bool = False
     use_alpha_shortlist_for_search: bool = False
+    run_validation_lab: bool = False
+    validation_lab_dir: str | None = None
+    validation_split_method: str = "simple_walk_forward"
+    validation_train_size: int = 1
+    validation_size: int = 0
+    validation_test_size: int = 1
+    validation_step_size: int = 1
+    validation_embargo_size: int = 0
+    validation_cscv_groups: int = 2
+    validation_max_cscv_combinations: int = 6
+    run_multiple_testing: bool = False
+    run_overfit_risk: bool = False
+    run_placebo: bool = False
+    placebo_trials: int = 12
+    run_regime_validation: bool = False
+    run_sensitivity_validation: bool = False
+    run_stress_backtest_validation: bool = False
+    run_factor_certification: bool = False
+    factor_certification_dir: str | None = None
+    certification_policy_path: str | None = None
+    certification_policy_profile: str = "sample_lenient_certification"
+    require_certification: bool = False
+    fail_on_certification_rejected: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -218,6 +241,8 @@ class PromotionConfig:
     max_factor_risk_share: float = 1.0
     max_specific_risk_share: float = 1.0
     require_composite: bool = True
+    certification_status: str | None = None
+    require_certification: bool = False
 
 
 @dataclass(frozen=True)

@@ -75,6 +75,15 @@ class MonitoringReport:
         alpha_diversity = self.checks.get("alpha_diversity", {}) if isinstance(self.checks, dict) else {}
         feature_set = self.checks.get("feature_set_manifest", {}) if isinstance(self.checks, dict) else {}
         feature_coverage = self.checks.get("feature_coverage", {}) if isinstance(self.checks, dict) else {}
+        validation_lab = self.checks.get("validation_lab", {}) if isinstance(self.checks, dict) else {}
+        multiple_testing = self.checks.get("multiple_testing", {}) if isinstance(self.checks, dict) else {}
+        overfit_risk = self.checks.get("overfit_risk", {}) if isinstance(self.checks, dict) else {}
+        placebo_tests = self.checks.get("placebo_tests", {}) if isinstance(self.checks, dict) else {}
+        regime_validation = self.checks.get("regime_validation", {}) if isinstance(self.checks, dict) else {}
+        sensitivity_validation = self.checks.get("sensitivity_validation", {}) if isinstance(self.checks, dict) else {}
+        stress_validation = self.checks.get("stress_backtest_validation", {}) if isinstance(self.checks, dict) else {}
+        factor_certification = self.checks.get("factor_certification", {}) if isinstance(self.checks, dict) else {}
+        uncertified = self.checks.get("uncertified_production_candidate", {}) if isinstance(self.checks, dict) else {}
         return {
             "created_at": self.created_at,
             "as_of_date": self.as_of_date,
@@ -177,4 +186,24 @@ class MonitoringReport:
             "alpha_diversity_warning_count": int(alpha_diversity.get("alpha_diversity_warning_count", 0) or 0) if isinstance(alpha_diversity, dict) else 0,
             "feature_coverage_warning_count": int(feature_coverage.get("feature_coverage_warning_count", 0) or 0) if isinstance(feature_coverage, dict) else 0,
             "feature_set_hash": feature_set.get("feature_set_hash") if isinstance(feature_set, dict) else None,
+            "validation_status": str(validation_lab.get("validation_status", "")) if isinstance(validation_lab, dict) else "",
+            "validation_blocker_count": int(validation_lab.get("validation_blocker_count", 0) or 0) if isinstance(validation_lab, dict) else 0,
+            "validation_warning_count": int(validation_lab.get("validation_warning_count", 0) or 0) if isinstance(validation_lab, dict) else 0,
+            "validation_out_of_sample_score": float(validation_lab.get("out_of_sample_score", 0.0) or 0.0) if isinstance(validation_lab, dict) else 0.0,
+            "validation_window_pass_ratio": float(validation_lab.get("window_pass_ratio", 0.0) or 0.0) if isinstance(validation_lab, dict) else 0.0,
+            "effective_trial_count": int(multiple_testing.get("effective_trial_count", 0) or 0) if isinstance(multiple_testing, dict) else 0,
+            "selection_bias_warning": bool(multiple_testing.get("selection_bias_warning", False)) if isinstance(multiple_testing, dict) else False,
+            "pbo_estimate": float(overfit_risk.get("pbo_estimate", 0.0) or 0.0) if isinstance(overfit_risk, dict) else 0.0,
+            "deflated_ic_score": float(overfit_risk.get("deflated_ic_score", 0.0) or 0.0) if isinstance(overfit_risk, dict) else 0.0,
+            "overfit_risk_level": str(overfit_risk.get("overfit_risk_level", "")) if isinstance(overfit_risk, dict) else "",
+            "placebo_percentile": float(placebo_tests.get("placebo_percentile", 0.0) or 0.0) if isinstance(placebo_tests, dict) else 0.0,
+            "null_exceedance_ratio": float(placebo_tests.get("null_exceedance_ratio", 0.0) or 0.0) if isinstance(placebo_tests, dict) else 0.0,
+            "regime_pass_ratio": float(regime_validation.get("regime_pass_ratio", 0.0) or 0.0) if isinstance(regime_validation, dict) else 0.0,
+            "sensitivity_pass_ratio": float(sensitivity_validation.get("sensitivity_pass_ratio", 0.0) or 0.0) if isinstance(sensitivity_validation, dict) else 0.0,
+            "stress_backtest_pass_ratio": float(stress_validation.get("stress_backtest_pass_ratio", 0.0) or 0.0) if isinstance(stress_validation, dict) else 0.0,
+            "certification_status": str(factor_certification.get("certification_status", "")) if isinstance(factor_certification, dict) else "",
+            "certification_passed": bool(factor_certification.get("certification_passed", False)) if isinstance(factor_certification, dict) else False,
+            "certification_blocker_count": int(factor_certification.get("certification_blocker_count", 0) or 0) if isinstance(factor_certification, dict) else 0,
+            "certification_required_remediation_count": int(factor_certification.get("certification_required_remediation_count", 0) or 0) if isinstance(factor_certification, dict) else 0,
+            "uncertified_production_candidate": bool(uncertified.get("uncertified_production_candidate", False)) if isinstance(uncertified, dict) else False,
         }

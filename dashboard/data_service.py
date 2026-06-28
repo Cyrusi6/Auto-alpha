@@ -301,6 +301,66 @@ class AshareDashboardService:
     def load_alpha_campaign_artifact_catalog(self) -> dict[str, Any]:
         return self._read_first_json(self._alpha_artifact_candidates("alpha_campaign_artifact_catalog.json"))
 
+    def load_validation_lab_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_artifact_candidates("validation_lab_report.json"))
+
+    def load_validation_splits(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._validation_artifact_candidates("validation_splits.jsonl"))
+
+    def load_factor_validation_results(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._validation_artifact_candidates("factor_validation_results.jsonl"))
+
+    def load_factor_validation_summary(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_artifact_candidates("factor_validation_summary.json"))
+
+    def load_multiple_testing_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_artifact_candidates("multiple_testing_report.json"))
+
+    def load_overfit_risk_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_artifact_candidates("overfit_risk_report.json"))
+
+    def load_placebo_test_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_artifact_candidates("placebo_test_report.json"))
+
+    def load_placebo_trials(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._validation_artifact_candidates("placebo_trials.jsonl"))
+
+    def load_regime_validation_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_artifact_candidates("regime_validation_report.json"))
+
+    def load_regime_results(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._validation_artifact_candidates("regime_results.jsonl"))
+
+    def load_sensitivity_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_artifact_candidates("sensitivity_report.json"))
+
+    def load_sensitivity_results(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._validation_artifact_candidates("sensitivity_results.jsonl"))
+
+    def load_stress_backtest_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_artifact_candidates("stress_backtest_report.json"))
+
+    def load_stress_backtest_results(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._validation_artifact_candidates("stress_backtest_results.jsonl"))
+
+    def load_validation_issues(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._validation_artifact_candidates("validation_issues.jsonl"))
+
+    def load_factor_certification_policy(self) -> dict[str, Any]:
+        return self._read_first_json(self._certification_artifact_candidates("factor_certification_policy.json"))
+
+    def load_factor_certification_scorecard(self) -> dict[str, Any]:
+        return self._read_first_json(self._certification_artifact_candidates("factor_certification_scorecard.json"))
+
+    def load_factor_certification_decision(self) -> dict[str, Any]:
+        return self._read_first_json(self._certification_artifact_candidates("factor_certification_decision.json"))
+
+    def load_factor_certification_package(self) -> dict[str, Any]:
+        return self._read_first_json(self._certification_artifact_candidates("factor_certification_package.json"))
+
+    def load_factor_certification_checks(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._certification_artifact_candidates("factor_certification_checks.jsonl"))
+
     def load_compute_resource_snapshot(self) -> dict[str, Any]:
         for path in self._compute_artifact_candidates("compute_resource_snapshot.json"):
             payload = self._read_json(path)
@@ -1545,6 +1605,24 @@ class AshareDashboardService:
             root / "alpha_factory" / filename,
             root / "suite_alpha_factory" / filename,
             root / "suite" / "alpha_factory" / filename,
+        ]
+
+    def _validation_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.validation_lab_dir / filename,
+            self.config.backtest_dir / "validation" / filename,
+            root / "validation_lab" / filename,
+            root / "suite" / "validation_lab" / filename,
+            root / "validation" / filename,
+        ]
+
+    def _certification_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.factor_certification_dir / filename,
+            root / "factor_certification" / filename,
+            root / "suite" / "factor_certification" / filename,
         ]
 
     def _read_first_json(self, paths: list[Path]) -> dict[str, Any]:

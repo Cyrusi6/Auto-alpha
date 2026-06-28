@@ -26,6 +26,8 @@ from neural_search.run_pretrain import main as run_pretrain_main
 from performance_benchmark.run_benchmark import main as run_benchmark_main
 from strategy_manager import runner as strategy_runner
 from universe import run_universe
+from validation_lab.run_validation import main as run_validation_main
+from factor_certification.run_certify import main as run_certify_main
 from leakage_audit.run_audit import main as run_leakage_audit_main
 from point_in_time.run_pit import main as run_pit_main
 from data_lake import LocalDataLakeRegistry, create_research_freeze, validate_research_input
@@ -59,6 +61,8 @@ class ResearchSuiteRunner:
         self.corporate_action_summary: dict[str, Any] = {}
         self.compute_summary: dict[str, Any] = {}
         self.alpha_summary: dict[str, Any] = {}
+        self.validation_summary: dict[str, Any] = {}
+        self.certification_summary: dict[str, Any] = {}
         self.dataset_version_id: str | None = None
         self.data_freeze_id: str | None = config.data_freeze_id
         self.data_freeze_hash: str | None = None
@@ -113,6 +117,10 @@ class ResearchSuiteRunner:
             if not self.config.skip_orders:
                 self._append_stage("orders", self._stage_orders)
             self._append_stage("walk_forward", self._stage_walk_forward)
+            if self.config.run_validation_lab:
+                self._append_stage("validation_lab", self._stage_validation_lab)
+            if self.config.run_factor_certification:
+                self._append_stage("factor_certification", self._stage_factor_certification)
             if not self.config.disable_promotion and self.config.promote_latest_composite:
                 self._append_stage("promotion", self._stage_promotion)
             if self.config.register_model_version:
@@ -206,6 +214,20 @@ class ResearchSuiteRunner:
                 "alpha_family_distribution": self.alpha_summary.get("family_distribution", {}),
                 "alpha_compute_run_report_path": self.alpha_summary.get("compute_run_report_path"),
                 "alpha_factory_report_path": self.alpha_summary.get("alpha_factory_report_path"),
+                "validation_lab_enabled": self.config.run_validation_lab,
+                "validation_status": self.validation_summary.get("status"),
+                "validation_blocker_count": self.validation_summary.get("validation_blocker_count", 0),
+                "pbo_estimate": self.validation_summary.get("pbo_estimate", 0.0),
+                "deflated_ic_score": self.validation_summary.get("deflated_ic_score", 0.0),
+                "placebo_percentile": self.validation_summary.get("placebo_percentile", 0.0),
+                "regime_pass_ratio": self.validation_summary.get("regime_pass_ratio", 0.0),
+                "sensitivity_pass_ratio": self.validation_summary.get("sensitivity_pass_ratio", 0.0),
+                "stress_backtest_pass_ratio": self.validation_summary.get("stress_backtest_pass_ratio", 0.0),
+                "certification_status": self.certification_summary.get("certification_status"),
+                "certification_policy_profile": self.certification_summary.get("certification_policy_profile"),
+                "certification_decision_path": (self.certification_summary.get("paths") or {}).get("factor_certification_decision_path"),
+                "certification_blocker_count": self.certification_summary.get("certification_blocker_count", 0),
+                "certification_required_remediation_count": self.certification_summary.get("certification_required_remediation_count", 0),
             },
         )
         suite_json, suite_md = write_suite_report(result, self.output_dir)
@@ -1342,6 +1364,133 @@ class ResearchSuiteRunner:
         self.catalog = register_artifact(self.catalog, "walk_forward_result", path, "json", "walk_forward")
         return result.to_dict(), {"walk_forward_result": str(path)}
 
+    def _stage_validation_lab(self) -> tuple[dict[str, Any], dict[str, str]]:
+        if not self.selected_factor_id:
+            raise ValueError("no selected factor for validation lab")
+        validation_dir = self._validation_lab_dir()
+        alpha_dir = Path(self.config.alpha_factory_dir) if self.config.alpha_factory_dir else self.output_dir / "alpha_factory"
+        search_dir = Path(self.config.output_dir) / "search"
+        batch_dir = self._batch_eval_dir()
+        argv = [
+            "run-suite",
+            "--data-dir",
+            self.config.data_dir,
+            "--factor-store-dir",
+            self.config.factor_store_dir,
+            "--factor-id",
+            self.selected_factor_id,
+            "--factor-type",
+            "composite",
+            "--output-dir",
+            str(validation_dir),
+            "--as-of-date",
+            self.config.as_of_date,
+            "--universe-name",
+            self.config.universe_name,
+            "--split-method",
+            self.config.validation_split_method,
+            "--train-size",
+            str(self.config.validation_train_size),
+            "--validation-size",
+            str(self.config.validation_size),
+            "--test-size",
+            str(self.config.validation_test_size),
+            "--step-size",
+            str(self.config.validation_step_size),
+            "--embargo-size",
+            str(self.config.validation_embargo_size),
+            "--cscv-groups",
+            str(self.config.validation_cscv_groups),
+            "--max-cscv-combinations",
+            str(self.config.validation_max_cscv_combinations),
+            "--placebo-trials",
+            str(self.config.placebo_trials),
+            "--alpha-factory-report-path",
+            str(alpha_dir / "alpha_factory_report.json"),
+            "--alpha-candidates-path",
+            str(alpha_dir / "alpha_candidates.jsonl"),
+            "--alpha-shortlist-path",
+            str(alpha_dir / "alpha_shortlist.jsonl"),
+            "--alpha-full-eval-summary-path",
+            str(alpha_dir / "alpha_full_eval_summary.json"),
+            "--formula-search-result-path",
+            str(search_dir / "search_result.json"),
+            "--batch-eval-result-path",
+            str(batch_dir / "formula_batch_eval_result.json"),
+        ]
+        argv.extend(_freeze_cli_args(self.config))
+        if self.config.run_multiple_testing:
+            argv.append("--run-multiple-testing")
+        if self.config.run_overfit_risk:
+            argv.append("--run-overfit-risk")
+        if self.config.run_placebo:
+            argv.append("--run-placebo")
+        if self.config.run_regime_validation:
+            argv.append("--run-regime")
+        if self.config.run_sensitivity_validation:
+            argv.append("--run-sensitivity")
+        if self.config.run_stress_backtest_validation:
+            argv.append("--run-stress-backtest")
+        payload = _run_json_main(run_validation_main, argv)
+        self.validation_summary = payload
+        paths = payload.get("paths", {}) if isinstance(payload.get("paths"), dict) else {}
+        output_paths = {name.replace("_path", ""): str(path) for name, path in paths.items() if path}
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "validation_lab")
+        return payload, output_paths
+
+    def _stage_factor_certification(self) -> tuple[dict[str, Any], dict[str, str]]:
+        if not self.selected_factor_id:
+            raise ValueError("no selected factor for certification")
+        cert_dir = self._factor_certification_dir()
+        validation_dir = self._validation_lab_dir()
+        argv = [
+            "run",
+            "--factor-store-dir",
+            self.config.factor_store_dir,
+            "--factor-id",
+            self.selected_factor_id,
+            "--factor-type",
+            "composite",
+            "--output-dir",
+            str(cert_dir),
+            "--policy-profile",
+            self.config.certification_policy_profile,
+            "--validation-lab-report-path",
+            str(validation_dir / "validation_lab_report.json"),
+            "--factor-validation-summary-path",
+            str(validation_dir / "factor_validation_summary.json"),
+            "--multiple-testing-report-path",
+            str(validation_dir / "multiple_testing_report.json"),
+            "--overfit-risk-report-path",
+            str(validation_dir / "overfit_risk_report.json"),
+            "--placebo-test-report-path",
+            str(validation_dir / "placebo_test_report.json"),
+            "--regime-validation-report-path",
+            str(validation_dir / "regime_validation_report.json"),
+            "--sensitivity-report-path",
+            str(validation_dir / "sensitivity_report.json"),
+            "--stress-backtest-report-path",
+            str(validation_dir / "stress_backtest_report.json"),
+            "--data-version-manifest-path",
+            self.config.data_version_manifest_path or "",
+            "--research-data-freeze-path",
+            str(Path(self.config.data_freeze_dir) / "research_data_freeze.json") if self.config.data_freeze_dir else "",
+            "--alpha-factory-report-path",
+            str((Path(self.config.alpha_factory_dir) if self.config.alpha_factory_dir else self.output_dir / "alpha_factory") / "alpha_factory_report.json"),
+        ]
+        if self.config.certification_policy_path:
+            argv.extend(["--policy-path", self.config.certification_policy_path])
+        if self.config.fail_on_certification_rejected:
+            argv.append("--fail-on-rejected")
+        payload = _run_json_main(run_certify_main, argv)
+        self.certification_summary = payload
+        paths = payload.get("paths", {}) if isinstance(payload.get("paths"), dict) else {}
+        output_paths = {name.replace("_path", ""): str(path) for name, path in paths.items() if path}
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "factor_certification")
+        return payload, output_paths
+
     def _stage_promotion(self) -> tuple[dict[str, Any], dict[str, str]]:
         if not self.selected_factor_id:
             raise ValueError("no selected factor for promotion")
@@ -1355,6 +1504,22 @@ class ResearchSuiteRunner:
             summary=walk_payload.get("summary", {}),
         )
         store = LocalFactorStore(self.config.factor_store_dir)
+        if self.config.require_certification:
+            status = str(self.certification_summary.get("certification_status") or "")
+            if status not in {"certified", "conditional"}:
+                from .models import PromotionDecision
+
+                self.promotion_decision = PromotionDecision(
+                    factor_id=self.selected_factor_id,
+                    passed=False,
+                    new_status="needs_review",
+                    reasons=[f"certification_not_passed:{status or 'missing'}"],
+                    checks={"certification_status": status, "require_certification": True},
+                    created_at=_utc_now(),
+                )
+                path = write_promotion_decision(self.promotion_decision, self.config.output_dir)
+                self.catalog = register_artifact(self.catalog, "promotion_decision", path, "json", "promotion")
+                return self.promotion_decision.to_dict(), {"promotion_decision": str(path)}
         self.promotion_decision = promote_factor_if_eligible(
             store,
             self.selected_factor_id,
@@ -1367,6 +1532,8 @@ class ResearchSuiteRunner:
                 max_factor_risk_share=self.config.max_factor_risk_contribution
                 if self.config.max_factor_risk_contribution is not None
                 else 1.0,
+                certification_status=self.certification_summary.get("certification_status"),
+                require_certification=self.config.require_certification,
             ),
         )
         path = write_promotion_decision(self.promotion_decision, self.config.output_dir)
@@ -1402,6 +1569,8 @@ class ResearchSuiteRunner:
                 "alpha_factory_report_path": self.alpha_summary.get("alpha_factory_report_path"),
                 "alpha_campaign_manifest_path": self.alpha_summary.get("alpha_campaign_manifest_path"),
                 "alpha_shortlist_path": self.alpha_summary.get("alpha_shortlist_path"),
+                "validation_lab_summary": self.validation_summary,
+                "factor_certification_summary": self.certification_summary,
                 "feature_set_name": self.alpha_summary.get("feature_set_name"),
                 "feature_version": self.alpha_summary.get("feature_set_name"),
             },
@@ -1491,6 +1660,13 @@ class ResearchSuiteRunner:
             argv.extend(["--cash-buckets-path", str(cash_buckets)])
         if realized_pnl.exists():
             argv.extend(["--realized-pnl-path", str(realized_pnl)])
+        validation_dir = self._validation_lab_dir()
+        cert_dir = self._factor_certification_dir()
+        cert_decision = cert_dir / "factor_certification_decision.json"
+        if cert_decision.exists():
+            argv.extend(["--artifact-dir", str(cert_dir)])
+        if (validation_dir / "validation_lab_report.json").exists():
+            argv.extend(["--artifact-dir", str(validation_dir)])
         if self.config.model_lifecycle_policy_path:
             argv.extend(["--policy-path", self.config.model_lifecycle_policy_path])
         if self.config.require_model_approval:
@@ -1569,6 +1745,12 @@ class ResearchSuiteRunner:
         if self.config.corporate_action_output_dir:
             return Path(self.config.corporate_action_output_dir)
         return Path(self.config.output_dir) / "corporate_actions"
+
+    def _validation_lab_dir(self) -> Path:
+        return Path(self.config.validation_lab_dir) if self.config.validation_lab_dir else Path(self.config.output_dir) / "validation_lab"
+
+    def _factor_certification_dir(self) -> Path:
+        return Path(self.config.factor_certification_dir) if self.config.factor_certification_dir else Path(self.config.output_dir) / "factor_certification"
 
 
 def _run_json_main(main_func: Callable[[list[str] | None], int], argv: list[str]) -> dict[str, Any]:

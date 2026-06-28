@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 from pathlib import Path
 
@@ -12,6 +14,9 @@ from neural_search.models import NeuralSearchConfig
 from neural_search.trainer import NeuralFormulaTrainer
 from research.composite import COMPOSITE_METHODS
 from experiment_orchestrator.merge import merge_formula_search_results
+from factor_store import LocalFactorStore
+from validation_lab.run_validation import main as run_validation_main
+from factor_certification.run_certify import main as run_certify_main
 
 from .models import FormulaSearchConfig
 from .search import FormulaSearchRunner
@@ -96,6 +101,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--feature-set-manifest-path")
     parser.add_argument("--use-alpha-shortlist-as-seed", action="store_true")
     parser.add_argument("--alpha-seed-top-k", type=int)
+    parser.add_argument("--run-validation-lab", action="store_true")
+    parser.add_argument("--validation-output-dir")
+    parser.add_argument("--run-certification", action="store_true")
+    parser.add_argument("--certification-output-dir")
+    parser.add_argument("--certification-policy-path")
+    parser.add_argument("--certification-policy-profile", default="sample_lenient_certification")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -132,12 +143,16 @@ def main(argv: list[str] | None = None) -> int:
         result = _run_neural(args)
         result.update(freeze_payload)
         _attach_pit_metadata(result, args)
+        _attach_search_trial_summary(result)
+        _maybe_run_validation_and_certification(result, args)
         print(json.dumps(result, ensure_ascii=False, indent=2 if args.pretty else None))
         return 0
     if args.search_mode == "hybrid":
         result = _run_hybrid(args, search_config)
         result.update(freeze_payload)
         _attach_pit_metadata(result, args)
+        _attach_search_trial_summary(result)
+        _maybe_run_validation_and_certification(result, args)
         print(json.dumps(result, ensure_ascii=False, indent=2 if args.pretty else None))
         return 0
     result = FormulaSearchRunner(
@@ -196,6 +211,8 @@ def main(argv: list[str] | None = None) -> int:
     payload = result.to_dict()
     payload.update(freeze_payload)
     _attach_pit_metadata(payload, args)
+    _attach_search_trial_summary(payload)
+    _maybe_run_validation_and_certification(payload, args)
     print(json.dumps(payload, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0
 
@@ -359,6 +376,115 @@ def _attach_pit_metadata(payload: dict[str, object], args: argparse.Namespace) -
         payload["data_freeze_id"] = args.data_freeze_id
     if args.data_version_manifest_path:
         payload["data_version_manifest_path"] = args.data_version_manifest_path
+
+
+def _maybe_run_validation_and_certification(payload: dict[str, object], args: argparse.Namespace) -> None:
+    if not (args.run_validation_lab or args.run_certification):
+        payload["total_search_trials"] = int(payload.get("candidates_generated", 0) or 0)
+        payload["selected_factor_id"] = payload.get("composite_factor_id")
+        payload["validation_target_count"] = 1 if payload.get("composite_factor_id") else 0
+        return
+    factor_id = str(payload.get("composite_factor_id") or _latest_composite(args.factor_store_dir) or "")
+    if not factor_id:
+        return
+    validation_dir = Path(args.validation_output_dir) if args.validation_output_dir else Path(args.output_dir) / "validation_lab"
+    certification_dir = Path(args.certification_output_dir) if args.certification_output_dir else Path(args.output_dir) / "factor_certification"
+    if args.run_validation_lab:
+        validation_argv = [
+            "run-suite",
+            "--data-dir",
+            args.data_dir,
+            "--factor-store-dir",
+            args.factor_store_dir,
+            "--factor-id",
+            factor_id,
+            "--factor-type",
+            "composite",
+            "--output-dir",
+            str(validation_dir),
+            "--run-multiple-testing",
+            "--run-overfit-risk",
+            "--run-placebo",
+            "--run-regime",
+            "--run-sensitivity",
+            "--run-stress-backtest",
+            "--formula-search-result-path",
+            str(Path(args.output_dir) / "search_result.json"),
+        ]
+        if args.data_freeze_dir:
+            validation_argv.extend(["--data-freeze-dir", args.data_freeze_dir])
+        if args.universe_name:
+            validation_argv.extend(["--universe-name", args.universe_name])
+        payload["validation_summary"] = _run_child_json(run_validation_main, validation_argv)
+        payload["validation_output_dir"] = str(validation_dir)
+    if args.run_certification:
+        cert_argv = [
+            "run",
+            "--factor-store-dir",
+            args.factor_store_dir,
+            "--factor-id",
+            factor_id,
+            "--factor-type",
+            "composite",
+            "--output-dir",
+            str(certification_dir),
+            "--policy-profile",
+            args.certification_policy_profile,
+            "--validation-lab-report-path",
+            str(validation_dir / "validation_lab_report.json"),
+            "--factor-validation-summary-path",
+            str(validation_dir / "factor_validation_summary.json"),
+            "--multiple-testing-report-path",
+            str(validation_dir / "multiple_testing_report.json"),
+            "--overfit-risk-report-path",
+            str(validation_dir / "overfit_risk_report.json"),
+            "--placebo-test-report-path",
+            str(validation_dir / "placebo_test_report.json"),
+            "--regime-validation-report-path",
+            str(validation_dir / "regime_validation_report.json"),
+            "--sensitivity-report-path",
+            str(validation_dir / "sensitivity_report.json"),
+            "--stress-backtest-report-path",
+            str(validation_dir / "stress_backtest_report.json"),
+        ]
+        if args.certification_policy_path:
+            cert_argv.extend(["--policy-path", args.certification_policy_path])
+        payload["certification_summary"] = _run_child_json(run_certify_main, cert_argv)
+        payload["certification_output_dir"] = str(certification_dir)
+    payload["selected_factor_id"] = factor_id
+    payload["validation_target_count"] = 1
+
+
+def _attach_search_trial_summary(payload: dict[str, object]) -> None:
+    candidates_generated = int(payload.get("candidates_generated", 0) or 0)
+    candidates_valid = int(payload.get("candidates_valid", 0) or 0)
+    candidates_evaluated = int(payload.get("candidates_evaluated", 0) or 0)
+    hashes = set()
+    for item in payload.get("best_candidates", []) if isinstance(payload.get("best_candidates"), list) else []:
+        if isinstance(item, dict) and item.get("formula_hash"):
+            hashes.add(str(item["formula_hash"]))
+    payload.setdefault("alpha_seed_count", 0)
+    payload["total_search_trials"] = candidates_generated
+    payload["valid_search_trials"] = candidates_valid
+    payload["evaluated_search_trials"] = candidates_evaluated
+    payload["unique_formula_hash_count"] = max(len(hashes), candidates_valid if candidates_valid else 0)
+    payload["selected_factor_id"] = payload.get("composite_factor_id")
+    payload["validation_target_count"] = 1 if payload.get("composite_factor_id") else 0
+
+
+def _latest_composite(factor_store_dir: str) -> str | None:
+    record = LocalFactorStore(factor_store_dir).load_latest_factor(status="approved", factor_type="composite")
+    return record.factor_id if record else None
+
+
+def _run_child_json(main_func, argv: list[str]) -> dict[str, object]:
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        exit_code = main_func(argv)
+    if exit_code != 0:
+        raise RuntimeError(f"child command failed: {argv}")
+    output = buffer.getvalue().strip()
+    return json.loads(output) if output else {}
 
 
 def _apply_data_freeze_args(args: argparse.Namespace) -> dict[str, object]:

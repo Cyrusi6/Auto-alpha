@@ -249,6 +249,64 @@ def _artifact_checks(paths: dict[str, str], policy: LifecyclePolicy) -> list[Fac
                 "error",
             )
         )
+    validation = _read_json(paths.get("validation_lab_report_path") or paths.get("validation_lab_report"))
+    if validation:
+        summary = validation.get("validation_summary", {}) if isinstance(validation.get("validation_summary"), dict) else {}
+        blockers = int(summary.get("blocker_count", 0) or 0)
+        checks.append(
+            _check(
+                "validation_blockers",
+                blockers <= policy.max_validation_blocker_count,
+                blockers,
+                policy.max_validation_blocker_count,
+                "error",
+            )
+        )
+    validation_summary = _read_json(paths.get("factor_validation_summary_path") or paths.get("factor_validation_summary"))
+    if validation_summary:
+        checks.append(
+            FactorHealthCheck(
+                "validation_out_of_sample_score",
+                "info",
+                True,
+                validation_summary.get("out_of_sample_score", 0.0),
+                None,
+                "validation summary attached",
+            )
+        )
+    overfit = _read_json(paths.get("overfit_risk_report_path") or paths.get("overfit_risk_report"))
+    if overfit:
+        pbo = float(overfit.get("pbo_estimate", 0.0) or 0.0)
+        deflated = float(overfit.get("deflated_ic_like_score", 0.0) or 0.0)
+        checks.append(_check("overfit_pbo", pbo <= policy.max_pbo, pbo, policy.max_pbo, "warning"))
+        checks.append(_check("overfit_deflated_ic", deflated >= policy.min_deflated_ic_score, deflated, policy.min_deflated_ic_score, "warning"))
+    placebo = _read_json(paths.get("placebo_test_report_path") or paths.get("placebo_test_report"))
+    if placebo:
+        null_ratio = float(placebo.get("null_exceedance_ratio", 0.0) or 0.0)
+        checks.append(
+            _check(
+                "placebo_null_exceedance_ratio",
+                null_ratio <= policy.max_placebo_null_exceedance_ratio,
+                null_ratio,
+                policy.max_placebo_null_exceedance_ratio,
+                "warning",
+            )
+        )
+    certification = _read_json(paths.get("factor_certification_decision_path") or paths.get("factor_certification_decision"))
+    if certification:
+        status = str(certification.get("status", ""))
+        checks.append(
+            FactorHealthCheck(
+                "certification_status",
+                "error" if status not in policy.allowed_certification_statuses else "info",
+                status in policy.allowed_certification_statuses,
+                status,
+                ",".join(policy.allowed_certification_statuses),
+                "factor certification decision",
+            )
+        )
+    elif policy.require_factor_certification:
+        checks.append(FactorHealthCheck("certification_status", "error", False, message="factor certification required but missing"))
     return checks
 
 

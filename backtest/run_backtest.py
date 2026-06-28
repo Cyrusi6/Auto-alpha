@@ -19,6 +19,8 @@ from execution_plan import write_execution_plan_report
 from risk_model import write_risk_model_report, write_risk_report
 from risk_controls import evaluate_order_records
 from data_lake import validate_research_input
+from validation_lab.report import write_stress_backtest_artifacts
+from validation_lab.stress_backtest import run_stress_backtest_bundle
 
 from .io import describe_factor, factor_values_to_matrix, select_factor_id
 from .simulator import AShareBacktestSimulator
@@ -120,6 +122,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--risk-fail-on-breach", action="store_true")
     parser.add_argument("--risk-allow-clipping", action="store_true")
     parser.add_argument("--risk-state-reset-each-run", action="store_true")
+    parser.add_argument("--validation-bundle", action="store_true")
+    parser.add_argument("--validation-output-dir")
+    parser.add_argument("--stress-cost-multipliers", default="1.0,2.0")
+    parser.add_argument("--stress-participations", default="0.10,0.05")
+    parser.add_argument("--stress-settlement-profiles", default="cn_ashare_paper_default,conservative_t_plus_one_cash")
+    parser.add_argument("--stress-top-n-values", default="")
+    parser.add_argument("--stress-max-weight-values", default="")
+    parser.add_argument("--write-validation-stress-report", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -449,6 +459,40 @@ def main(argv: list[str] | None = None) -> int:
         )
         (output_dir / "backtest_result.json").write_text(json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
 
+    validation_paths: dict[str, str | None] = {
+        "stress_backtest_report_path": None,
+        "stress_backtest_report_md_path": None,
+        "stress_backtest_results_path": None,
+    }
+    validation_summary: dict[str, object] = {"enabled": False}
+    if args.validation_bundle or args.write_validation_stress_report:
+        validation_dir = Path(args.validation_output_dir) if args.validation_output_dir else output_dir / "validation"
+        stress_results, stress_summary = run_stress_backtest_bundle(
+            result.metrics,
+            cost_multipliers=_parse_float_list(args.stress_cost_multipliers),
+            participations=_parse_float_list(args.stress_participations),
+            settlement_profiles=_parse_str_list(args.stress_settlement_profiles),
+            top_n_values=_parse_int_list(args.stress_top_n_values),
+            max_weight_values=_parse_float_list(args.stress_max_weight_values),
+        )
+        validation_paths = write_stress_backtest_artifacts(validation_dir, stress_results, stress_summary)
+        validation_summary = {
+            "enabled": True,
+            **stress_summary,
+            "scenario_count": len(stress_results),
+        }
+        result.metrics.update(
+            {
+                "validation_bundle_enabled": 1.0,
+                "stress_backtest_pass_ratio": float(stress_summary.get("stress_backtest_pass_ratio", 0.0) or 0.0),
+                "stress_scenario_count": float(stress_summary.get("stress_scenario_count", 0) or 0),
+            }
+        )
+        enriched = result.to_dict()
+        enriched["validation_bundle"] = validation_summary
+        enriched["validation_paths"] = validation_paths
+        (output_dir / "backtest_result.json").write_text(json.dumps(enriched, ensure_ascii=False, indent=2), encoding="utf-8")
+
     summary = {
         "factor_id": factor_id,
         "factor_type": factor_meta["factor_type"],
@@ -488,6 +532,8 @@ def main(argv: list[str] | None = None) -> int:
         "data_version_manifest_path": args.data_version_manifest_path,
         "freeze_validation_report_path": args.freeze_validation_report_path,
         **risk_control_paths,
+        "validation_bundle": validation_summary,
+        **validation_paths,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0
@@ -522,6 +568,18 @@ def _prices_from_loader(loader: AShareDataLoader, trade_date: str) -> dict[str, 
     close = loader.raw_data_cache["close"].detach().cpu()
     date_idx = loader.trade_dates.index(trade_date)
     return {ts_code: float(close[idx, date_idx].item()) for idx, ts_code in enumerate(loader.ts_codes)}
+
+
+def _parse_float_list(value: str | None) -> list[float]:
+    return [float(item.strip()) for item in (value or "").split(",") if item.strip()]
+
+
+def _parse_int_list(value: str | None) -> list[int]:
+    return [int(float(item.strip())) for item in (value or "").split(",") if item.strip()]
+
+
+def _parse_str_list(value: str | None) -> list[str]:
+    return [item.strip() for item in (value or "").split(",") if item.strip()]
 
 
 if __name__ == "__main__":

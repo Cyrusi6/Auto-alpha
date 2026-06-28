@@ -26,6 +26,8 @@ from neural_search import AlphaGPTPretrainConfig, AlphaGPTPretrainer
 from research import BatchFactorResearchRunner, BatchResearchConfig
 from research.candidates import default_candidates
 from feature_factory import build_feature_set_manifest, build_feature_tensor
+from validation_lab.run_validation import main as run_validation_main
+from factor_certification.run_certify import main as run_certify_main
 
 from .models import BenchmarkItemResult, BenchmarkResult
 from .report import write_benchmark_report
@@ -64,6 +66,8 @@ def run_benchmark(
         _run_item("formula_batch_eval_small", lambda: _bench_formula_batch_eval(data_path, output_path, cache_path)),
         _run_item("feature_set_v2_build", lambda: _bench_feature_set_v2(data_path)),
         _run_item("alpha_factory_full_small", lambda: _bench_alpha_factory(data_path, output_path, cache_path)),
+        _run_item("validation_lab_small", lambda: _bench_validation_lab(data_path, output_path)),
+        _run_item("factor_certification_small", lambda: _bench_factor_certification(data_path, output_path)),
         _run_item("cpu_formula_batch_eval_baseline", lambda: _bench_formula_batch_eval(data_path, output_path / "cpu_baseline", cache_path)),
         _run_item("gpu_formula_batch_eval_single_device", lambda: _bench_formula_batch_eval(data_path, output_path / "gpu_single", cache_path), skip=not run_gpu or (skip_gpu_if_unavailable and not snapshot.cuda_available)),
         _run_item("gpu_formula_batch_eval_sharded", lambda: _bench_formula_batch_eval(data_path, output_path / "gpu_sharded", cache_path), skip=not run_gpu or (skip_gpu_if_unavailable and not snapshot.cuda_available)),
@@ -355,6 +359,68 @@ def _bench_backtest(data_dir: Path, output_dir: Path, portfolio_method: str) -> 
         exit_code = run_backtest.main(args)
     if exit_code != 0:
         raise RuntimeError(f"backtest returned {exit_code}")
+    return _loader_payload(loader) | {"formulas_evaluated": 1}
+
+
+def _bench_validation_lab(data_dir: Path, output_dir: Path) -> dict[str, int]:
+    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+    store_dir = output_dir / "validation_store"
+    factor_id = _ensure_benchmark_factor(store_dir, loader)
+    with contextlib.redirect_stdout(io.StringIO()):
+        exit_code = run_validation_main(
+            [
+                "run-suite",
+                "--data-dir",
+                str(data_dir),
+                "--factor-store-dir",
+                str(store_dir),
+                "--factor-id",
+                factor_id,
+                "--output-dir",
+                str(output_dir / "validation_lab_benchmark"),
+                "--run-placebo",
+                "--placebo-trials",
+                "2",
+            ]
+        )
+    if exit_code != 0:
+        raise RuntimeError(f"validation lab returned {exit_code}")
+    return _loader_payload(loader) | {"formulas_evaluated": 1}
+
+
+def _bench_factor_certification(data_dir: Path, output_dir: Path) -> dict[str, int]:
+    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+    store_dir = output_dir / "validation_store"
+    factor_id = _ensure_benchmark_factor(store_dir, loader)
+    validation_dir = output_dir / "validation_lab_benchmark"
+    if not (validation_dir / "validation_lab_report.json").exists():
+        _bench_validation_lab(data_dir, output_dir)
+    with contextlib.redirect_stdout(io.StringIO()):
+        exit_code = run_certify_main(
+            [
+                "run",
+                "--factor-store-dir",
+                str(store_dir),
+                "--factor-id",
+                factor_id,
+                "--output-dir",
+                str(output_dir / "certification_benchmark"),
+                "--validation-lab-report-path",
+                str(validation_dir / "validation_lab_report.json"),
+                "--factor-validation-summary-path",
+                str(validation_dir / "factor_validation_summary.json"),
+                "--multiple-testing-report-path",
+                str(validation_dir / "multiple_testing_report.json"),
+                "--overfit-risk-report-path",
+                str(validation_dir / "overfit_risk_report.json"),
+                "--placebo-test-report-path",
+                str(validation_dir / "placebo_test_report.json"),
+                "--stress-backtest-report-path",
+                str(validation_dir / "stress_backtest_report.json"),
+            ]
+        )
+    if exit_code != 0:
+        raise RuntimeError(f"factor certification returned {exit_code}")
     return _loader_payload(loader) | {"formulas_evaluated": 1}
 
 

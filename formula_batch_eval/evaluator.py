@@ -484,8 +484,22 @@ def _summary(results: list[FormulaEvalResult]) -> dict[str, Any]:
     for result in results:
         counts[result.status] = counts.get(result.status, 0) + 1
     ranked = sorted(results, key=lambda item: item.score, reverse=True)
+    scores = [float(result.score) for result in results]
+    unique_hashes = {result.request.formula_hash for result in results if result.request.formula_hash}
+    split_summary: dict[str, dict[str, float]] = {}
+    for split in ("train", "valid", "test", "all"):
+        split_scores = [
+            float((result.metrics_by_split.get(split) or {}).get("score", 0.0) or 0.0)
+            for result in results
+            if isinstance(result.metrics_by_split, dict) and split in result.metrics_by_split
+        ]
+        split_summary[split] = _distribution(split_scores)
     return {
         "total": len(results),
+        "evaluated_trial_count": sum(1 for result in results if result.status not in {"invalid", "error"}),
+        "unique_formula_hash_count": len(unique_hashes),
+        "score_distribution": _distribution(scores),
+        "train_valid_test_metric_summary": split_summary,
         "status_counts": counts,
         "approved": counts.get("approved", 0),
         "rejected": counts.get("rejected", 0),
@@ -501,6 +515,19 @@ def _summary(results: list[FormulaEvalResult]) -> dict[str, Any]:
             }
             for result in ranked[:20]
         ],
+    }
+
+
+def _distribution(values: list[float]) -> dict[str, float]:
+    if not values:
+        return {"count": 0.0, "min": 0.0, "median": 0.0, "max": 0.0, "mean": 0.0}
+    ordered = sorted(values)
+    return {
+        "count": float(len(values)),
+        "min": float(ordered[0]),
+        "median": float(ordered[len(ordered) // 2]),
+        "max": float(ordered[-1]),
+        "mean": float(sum(values) / len(values)),
     }
 
 
