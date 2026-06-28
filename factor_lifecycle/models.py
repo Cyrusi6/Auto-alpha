@@ -38,6 +38,10 @@ class LifecyclePolicy:
     max_pending_settlement_event_count: int = 999999
     max_failed_settlement_event_count: int = 0
     max_nav_difference_abs: float = 1e-6
+    require_alpha_factory_lineage: bool = False
+    min_alpha_shortlist_count: int = 0
+    max_alpha_static_error_count: int = 0
+    max_alpha_leakage_blocker_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -91,6 +95,8 @@ class ModelReviewPackage:
     leakage_summary: dict[str, Any] = field(default_factory=dict)
     corporate_action_summary: dict[str, Any] = field(default_factory=dict)
     settlement_summary: dict[str, Any] = field(default_factory=dict)
+    alpha_campaign_summary: dict[str, Any] = field(default_factory=dict)
+    feature_set_summary: dict[str, Any] = field(default_factory=dict)
     lineage_graph_path: str | None = None
 
     def to_dict(self) -> dict[str, Any]:

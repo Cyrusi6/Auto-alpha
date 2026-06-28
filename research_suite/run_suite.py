@@ -45,6 +45,27 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--resource-report-dir")
     parser.add_argument("--resume-compute", action="store_true")
     parser.add_argument("--compute-dry-run", action="store_true")
+    parser.add_argument("--run-alpha-factory", action="store_true")
+    parser.add_argument("--alpha-factory-dir")
+    parser.add_argument("--alpha-campaign-name", default="suite_alpha_campaign")
+    parser.add_argument("--alpha-candidate-budget", type=int, default=36)
+    parser.add_argument("--alpha-template-budget", type=int, default=10)
+    parser.add_argument("--alpha-random-budget", type=int, default=10)
+    parser.add_argument("--alpha-mutation-budget", type=int, default=8)
+    parser.add_argument("--alpha-crossover-budget", type=int, default=4)
+    parser.add_argument("--alpha-corpus-budget", type=int, default=8)
+    parser.add_argument("--alpha-neural-budget", type=int, default=0)
+    parser.add_argument("--alpha-feature-set-name", default="ashare_features_v1")
+    parser.add_argument("--alpha-build-feature-set", action="store_true")
+    parser.add_argument("--alpha-feature-output-dir")
+    parser.add_argument("--alpha-use-batch-eval", action="store_true")
+    parser.add_argument("--alpha-use-compute-scheduler", action="store_true")
+    parser.add_argument("--alpha-shard-count", type=int, default=1)
+    parser.add_argument("--alpha-top-k", type=int, default=8)
+    parser.add_argument("--alpha-max-per-family", type=int, default=3)
+    parser.add_argument("--alpha-min-novelty-score", type=float, default=0.0)
+    parser.add_argument("--alpha-register-shortlist", action="store_true")
+    parser.add_argument("--use-alpha-shortlist-for-search", action="store_true")
     parser.add_argument("--universe-name", default="csi300_sample")
     parser.add_argument("--index-code", default="000300.SH")
     parser.add_argument("--factor-store-dir")
@@ -203,6 +224,27 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
         resource_report_dir=args.resource_report_dir,
         resume_compute=args.resume_compute,
         compute_dry_run=args.compute_dry_run,
+        run_alpha_factory=args.run_alpha_factory,
+        alpha_factory_dir=args.alpha_factory_dir,
+        alpha_campaign_name=args.alpha_campaign_name,
+        alpha_candidate_budget=args.alpha_candidate_budget,
+        alpha_template_budget=args.alpha_template_budget,
+        alpha_random_budget=args.alpha_random_budget,
+        alpha_mutation_budget=args.alpha_mutation_budget,
+        alpha_crossover_budget=args.alpha_crossover_budget,
+        alpha_corpus_budget=args.alpha_corpus_budget,
+        alpha_neural_budget=args.alpha_neural_budget,
+        alpha_feature_set_name=args.alpha_feature_set_name,
+        alpha_build_feature_set=args.alpha_build_feature_set,
+        alpha_feature_output_dir=args.alpha_feature_output_dir,
+        alpha_use_batch_eval=args.alpha_use_batch_eval,
+        alpha_use_compute_scheduler=args.alpha_use_compute_scheduler,
+        alpha_shard_count=args.alpha_shard_count,
+        alpha_top_k=args.alpha_top_k,
+        alpha_max_per_family=args.alpha_max_per_family,
+        alpha_min_novelty_score=args.alpha_min_novelty_score,
+        alpha_register_shortlist=args.alpha_register_shortlist,
+        use_alpha_shortlist_for_search=args.use_alpha_shortlist_for_search,
         universe_name=args.universe_name,
         index_code=args.index_code,
         factor_store_dir=str(args.factor_store_dir or base_dir / "store"),

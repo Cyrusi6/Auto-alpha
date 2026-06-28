@@ -145,6 +145,27 @@ class ResearchSuiteConfig:
     resource_report_dir: str | None = None
     resume_compute: bool = False
     compute_dry_run: bool = False
+    run_alpha_factory: bool = False
+    alpha_factory_dir: str | None = None
+    alpha_campaign_name: str = "suite_alpha_campaign"
+    alpha_candidate_budget: int = 36
+    alpha_template_budget: int = 10
+    alpha_random_budget: int = 10
+    alpha_mutation_budget: int = 8
+    alpha_crossover_budget: int = 4
+    alpha_corpus_budget: int = 8
+    alpha_neural_budget: int = 0
+    alpha_feature_set_name: str = "ashare_features_v1"
+    alpha_build_feature_set: bool = False
+    alpha_feature_output_dir: str | None = None
+    alpha_use_batch_eval: bool = False
+    alpha_use_compute_scheduler: bool = False
+    alpha_shard_count: int = 1
+    alpha_top_k: int = 8
+    alpha_max_per_family: int = 3
+    alpha_min_novelty_score: float = 0.0
+    alpha_register_shortlist: bool = False
+    use_alpha_shortlist_for_search: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

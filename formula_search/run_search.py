@@ -90,6 +90,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--distributed-search", action="store_true")
     parser.add_argument("--merge-search-shards", action="store_true")
     parser.add_argument("--search-shard-dir", action="append", default=[])
+    parser.add_argument("--alpha-candidates-path")
+    parser.add_argument("--alpha-campaign-manifest-path")
+    parser.add_argument("--feature-set-name", default="ashare_features_v1")
+    parser.add_argument("--feature-set-manifest-path")
+    parser.add_argument("--use-alpha-shortlist-as-seed", action="store_true")
+    parser.add_argument("--alpha-seed-top-k", type=int)
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -181,6 +187,11 @@ def main(argv: list[str] | None = None) -> int:
         formula_shard_id=args.formula_shard_id,
         resource_report_path=args.resource_report_path,
         experiment_id=args.experiment_id,
+        alpha_candidates_path=args.alpha_candidates_path if args.use_alpha_shortlist_as_seed else None,
+        alpha_seed_top_k=args.alpha_seed_top_k,
+        alpha_campaign_manifest_path=args.alpha_campaign_manifest_path,
+        feature_set_name=args.feature_set_name,
+        feature_set_manifest_path=args.feature_set_manifest_path,
     ).run()
     payload = result.to_dict()
     payload.update(freeze_payload)
@@ -260,6 +271,11 @@ def _run_hybrid(args: argparse.Namespace, search_config: FormulaSearchConfig) ->
         data_version_manifest_path=args.data_version_manifest_path,
         require_data_freeze=args.require_data_freeze,
         freeze_validation_report_path=args.freeze_validation_report_path,
+        alpha_candidates_path=args.alpha_candidates_path if args.use_alpha_shortlist_as_seed else None,
+        alpha_seed_top_k=args.alpha_seed_top_k,
+        alpha_campaign_manifest_path=args.alpha_campaign_manifest_path,
+        feature_set_name=args.feature_set_name,
+        feature_set_manifest_path=args.feature_set_manifest_path,
     ).run()
     payload = random_result.to_dict()
     neural_payload = neural_result.to_dict()

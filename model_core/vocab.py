@@ -57,3 +57,13 @@ FORMULA_VOCAB = FormulaVocab(
     feature_names=FEATURE_NAMES,
     operator_names=tuple(cfg[0] for cfg in OPS_CONFIG),
 )
+
+
+def make_formula_vocab(
+    feature_names: list[str] | tuple[str, ...] | None = None,
+    operator_names: list[str] | tuple[str, ...] | None = None,
+) -> FormulaVocab:
+    return FormulaVocab(
+        feature_names=tuple(feature_names or FEATURE_NAMES),
+        operator_names=tuple(operator_names or tuple(cfg[0] for cfg in OPS_CONFIG)),
+    )

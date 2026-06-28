@@ -34,6 +34,7 @@ from data_lake.models import DatasetVersionRecord
 from data_lake.report import write_data_lake_report, write_dataset_version_manifest
 from data_lake.freeze import write_freeze_validation_report
 from experiment_orchestrator.workflows import run_workflow_smoke
+from alpha_factory.run_factory import main as run_alpha_factory_main
 
 from .catalog import register_artifact, write_artifact_catalog
 from .models import ArtifactCatalog, PromotionConfig, ResearchSuiteConfig, ResearchSuiteResult, SuiteStageResult
@@ -57,6 +58,7 @@ class ResearchSuiteRunner:
         self.leakage_summary: dict[str, Any] = {}
         self.corporate_action_summary: dict[str, Any] = {}
         self.compute_summary: dict[str, Any] = {}
+        self.alpha_summary: dict[str, Any] = {}
         self.dataset_version_id: str | None = None
         self.data_freeze_id: str | None = config.data_freeze_id
         self.data_freeze_hash: str | None = None
@@ -102,6 +104,8 @@ class ResearchSuiteRunner:
                 self._append_stage("formula_batch_eval", self._stage_formula_batch_eval)
             if self.config.use_compute_scheduler:
                 self._append_stage("compute_experiment", self._stage_compute_experiment)
+            if self.config.run_alpha_factory:
+                self._append_stage("alpha_factory", self._stage_alpha_factory)
             self._append_stage("formula_search", self._stage_formula_search)
             self._append_stage("backtest", self._stage_backtest)
             if self.config.run_leakage_audit:
@@ -189,6 +193,19 @@ class ResearchSuiteRunner:
                 "experiment_plan_path": self.compute_summary.get("experiment_plan_path"),
                 "compute_run_report_path": self.compute_summary.get("compute_run_report_path"),
                 "experiment_merge_report_path": self.compute_summary.get("experiment_merge_report_path"),
+                "alpha_factory_enabled": self.config.run_alpha_factory,
+                "alpha_campaign_id": self.alpha_summary.get("campaign_id"),
+                "alpha_candidates_generated": self.alpha_summary.get("candidates_generated", 0),
+                "alpha_candidates_static_passed": self.alpha_summary.get("static_passed", 0),
+                "alpha_proxy_passed": self.alpha_summary.get("proxy_passed", 0),
+                "alpha_full_eval_count": self.alpha_summary.get("full_eval_count", 0),
+                "alpha_shortlist_count": self.alpha_summary.get("shortlist_count", 0),
+                "alpha_best_score": self.alpha_summary.get("best_score", 0.0),
+                "alpha_feature_set_name": self.alpha_summary.get("feature_set_name"),
+                "alpha_feature_count": self.alpha_summary.get("feature_count", 0),
+                "alpha_family_distribution": self.alpha_summary.get("family_distribution", {}),
+                "alpha_compute_run_report_path": self.alpha_summary.get("compute_run_report_path"),
+                "alpha_factory_report_path": self.alpha_summary.get("alpha_factory_report_path"),
             },
         )
         suite_json, suite_md = write_suite_report(result, self.output_dir)
@@ -288,6 +305,21 @@ class ResearchSuiteRunner:
         return payload, output_paths
 
     def _stage_universe(self) -> tuple[dict[str, Any], dict[str, str]]:
+        frozen_universe = Path(self.config.data_dir) / "universe" / f"{self.config.universe_name}.jsonl"
+        frozen_summary = Path(self.config.data_dir) / "universe" / f"{self.config.universe_name}_summary.json"
+        if self.config.data_freeze_dir and frozen_universe.exists() and frozen_summary.exists():
+            payload = _read_json(frozen_summary) or {}
+            output_paths = {
+                "universe": str(frozen_universe),
+                "universe_summary": str(frozen_summary),
+            }
+            pit_summary = Path(self.config.data_dir) / "universe" / f"{self.config.universe_name}_pit_summary.json"
+            if pit_summary.exists():
+                output_paths["universe_pit_summary"] = str(pit_summary)
+            for name, path in output_paths.items():
+                self.catalog = register_artifact(self.catalog, name, path, "jsonl" if name == "universe" else "json", "universe")
+            return payload | {"reused_from_freeze": True}, output_paths
+
         argv = [
                 "--data-dir",
                 self.config.data_dir,
@@ -713,6 +745,122 @@ class ResearchSuiteRunner:
                 self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "compute_experiment")
         return self.compute_summary | {"status": payload.get("status")}, {str(k): str(v) for k, v in paths.items() if v}
 
+    def _stage_alpha_factory(self) -> tuple[dict[str, Any], dict[str, str]]:
+        alpha_dir = Path(self.config.alpha_factory_dir) if self.config.alpha_factory_dir else self.output_dir / "alpha_factory"
+        feature_dir = (
+            Path(self.config.alpha_feature_output_dir)
+            if self.config.alpha_feature_output_dir
+            else alpha_dir / "features"
+        )
+        corpus_path = self._formula_corpus_dir() / "formula_corpus.jsonl"
+        if self.config.alpha_corpus_budget > 0 and not corpus_path.exists():
+            self._stage_formula_corpus()
+        argv = [
+            "run",
+            "--campaign-name",
+            self.config.alpha_campaign_name,
+            "--data-dir",
+            self.config.data_dir,
+            "--factor-store-dir",
+            self.config.factor_store_dir,
+            "--output-dir",
+            str(alpha_dir),
+            "--report-dir",
+            self.config.report_dir,
+            "--feature-set-name",
+            self.config.alpha_feature_set_name,
+            "--candidate-budget",
+            str(self.config.alpha_candidate_budget),
+            "--template-budget",
+            str(self.config.alpha_template_budget),
+            "--random-budget",
+            str(self.config.alpha_random_budget),
+            "--mutation-budget",
+            str(self.config.alpha_mutation_budget),
+            "--crossover-budget",
+            str(self.config.alpha_crossover_budget),
+            "--corpus-budget",
+            str(self.config.alpha_corpus_budget),
+            "--neural-budget",
+            str(self.config.alpha_neural_budget),
+            "--proxy-max-candidates",
+            str(max(self.config.alpha_candidate_budget, 1)),
+            "--top-k",
+            str(self.config.alpha_top_k),
+            "--max-per-family",
+            str(self.config.alpha_max_per_family),
+            "--min-novelty-score",
+            str(self.config.alpha_min_novelty_score),
+            "--factor-transform",
+            self.config.factor_transform,
+            "--universe-name",
+            self.config.universe_name,
+        ]
+        argv.extend(_freeze_cli_args(self.config))
+        if self.config.alpha_build_feature_set:
+            argv.extend(["--build-feature-set", "--feature-output-dir", str(feature_dir)])
+        if corpus_path.exists():
+            argv.extend(["--formula-corpus-path", str(corpus_path)])
+        if self.config.use_matrix_cache:
+            argv.extend(["--matrix-cache-dir", str(self._matrix_cache_dir())])
+        if self.config.alpha_use_batch_eval:
+            argv.extend(
+                [
+                    "--use-batch-eval",
+                    "--batch-eval-dir",
+                    str(alpha_dir / "batch_eval"),
+                    "--batch-eval-chunk-size",
+                    str(self.config.batch_eval_chunk_size),
+                    "--batch-eval-device",
+                    self.config.batch_eval_device,
+                    "--enable-gate",
+                    "--correlation-threshold",
+                    "0.99",
+                    "--min-coverage",
+                    "0.5",
+                ]
+            )
+        if self.config.use_eval_cache:
+            argv.append("--use-eval-cache")
+            if self.config.eval_cache_dir:
+                argv.extend(["--eval-cache-dir", self.config.eval_cache_dir])
+        if self.config.alpha_use_compute_scheduler:
+            argv.extend(
+                [
+                    "--use-compute-scheduler",
+                    "--compute-state-dir",
+                    str(self.config.compute_state_dir or self.output_dir / "alpha_compute_state"),
+                    "--compute-output-dir",
+                    str(self.config.compute_output_dir or self.output_dir / "alpha_compute"),
+                    "--shard-count",
+                    str(self.config.alpha_shard_count),
+                    "--max-parallel-cpu-jobs",
+                    str(self.config.max_parallel_cpu_jobs),
+                    "--max-parallel-gpu-jobs",
+                    str(self.config.max_parallel_gpu_jobs),
+                ]
+            )
+        if self.config.alpha_register_shortlist:
+            argv.append("--register-shortlist")
+        if self.config.point_in_time:
+            argv.extend(["--point-in-time", "--feature-cutoff-mode", self.config.feature_cutoff_mode])
+        if self.config.corporate_action_aware:
+            argv.extend(["--corporate-action-aware", "--target-return-mode", self.config.target_return_mode])
+        payload = _run_json_main(run_alpha_factory_main, argv)
+        summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+        paths = payload.get("paths", {}) if isinstance(payload.get("paths"), dict) else {}
+        self.alpha_summary = dict(summary) | {
+            "campaign_id": payload.get("campaign_id"),
+            "alpha_factory_report_path": paths.get("alpha_factory_report_path"),
+            "alpha_campaign_manifest_path": paths.get("alpha_campaign_manifest_path"),
+            "alpha_shortlist_path": paths.get("alpha_shortlist_path"),
+            "feature_set_manifest_path": paths.get("feature_set_manifest_path"),
+        }
+        output_paths = {name.replace("_path", ""): str(path) for name, path in paths.items() if path}
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "alpha_factory")
+        return self.alpha_summary, output_paths
+
     def _stage_formula_search(self) -> tuple[dict[str, Any], dict[str, str]]:
         payload = _run_json_main(
             run_search.main,
@@ -763,6 +911,29 @@ class ResearchSuiteRunner:
             ]
             + _freeze_cli_args(self.config)
             + (["--corpus-sequence-path", str(self._formula_corpus_dir() / "formula_sequences.jsonl")] if (self._formula_corpus_dir() / "formula_sequences.jsonl").exists() else [])
+            + (
+                [
+                    "--alpha-candidates-path",
+                    str((Path(self.config.alpha_factory_dir) if self.config.alpha_factory_dir else self.output_dir / "alpha_factory") / "alpha_shortlist.jsonl"),
+                    "--alpha-campaign-manifest-path",
+                    str((Path(self.config.alpha_factory_dir) if self.config.alpha_factory_dir else self.output_dir / "alpha_factory") / "alpha_campaign_manifest.json"),
+                    "--use-alpha-shortlist-as-seed",
+                    "--alpha-seed-top-k",
+                    str(self.config.alpha_top_k),
+                    "--feature-set-name",
+                    self.config.alpha_feature_set_name,
+                ]
+                + (
+                    [
+                        "--feature-set-manifest-path",
+                        str((Path(self.config.alpha_feature_output_dir) if self.config.alpha_feature_output_dir else (Path(self.config.alpha_factory_dir) if self.config.alpha_factory_dir else self.output_dir / "alpha_factory") / "features") / "feature_set_manifest.json"),
+                    ]
+                    if self.config.alpha_build_feature_set
+                    else []
+                )
+                if self.config.use_alpha_shortlist_for_search
+                else []
+            )
             + (["--matrix-cache-dir", str(self._matrix_cache_dir()), "--use-matrix-cache"] if self.config.use_matrix_cache else [])
             + (
                 [
@@ -1227,6 +1398,12 @@ class ResearchSuiteRunner:
                 "corporate_action_summary": self.corporate_action_summary,
                 "corporate_action_aware": self.config.corporate_action_aware,
                 "target_return_mode": self.config.target_return_mode,
+                "alpha_campaign_id": self.alpha_summary.get("campaign_id"),
+                "alpha_factory_report_path": self.alpha_summary.get("alpha_factory_report_path"),
+                "alpha_campaign_manifest_path": self.alpha_summary.get("alpha_campaign_manifest_path"),
+                "alpha_shortlist_path": self.alpha_summary.get("alpha_shortlist_path"),
+                "feature_set_name": self.alpha_summary.get("feature_set_name"),
+                "feature_version": self.alpha_summary.get("feature_set_name"),
             },
             lifecycle_status=lifecycle_status,
         )

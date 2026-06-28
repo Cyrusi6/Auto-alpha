@@ -1672,3 +1672,37 @@
 - Extended `neural_search.run_pretrain` with distributed/DDP metadata options, rank0 checkpoint metadata, CPU fallback reporting, and resource report output.
 - Extended `research`, `formula_search`, `research_suite`, `performance_benchmark`, monitoring, dashboard, artifact schema, release inventory, local CI, package metadata, README, and CATREADME with compute scheduler and experiment orchestration artifacts.
 - Default CI/test paths remain CPU/offline and skip or fallback when CUDA is unavailable. The 4-card RTX 4090 path is an optional operator smoke for per-GPU shard parallelism and AlphaGPT DDP metadata, not a default requirement.
+
+## Task 034 - Alpha Factory, Feature Space V2, And Multi-Stage Candidate Funnel
+
+- Added `feature_factory/` with versioned A-share feature catalogs, opt-in `ashare_features_v2`, feature manifests, coverage reports, feature value summaries, tensor artifacts, and `feature_factory.run_features`.
+- Extended `model_core` so `AShareDataLoader` keeps v1 feature defaults while optionally loading a feature-set manifest/name for v2 tensors; formula hashing and batch eval metadata now carry feature-set lineage.
+- Added `alpha_factory/` for campaign manifests, source-budgeted candidate generation, templates, static DSL checks, cheap proxy evaluation, optional `formula_batch_eval` full evaluation, novelty/diversity scoring, family caps, shortlist artifacts, and campaign reports.
+- Extended `formula_batch_eval`, `research`, `formula_search`, and `research_suite` with feature-set and alpha-campaign metadata, plus `research_suite --run-alpha-factory` and `--use-alpha-shortlist-for-search` handoff.
+- Extended monitoring, dashboard artifact service, artifact schema registry, release inventory, local CI smoke, performance benchmark, package metadata, README, CATREADME, and `.env.example` for feature/alpha factory artifacts.
+- Defaults remain sample/offline/CPU. Large Alpha Factory campaigns and GPU-backed sharded evaluation are opt-in and are not required by default pytest or CI.
+
+### New Artifacts
+- `feature_set_manifest.json`
+- `feature_tensor.npy`
+- `feature_coverage_report.json/md`
+- `feature_values_summary.json`
+- `feature_tensor_build_result.json`
+- `alpha_campaign_manifest.json`
+- `alpha_candidates.jsonl`
+- `alpha_generation_stats.json`
+- `alpha_static_checks.jsonl`
+- `alpha_proxy_eval.jsonl`
+- `alpha_proxy_eval_report.json`
+- `alpha_full_eval_summary.json`
+- `alpha_scored_candidates.jsonl`
+- `alpha_shortlist.jsonl`
+- `alpha_rejected.jsonl`
+- `alpha_diversity_report.json/md`
+- `alpha_factory_report.json/md`
+- `alpha_campaign_artifact_catalog.json`
+
+### Follow-Ups
+- Calibrate proxy scoring and diversity thresholds on longer real-data freezes.
+- Expand feature-space v2 with validated full-market PIT and corporate-action fields.
+- Run optional multi-GPU campaign stress tests outside default CI before promoting large-scale Alpha Factory workloads.

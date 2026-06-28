@@ -10,6 +10,11 @@ from factor_store import LocalFactorStore
 
 from .checks import (
     check_active_risk_drift,
+    check_alpha_diversity,
+    check_alpha_factory_campaign,
+    check_alpha_proxy_eval,
+    check_alpha_shortlist,
+    check_alpha_static_errors,
     check_active_model_status,
     check_artifact_schema_validation,
     check_attribution_anomaly,
@@ -79,7 +84,9 @@ from .checks import (
     check_truncation_consistency,
     check_total_return_report,
     check_active_universe_coverage,
+    check_feature_coverage,
     check_feature_cutoff_policy,
+    check_feature_set_manifest,
     check_settlement_fee_tax,
     check_settlement_report,
     check_statement_staleness,
@@ -168,6 +175,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--external-account-mirror-path")
     parser.add_argument("--adjustment-proposals-path")
     parser.add_argument("--adjustment-application-result-path")
+    parser.add_argument("--alpha-factory-report-path")
+    parser.add_argument("--alpha-campaign-manifest-path")
+    parser.add_argument("--alpha-generation-stats-path")
+    parser.add_argument("--alpha-static-checks-path")
+    parser.add_argument("--alpha-proxy-eval-report-path")
+    parser.add_argument("--alpha-diversity-report-path")
+    parser.add_argument("--alpha-shortlist-path")
+    parser.add_argument("--feature-set-manifest-path")
+    parser.add_argument("--feature-coverage-report-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -218,6 +234,13 @@ def main(argv: list[str] | None = None) -> int:
         ("provider_readiness", lambda: check_provider_readiness(args.data_source_smoke_report_path)),
         ("field_coverage", lambda: check_field_coverage(args.field_coverage_path)),
         ("data_source_audit", lambda: check_data_source_audit(args.audit_summary_path)),
+        ("alpha_factory_campaign", lambda: check_alpha_factory_campaign(args.alpha_factory_report_path, args.alpha_campaign_manifest_path)),
+        ("alpha_static_errors", lambda: check_alpha_static_errors(args.alpha_static_checks_path)),
+        ("alpha_proxy_eval", lambda: check_alpha_proxy_eval(args.alpha_proxy_eval_report_path)),
+        ("alpha_diversity", lambda: check_alpha_diversity(args.alpha_diversity_report_path)),
+        ("alpha_shortlist", lambda: check_alpha_shortlist(args.alpha_shortlist_path)),
+        ("feature_set_manifest", lambda: check_feature_set_manifest(args.feature_set_manifest_path)),
+        ("feature_coverage", lambda: check_feature_coverage(args.feature_coverage_report_path)),
         ("corporate_action_report", lambda: check_corporate_action_report(args.corporate_action_report_path or _default_corporate_action_path(args.orders_dir, "corporate_actions_report.json"))),
         ("total_return_report", lambda: check_total_return_report(args.total_return_report_path or _default_corporate_action_path(args.orders_dir, "total_return_report.json"))),
         ("corporate_action_ledger", lambda: check_corporate_action_ledger(args.corporate_action_ledger_path or args.paper_account_dir)),

@@ -67,6 +67,8 @@ class BatchFactorResearchRunner:
             target_return_mode=config.target_return_mode,
             corporate_action_dir=config.corporate_action_dir,
             corporate_action_cash_field=config.corporate_action_cash_field,
+            feature_set_name=config.feature_set_name,
+            feature_set_manifest_path=config.feature_set_manifest_path,
         )
         self.vm = StackVM()
         self.evaluator = AShareFactorEvaluator()
@@ -169,6 +171,9 @@ class BatchFactorResearchRunner:
                 shard_id=self.config.formula_shard_id,
                 shard_count=self.config.formula_shard_count,
                 resource_report_path=self.config.resource_report_path,
+                feature_set_name=self.config.feature_set_name,
+                feature_set_manifest_path=self.config.feature_set_manifest_path,
+                alpha_campaign_id=self.config.alpha_campaign_id,
             )
         ).run(requests_from_candidates(self.candidates))
         results = [
@@ -215,6 +220,8 @@ class BatchFactorResearchRunner:
             target_return_mode=self.config.target_return_mode,
             corporate_action_dir=self.config.corporate_action_dir,
             corporate_action_cash_field=self.config.corporate_action_cash_field,
+            feature_set_name=self.config.feature_set_name,
+            feature_set_manifest_path=self.config.feature_set_manifest_path,
         )
         self.loader.load_data()
         composite_info = None if self.config.disable_composite else self._build_composite(batch_id, created_at)
@@ -251,7 +258,7 @@ class BatchFactorResearchRunner:
         formula_hash = stable_formula_hash(
             formula_tokens=candidate.formula_tokens,
             formula_names=candidate.formula_names,
-            feature_version=FEATURE_VERSION,
+            feature_version=self.config.feature_set_name or FEATURE_VERSION,
             operator_version=OPERATOR_VERSION,
         )
         formula_hash = candidate.formula_hash or formula_hash
@@ -306,7 +313,7 @@ class BatchFactorResearchRunner:
             formula=candidate.formula_names,
             formula_tokens=candidate.formula_tokens,
             formula_hash=formula_hash,
-            feature_version=FEATURE_VERSION,
+            feature_version=self.config.feature_set_name or FEATURE_VERSION,
             operator_version=OPERATOR_VERSION,
             lookback_days=int(candidate.lookback or _estimate_lookback_days(candidate.formula_names)),
             created_at=created_at,
@@ -356,6 +363,11 @@ class BatchFactorResearchRunner:
                 "compute_device": self.config.batch_eval_device if self.config.use_batch_eval else "cpu",
                 "cuda_visible_devices": "",
                 "resource_snapshot_path": self.config.resource_report_path,
+                "feature_set_name": self.config.feature_set_name,
+                "feature_set_manifest_path": self.config.feature_set_manifest_path,
+                "alpha_campaign_id": self.config.alpha_campaign_id,
+                "alpha_candidates_path": self.config.alpha_candidates_path,
+                "alpha_factory_report_path": self.config.alpha_factory_report_path,
             },
             factor_type="single",
             batch_id=batch_id,

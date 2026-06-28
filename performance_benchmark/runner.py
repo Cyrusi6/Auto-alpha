@@ -9,6 +9,7 @@ from typing import Callable
 
 import torch
 
+from alpha_factory import AlphaCampaignConfig, AlphaFactoryRunner
 from compute_cluster.gpu_probe import probe_compute_resources
 from compute_cluster.models import ComputeSchedulerConfig
 from compute_cluster.run_compute import main as run_compute_main
@@ -24,6 +25,7 @@ from model_core.vocab import FORMULA_VOCAB
 from neural_search import AlphaGPTPretrainConfig, AlphaGPTPretrainer
 from research import BatchFactorResearchRunner, BatchResearchConfig
 from research.candidates import default_candidates
+from feature_factory import build_feature_set_manifest, build_feature_tensor
 
 from .models import BenchmarkItemResult, BenchmarkResult
 from .report import write_benchmark_report
@@ -60,6 +62,8 @@ def run_benchmark(
         _run_item("research_batch_small", lambda: _bench_research_batch(data_path, output_path)),
         _run_item("formula_search_small", lambda: _bench_formula_search(data_path, output_path)),
         _run_item("formula_batch_eval_small", lambda: _bench_formula_batch_eval(data_path, output_path, cache_path)),
+        _run_item("feature_set_v2_build", lambda: _bench_feature_set_v2(data_path)),
+        _run_item("alpha_factory_full_small", lambda: _bench_alpha_factory(data_path, output_path, cache_path)),
         _run_item("cpu_formula_batch_eval_baseline", lambda: _bench_formula_batch_eval(data_path, output_path / "cpu_baseline", cache_path)),
         _run_item("gpu_formula_batch_eval_single_device", lambda: _bench_formula_batch_eval(data_path, output_path / "gpu_single", cache_path), skip=not run_gpu or (skip_gpu_if_unavailable and not snapshot.cuda_available)),
         _run_item("gpu_formula_batch_eval_sharded", lambda: _bench_formula_batch_eval(data_path, output_path / "gpu_sharded", cache_path), skip=not run_gpu or (skip_gpu_if_unavailable and not snapshot.cuda_available)),
@@ -93,6 +97,10 @@ def run_benchmark(
         "speedup_vs_cpu": 0.0,
         "speedup_vs_single_gpu": 0.0,
         "skipped_gpu_reason": "" if snapshot.cuda_available else "cuda_unavailable",
+        "feature_build_seconds": item_map.get("feature_set_v2_build").wall_time_seconds if item_map.get("feature_set_v2_build") else 0.0,
+        "feature_count": item_map.get("feature_set_v2_build").n_features if item_map.get("feature_set_v2_build") else 0,
+        "alpha_factory_total_seconds": item_map.get("alpha_factory_full_small").wall_time_seconds if item_map.get("alpha_factory_full_small") else 0.0,
+        "alpha_candidates_per_second": item_map.get("alpha_factory_full_small").throughput_estimate if item_map.get("alpha_factory_full_small") else 0.0,
     }
     result = BenchmarkResult(
         data_dir=str(data_path),
@@ -258,6 +266,47 @@ def _bench_formula_batch_eval(data_dir: Path, output_dir: Path, cache_dir: Path 
         )
     ).run(requests_from_candidates(default_candidates()[:3]))
     return {"formulas_evaluated": len(result.results), **_loader_payload(AShareDataLoader(data_dir=data_dir, device="cpu").load_data())}
+
+
+def _bench_feature_set_v2(data_dir: Path) -> dict[str, int]:
+    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+    manifest = build_feature_set_manifest("ashare_features_v2")
+    tensor, _warnings = build_feature_tensor(loader, manifest)
+    return {
+        "records_read": int(tensor.shape[0] * tensor.shape[2]),
+        "n_stocks": int(tensor.shape[0]),
+        "n_dates": int(tensor.shape[2]),
+        "n_features": int(tensor.shape[1]),
+    }
+
+
+def _bench_alpha_factory(data_dir: Path, output_dir: Path, cache_dir: Path | None) -> dict[str, int]:
+    result = AlphaFactoryRunner(
+        AlphaCampaignConfig(
+            campaign_name="benchmark_alpha_factory",
+            data_dir=str(data_dir),
+            output_dir=str(output_dir / "alpha_factory_benchmark"),
+            factor_store_dir=str(output_dir / "alpha_factory_store"),
+            report_dir=str(output_dir / "alpha_factory_reports"),
+            matrix_cache_dir=str(cache_dir) if cache_dir is not None else None,
+            feature_set_name="ashare_features_v2",
+            candidate_budget=8,
+            template_budget=4,
+            random_budget=4,
+            mutation_budget=2,
+            crossover_budget=1,
+            corpus_budget=0,
+            proxy_max_candidates=8,
+            top_k=3,
+            use_batch_eval=False,
+            seed=11,
+        )
+    ).run()
+    summary = result.summary
+    return {
+        "records_read": int(summary.get("candidates_generated", 0) or 0),
+        "formulas_evaluated": int(summary.get("proxy_passed", 0) or 0),
+    }
 
 
 def _bench_pretrain(output_dir: Path) -> dict[str, int]:

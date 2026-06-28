@@ -55,6 +55,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gpu-index", type=int)
     parser.add_argument("--device-lock-id")
     parser.add_argument("--resource-report-path")
+    parser.add_argument("--feature-set-name", default="ashare_features_v1")
+    parser.add_argument("--feature-set-manifest-path")
+    parser.add_argument("--alpha-campaign-id")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -112,6 +115,9 @@ def main(argv: list[str] | None = None) -> int:
         shard_id=args.shard_id,
         shard_count=args.shard_count,
         resource_report_path=args.resource_report_path,
+        feature_set_name=args.feature_set_name,
+        feature_set_manifest_path=args.feature_set_manifest_path,
+        alpha_campaign_id=args.alpha_campaign_id,
     )
     result = FormulaBatchEvaluator(config).run(requests)
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))

@@ -70,6 +70,11 @@ class FormulaSearchRunner:
         formula_shard_id: int | None = None,
         resource_report_path: str | None = None,
         experiment_id: str | None = None,
+        alpha_candidates_path: str | None = None,
+        alpha_seed_top_k: int | None = None,
+        alpha_campaign_manifest_path: str | None = None,
+        feature_set_name: str = "ashare_features_v1",
+        feature_set_manifest_path: str | None = None,
     ):
         self.search_config = search_config
         self.data_dir = data_dir
@@ -117,6 +122,11 @@ class FormulaSearchRunner:
         self.formula_shard_id = formula_shard_id
         self.resource_report_path = resource_report_path
         self.experiment_id = experiment_id
+        self.alpha_candidates_path = alpha_candidates_path
+        self.alpha_seed_top_k = alpha_seed_top_k
+        self.alpha_campaign_manifest_path = alpha_campaign_manifest_path
+        self.feature_set_name = feature_set_name
+        self.feature_set_manifest_path = feature_set_manifest_path
         self.rng = random.Random(search_config.seed)
 
     def run(self) -> FormulaSearchResult:
@@ -124,7 +134,7 @@ class FormulaSearchRunner:
         search_id = _make_search_id(created_at, self.search_config.seed)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        population = generate_initial_population(self.search_config)
+        population = self._initial_population()
         generated: dict[str, FormulaCandidate] = {candidate.formula_hash: candidate for candidate in population}
         evaluated_hashes: set[str] = set()
         generation_summaries: list[dict[str, Any]] = []
@@ -210,6 +220,10 @@ class FormulaSearchRunner:
                 "formula_shard_id": self.formula_shard_id,
                 "resource_report_path": self.resource_report_path,
                 "experiment_id": self.experiment_id,
+                "alpha_candidates_path": self.alpha_candidates_path,
+                "alpha_campaign_manifest_path": self.alpha_campaign_manifest_path,
+                "feature_set_name": self.feature_set_name,
+                "feature_set_manifest_path": self.feature_set_manifest_path,
             },
         )
         self._write_outputs(result, generated)
@@ -274,8 +288,23 @@ class FormulaSearchRunner:
             formula_shard_count=self.formula_shard_count,
             formula_shard_id=self.formula_shard_id,
             resource_report_path=self.resource_report_path,
+            feature_set_name=self.feature_set_name,
+            feature_set_manifest_path=self.feature_set_manifest_path,
+            alpha_campaign_id=_alpha_campaign_id(self.alpha_campaign_manifest_path),
+            alpha_candidates_path=self.alpha_candidates_path,
+            alpha_factory_report_path=None,
         )
         return BatchFactorResearchRunner(config=config, candidates=from_formula_search_candidates(candidates)).run()
+
+    def _initial_population(self) -> list[FormulaCandidate]:
+        population = generate_initial_population(self.search_config)
+        if not self.alpha_candidates_path:
+            return population
+        alpha = _load_alpha_candidates(self.alpha_candidates_path, self.alpha_seed_top_k)
+        merged: dict[str, FormulaCandidate] = {candidate.formula_hash: candidate for candidate in alpha}
+        for candidate in population:
+            merged.setdefault(candidate.formula_hash, candidate)
+        return list(merged.values())[: max(self.search_config.population_size, len(alpha))]
 
     def _select_elites(self, results, generated: dict[str, FormulaCandidate]) -> list[FormulaCandidate]:
         ranked = sorted(results, key=lambda item: item.score, reverse=True)
@@ -380,3 +409,42 @@ def _unique(values) -> list[str]:
         seen.add(value)
         result.append(value)
     return result
+
+
+def _load_alpha_candidates(path: str, top_k: int | None) -> list[FormulaCandidate]:
+    target = Path(path)
+    if not target.exists():
+        return []
+    rows = [json.loads(line) for line in target.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = sorted(rows, key=lambda item: float(item.get("final_score", 0.0) or 0.0), reverse=True)
+    if top_k is not None:
+        rows = rows[: max(top_k, 0)]
+    candidates: list[FormulaCandidate] = []
+    for idx, row in enumerate(rows):
+        tokens = [int(item) for item in row.get("formula_tokens", [])]
+        names = [str(item) for item in row.get("formula_names", [])]
+        formula_hash = str(row.get("formula_hash") or f"alpha_{idx}")
+        candidates.append(
+            FormulaCandidate(
+                formula_tokens=tokens,
+                formula_names=names,
+                formula_hash=formula_hash,
+                complexity=int(row.get("complexity", len(tokens)) or len(tokens)),
+                lookback=int(row.get("lookback", 0) or 0),
+                source=f"alpha_factory:{row.get('source', 'shortlist')}",
+                parent_hashes=[str(row.get("alpha_candidate_id", ""))],
+                generation=0,
+                validation_reason="ok",
+            )
+        )
+    return candidates
+
+
+def _alpha_campaign_id(path: str | None) -> str | None:
+    if not path or not Path(path).exists():
+        return None
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        return payload.get("campaign_id")
+    except Exception:
+        return None

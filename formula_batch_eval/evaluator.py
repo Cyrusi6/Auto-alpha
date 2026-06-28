@@ -58,7 +58,10 @@ class FormulaBatchEvaluator:
             universe_file=config.universe_file,
             matrix_cache_dir=config.matrix_cache_dir,
             use_matrix_cache=config.use_matrix_cache,
+            feature_set_name=config.feature_set_name,
+            feature_set_manifest_path=config.feature_set_manifest_path,
         )
+        self.feature_version = config.feature_set_name or FEATURE_VERSION
         self.cache_dir = Path(config.eval_cache_dir) if config.eval_cache_dir else self.output_dir / "eval_cache"
         self._cache: dict[str, dict[str, Any]] = {}
         self.cache_hits = 0
@@ -91,6 +94,12 @@ class FormulaBatchEvaluator:
                             gate_reasons=[str(exc)],
                             max_abs_correlation=0.0,
                             error=str(exc),
+                            feature_set_name=self.config.feature_set_name,
+                            feature_version=self.feature_version,
+                            campaign_id=self.config.alpha_campaign_id,
+                            alpha_candidate_id=(request.metadata or {}).get("alpha_candidate_id"),
+                            family_tags=(request.metadata or {}).get("alpha_family_tags"),
+                            proxy_score=(request.metadata or {}).get("proxy_score"),
                         )
                     )
         elapsed = time.perf_counter() - start
@@ -144,7 +153,7 @@ class FormulaBatchEvaluator:
         formula_hash = request.formula_hash or stable_formula_hash(
             request.formula_tokens,
             request.formula_names,
-            FEATURE_VERSION,
+            self.feature_version,
             OPERATOR_VERSION,
         )
         existing = self.store.find_factor_by_hash(formula_hash)
@@ -158,6 +167,12 @@ class FormulaBatchEvaluator:
                 gate_reasons=["skipped_existing"],
                 max_abs_correlation=float((existing.metadata or {}).get("max_abs_correlation", 0.0) or 0.0),
                 elapsed_seconds=time.perf_counter() - started,
+                feature_set_name=self.config.feature_set_name,
+                feature_version=self.feature_version,
+                campaign_id=self.config.alpha_campaign_id,
+                alpha_candidate_id=(request.metadata or {}).get("alpha_candidate_id"),
+                family_tags=(request.metadata or {}).get("alpha_family_tags"),
+                proxy_score=(request.metadata or {}).get("proxy_score"),
             )
 
         cache_key = self._cache_key(request)
@@ -218,7 +233,7 @@ class FormulaBatchEvaluator:
                     formula=request.formula_names,
                     formula_tokens=request.formula_tokens,
                     formula_hash=formula_hash,
-                    feature_version=FEATURE_VERSION,
+                    feature_version=self.feature_version,
                     operator_version=OPERATOR_VERSION,
                     lookback_days=int(request.lookback or self.vm.formula_lookback(request.formula_tokens)),
                     created_at=created_at,
@@ -283,6 +298,13 @@ class FormulaBatchEvaluator:
             elapsed_seconds=time.perf_counter() - started,
             report_json_path=report_json_path,
             report_md_path=report_md_path,
+            feature_set_name=self.config.feature_set_name,
+            feature_version=self.feature_version,
+            campaign_id=self.config.alpha_campaign_id,
+            alpha_candidate_id=(request.metadata or {}).get("alpha_candidate_id"),
+            family_tags=(request.metadata or {}).get("alpha_family_tags"),
+            proxy_score=(request.metadata or {}).get("proxy_score"),
+            final_score=(request.metadata or {}).get("final_score"),
         )
         if self.config.use_eval_cache:
             self._cache[cache_key] = result.to_dict()

@@ -12,11 +12,13 @@ The current implementation is local-first. It uses deterministic sample data and
 - `data_lake/`: Dataset fingerprints, dataset version registry, immutable research freezes, freeze validation, lineage graphs, and retention reports.
 - `artifact_schema/`: Artifact type registry, schema versioning, checksum manifests, JSON/JSONL validation, and legacy-compatible artifact scanning.
 - `universe/`: Local A-share universe construction from governed data artifacts.
+- `feature_factory/`: Versioned A-share feature catalogs, v1/v2 feature manifests, coverage reports, and opt-in feature tensor artifacts.
 - `model_core/`: A-share feature engineering, formula vocabulary, DSL operators, StackVM execution, factor evaluation, and mining engine.
 - `factor_engine/`: Cross-sectional preprocessing, market-cap and industry neutralization, correlation checks, and factor admission gate.
 - `factor_store/`: Local factor registry, experiment registry, factor value storage, and stable factor identifiers.
 - `evaluation/`: Time-series sample split, split-level metrics, and factor reports.
 - `research/`: Batch candidate execution, factor ranking, composite factor construction, and batch research reports.
+- `alpha_factory/`: Campaign-level large candidate generation, template/random/mutation/crossover/corpus source budgets, static checks, proxy eval, full eval, novelty/diversity scoring, and shortlist reports.
 - `formula_search/`: Formula metadata, random generation, mutation, crossover, multi-generation search, and search reports.
 - `neural_search/`: AlphaGPT warm-start training, action-mask constrained formula sampling, lightweight policy search, checkpointing, and neural search reports.
 - `compute_cluster/`: Local CPU/GPU probe, GPU leases, job queue, subprocess runner, heartbeat, retry/resume state, and compute resource reports.
@@ -91,6 +93,8 @@ ASHARE_DASHBOARD_FACTOR_STORE_DIR=/tmp/auto-alpha-demo/store \
 ASHARE_DASHBOARD_REPORT_DIR=/tmp/auto-alpha-demo/reports \
 ASHARE_DASHBOARD_BACKTEST_DIR=/tmp/auto-alpha-demo/backtest \
 ASHARE_DASHBOARD_ORDERS_DIR=/tmp/auto-alpha-demo/orders \
+ASHARE_DASHBOARD_FEATURE_FACTORY_DIR=/tmp/auto-alpha-demo/features \
+ASHARE_DASHBOARD_ALPHA_FACTORY_DIR=/tmp/auto-alpha-demo/alpha_factory \
 uv run streamlit run dashboard/app.py
 ```
 
@@ -808,6 +812,43 @@ The package build uses hatchling and includes only A-share platform modules. It 
 
 ## Formula Corpus, Batch Evaluation, And AlphaGPT Pretraining
 
+`feature_factory/` keeps the existing 11-feature v1 loader behavior as the default and adds an opt-in `ashare_features_v2` feature space. v2 extends the base feature set with additional return horizons, liquidity z-scores, volatility/downside-volatility, valuation, limit/suspension, index membership, and optional point-in-time/corporate-action flags. Missing optional raw fields are reported as warnings and encoded as zero matrices instead of breaking local sample runs.
+
+```bash
+uv run python -m feature_factory.run_features build \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --output-dir /tmp/auto-alpha-demo/features \
+  --feature-set-name ashare_features_v2 \
+  --pretty
+```
+
+`alpha_factory/` is the campaign-level candidate funnel. It records campaign lineage, feature-set metadata, generator source budgets, random seed, compute configuration, static DSL checks, cheap proxy evaluation, optional `formula_batch_eval` full evaluation, novelty/diversity scoring, and shortlist artifacts:
+
+```bash
+uv run python -m alpha_factory.run_factory run \
+  --campaign-name sample_alpha_factory \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --report-dir /tmp/auto-alpha-demo/reports \
+  --output-dir /tmp/auto-alpha-demo/alpha_factory \
+  --feature-set-name ashare_features_v2 \
+  --build-feature-set \
+  --feature-output-dir /tmp/auto-alpha-demo/features \
+  --candidate-budget 40 \
+  --template-budget 12 \
+  --random-budget 12 \
+  --mutation-budget 8 \
+  --crossover-budget 4 \
+  --proxy-max-candidates 30 \
+  --top-k 8 \
+  --use-batch-eval \
+  --batch-eval-dir /tmp/auto-alpha-demo/alpha_batch_eval \
+  --batch-eval-device cpu \
+  --pretty
+```
+
+`formula_search.run_search` can continue from an Alpha Factory shortlist by passing `--alpha-candidates-path`, `--alpha-campaign-manifest-path`, `--use-alpha-shortlist-as-seed`, and the matching feature-set manifest. `research_suite.run_suite` can run the same stage before search with `--run-alpha-factory --use-alpha-shortlist-for-search`.
+
 `formula_corpus/` builds a reusable local formula corpus from default candidates, seed formulas, factor store records, search outputs, neural search outputs, batch reports, and suite artifact catalogs. It validates formulas with `StackVM.validate_with_reason`, deduplicates by stable formula hash, merges source metadata, and writes:
 
 - `formula_corpus.jsonl`
@@ -899,6 +940,12 @@ uv run python -m experiment_orchestrator.run_experiment smoke \
 `formula_search.run_search` and `research_suite.run_suite` can now reuse these artifacts with `--corpus-path`, `--neural-checkpoint`, `--use-batch-eval`, `--use-matrix-cache`, and `--use-eval-cache`. A suite can build the corpus, pretrain AlphaGPT, run batch evaluation, search, backtest, orders, walk-forward, and promotion in one command by adding:
 
 ```bash
+--run-alpha-factory \
+--alpha-feature-set-name ashare_features_v2 \
+--alpha-build-feature-set \
+--alpha-factory-dir /tmp/auto-alpha-demo/alpha_factory \
+--alpha-feature-output-dir /tmp/auto-alpha-demo/features \
+--use-alpha-shortlist-for-search \
 --build-formula-corpus \
 --pretrain-alphagpt \
 --use-batch-eval \
@@ -957,6 +1004,7 @@ Current PIT boundaries:
 - Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
 - Local daily simulation supports A-share constraints, pre-trade risk controls, local kill switch, override approvals, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, settlement-aware paper accounting, lot cost, realized PnL, NAV reconciliation, generic statement import, external account mirroring, EOD break management, and execution quality reports; future work should add finer real-world matching, minute-level volume modeling, verified real broker statement mappings, richer limit policies, and real broker connectivity.
 - Local formula search, batch formula evaluation, formula corpus construction, offline AlphaGPT supervised pretraining, a first neural-guided policy-search path, and a local CPU/GPU compute scheduler are available; future work should add stronger reinforcement learning, larger offline corpora, more operators, true full-market 4-GPU stress runs, richer DDP training, and broader stability validation.
+- Feature Factory v2 and Alpha Factory campaign funnels are available locally; future work should expand the feature catalog against full-market data, calibrate proxy scores with longer histories, and run large GPU-backed campaigns outside default CI.
 - Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.
 - One-click research suites now provide local walk-forward, promotion gates, model registry records, lifecycle review packages, active deployment state, and rollback artifacts; daily operations can require an active governed model. Future work should add richer lifecycle policies and external review workflow integrations.
 - Broker adapter, file instructions, broker statement import, settlement profiles, EOD reconciliation, and account ledger are local only. No real broker integration, credential handling, network submission, verified QMT/broker file compatibility, or tax reporting interface is implemented.

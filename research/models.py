@@ -74,6 +74,11 @@ class BatchResearchConfig:
     formula_shard_count: int = 1
     formula_shard_id: int | None = None
     resource_report_path: str | None = None
+    feature_set_name: str = "ashare_features_v1"
+    feature_set_manifest_path: str | None = None
+    alpha_campaign_id: str | None = None
+    alpha_candidates_path: str | None = None
+    alpha_factory_report_path: str | None = None
 
 
 @dataclass(frozen=True)

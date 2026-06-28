@@ -31,6 +31,8 @@ class DashboardConfig:
     ci_dir: Path = Path(".ci_artifacts")
     formula_corpus_dir: Path = Path("artifacts/formula_corpus")
     formula_batch_eval_dir: Path = Path("artifacts/formula_batch_eval")
+    feature_factory_dir: Path = Path("artifacts/features")
+    alpha_factory_dir: Path = Path("artifacts/alpha_factory")
     pretrain_dir: Path = Path("artifacts/alphagpt_pretrain")
     model_registry_dir: Path = Path("artifacts/model_registry")
     model_lifecycle_dir: Path = Path("artifacts/model_lifecycle")
@@ -66,6 +68,8 @@ class DashboardConfig:
             ci_dir=Path(os.getenv("ASHARE_DASHBOARD_CI_DIR") or ".ci_artifacts"),
             formula_corpus_dir=Path(os.getenv("ASHARE_DASHBOARD_FORMULA_CORPUS_DIR") or "artifacts/formula_corpus"),
             formula_batch_eval_dir=Path(os.getenv("ASHARE_DASHBOARD_FORMULA_BATCH_EVAL_DIR") or "artifacts/formula_batch_eval"),
+            feature_factory_dir=Path(os.getenv("ASHARE_DASHBOARD_FEATURE_FACTORY_DIR") or "artifacts/features"),
+            alpha_factory_dir=Path(os.getenv("ASHARE_DASHBOARD_ALPHA_FACTORY_DIR") or "artifacts/alpha_factory"),
             pretrain_dir=Path(os.getenv("ASHARE_DASHBOARD_PRETRAIN_DIR") or "artifacts/alphagpt_pretrain"),
             model_registry_dir=Path(os.getenv("ASHARE_DASHBOARD_MODEL_REGISTRY_DIR") or "artifacts/model_registry"),
             model_lifecycle_dir=Path(os.getenv("ASHARE_DASHBOARD_MODEL_LIFECYCLE_DIR") or "artifacts/model_lifecycle"),

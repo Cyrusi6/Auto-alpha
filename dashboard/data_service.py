@@ -253,6 +253,54 @@ class AshareDashboardService:
                 return payload
         return {}
 
+    def load_feature_set_manifest(self) -> dict[str, Any]:
+        return self._read_first_json(self._feature_artifact_candidates("feature_set_manifest.json"))
+
+    def load_feature_coverage_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._feature_artifact_candidates("feature_coverage_report.json"))
+
+    def load_feature_values_summary(self) -> dict[str, Any]:
+        return self._read_first_json(self._feature_artifact_candidates("feature_values_summary.json"))
+
+    def load_alpha_campaign_manifest(self) -> dict[str, Any]:
+        return self._read_first_json(self._alpha_artifact_candidates("alpha_campaign_manifest.json"))
+
+    def load_alpha_factory_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._alpha_artifact_candidates("alpha_factory_report.json"))
+
+    def load_alpha_generation_stats(self) -> dict[str, Any]:
+        return self._read_first_json(self._alpha_artifact_candidates("alpha_generation_stats.json"))
+
+    def load_alpha_candidates(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._alpha_artifact_candidates("alpha_candidates.jsonl"))
+
+    def load_alpha_static_checks(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._alpha_artifact_candidates("alpha_static_checks.jsonl"))
+
+    def load_alpha_proxy_eval(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._alpha_artifact_candidates("alpha_proxy_eval.jsonl"))
+
+    def load_alpha_proxy_eval_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._alpha_artifact_candidates("alpha_proxy_eval_report.json"))
+
+    def load_alpha_full_eval_summary(self) -> dict[str, Any]:
+        return self._read_first_json(self._alpha_artifact_candidates("alpha_full_eval_summary.json"))
+
+    def load_alpha_scored_candidates(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._alpha_artifact_candidates("alpha_scored_candidates.jsonl"))
+
+    def load_alpha_shortlist(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._alpha_artifact_candidates("alpha_shortlist.jsonl"))
+
+    def load_alpha_rejected(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._alpha_artifact_candidates("alpha_rejected.jsonl"))
+
+    def load_alpha_diversity_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._alpha_artifact_candidates("alpha_diversity_report.json"))
+
+    def load_alpha_campaign_artifact_catalog(self) -> dict[str, Any]:
+        return self._read_first_json(self._alpha_artifact_candidates("alpha_campaign_artifact_catalog.json"))
+
     def load_compute_resource_snapshot(self) -> dict[str, Any]:
         for path in self._compute_artifact_candidates("compute_resource_snapshot.json"):
             payload = self._read_json(path)
@@ -1479,12 +1527,39 @@ class AshareDashboardService:
             root / "suite" / "experiment" / filename,
         ]
 
+    def _feature_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.feature_factory_dir / filename,
+            root / "features" / filename,
+            root / "features_v2" / filename,
+            root / "suite_features_v2" / filename,
+            root / "alpha_factory" / "features" / filename,
+            root / "suite_alpha_factory" / "features" / filename,
+        ]
+
+    def _alpha_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.alpha_factory_dir / filename,
+            root / "alpha_factory" / filename,
+            root / "suite_alpha_factory" / filename,
+            root / "suite" / "alpha_factory" / filename,
+        ]
+
     def _read_first_json(self, paths: list[Path]) -> dict[str, Any]:
         for path in paths:
             payload = self._read_json(path)
             if payload:
                 return payload
         return {}
+
+    def _read_first_jsonl(self, paths: list[Path]) -> pd.DataFrame:
+        for path in paths:
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
 
     def _statement_artifact_candidates(self, filename: str) -> list[Path]:
         root = self.config.report_dir.parent

@@ -34,6 +34,8 @@ class AShareDataLoader:
         target_return_mode: str = "adjusted_close",
         corporate_action_cash_field: str = "cash_div",
         corporate_action_application_mode: str = "ex_date",
+        feature_set_name: str = "ashare_features_v1",
+        feature_set_manifest_path: str | Path | None = None,
     ):
         self.data_dir = Path(data_dir) if data_dir is not None else Path(ModelConfig.DATA_DIR)
         self.device = torch.device(device) if device is not None else ModelConfig.DEVICE
@@ -54,6 +56,8 @@ class AShareDataLoader:
         self.target_return_mode = target_return_mode
         self.corporate_action_cash_field = corporate_action_cash_field
         self.corporate_action_application_mode = corporate_action_application_mode
+        self.feature_set_name = feature_set_name
+        self.feature_set_manifest_path = Path(feature_set_manifest_path) if feature_set_manifest_path is not None else None
         self.ts_codes: list[str] = []
         self.trade_dates: list[str] = []
         self.security_metadata: dict[str, dict[str, object]] = {}
@@ -146,7 +150,7 @@ class AShareDataLoader:
         self.raw_data_cache["industry_code_matrix"] = self.industry_codes.unsqueeze(1).expand(-1, len(self.trade_dates))
         if self.point_in_time:
             self._attach_point_in_time_masks(securities)
-        self.feat_tensor = AShareFeatureEngineer.compute_features(self.raw_data_cache)
+        self.feat_tensor = self._compute_feature_tensor()
         self.target_ret = self._compute_target_ret(self._target_price_matrix())
         return self
 
@@ -203,9 +207,31 @@ class AShareDataLoader:
         if self.point_in_time and not {"active_mask", "listing_age_days", "pit_available_mask"} <= set(self.raw_data_cache):
             self._attach_point_in_time_masks(None)
 
-        self.feat_tensor = AShareFeatureEngineer.compute_features(self.raw_data_cache)
+        self.feat_tensor = self._compute_feature_tensor()
         self.target_ret = self._compute_target_ret(self._target_price_matrix())
         return self
+
+    def _compute_feature_tensor(self) -> torch.Tensor:
+        if self.feature_set_manifest_path is not None:
+            from feature_factory.builder import load_feature_manifest
+
+            return AShareFeatureEngineer.compute_features(
+                self.raw_data_cache,
+                feature_set_manifest=load_feature_manifest(self.feature_set_manifest_path),
+            )
+        if self.feature_set_name != "ashare_features_v1":
+            from feature_factory.catalog import build_feature_set_manifest
+
+            return AShareFeatureEngineer.compute_features(
+                self.raw_data_cache,
+                feature_set_manifest=build_feature_set_manifest(
+                    self.feature_set_name,
+                    point_in_time=self.point_in_time,
+                    corporate_action_aware=self.corporate_action_aware,
+                    target_return_mode=self.target_return_mode,
+                ),
+            )
+        return AShareFeatureEngineer.compute_features(self.raw_data_cache)
 
     def _read_jsonl(self, dataset: str) -> list[dict[str, object]]:
         path = self.data_dir / dataset / "records.jsonl"

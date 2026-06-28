@@ -33,7 +33,16 @@ class AShareFeatureEngineer:
     INPUT_DIM = len(FEATURE_NAMES)
 
     @staticmethod
-    def compute_features(raw_dict: dict[str, torch.Tensor]) -> torch.Tensor:
+    def compute_features(raw_dict: dict[str, torch.Tensor], feature_set_manifest=None) -> torch.Tensor:
+        if feature_set_manifest is not None:
+            from feature_factory.builder import build_feature_tensor
+
+            class _RawLoader:
+                raw_data_cache = raw_dict
+
+            tensor, _warnings = build_feature_tensor(_RawLoader(), feature_set_manifest)
+            return tensor
+
         close = raw_dict["close"]
         high = raw_dict["high"]
         low = raw_dict["low"]

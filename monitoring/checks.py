@@ -1150,6 +1150,78 @@ def check_settlement_fee_tax(fee_tax_report_path: str | Path | None) -> tuple[di
     return {"exists": True, "total_fee_tax": total, **payload}, alerts
 
 
+def check_alpha_factory_campaign(report_path: str | Path | None, manifest_path: str | Path | None = None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    report = _read_json(Path(report_path)) if report_path else {}
+    manifest = _read_json(Path(manifest_path)) if manifest_path else {}
+    summary = report.get("summary", {}) if isinstance(report.get("summary"), dict) else {}
+    status = str(report.get("status", "missing") if report else "missing")
+    alerts: list[MonitoringAlert] = []
+    if report and status not in {"success", "partial"}:
+        alerts.append(MonitoringAlert("warning", "alpha_factory_campaign", "alpha campaign did not finish successfully", {"status": status}))
+    return {
+        "exists": bool(report or manifest),
+        "alpha_campaign_id": report.get("campaign_id") or manifest.get("campaign_id"),
+        "alpha_status": status,
+        "alpha_candidates_generated": int(summary.get("candidates_generated", 0) or 0),
+        "alpha_static_pass_count": int(summary.get("static_passed", 0) or 0),
+        "alpha_static_error_count": int(summary.get("static_error_count", 0) or 0),
+        "alpha_proxy_pass_count": int(summary.get("proxy_passed", 0) or 0),
+        "alpha_full_eval_count": int(summary.get("full_eval_count", 0) or 0),
+        "alpha_shortlist_count": int(summary.get("shortlist_count", 0) or 0),
+        "alpha_best_score": float(summary.get("best_score", 0.0) or 0.0),
+        "alpha_feature_count": int(summary.get("feature_count", 0) or 0),
+        "alpha_family_count": len(summary.get("family_distribution", {}) or {}),
+        "alpha_compute_run_report_path": summary.get("compute_run_report_path"),
+    }, alerts
+
+
+def check_alpha_static_errors(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(path)) if path else []
+    errors = sum(1 for row in rows if row.get("status") != "passed")
+    alerts = [MonitoringAlert("warning", "alpha_static_errors", "alpha static checks rejected candidates", {"errors": errors})] if errors else []
+    return {"exists": bool(rows), "alpha_static_error_count": errors, "alpha_static_pass_count": len(rows) - errors}, alerts
+
+
+def check_alpha_proxy_eval(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    return {"exists": bool(payload), "alpha_proxy_pass_count": int(summary.get("passed", 0) or 0), "alpha_proxy_failed_count": int(summary.get("failed", 0) or 0)}, []
+
+
+def check_alpha_diversity(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    warnings = int(payload.get("warning_count", 0) or 0) if payload else 0
+    return {
+        "exists": bool(payload),
+        "alpha_shortlist_count": int(payload.get("shortlist_count", 0) or 0) if payload else 0,
+        "alpha_diversity_warning_count": warnings,
+        "alpha_family_count": len(payload.get("family_counts", {}) or {}) if payload else 0,
+    }, []
+
+
+def check_alpha_shortlist(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(path)) if path else []
+    best = max([float(row.get("final_score", 0.0) or 0.0) for row in rows], default=0.0)
+    return {"exists": bool(rows), "alpha_shortlist_count": len(rows), "alpha_best_score": best}, []
+
+
+def check_feature_set_manifest(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    return {
+        "exists": bool(payload),
+        "feature_set_name": payload.get("feature_set_name"),
+        "feature_count": int(payload.get("feature_count", 0) or 0) if payload else 0,
+        "feature_set_hash": payload.get("content_hash"),
+    }, []
+
+
+def check_feature_coverage(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    warnings = len(payload.get("warnings", []) or []) if payload else 0
+    alerts = [MonitoringAlert("warning", "feature_coverage", "feature coverage warnings exist", {"warnings": warnings})] if warnings else []
+    return {"exists": bool(payload), "feature_coverage_warning_count": warnings}, alerts
+
+
 def _eod_summary(report_path: str | Path | None) -> dict[str, Any]:
     payload = _read_json(Path(report_path)) if report_path else {}
     summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}

@@ -69,6 +69,12 @@ class MonitoringReport:
         experiment_shards = self.checks.get("experiment_shard_failures", {}) if isinstance(self.checks, dict) else {}
         experiment_merge = self.checks.get("experiment_merge_status", {}) if isinstance(self.checks, dict) else {}
         gpu_throughput = self.checks.get("gpu_throughput_regression", {}) if isinstance(self.checks, dict) else {}
+        alpha_campaign = self.checks.get("alpha_factory_campaign", {}) if isinstance(self.checks, dict) else {}
+        alpha_static = self.checks.get("alpha_static_errors", {}) if isinstance(self.checks, dict) else {}
+        alpha_proxy = self.checks.get("alpha_proxy_eval", {}) if isinstance(self.checks, dict) else {}
+        alpha_diversity = self.checks.get("alpha_diversity", {}) if isinstance(self.checks, dict) else {}
+        feature_set = self.checks.get("feature_set_manifest", {}) if isinstance(self.checks, dict) else {}
+        feature_coverage = self.checks.get("feature_coverage", {}) if isinstance(self.checks, dict) else {}
         return {
             "created_at": self.created_at,
             "as_of_date": self.as_of_date,
@@ -158,4 +164,17 @@ class MonitoringReport:
             "experiment_failed_shard_count": int(experiment_shards.get("experiment_failed_shard_count", 0) or 0) if isinstance(experiment_shards, dict) else 0,
             "experiment_merge_status": str(experiment_merge.get("experiment_merge_status", "")) if isinstance(experiment_merge, dict) else "",
             "scheduler_warning_count": int(gpu_throughput.get("scheduler_warning_count", 0) or 0) if isinstance(gpu_throughput, dict) else 0,
+            "alpha_campaign_id": alpha_campaign.get("alpha_campaign_id") if isinstance(alpha_campaign, dict) else None,
+            "alpha_candidates_generated": int(alpha_campaign.get("alpha_candidates_generated", 0) or 0) if isinstance(alpha_campaign, dict) else 0,
+            "alpha_static_pass_count": int(alpha_static.get("alpha_static_pass_count", alpha_campaign.get("alpha_static_pass_count", 0)) or 0) if isinstance(alpha_static, dict) else 0,
+            "alpha_static_error_count": int(alpha_static.get("alpha_static_error_count", alpha_campaign.get("alpha_static_error_count", 0)) or 0) if isinstance(alpha_static, dict) else 0,
+            "alpha_proxy_pass_count": int(alpha_proxy.get("alpha_proxy_pass_count", alpha_campaign.get("alpha_proxy_pass_count", 0)) or 0) if isinstance(alpha_proxy, dict) else 0,
+            "alpha_full_eval_count": int(alpha_campaign.get("alpha_full_eval_count", 0) or 0) if isinstance(alpha_campaign, dict) else 0,
+            "alpha_shortlist_count": int(alpha_diversity.get("alpha_shortlist_count", alpha_campaign.get("alpha_shortlist_count", 0)) or 0) if isinstance(alpha_diversity, dict) else 0,
+            "alpha_feature_count": int(feature_set.get("feature_count", alpha_campaign.get("alpha_feature_count", 0)) or 0) if isinstance(feature_set, dict) else 0,
+            "alpha_family_count": int(alpha_diversity.get("alpha_family_count", alpha_campaign.get("alpha_family_count", 0)) or 0) if isinstance(alpha_diversity, dict) else 0,
+            "alpha_best_score": float(alpha_campaign.get("alpha_best_score", 0.0) or 0.0) if isinstance(alpha_campaign, dict) else 0.0,
+            "alpha_diversity_warning_count": int(alpha_diversity.get("alpha_diversity_warning_count", 0) or 0) if isinstance(alpha_diversity, dict) else 0,
+            "feature_coverage_warning_count": int(feature_coverage.get("feature_coverage_warning_count", 0) or 0) if isinstance(feature_coverage, dict) else 0,
+            "feature_set_hash": feature_set.get("feature_set_hash") if isinstance(feature_set, dict) else None,
         }

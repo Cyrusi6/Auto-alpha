@@ -36,6 +36,13 @@ class FormulaEvalResult:
     error: str | None = None
     report_json_path: str | None = None
     report_md_path: str | None = None
+    feature_set_name: str = "ashare_features_v1"
+    feature_version: str = "ashare_features_v1"
+    campaign_id: str | None = None
+    alpha_candidate_id: str | None = None
+    family_tags: list[str] | None = None
+    proxy_score: float | None = None
+    final_score: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -69,6 +76,9 @@ class FormulaBatchEvalConfig:
     shard_id: int | None = None
     shard_count: int = 1
     resource_report_path: str | None = None
+    feature_set_name: str = "ashare_features_v1"
+    feature_set_manifest_path: str | None = None
+    alpha_campaign_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

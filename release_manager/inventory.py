@@ -11,6 +11,7 @@ from .models import CliInventory, DependencyInventory, ModuleInventory
 
 PLATFORM_MODULES = [
     "approval",
+    "alpha_factory",
     "backtest",
     "broker_adapter",
     "broker_statement",
@@ -30,6 +31,7 @@ PLATFORM_MODULES = [
     "factor_engine",
     "factor_store",
     "factor_lifecycle",
+    "feature_factory",
     "formula_batch_eval",
     "formula_corpus",
     "formula_search",
