@@ -113,12 +113,18 @@ When enabled, `research_suite.run_suite --run-validation-lab --run-factor-certif
 - constraint checks for max weight, industry active weight, total active weight, tracking error, names, and HHI
 - `risk_report.json/md` and, when enabled, `risk_model_report.json/md`
 
-`portfolio_optimizer/` provides a deterministic long-only benchmark-aware optimizer. It ranks alpha scores, tilts from benchmark weights, clamps max names and max weight, shrinks turnover and tracking error, and outputs:
+`portfolio_optimizer/` provides a deterministic long-only benchmark-aware optimizer and serializable portfolio policies. It ranks alpha scores, tilts from benchmark weights, clamps max names and max weight, shrinks turnover and tracking error, and outputs:
 
 - `optimized_weights.jsonl`
 - `optimization_result.json`
 - `risk_report.json`
 - `risk_report.md`
+
+`portfolio_lab/` runs portfolio policy grids against scenarios such as base, higher cost, lower capacity, stricter turnover, settlement, and risk-control assumptions. It writes `portfolio_lab_report.json/md`, `portfolio_policy_grid.json`, `portfolio_scenarios.json`, trial JSONL files, `portfolio_robustness_report.json/md`, and `selected_portfolio_policy.json`.
+
+`portfolio_certification/` turns the selected policy plus lab, validation, factor certification, data-freeze, PIT, settlement, risk-control, and reconciliation artifacts into a portfolio scorecard and decision. Passing certification writes `certified_portfolio_policy.json` and can create a `portfolio_policy_activation` approval. Applying that approval activates an `optimizer_policy` model version in `model_registry/`.
+
+A certified factor and a certified portfolio policy are intentionally separate: the factor gate reviews signal quality; the portfolio gate reviews optimizer parameters and deployment assumptions. Sample certification is a smoke path only, not a return guarantee.
 
 `capacity_model/` estimates stock and portfolio trading capacity from local amount, volume, turnover, and volatility matrices. It reports amount participation, volume participation, max trade value, max trade shares, estimated impact cost, capacity score, and capacity warnings.
 
@@ -197,7 +203,7 @@ With `--capacity-aware`, backtest generates parent/child execution plans before 
 - `orders.jsonl`
 - `paper_fills.jsonl`
 
-With `--portfolio-method risk_aware`, target positions include optimized weight, benchmark weight, and active weight. The summary includes risk metrics and constraint violations. With `--use-factor-risk-model`, strategy and daily operations summaries include style exposure, active style exposure, and risk decomposition. With `--capacity-aware`, strategy writes `capacity_report.json/md`, `execution_plan.json/md`, `parent_orders.jsonl`, `child_orders.jsonl`, `child_fills.jsonl`, and `execution_quality.json`. With `--risk-controls`, strategy evaluates orders before approval or paper execution and writes `risk_control_report.json/md`, `risk_control_breaches.jsonl`, `risk_control_decisions.jsonl`, `risk_limit_usage.jsonl`, `accepted_orders.jsonl`, `rejected_orders.jsonl`, `clipped_orders.jsonl`, and `kill_switch_state.json`.
+With `--portfolio-method risk_aware`, target positions include optimized weight, benchmark weight, and active weight. The summary includes risk metrics and constraint violations. With `--portfolio-policy-path`, strategy/backtest/operations override optimizer parameters from a certified policy JSON. With `--active-optimizer-policy`, they load the active optimizer policy from `model_registry/`; with `--require-certified-portfolio-policy`, uncertified policies fail closed. With `--use-factor-risk-model`, strategy and daily operations summaries include style exposure, active style exposure, and risk decomposition. With `--capacity-aware`, strategy writes `capacity_report.json/md`, `execution_plan.json/md`, `parent_orders.jsonl`, `child_orders.jsonl`, `child_fills.jsonl`, and `execution_quality.json`. With `--risk-controls`, strategy evaluates orders before approval or paper execution and writes `risk_control_report.json/md`, `risk_control_breaches.jsonl`, `risk_control_decisions.jsonl`, `risk_limit_usage.jsonl`, `accepted_orders.jsonl`, `rejected_orders.jsonl`, `clipped_orders.jsonl`, and `kill_switch_state.json`.
 
 ## Production Operations
 
@@ -221,10 +227,11 @@ Filled and partial fills update cash and positions. Rejected fills are recorded 
 `operations/` runs the daily production path:
 
 1. Select an active model from `model_registry/`, or select a `production_candidate` factor when registry mode is disabled.
-2. Generate target positions and proposed orders with `strategy_manager`.
-3. If approval is required, write a pending approval batch and stop.
-4. After approval, execute local paper fills, update the paper account, and write `production_run.json` plus `production_run.md`.
-5. Optionally import a broker statement, run EOD reconciliation, create adjustment proposals, create an `account_reconciliation_adjustment` approval, and apply approved manual adjustments idempotently.
+2. Optionally require an active `optimizer_policy` and certified portfolio policy before generating target positions.
+3. Generate target positions and proposed orders with `strategy_manager`.
+4. If approval is required, write a pending approval batch and stop.
+5. After approval, execute local paper fills, update the paper account, and write `production_run.json` plus `production_run.md`.
+6. Optionally import a broker statement, run EOD reconciliation, create adjustment proposals, create an `account_reconciliation_adjustment` approval, and apply approved manual adjustments idempotently.
 
 Capacity-aware daily runs store parent and child order schedules inside approval batches. Approved child orders can keep the default paper simulator path, route through the simulated broker state machine, or export generic file instructions. Broker-enabled runs write `broker_report.json/md`, `broker_orders.jsonl`, `broker_events.jsonl`, `broker_fills.jsonl`, and `broker_reconciliation.json/md`. Repeated execution of the same approved child orders is idempotent at the broker order and paper-account fill layers.
 

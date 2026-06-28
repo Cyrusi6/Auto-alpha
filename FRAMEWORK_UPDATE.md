@@ -1744,3 +1744,36 @@
 - Calibrate validation thresholds on longer real-data freezes and production-sized Alpha Factory campaigns.
 - Replace approximate deflated IC/PBO diagnostics with richer statistical estimators once enough live research history exists.
 - Add reviewer ownership, expiry, and remediation workflow for conditional certification before any automated activation policy.
+
+## Task 036 - Portfolio Production Certification, Optimizer Policy Registry, And Portfolio Gate
+
+- Added `portfolio_optimizer.policy` with deterministic, serializable portfolio policies and conversion back to existing `OptimizationConfig` while keeping default optimizer behavior unchanged.
+- Added `portfolio_lab/` for small portfolio policy grids, scenario trials, trial metrics, robustness ranking, selected policy artifacts, and portfolio lab reports.
+- Added `portfolio_certification/` for portfolio certification policies, scorecards, decisions, certified portfolio policy packages, activation requests, registry registration, and approval-gated optimizer policy activation.
+- Integrated portfolio lab/certification into `research_suite`, including suite summaries, artifact catalog entries, promotion blocking when portfolio certification is required, optimizer policy registration, and activation approval creation.
+- Extended `backtest`, `strategy_manager`, and `operations` with explicit portfolio policy paths, active optimizer policy lookup, certified-policy gates, and fail-closed production order generation when required.
+- Extended `model_registry`, `factor_lifecycle`, `approval`, `monitoring`, `dashboard` data service, `artifact_schema`, `release_manager`, `performance_benchmark`, local CI, packaging metadata, README, and CATREADME for portfolio lab/certification artifacts and optimizer policy lifecycle.
+
+### New Artifacts
+- `portfolio_lab_report.json/md`
+- `portfolio_policy_grid.json`
+- `portfolio_scenarios.json`
+- `portfolio_policy_trials.jsonl`
+- `portfolio_trial_metrics.jsonl`
+- `portfolio_robustness_report.json/md`
+- `selected_portfolio_policy.json`
+- `portfolio_lab_issues.jsonl`
+- `portfolio_lab_artifact_catalog.json`
+- `portfolio_certification_policy.json`
+- `portfolio_certification_scorecard.json`
+- `portfolio_certification_decision.json`
+- `portfolio_certification_package.json`
+- `portfolio_certification_report.md`
+- `portfolio_certification_checks.jsonl`
+- `certified_portfolio_policy.json`
+- `portfolio_policy_activation_request.json`
+
+### Follow-Ups
+- Calibrate portfolio certification thresholds on long real-data freezes and production-scale policy grids.
+- Add richer scenario matrices for slippage, liquidity droughts, settlement delays, and risk-control override workflows.
+- Keep optimizer policy activation approval-gated until production review and external operational controls are mature.

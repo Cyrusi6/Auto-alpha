@@ -28,6 +28,8 @@ from strategy_manager import runner as strategy_runner
 from universe import run_universe
 from validation_lab.run_validation import main as run_validation_main
 from factor_certification.run_certify import main as run_certify_main
+from portfolio_lab.run_portfolio_lab import main as run_portfolio_lab_main
+from portfolio_certification.run_portfolio_certify import main as run_portfolio_certify_main
 from leakage_audit.run_audit import main as run_leakage_audit_main
 from point_in_time.run_pit import main as run_pit_main
 from data_lake import LocalDataLakeRegistry, create_research_freeze, validate_research_input
@@ -63,6 +65,8 @@ class ResearchSuiteRunner:
         self.alpha_summary: dict[str, Any] = {}
         self.validation_summary: dict[str, Any] = {}
         self.certification_summary: dict[str, Any] = {}
+        self.portfolio_lab_summary: dict[str, Any] = {}
+        self.portfolio_certification_summary: dict[str, Any] = {}
         self.dataset_version_id: str | None = None
         self.data_freeze_id: str | None = config.data_freeze_id
         self.data_freeze_hash: str | None = None
@@ -121,6 +125,10 @@ class ResearchSuiteRunner:
                 self._append_stage("validation_lab", self._stage_validation_lab)
             if self.config.run_factor_certification:
                 self._append_stage("factor_certification", self._stage_factor_certification)
+            if self.config.run_portfolio_lab:
+                self._append_stage("portfolio_lab", self._stage_portfolio_lab)
+            if self.config.run_portfolio_certification:
+                self._append_stage("portfolio_certification", self._stage_portfolio_certification)
             if not self.config.disable_promotion and self.config.promote_latest_composite:
                 self._append_stage("promotion", self._stage_promotion)
             if self.config.register_model_version:
@@ -228,6 +236,14 @@ class ResearchSuiteRunner:
                 "certification_decision_path": (self.certification_summary.get("paths") or {}).get("factor_certification_decision_path"),
                 "certification_blocker_count": self.certification_summary.get("certification_blocker_count", 0),
                 "certification_required_remediation_count": self.certification_summary.get("certification_required_remediation_count", 0),
+                "portfolio_lab_enabled": self.config.run_portfolio_lab,
+                "portfolio_lab_status": self.portfolio_lab_summary.get("status"),
+                "selected_portfolio_policy_id": self.portfolio_lab_summary.get("selected_policy_id"),
+                "portfolio_lab_trial_count": self.portfolio_lab_summary.get("trial_count", 0),
+                "portfolio_certification_status": self.portfolio_certification_summary.get("certification_status"),
+                "portfolio_certification_policy_profile": self.portfolio_certification_summary.get("portfolio_certification_policy_profile"),
+                "portfolio_certification_decision_path": (self.portfolio_certification_summary.get("paths") or {}).get("portfolio_certification_decision_path"),
+                "portfolio_policy_model_version_id": self.portfolio_certification_summary.get("model_version_id"),
             },
         )
         suite_json, suite_md = write_suite_report(result, self.output_dir)
@@ -1491,6 +1507,100 @@ class ResearchSuiteRunner:
             self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "factor_certification")
         return payload, output_paths
 
+    def _stage_portfolio_lab(self) -> tuple[dict[str, Any], dict[str, str]]:
+        if not self.selected_factor_id:
+            raise ValueError("no selected factor for portfolio lab")
+        lab_dir = self._portfolio_lab_dir()
+        argv = [
+            "run",
+            "--data-dir",
+            self.config.data_dir,
+            "--factor-store-dir",
+            self.config.factor_store_dir,
+            "--factor-id",
+            self.selected_factor_id,
+            "--factor-type",
+            "composite",
+            "--output-dir",
+            str(lab_dir),
+            "--index-code",
+            self.config.index_code,
+            "--scenario-profile",
+            self.config.portfolio_lab_scenario_profile,
+            "--portfolio-methods",
+            self.config.portfolio_methods,
+            "--risk-aversions",
+            self.config.portfolio_risk_aversions,
+            "--turnover-penalties",
+            self.config.portfolio_turnover_penalties,
+            "--benchmark-weights",
+            self.config.portfolio_benchmark_weights,
+            "--max-weight-values",
+            self.config.portfolio_max_weight_values,
+            "--max-names-values",
+            self.config.portfolio_max_names_values,
+            "--max-turnover-values",
+            self.config.portfolio_max_turnover_values,
+            "--max-tracking-error-values",
+            self.config.portfolio_max_tracking_error_values,
+            "--top-n-values",
+            self.config.portfolio_top_n_values,
+        ]
+        if self.config.portfolio_policy_grid_path:
+            argv.extend(["--policy-grid-path", self.config.portfolio_policy_grid_path])
+        if self.config.use_factor_risk_model:
+            argv.append("--use-factor-risk-model")
+        payload = _run_json_main(run_portfolio_lab_main, argv)
+        self.portfolio_lab_summary = payload
+        paths = payload.get("paths", {}) if isinstance(payload.get("paths"), dict) else {}
+        output_paths = {name.replace("_path", ""): str(path) for name, path in paths.items() if path}
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "portfolio_lab")
+        return payload, output_paths
+
+    def _stage_portfolio_certification(self) -> tuple[dict[str, Any], dict[str, str]]:
+        if not self.selected_factor_id:
+            raise ValueError("no selected factor for portfolio certification")
+        cert_dir = self._portfolio_certification_dir()
+        lab_dir = self._portfolio_lab_dir()
+        factor_cert_dir = self._factor_certification_dir()
+        argv = [
+            "run",
+            "--factor-store-dir",
+            self.config.factor_store_dir,
+            "--factor-id",
+            self.selected_factor_id,
+            "--factor-type",
+            "composite",
+            "--output-dir",
+            str(cert_dir),
+            "--portfolio-policy-path",
+            str(lab_dir / "selected_portfolio_policy.json"),
+            "--portfolio-lab-report-path",
+            str(lab_dir / "portfolio_lab_report.json"),
+            "--portfolio-robustness-report-path",
+            str(lab_dir / "portfolio_robustness_report.json"),
+            "--factor-certification-decision-path",
+            str(factor_cert_dir / "factor_certification_decision.json"),
+            "--policy-profile",
+            self.config.portfolio_certification_policy_profile,
+        ]
+        if self.config.portfolio_certification_policy_path:
+            argv.extend(["--policy-path", self.config.portfolio_certification_policy_path])
+        if self.config.register_optimizer_policy:
+            argv.extend(["--register-policy", "--model-registry-dir", str(self._model_registry_dir())])
+        if self.config.create_portfolio_policy_approval:
+            argv.extend(["--create-activation-approval", "--approval-store-dir", str(self._portfolio_policy_approval_store_dir())])
+        if self.config.fail_on_portfolio_certification_rejected:
+            argv.append("--fail-on-rejected")
+        payload = _run_json_main(run_portfolio_certify_main, argv)
+        self.portfolio_certification_summary = payload
+        paths = payload.get("paths", {}) if isinstance(payload.get("paths"), dict) else {}
+        output_paths = {name.replace("_path", ""): str(path) for name, path in paths.items() if path}
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "portfolio_certification")
+        return payload, output_paths
+
     def _stage_promotion(self) -> tuple[dict[str, Any], dict[str, str]]:
         if not self.selected_factor_id:
             raise ValueError("no selected factor for promotion")
@@ -1515,6 +1625,22 @@ class ResearchSuiteRunner:
                     new_status="needs_review",
                     reasons=[f"certification_not_passed:{status or 'missing'}"],
                     checks={"certification_status": status, "require_certification": True},
+                    created_at=_utc_now(),
+                )
+                path = write_promotion_decision(self.promotion_decision, self.config.output_dir)
+                self.catalog = register_artifact(self.catalog, "promotion_decision", path, "json", "promotion")
+                return self.promotion_decision.to_dict(), {"promotion_decision": str(path)}
+        if self.config.require_portfolio_certification:
+            status = str(self.portfolio_certification_summary.get("certification_status") or "")
+            if status not in {"certified", "conditional"}:
+                from .models import PromotionDecision
+
+                self.promotion_decision = PromotionDecision(
+                    factor_id=self.selected_factor_id,
+                    passed=False,
+                    new_status="needs_review",
+                    reasons=[f"portfolio_certification_not_passed:{status or 'missing'}"],
+                    checks={"portfolio_certification_status": status, "require_portfolio_certification": True},
                     created_at=_utc_now(),
                 )
                 path = write_promotion_decision(self.promotion_decision, self.config.output_dir)
@@ -1751,6 +1877,23 @@ class ResearchSuiteRunner:
 
     def _factor_certification_dir(self) -> Path:
         return Path(self.config.factor_certification_dir) if self.config.factor_certification_dir else Path(self.config.output_dir) / "factor_certification"
+
+    def _portfolio_lab_dir(self) -> Path:
+        return Path(self.config.portfolio_lab_dir) if self.config.portfolio_lab_dir else Path(self.config.output_dir) / "portfolio_lab"
+
+    def _portfolio_certification_dir(self) -> Path:
+        return (
+            Path(self.config.portfolio_certification_dir)
+            if self.config.portfolio_certification_dir
+            else Path(self.config.output_dir) / "portfolio_certification"
+        )
+
+    def _portfolio_policy_approval_store_dir(self) -> Path:
+        return (
+            Path(self.config.portfolio_policy_approval_store_dir)
+            if self.config.portfolio_policy_approval_store_dir
+            else Path(self.config.output_dir).parent / "approvals"
+        )
 
 
 def _run_json_main(main_func: Callable[[list[str] | None], int], argv: list[str]) -> dict[str, Any]:

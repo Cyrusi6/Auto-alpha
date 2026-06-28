@@ -16,6 +16,7 @@ class ApprovalStatus:
 class ApprovalType:
     order_batch = "order_batch"
     model_lifecycle = "model_lifecycle"
+    portfolio_policy_activation = "portfolio_policy_activation"
     account_reconciliation_adjustment = "account_reconciliation_adjustment"
     risk_control_override = "risk_control_override"
 

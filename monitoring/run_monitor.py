@@ -52,6 +52,8 @@ from .checks import (
     check_formula_batch_eval,
     check_formula_corpus,
     check_factor_certification,
+    check_portfolio_certification,
+    check_portfolio_lab,
     check_experiment_merge_status,
     check_experiment_shard_failures,
     check_alphagpt_pretrain,
@@ -203,6 +205,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stress-backtest-report-path")
     parser.add_argument("--factor-certification-decision-path")
     parser.add_argument("--factor-certification-scorecard-path")
+    parser.add_argument("--portfolio-lab-report-path")
+    parser.add_argument("--portfolio-robustness-report-path")
+    parser.add_argument("--portfolio-policy-trials-path")
+    parser.add_argument("--selected-portfolio-policy-path")
+    parser.add_argument("--portfolio-certification-decision-path")
+    parser.add_argument("--portfolio-certification-scorecard-path")
+    parser.add_argument("--certified-portfolio-policy-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -270,6 +279,23 @@ def main(argv: list[str] | None = None) -> int:
         (
             "factor_certification",
             lambda: check_factor_certification(args.factor_certification_decision_path, args.factor_certification_scorecard_path),
+        ),
+        (
+            "portfolio_lab",
+            lambda: check_portfolio_lab(
+                args.portfolio_lab_report_path,
+                args.portfolio_robustness_report_path,
+                args.portfolio_policy_trials_path,
+                args.selected_portfolio_policy_path,
+            ),
+        ),
+        (
+            "portfolio_certification",
+            lambda: check_portfolio_certification(
+                args.portfolio_certification_decision_path,
+                args.portfolio_certification_scorecard_path,
+                args.certified_portfolio_policy_path,
+            ),
         ),
         (
             "uncertified_production_candidate",

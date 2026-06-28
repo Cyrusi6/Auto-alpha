@@ -16,6 +16,7 @@ from factor_store import LocalFactorStore
 from model_core.data_loader import AShareDataLoader
 from capacity_model import write_capacity_report
 from execution_plan import write_execution_plan_report
+from portfolio_optimizer import load_portfolio_policy, portfolio_policy_from_payload, validate_certified_portfolio_policy
 from risk_model import write_risk_model_report, write_risk_report
 from risk_controls import evaluate_order_records
 from data_lake import validate_research_input
@@ -59,7 +60,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--top-n", type=int, default=20)
     parser.add_argument("--max-weight", type=float, default=0.10)
     parser.add_argument("--portfolio-method", choices=["equal_weight", "risk_aware"], default="equal_weight")
+    parser.add_argument("--portfolio-policy-path")
+    parser.add_argument("--portfolio-policy-id")
+    parser.add_argument("--require-certified-portfolio-policy", action="store_true")
+    parser.add_argument("--portfolio-certification-decision-path")
+    parser.add_argument("--active-optimizer-policy", action="store_true")
+    parser.add_argument("--model-registry-dir")
     parser.add_argument("--index-code", default="000300.SH")
+    parser.add_argument("--universe-name")
+    parser.add_argument("--universe-file")
     parser.add_argument("--risk-aversion", type=float, default=1.0)
     parser.add_argument("--turnover-penalty", type=float, default=0.1)
     parser.add_argument("--max-turnover", type=float, default=1.0)
@@ -143,9 +152,15 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.data_freeze_dir:
         args.data_dir = str(Path(args.data_freeze_dir) / "data")
+    portfolio_policy, policy_gate = _resolve_portfolio_policy(args)
+    if policy_gate.get("blocked"):
+        print(json.dumps({"error": "portfolio policy certification gate failed", "portfolio_policy_gate": policy_gate}, ensure_ascii=False))
+        return 1
     loader = AShareDataLoader(
         data_dir=args.data_dir,
         device="cpu",
+        universe_file=args.universe_file,
+        universe_name=args.universe_name,
         point_in_time=args.point_in_time,
         feature_cutoff_mode=args.feature_cutoff_mode,
         min_listing_days=args.min_listing_days,
@@ -167,6 +182,7 @@ def main(argv: list[str] | None = None) -> int:
     factor_meta = describe_factor(store, factor_id)
     values = store.load_factor_values(factor_id)
     factors = factor_values_to_matrix(values, loader.ts_codes, loader.trade_dates)
+    policy_context = _portfolio_policy_context(portfolio_policy, policy_gate)
 
     simulator = AShareBacktestSimulator(
         initial_cash=args.initial_cash,
@@ -227,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "backtest_result.json").write_text(
-        json.dumps(result.to_dict(), ensure_ascii=False, indent=2),
+        json.dumps(_backtest_payload(result, policy_context), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     _write_jsonl(output_dir / "equity_curve.jsonl", result.snapshots)
@@ -279,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
                 "risk_control_error_count": float(report.error_count),
             }
         )
-        (output_dir / "backtest_result.json").write_text(json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        (output_dir / "backtest_result.json").write_text(json.dumps(_backtest_payload(result, policy_context), ensure_ascii=False, indent=2), encoding="utf-8")
         if args.risk_fail_on_breach and report.rejected_orders > 0:
             print(json.dumps({"error": "risk controls rejected backtest orders", **risk_control_summary}, ensure_ascii=False))
             return 1
@@ -392,7 +408,7 @@ def main(argv: list[str] | None = None) -> int:
             leakage_gate_status = str(payload.get("leakage_gate_status") or payload.get("status") or "unknown")
             result.metrics["leakage_warning_count"] = float(payload.get("warning_count", 0) or 0)
             result.metrics["leakage_blocker_count"] = float(payload.get("blocker_count", 0) or 0)
-            (output_dir / "backtest_result.json").write_text(json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+            (output_dir / "backtest_result.json").write_text(json.dumps(_backtest_payload(result, policy_context), ensure_ascii=False, indent=2), encoding="utf-8")
 
     settlement_paths: dict[str, str | None] = {
         "settlement_report_path": None,
@@ -457,7 +473,7 @@ def main(argv: list[str] | None = None) -> int:
                 "settlement_reconciliation_error_count": float(reconciliation_payload.get("error_count", 0) or 0),
             }
         )
-        (output_dir / "backtest_result.json").write_text(json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        (output_dir / "backtest_result.json").write_text(json.dumps(_backtest_payload(result, policy_context), ensure_ascii=False, indent=2), encoding="utf-8")
 
     validation_paths: dict[str, str | None] = {
         "stress_backtest_report_path": None,
@@ -488,7 +504,7 @@ def main(argv: list[str] | None = None) -> int:
                 "stress_scenario_count": float(stress_summary.get("stress_scenario_count", 0) or 0),
             }
         )
-        enriched = result.to_dict()
+        enriched = _backtest_payload(result, policy_context)
         enriched["validation_bundle"] = validation_summary
         enriched["validation_paths"] = validation_paths
         (output_dir / "backtest_result.json").write_text(json.dumps(enriched, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -498,6 +514,9 @@ def main(argv: list[str] | None = None) -> int:
         "factor_type": factor_meta["factor_type"],
         "component_factor_ids": factor_meta["component_factor_ids"],
         "portfolio_method": args.portfolio_method,
+        "portfolio_policy_id": portfolio_policy.policy_id if portfolio_policy else None,
+        "portfolio_policy_path": args.portfolio_policy_path,
+        "portfolio_policy_gate": policy_gate,
         "output_dir": str(output_dir),
         "metrics": result.metrics,
         "n_snapshots": len(result.snapshots),
@@ -537,6 +556,63 @@ def main(argv: list[str] | None = None) -> int:
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0
+
+
+def _resolve_portfolio_policy(args: argparse.Namespace):
+    policy = None
+    if args.active_optimizer_policy:
+        if not args.model_registry_dir:
+            return None, {"blocked": True, "reason": "model_registry_dir_required_for_active_optimizer_policy"}
+        from model_registry import LocalModelRegistry
+
+        active = LocalModelRegistry(args.model_registry_dir).latest_active_optimizer_policy()
+        if active is None:
+            return None, {"blocked": bool(args.require_certified_portfolio_policy), "reason": "active_optimizer_policy_not_found"}
+        source = active.source_artifacts.get("certified_portfolio_policy_path") or active.source_artifacts.get("selected_portfolio_policy_path")
+        if source and Path(source).exists():
+            policy = load_portfolio_policy(source)
+            args.portfolio_policy_path = str(source)
+        else:
+            policy = portfolio_policy_from_payload(active.metadata.get("portfolio_policy", active.metadata))
+    elif args.portfolio_policy_path:
+        policy = load_portfolio_policy(args.portfolio_policy_path)
+
+    if policy is not None:
+        args.portfolio_method = policy.portfolio_method
+        args.index_code = policy.index_code
+        args.top_n = policy.top_n
+        args.max_weight = policy.max_weight
+        args.risk_aversion = policy.risk_aversion
+        args.turnover_penalty = policy.turnover_penalty
+        args.max_turnover = policy.max_turnover
+        args.max_industry_active_weight = policy.max_industry_active_weight
+        args.max_tracking_error = policy.max_tracking_error
+        args.use_factor_risk_model = policy.use_factor_risk_model
+        args.risk_model_lookback = policy.risk_model_lookback
+        args.risk_model_shrinkage = policy.risk_model_shrinkage
+        args.max_style_exposure = policy.max_style_exposure
+        args.max_active_style_exposure = policy.max_active_style_exposure
+        args.max_factor_risk_contribution = policy.max_factor_risk_contribution
+
+    gate = validate_certified_portfolio_policy(
+        args.portfolio_policy_path,
+        args.portfolio_certification_decision_path,
+        require=args.require_certified_portfolio_policy,
+    ).to_dict()
+    if policy is not None and not args.portfolio_policy_path and policy.certification_status in {"certified", "conditional"}:
+        gate.update({"certified": True, "status": policy.certification_status, "reasons": []})
+    gate["blocked"] = bool(args.require_certified_portfolio_policy and gate.get("reasons"))
+    return policy, gate
+
+
+def _portfolio_policy_context(policy, gate: dict[str, object]) -> dict[str, object]:
+    return {"policy": policy.to_dict() if policy is not None else None, "gate": gate}
+
+
+def _backtest_payload(result, policy_context: dict[str, object]) -> dict[str, object]:
+    payload = result.to_dict()
+    payload["portfolio_policy"] = policy_context
+    return payload
 
 
 def _write_corporate_action_artifacts(args: argparse.Namespace, loader: AShareDataLoader) -> tuple[dict[str, str | None], dict[str, object]]:

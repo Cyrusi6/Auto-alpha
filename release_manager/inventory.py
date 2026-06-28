@@ -45,6 +45,8 @@ PLATFORM_MODULES = [
     "paper_account",
     "performance_benchmark",
     "point_in_time",
+    "portfolio_certification",
+    "portfolio_lab",
     "portfolio_optimizer",
     "reconciliation_center",
     "research",

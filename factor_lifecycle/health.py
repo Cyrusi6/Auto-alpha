@@ -307,6 +307,80 @@ def _artifact_checks(paths: dict[str, str], policy: LifecyclePolicy) -> list[Fac
         )
     elif policy.require_factor_certification:
         checks.append(FactorHealthCheck("certification_status", "error", False, message="factor certification required but missing"))
+    portfolio_lab = _read_json(paths.get("portfolio_lab_report_path") or paths.get("portfolio_lab_report"))
+    if portfolio_lab:
+        summary = portfolio_lab.get("summary", {}) if isinstance(portfolio_lab.get("summary"), dict) else {}
+        robustness = portfolio_lab.get("robustness", {}) if isinstance(portfolio_lab.get("robustness"), dict) else {}
+        pass_ratio = float(
+            summary.get("scenario_pass_ratio", robustness.get("scenario_pass_ratio", 0.0)) or 0.0
+        )
+        checks.append(
+            _check(
+                "portfolio_scenario_pass_ratio",
+                pass_ratio >= policy.min_portfolio_scenario_pass_ratio,
+                pass_ratio,
+                policy.min_portfolio_scenario_pass_ratio,
+                "error" if policy.require_portfolio_certification else "warning",
+            )
+        )
+    elif policy.require_portfolio_certification:
+        checks.append(FactorHealthCheck("portfolio_lab", "error", False, message="portfolio lab report required but missing"))
+    portfolio_certification = _read_json(
+        paths.get("portfolio_certification_decision_path") or paths.get("portfolio_certification_decision")
+    )
+    if portfolio_certification:
+        status = str(portfolio_certification.get("status") or portfolio_certification.get("certification_status") or "")
+        checks_payload = portfolio_certification.get("checks", {})
+        blocker_count = int(portfolio_certification.get("blocker_count", 0) or 0)
+        if isinstance(checks_payload, dict):
+            blocker_count = int(blocker_count or checks_payload.get("blocker_count", 0) or 0)
+        status_passed = status in policy.allowed_portfolio_certification_statuses
+        blockers_passed = blocker_count <= policy.max_portfolio_certification_blocker_count
+        checks.append(
+            FactorHealthCheck(
+                "portfolio_certification_status",
+                "error" if not status_passed else "info",
+                status_passed,
+                status,
+                ",".join(policy.allowed_portfolio_certification_statuses),
+                "portfolio certification decision",
+            )
+        )
+        checks.append(
+            _check(
+                "portfolio_certification_blockers",
+                blockers_passed,
+                blocker_count,
+                policy.max_portfolio_certification_blocker_count,
+                "error",
+            )
+        )
+    elif policy.require_portfolio_certification:
+        checks.append(
+            FactorHealthCheck(
+                "portfolio_certification_status",
+                "error",
+                False,
+                message="portfolio certification required but missing",
+            )
+        )
+    certified_policy = _read_json(paths.get("certified_portfolio_policy_path") or paths.get("certified_portfolio_policy"))
+    if certified_policy:
+        policy_id = (
+            certified_policy.get("portfolio_policy", {}).get("policy_id")
+            if isinstance(certified_policy.get("portfolio_policy"), dict)
+            else certified_policy.get("policy_id")
+        )
+        checks.append(
+            FactorHealthCheck(
+                "certified_portfolio_policy",
+                "info",
+                True,
+                str(policy_id or ""),
+                None,
+                "certified portfolio policy attached",
+            )
+        )
     return checks
 
 

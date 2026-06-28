@@ -253,6 +253,23 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
     "factor_certification_decision": _definition("factor_certification_decision", ["factor_id", "status", "passed"], ["factor_certification_decision.json"]),
     "factor_certification_package": _definition("factor_certification_package", ["factor_id", "policy", "scorecard", "decision"], ["factor_certification_package.json"]),
     "factor_certification_checks": _definition("factor_certification_checks", ["name", "status", "severity"], ["factor_certification_checks.jsonl"], kind="jsonl", allow_empty=True),
+    "portfolio_policy": _definition("portfolio_policy", ["policy_id", "portfolio_method"], ["portfolio_policy.json"]),
+    "portfolio_policy_grid": _definition("portfolio_policy_grid", ["policies"], ["portfolio_policy_grid.json"]),
+    "portfolio_scenarios": _definition("portfolio_scenarios", ["scenarios"], ["portfolio_scenarios.json"]),
+    "portfolio_lab_report": _definition("portfolio_lab_report", ["lab_id", "status", "factor_id", "summary"], ["portfolio_lab_report.json"]),
+    "portfolio_policy_trials": _definition("portfolio_policy_trials", ["trial_id", "policy_id", "scenario_id"], ["portfolio_policy_trials.jsonl"], kind="jsonl", allow_empty=True),
+    "portfolio_trial_metrics": _definition("portfolio_trial_metrics", ["trial_id", "policy_id", "score"], ["portfolio_trial_metrics.jsonl"], kind="jsonl", allow_empty=True),
+    "portfolio_robustness_report": _definition("portfolio_robustness_report", ["ranked_policies"], ["portfolio_robustness_report.json"]),
+    "selected_portfolio_policy": _definition("selected_portfolio_policy", ["policy_id", "portfolio_method"], ["selected_portfolio_policy.json"]),
+    "portfolio_lab_issues": _definition("portfolio_lab_issues", ["severity", "code", "message"], ["portfolio_lab_issues.jsonl"], kind="jsonl", allow_empty=True),
+    "portfolio_lab_artifact_catalog": _definition("portfolio_lab_artifact_catalog", ["entries"], ["portfolio_lab_artifact_catalog.json"]),
+    "portfolio_certification_policy": _definition("portfolio_certification_policy", ["policy_id", "profile_name"], ["portfolio_certification_policy.json"]),
+    "portfolio_certification_scorecard": _definition("portfolio_certification_scorecard", ["portfolio_policy_id", "checks", "summary"], ["portfolio_certification_scorecard.json"]),
+    "portfolio_certification_decision": _definition("portfolio_certification_decision", ["portfolio_policy_id", "status", "passed"], ["portfolio_certification_decision.json"]),
+    "portfolio_certification_package": _definition("portfolio_certification_package", ["portfolio_policy_id", "portfolio_policy", "scorecard", "decision"], ["portfolio_certification_package.json"]),
+    "portfolio_certification_checks": _definition("portfolio_certification_checks", ["name", "status", "severity"], ["portfolio_certification_checks.jsonl"], kind="jsonl", allow_empty=True),
+    "certified_portfolio_policy": _definition("certified_portfolio_policy", ["policy_id", "portfolio_method", "certification_status"], ["certified_portfolio_policy.json"]),
+    "portfolio_policy_activation_request": _definition("portfolio_policy_activation_request", ["portfolio_policy_id", "requested_action"], ["portfolio_policy_activation_request.json"]),
 }
 
 

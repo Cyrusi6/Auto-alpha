@@ -1328,6 +1328,62 @@ def check_factor_certification(
     }, alerts
 
 
+def check_portfolio_lab(
+    path: str | Path | None,
+    robustness_path: str | Path | None = None,
+    trials_path: str | Path | None = None,
+    selected_policy_path: str | Path | None = None,
+) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    robustness = _read_json(Path(robustness_path)) if robustness_path else {}
+    selected_policy = _read_json(Path(selected_policy_path)) if selected_policy_path else {}
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    selected_id = summary.get("selected_policy_id") or robustness.get("selected_policy_id") or selected_policy.get("policy_id")
+    error_count = int(summary.get("error_count", 0) or 0) if summary else 0
+    trial_count = int(summary.get("trial_count", 0) or 0) if summary else 0
+    if not trial_count and trials_path and Path(trials_path).exists():
+        trial_count = sum(1 for line in Path(trials_path).read_text(encoding="utf-8").splitlines() if line.strip())
+    alerts = [MonitoringAlert("warning", "portfolio_lab", "portfolio lab has failed trials", {"error_count": error_count})] if error_count else []
+    return {
+        "exists": bool(payload),
+        "portfolio_lab_status": str(payload.get("status", "missing") if payload else "missing"),
+        "portfolio_lab_trial_count": trial_count,
+        "selected_portfolio_policy_id": selected_id,
+        "selected_portfolio_method": selected_policy.get("portfolio_method") if selected_policy else None,
+        "portfolio_lab_error_count": error_count,
+        "portfolio_selection_score": float(robustness.get("selected_score", 0.0) or 0.0) if robustness else 0.0,
+    }, alerts
+
+
+def check_portfolio_certification(
+    path: str | Path | None,
+    scorecard_path: str | Path | None = None,
+    certified_policy_path: str | Path | None = None,
+) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    scorecard = _read_json(Path(scorecard_path)) if scorecard_path else {}
+    certified_policy = _read_json(Path(certified_policy_path)) if certified_policy_path else {}
+    status = str(payload.get("status", "") if payload else "")
+    remediation = len(payload.get("required_remediation", []) or []) if payload else 0
+    blocker_count = int((payload.get("checks") or {}).get("blocker_count", 0) or 0) if payload else 0
+    if not blocker_count and isinstance(scorecard.get("summary"), dict):
+        blocker_count = int(scorecard["summary"].get("blocker_count", 0) or 0)
+    alerts = []
+    if status in {"rejected", "insufficient_data"}:
+        alerts.append(MonitoringAlert("error", "portfolio_certification", "portfolio certification did not pass", {"status": status}))
+    elif status == "conditional":
+        alerts.append(MonitoringAlert("warning", "portfolio_certification", "portfolio certification is conditional", {"remediation": remediation}))
+    return {
+        "exists": bool(payload),
+        "portfolio_certification_status": status,
+        "portfolio_certification_passed": bool(payload.get("passed", False)) if payload else False,
+        "portfolio_certification_required_remediation_count": remediation,
+        "portfolio_certification_blocker_count": blocker_count,
+        "portfolio_policy_id": (payload.get("portfolio_policy_id") if payload else None) or certified_policy.get("policy_id"),
+        "certified_portfolio_policy_exists": bool(certified_policy),
+    }, alerts
+
+
 def check_uncertified_production_candidate(store: LocalFactorStore, certification_decision_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     latest = store.load_latest_factor(status="production_candidate", factor_type="composite") or store.load_latest_factor(status="production_candidate")
     decision = _read_json(Path(certification_decision_path)) if certification_decision_path else {}

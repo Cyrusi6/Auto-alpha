@@ -70,6 +70,12 @@ def _build_parser() -> argparse.ArgumentParser:
         cmd.add_argument("--stress-backtest-report-path")
         cmd.add_argument("--factor-certification-decision-path")
         cmd.add_argument("--factor-certification-scorecard-path")
+        cmd.add_argument("--portfolio-lab-report-path")
+        cmd.add_argument("--portfolio-robustness-report-path")
+        cmd.add_argument("--portfolio-certification-decision-path")
+        cmd.add_argument("--portfolio-certification-scorecard-path")
+        cmd.add_argument("--certified-portfolio-policy-path")
+        cmd.add_argument("--optimizer-policy-model-version-id")
         cmd.add_argument("--create-review-package", action="store_true")
         cmd.add_argument("--propose-activation", action="store_true")
         cmd.add_argument("--require-approval", action="store_true")
@@ -161,6 +167,12 @@ def _evaluate(args, registry, store, factor, model):
         "stress_backtest_report": args.stress_backtest_report_path,
         "factor_certification_decision": args.factor_certification_decision_path,
         "factor_certification_scorecard": args.factor_certification_scorecard_path,
+        "portfolio_lab_report": args.portfolio_lab_report_path,
+        "portfolio_robustness_report": args.portfolio_robustness_report_path,
+        "portfolio_certification_decision": args.portfolio_certification_decision_path,
+        "portfolio_certification_scorecard": args.portfolio_certification_scorecard_path,
+        "certified_portfolio_policy": args.certified_portfolio_policy_path,
+        "optimizer_policy_model_version_id": args.optimizer_policy_model_version_id,
     }
     metrics, checks = evaluate_factor_health(loader, store, factor.factor_id, args.as_of_date, policy, artifact_paths)
     current_status = model.lifecycle_status if model else factor.status

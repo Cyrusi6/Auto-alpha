@@ -189,6 +189,28 @@ class ResearchSuiteConfig:
     certification_policy_profile: str = "sample_lenient_certification"
     require_certification: bool = False
     fail_on_certification_rejected: bool = False
+    run_portfolio_lab: bool = False
+    portfolio_lab_dir: str | None = None
+    portfolio_lab_scenario_profile: str = "sample"
+    portfolio_policy_grid_path: str | None = None
+    portfolio_methods: str = "equal_weight,risk_aware"
+    portfolio_risk_aversions: str = "0.5,1.0"
+    portfolio_turnover_penalties: str = "0.0,0.1"
+    portfolio_benchmark_weights: str = "1.0"
+    portfolio_max_weight_values: str = "0.10"
+    portfolio_max_names_values: str = "2,20"
+    portfolio_max_turnover_values: str = "1.0"
+    portfolio_max_tracking_error_values: str = "1.0"
+    portfolio_top_n_values: str = "2,20"
+    run_portfolio_certification: bool = False
+    portfolio_certification_dir: str | None = None
+    portfolio_certification_policy_path: str | None = None
+    portfolio_certification_policy_profile: str = "sample_lenient_portfolio"
+    require_portfolio_certification: bool = False
+    fail_on_portfolio_certification_rejected: bool = False
+    create_portfolio_policy_approval: bool = False
+    portfolio_policy_approval_store_dir: str | None = None
+    register_optimizer_policy: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

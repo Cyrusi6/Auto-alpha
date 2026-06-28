@@ -78,6 +78,61 @@ class LocalModelRegistry:
         self._write_state()
         return record
 
+    def register_portfolio_policy(
+        self,
+        certified_portfolio_policy: dict[str, Any],
+        source_artifacts: dict[str, str] | None = None,
+        metadata: dict[str, Any] | None = None,
+        lifecycle_status: str | None = None,
+    ) -> ModelVersionRecord:
+        policy_payload = _extract_policy_payload(certified_portfolio_policy)
+        policy_id = str(policy_payload.get("policy_id") or policy_payload.get("portfolio_policy_id") or "")
+        if not policy_id:
+            raise ValueError("portfolio policy payload must include policy_id")
+        formula_hash = hashlib.sha256(
+            json.dumps(policy_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        existing = self._find_existing(policy_id, formula_hash, ModelKind.optimizer_policy)
+        if existing is not None:
+            return existing
+        now = _utc_now()
+        merged_metadata = {
+            "portfolio_policy": policy_payload,
+            "source_factor_id": policy_payload.get("source_factor_id"),
+            "certification_status": policy_payload.get("certification_status"),
+            **dict(metadata or {}),
+        }
+        record = ModelVersionRecord(
+            model_version_id=make_model_version_id(ModelKind.optimizer_policy, policy_id, formula_hash),
+            model_kind=ModelKind.optimizer_policy,
+            factor_id=policy_id,
+            factor_type="optimizer_policy",
+            formula_hash=formula_hash,
+            parent_factor_ids=[str(policy_payload.get("source_factor_id"))] if policy_payload.get("source_factor_id") else [],
+            source_batch_id=str(policy_payload.get("source_suite_name") or ""),
+            source_run_id=str(policy_payload.get("metadata", {}).get("lab_id") or "") if isinstance(policy_payload.get("metadata"), dict) else "",
+            source_artifacts=source_artifacts or {},
+            metrics={},
+            gate_status=str(policy_payload.get("certification_status") or ""),
+            lifecycle_status=lifecycle_status or ModelLifecycleStatus.approved,
+            created_at=now,
+            updated_at=now,
+            metadata=merged_metadata,
+        )
+        self.root_dir.mkdir(parents=True, exist_ok=True)
+        _append_jsonl(self.versions_path, record.to_dict())
+        self._append_event(
+            record.model_version_id,
+            None,
+            record.lifecycle_status,
+            ModelLifecycleAction.register,
+            "system",
+            "registered portfolio optimizer policy",
+            metadata={"portfolio_policy_id": policy_id},
+        )
+        self._write_state()
+        return record
+
     def get_model_version(self, model_version_id: str) -> ModelVersionRecord | None:
         for record in self.load_model_versions():
             if record.model_version_id == model_version_id:
@@ -96,6 +151,9 @@ class LocalModelRegistry:
     def latest_active(self, model_kind: str = ModelKind.composite_factor, environment: str = "paper") -> ModelVersionRecord | None:
         deployment = self.latest_active_deployment(model_kind=model_kind, environment=environment)
         return self.get_model_version(deployment.model_version_id) if deployment is not None else None
+
+    def latest_active_optimizer_policy(self, environment: str = "paper") -> ModelVersionRecord | None:
+        return self.latest_active(model_kind=ModelKind.optimizer_policy, environment=environment)
 
     def latest_active_deployment(self, model_kind: str = ModelKind.composite_factor, environment: str = "paper") -> ModelDeploymentRecord | None:
         deployments = [
@@ -381,6 +439,14 @@ def make_event_id(model_version_id: str, action: str, created_at: str, index: in
 
 def _kind_from_factor(record: FactorRecord) -> str:
     return ModelKind.composite_factor if (record.factor_type or "") == "composite" else ModelKind.single_factor
+
+
+def _extract_policy_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    for key in ("portfolio_policy", "selected_policy", "certified_portfolio_policy", "policy"):
+        candidate = payload.get(key)
+        if isinstance(candidate, dict):
+            return dict(candidate)
+    return dict(payload)
 
 
 def _status_from_factor(status: str) -> str:

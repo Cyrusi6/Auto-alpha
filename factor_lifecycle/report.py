@@ -87,7 +87,16 @@ def _render_review_markdown(package: ModelReviewPackage) -> str:
             "## Health Summary",
             "",
             "```json",
-            json.dumps(package.lifecycle_decision, ensure_ascii=False, indent=2),
+            json.dumps(
+                {
+                    "lifecycle_decision": package.lifecycle_decision,
+                    "portfolio_lab_summary": package.portfolio_lab_summary,
+                    "portfolio_certification_summary": package.portfolio_certification_summary,
+                    "optimizer_policy_summary": package.optimizer_policy_summary,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
             "```",
         ]
     )

@@ -27,6 +27,7 @@ from factor_store import LocalFactorStore
 from model_core.data_loader import AShareDataLoader
 from model_registry import LocalModelRegistry, ModelKind, ModelLifecycleStatus, write_model_registry_report
 from paper_account import LocalPaperAccount, compute_account_performance
+from portfolio_optimizer import load_portfolio_policy, portfolio_policy_from_payload, validate_certified_portfolio_policy
 from risk_controls import LocalRiskControlState
 from strategy_manager.runner import AShareStrategyRunner
 from data_lake import validate_research_input
@@ -48,6 +49,13 @@ class ProductionDailyRunner:
         latest_production: bool = False,
         rebalance_date: str | None = None,
         portfolio_method: str = "equal_weight",
+        portfolio_policy_path: str | Path | None = None,
+        portfolio_certification_decision_path: str | Path | None = None,
+        certified_portfolio_policy_path: str | Path | None = None,
+        require_certified_portfolio_policy: bool = False,
+        active_optimizer_policy: bool = False,
+        require_active_optimizer_policy: bool = False,
+        portfolio_policy_model_version_id: str | None = None,
         index_code: str = "000300.SH",
         top_n: int = 20,
         max_weight: float = 0.10,
@@ -144,6 +152,15 @@ class ProductionDailyRunner:
         self.latest_production = bool(latest_production)
         self.rebalance_date = rebalance_date
         self.portfolio_method = portfolio_method
+        self.portfolio_policy_path = Path(portfolio_policy_path) if portfolio_policy_path is not None else None
+        self.portfolio_certification_decision_path = (
+            Path(portfolio_certification_decision_path) if portfolio_certification_decision_path is not None else None
+        )
+        self.certified_portfolio_policy_path = Path(certified_portfolio_policy_path) if certified_portfolio_policy_path is not None else None
+        self.require_certified_portfolio_policy = bool(require_certified_portfolio_policy)
+        self.active_optimizer_policy = bool(active_optimizer_policy)
+        self.require_active_optimizer_policy = bool(require_active_optimizer_policy)
+        self.portfolio_policy_model_version_id = portfolio_policy_model_version_id
         self.index_code = index_code
         self.top_n = int(top_n)
         self.max_weight = float(max_weight)
@@ -218,6 +235,50 @@ class ProductionDailyRunner:
         self.block_on_kill_switch = bool(block_on_kill_switch)
         self.force_risk_local_override = bool(force_risk_local_override)
         self._model_context: dict[str, Any] = {}
+        self.portfolio_policy = None
+        self.portfolio_policy_gate: dict[str, Any] = {}
+        self._apply_portfolio_policy()
+
+    def _apply_portfolio_policy(self) -> None:
+        policy = None
+        source_path = self.certified_portfolio_policy_path or self.portfolio_policy_path
+        if self.active_optimizer_policy or self.require_active_optimizer_policy:
+            active = LocalModelRegistry(self.model_registry_dir).latest_active_optimizer_policy(environment=self.model_environment)
+            if active is None:
+                if self.require_active_optimizer_policy:
+                    raise ValueError("active optimizer policy is required but no active optimizer policy exists")
+            else:
+                self.portfolio_policy_model_version_id = active.model_version_id
+                source = active.source_artifacts.get("certified_portfolio_policy_path") or active.source_artifacts.get("selected_portfolio_policy_path")
+                if source and Path(source).exists():
+                    source_path = Path(source)
+                    policy = load_portfolio_policy(source_path)
+                else:
+                    policy = portfolio_policy_from_payload(active.metadata.get("portfolio_policy", active.metadata))
+        elif source_path is not None:
+            policy = load_portfolio_policy(source_path)
+        if policy is not None:
+            self.portfolio_policy_path = source_path
+            self.portfolio_method = policy.portfolio_method
+            self.index_code = policy.index_code
+            self.top_n = policy.top_n
+            self.max_weight = policy.max_weight
+            self.use_factor_risk_model = policy.use_factor_risk_model
+            self.risk_model_lookback = policy.risk_model_lookback
+            self.risk_model_shrinkage = policy.risk_model_shrinkage
+            self.max_style_exposure = policy.max_style_exposure
+            self.max_active_style_exposure = policy.max_active_style_exposure
+        gate = validate_certified_portfolio_policy(
+            source_path,
+            self.portfolio_certification_decision_path,
+            require=self.require_certified_portfolio_policy,
+        ).to_dict()
+        if policy is not None and source_path is None and policy.certification_status in {"certified", "conditional"}:
+            gate.update({"certified": True, "status": policy.certification_status, "reasons": []})
+        if self.require_certified_portfolio_policy and gate.get("reasons"):
+            raise ValueError(f"portfolio policy certification gate failed: {gate.get('reasons')}")
+        self.portfolio_policy = policy
+        self.portfolio_policy_gate = gate
 
     def run(
         self,
@@ -275,6 +336,11 @@ class ProductionDailyRunner:
             portfolio_value=self.portfolio_value,
             factor_type="any",
             portfolio_method=self.portfolio_method,
+            portfolio_policy_path=self.portfolio_policy_path,
+            require_certified_portfolio_policy=self.require_certified_portfolio_policy,
+            portfolio_certification_decision_path=self.portfolio_certification_decision_path,
+            model_registry_dir=self.model_registry_dir,
+            active_optimizer_policy=False,
             index_code=self.index_code,
             use_factor_risk_model=self.use_factor_risk_model,
             risk_model_lookback=self.risk_model_lookback,
@@ -354,9 +420,11 @@ class ProductionDailyRunner:
                 "performance": compute_account_performance(account_state),
             }
         self._attach_model_metadata_to_summary(summary)
+        self._attach_portfolio_policy_metadata_to_summary(summary)
         self._attach_data_freeze_metadata(summary)
         if require_approval and summary.get("approval_id"):
             self._attach_model_metadata_to_approval(str(summary["approval_id"]))
+            self._attach_portfolio_policy_metadata_to_approval(str(summary["approval_id"]))
         return ProductionRunResult(
             run_id=run_id,
             created_at=created_at,
@@ -414,6 +482,7 @@ class ProductionDailyRunner:
         if batch.status != ApprovalStatus.approved:
             raise ValueError(f"approval batch must be approved before execution: {approval_id} is {batch.status}")
         self._validate_approval_model_context(batch)
+        self._validate_approval_portfolio_policy_context(batch)
         loader = AShareDataLoader(
             data_dir=self.data_dir,
             device="cpu",
@@ -846,6 +915,30 @@ class ProductionDailyRunner:
         updated = replace(batch, model_version_id=self._model_context.get("model_version_id"), lifecycle_summary=self._model_context, metadata=metadata)
         store.save_batch(updated)
 
+    def _attach_portfolio_policy_metadata_to_summary(self, summary: dict[str, Any]) -> None:
+        summary["portfolio_policy_id"] = self.portfolio_policy.policy_id if self.portfolio_policy else summary.get("portfolio_policy_id")
+        summary["portfolio_policy_path"] = str(self.portfolio_policy_path) if self.portfolio_policy_path else summary.get("portfolio_policy_path")
+        summary["portfolio_policy_gate"] = self.portfolio_policy_gate
+        summary["portfolio_policy_model_version_id"] = self.portfolio_policy_model_version_id
+        summary["require_certified_portfolio_policy"] = self.require_certified_portfolio_policy
+
+    def _attach_portfolio_policy_metadata_to_approval(self, approval_id: str) -> None:
+        if not self.portfolio_policy and not self.portfolio_policy_gate:
+            return
+        store = LocalApprovalStore(self.approval_store_dir)
+        batch = store.load_batch(approval_id)
+        metadata = dict(batch.metadata or {})
+        metadata.update(
+            {
+                "portfolio_policy_id": self.portfolio_policy.policy_id if self.portfolio_policy else None,
+                "portfolio_policy_path": str(self.portfolio_policy_path) if self.portfolio_policy_path else None,
+                "portfolio_policy_gate": self.portfolio_policy_gate,
+                "portfolio_policy_model_version_id": self.portfolio_policy_model_version_id,
+                "require_certified_portfolio_policy": self.require_certified_portfolio_policy,
+            }
+        )
+        store.save_batch(replace(batch, metadata=metadata))
+
     def _validate_approval_model_context(self, batch: Any) -> None:
         if not self.use_model_registry:
             return
@@ -867,6 +960,22 @@ class ProductionDailyRunner:
                 "model_registry_dir": str(self.model_registry_dir),
                 "model_registry_warning_count": 0,
             }
+
+    def _validate_approval_portfolio_policy_context(self, batch: Any) -> None:
+        if not self.require_certified_portfolio_policy and not self.require_active_optimizer_policy:
+            return
+        metadata = dict(batch.metadata or {})
+        gate = metadata.get("portfolio_policy_gate") if isinstance(metadata.get("portfolio_policy_gate"), dict) else {}
+        if self.require_certified_portfolio_policy and gate.get("reasons"):
+            raise ValueError("approval portfolio policy certification gate is not passed")
+        if self.require_active_optimizer_policy:
+            active = LocalModelRegistry(self.model_registry_dir).latest_active_optimizer_policy(environment=self.model_environment)
+            if active is None:
+                raise ValueError("active optimizer policy is required for approved execution")
+            approved_policy_id = metadata.get("portfolio_policy_id")
+            active_policy_id = (active.metadata.get("portfolio_policy") or {}).get("policy_id") if isinstance(active.metadata, dict) else None
+            if approved_policy_id and active_policy_id and approved_policy_id != active_policy_id:
+                raise ValueError("approval portfolio policy does not match active optimizer policy")
 
     def _apply_corporate_actions(self, trade_date: str, prices: dict[str, float]) -> dict[str, Any]:
         events = _load_corporate_action_events(self.data_dir, self._corporate_action_dir(), self.corporate_action_cash_field)

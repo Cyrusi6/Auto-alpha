@@ -22,7 +22,13 @@ from execution_plan import (
 from factor_store import LocalFactorStore
 from data_lake import validate_research_input
 from model_core.data_loader import AShareDataLoader
-from portfolio_optimizer import OptimizationConfig, PortfolioOptimizer
+from portfolio_optimizer import (
+    OptimizationConfig,
+    PortfolioOptimizer,
+    load_portfolio_policy,
+    portfolio_policy_from_payload,
+    validate_certified_portfolio_policy,
+)
 from risk_controls import evaluate_order_records
 from risk_controls.overrides import create_override_approval
 from risk_model import (
@@ -53,6 +59,11 @@ class AShareStrategyRunner:
         latest_approved: bool = False,
         factor_type: str = "any",
         portfolio_method: str = "equal_weight",
+        portfolio_policy_path: str | Path | None = None,
+        require_certified_portfolio_policy: bool = False,
+        portfolio_certification_decision_path: str | Path | None = None,
+        model_registry_dir: str | Path | None = None,
+        active_optimizer_policy: bool = False,
         index_code: str = "000300.SH",
         risk_aversion: float = 1.0,
         turnover_penalty: float = 0.1,
@@ -126,6 +137,13 @@ class AShareStrategyRunner:
         self.latest_approved = bool(latest_approved)
         self.factor_type = factor_type
         self.portfolio_method = portfolio_method
+        self.portfolio_policy_path = Path(portfolio_policy_path) if portfolio_policy_path is not None else None
+        self.require_certified_portfolio_policy = bool(require_certified_portfolio_policy)
+        self.portfolio_certification_decision_path = (
+            Path(portfolio_certification_decision_path) if portfolio_certification_decision_path is not None else None
+        )
+        self.model_registry_dir = Path(model_registry_dir) if model_registry_dir is not None else None
+        self.active_optimizer_policy = bool(active_optimizer_policy)
         self.index_code = index_code
         self.risk_aversion = float(risk_aversion)
         self.turnover_penalty = float(turnover_penalty)
@@ -174,6 +192,58 @@ class AShareStrategyRunner:
         self.selected_factor_meta: dict[str, object] = {}
         self.optimization_summary: dict[str, object] | None = None
         self.risk_report = None
+        self.portfolio_policy = None
+        self.portfolio_policy_gate: dict[str, object] = {}
+        self._apply_portfolio_policy()
+
+    def _apply_portfolio_policy(self) -> None:
+        policy = None
+        if self.active_optimizer_policy:
+            if self.model_registry_dir is None:
+                raise ValueError("model_registry_dir is required when active_optimizer_policy is enabled")
+            from model_registry import LocalModelRegistry
+
+            active = LocalModelRegistry(self.model_registry_dir).latest_active_optimizer_policy()
+            if active is None:
+                if self.require_certified_portfolio_policy:
+                    raise ValueError("active optimizer policy is required but not found")
+            else:
+                source = active.source_artifacts.get("certified_portfolio_policy_path") or active.source_artifacts.get("selected_portfolio_policy_path")
+                if source and Path(source).exists():
+                    self.portfolio_policy_path = Path(source)
+                    policy = load_portfolio_policy(source)
+                else:
+                    policy = portfolio_policy_from_payload(active.metadata.get("portfolio_policy", active.metadata))
+        elif self.portfolio_policy_path is not None:
+            policy = load_portfolio_policy(self.portfolio_policy_path)
+
+        if policy is not None:
+            self.portfolio_method = policy.portfolio_method
+            self.index_code = policy.index_code
+            self.top_n = policy.top_n
+            self.max_weight = policy.max_weight
+            self.risk_aversion = policy.risk_aversion
+            self.turnover_penalty = policy.turnover_penalty
+            self.max_turnover = policy.max_turnover
+            self.max_industry_active_weight = policy.max_industry_active_weight
+            self.max_tracking_error = policy.max_tracking_error
+            self.use_factor_risk_model = policy.use_factor_risk_model
+            self.risk_model_lookback = policy.risk_model_lookback
+            self.risk_model_shrinkage = policy.risk_model_shrinkage
+            self.max_style_exposure = policy.max_style_exposure
+            self.max_active_style_exposure = policy.max_active_style_exposure
+
+        gate = validate_certified_portfolio_policy(
+            self.portfolio_policy_path,
+            self.portfolio_certification_decision_path,
+            require=self.require_certified_portfolio_policy,
+        ).to_dict()
+        if policy is not None and self.portfolio_policy_path is None and policy.certification_status in {"certified", "conditional"}:
+            gate.update({"certified": True, "status": policy.certification_status, "reasons": []})
+        if self.require_certified_portfolio_policy and gate.get("reasons"):
+            raise ValueError(f"portfolio policy certification gate failed: {gate.get('reasons')}")
+        self.portfolio_policy = policy
+        self.portfolio_policy_gate = gate
 
     def build_target_book(self) -> StrategyTargetBook:
         if self.portfolio_method not in {"equal_weight", "risk_aware"}:
@@ -403,6 +473,9 @@ class AShareStrategyRunner:
                     "orders_path": str(orders_jsonl),
                     "output_dir": str(self.output_dir),
                     "component_factor_ids": self.selected_factor_meta.get("component_factor_ids", []),
+                    "portfolio_policy_id": self.portfolio_policy.policy_id if self.portfolio_policy else None,
+                    "portfolio_policy_path": str(self.portfolio_policy_path) if self.portfolio_policy_path else None,
+                    "portfolio_policy_gate": self.portfolio_policy_gate,
                     "settlement_aware": self.settlement_aware,
                     "settlement_profile": self.settlement_profile,
                     "settlement_precheck": settlement_precheck,
@@ -437,6 +510,9 @@ class AShareStrategyRunner:
             "factor_type": self.selected_factor_meta.get("factor_type"),
             "component_factor_ids": self.selected_factor_meta.get("component_factor_ids", []),
             "portfolio_method": self.portfolio_method,
+            "portfolio_policy_id": self.portfolio_policy.policy_id if self.portfolio_policy else None,
+            "portfolio_policy_path": str(self.portfolio_policy_path) if self.portfolio_policy_path else None,
+            "portfolio_policy_gate": self.portfolio_policy_gate,
             "rebalance_date": target_book.trade_date,
             "n_targets": len(target_book.targets),
             "n_orders": len(orders),
@@ -596,6 +672,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-weight", type=float, default=defaults.max_weight)
     parser.add_argument("--portfolio-value", type=float, default=1_000_000.0)
     parser.add_argument("--portfolio-method", choices=["equal_weight", "risk_aware"], default="equal_weight")
+    parser.add_argument("--portfolio-policy-path")
+    parser.add_argument("--require-certified-portfolio-policy", action="store_true")
+    parser.add_argument("--portfolio-certification-decision-path")
+    parser.add_argument("--model-registry-dir")
+    parser.add_argument("--active-optimizer-policy", action="store_true")
     parser.add_argument("--index-code", default="000300.SH")
     parser.add_argument("--risk-aversion", type=float, default=1.0)
     parser.add_argument("--turnover-penalty", type=float, default=0.1)
@@ -666,6 +747,11 @@ def main(argv: list[str] | None = None) -> int:
         latest_approved=args.latest_approved,
         factor_type=args.factor_type,
         portfolio_method=args.portfolio_method,
+        portfolio_policy_path=args.portfolio_policy_path,
+        require_certified_portfolio_policy=args.require_certified_portfolio_policy,
+        portfolio_certification_decision_path=args.portfolio_certification_decision_path,
+        model_registry_dir=args.model_registry_dir,
+        active_optimizer_policy=args.active_optimizer_policy,
         index_code=args.index_code,
         risk_aversion=args.risk_aversion,
         turnover_penalty=args.turnover_penalty,

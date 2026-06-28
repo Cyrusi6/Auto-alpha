@@ -28,6 +28,9 @@ from research.candidates import default_candidates
 from feature_factory import build_feature_set_manifest, build_feature_tensor
 from validation_lab.run_validation import main as run_validation_main
 from factor_certification.run_certify import main as run_certify_main
+from portfolio_lab.run_portfolio_lab import main as run_portfolio_lab_main
+from portfolio_certification.run_portfolio_certify import main as run_portfolio_certify_main
+from portfolio_lab.policy_grid import generate_portfolio_policy_grid
 
 from .models import BenchmarkItemResult, BenchmarkResult
 from .report import write_benchmark_report
@@ -68,6 +71,10 @@ def run_benchmark(
         _run_item("alpha_factory_full_small", lambda: _bench_alpha_factory(data_path, output_path, cache_path)),
         _run_item("validation_lab_small", lambda: _bench_validation_lab(data_path, output_path)),
         _run_item("factor_certification_small", lambda: _bench_factor_certification(data_path, output_path)),
+        _run_item("portfolio_policy_grid_small", lambda: _bench_portfolio_policy_grid(output_path)),
+        _run_item("portfolio_lab_small", lambda: _bench_portfolio_lab(data_path, output_path)),
+        _run_item("portfolio_certification_scorecard_small", lambda: _bench_portfolio_certification(data_path, output_path)),
+        _run_item("portfolio_backtest_stress_bundle_small", lambda: _bench_portfolio_lab(data_path, output_path / "portfolio_stress")),
         _run_item("cpu_formula_batch_eval_baseline", lambda: _bench_formula_batch_eval(data_path, output_path / "cpu_baseline", cache_path)),
         _run_item("gpu_formula_batch_eval_single_device", lambda: _bench_formula_batch_eval(data_path, output_path / "gpu_single", cache_path), skip=not run_gpu or (skip_gpu_if_unavailable and not snapshot.cuda_available)),
         _run_item("gpu_formula_batch_eval_sharded", lambda: _bench_formula_batch_eval(data_path, output_path / "gpu_sharded", cache_path), skip=not run_gpu or (skip_gpu_if_unavailable and not snapshot.cuda_available)),
@@ -105,6 +112,12 @@ def run_benchmark(
         "feature_count": item_map.get("feature_set_v2_build").n_features if item_map.get("feature_set_v2_build") else 0,
         "alpha_factory_total_seconds": item_map.get("alpha_factory_full_small").wall_time_seconds if item_map.get("alpha_factory_full_small") else 0.0,
         "alpha_candidates_per_second": item_map.get("alpha_factory_full_small").throughput_estimate if item_map.get("alpha_factory_full_small") else 0.0,
+        "portfolio_trial_count": item_map.get("portfolio_lab_small").formulas_evaluated if item_map.get("portfolio_lab_small") else 0,
+        "portfolio_trials_per_second": item_map.get("portfolio_lab_small").throughput_estimate if item_map.get("portfolio_lab_small") else 0.0,
+        "portfolio_lab_total_seconds": item_map.get("portfolio_lab_small").wall_time_seconds if item_map.get("portfolio_lab_small") else 0.0,
+        "certification_checks_per_second": item_map.get("portfolio_certification_scorecard_small").throughput_estimate if item_map.get("portfolio_certification_scorecard_small") else 0.0,
+        "selected_policy_score": 0.0,
+        "skipped_portfolio_reason": "",
     }
     result = BenchmarkResult(
         data_dir=str(data_path),
@@ -422,6 +435,102 @@ def _bench_factor_certification(data_dir: Path, output_dir: Path) -> dict[str, i
     if exit_code != 0:
         raise RuntimeError(f"factor certification returned {exit_code}")
     return _loader_payload(loader) | {"formulas_evaluated": 1}
+
+
+def _bench_portfolio_policy_grid(output_dir: Path) -> dict[str, int]:
+    policies = generate_portfolio_policy_grid(
+        factor_id="benchmark_factor",
+        methods=["equal_weight", "risk_aware"],
+        risk_aversions=[0.5, 1.0],
+        turnover_penalties=[0.0],
+        benchmark_weights=[1.0],
+        max_weight_values=[0.10],
+        max_names_values=[2],
+        max_turnover_values=[1.0],
+        top_n_values=[2],
+        max_trials=3,
+    )
+    (output_dir / "portfolio_policy_grid_benchmark").mkdir(parents=True, exist_ok=True)
+    return {"records_read": len(policies), "formulas_evaluated": len(policies)}
+
+
+def _bench_portfolio_lab(data_dir: Path, output_dir: Path) -> dict[str, int]:
+    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+    store_dir = output_dir / "portfolio_store"
+    factor_id = _ensure_benchmark_factor(store_dir, loader)
+    lab_dir = output_dir / "portfolio_lab_benchmark"
+    with contextlib.redirect_stdout(io.StringIO()):
+        exit_code = run_portfolio_lab_main(
+            [
+                "run",
+                "--data-dir",
+                str(data_dir),
+                "--factor-store-dir",
+                str(store_dir),
+                "--factor-id",
+                factor_id,
+                "--output-dir",
+                str(lab_dir),
+                "--portfolio-methods",
+                "equal_weight,risk_aware",
+                "--risk-aversions",
+                "0.5",
+                "--turnover-penalties",
+                "0.0",
+                "--max-weight-values",
+                "0.10",
+                "--max-names-values",
+                "2",
+                "--top-n-values",
+                "2",
+                "--max-trials",
+                "2",
+            ]
+        )
+    if exit_code != 0:
+        raise RuntimeError(f"portfolio lab returned {exit_code}")
+    summary = {}
+    report_path = lab_dir / "portfolio_lab_report.json"
+    if report_path.exists():
+        import json
+
+        summary = json.loads(report_path.read_text(encoding="utf-8")).get("summary", {})
+    return _loader_payload(loader) | {"formulas_evaluated": int(summary.get("trial_count", 2) or 2)}
+
+
+def _bench_portfolio_certification(data_dir: Path, output_dir: Path) -> dict[str, int]:
+    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+    store_dir = output_dir / "portfolio_store"
+    factor_id = _ensure_benchmark_factor(store_dir, loader)
+    lab_dir = output_dir / "portfolio_lab_benchmark"
+    if not (lab_dir / "selected_portfolio_policy.json").exists():
+        _bench_portfolio_lab(data_dir, output_dir)
+    cert_dir = output_dir / "portfolio_certification_benchmark"
+    with contextlib.redirect_stdout(io.StringIO()):
+        exit_code = run_portfolio_certify_main(
+            [
+                "run",
+                "--factor-store-dir",
+                str(store_dir),
+                "--factor-id",
+                factor_id,
+                "--portfolio-policy-path",
+                str(lab_dir / "selected_portfolio_policy.json"),
+                "--portfolio-lab-report-path",
+                str(lab_dir / "portfolio_lab_report.json"),
+                "--portfolio-robustness-report-path",
+                str(lab_dir / "portfolio_robustness_report.json"),
+                "--policy-profile",
+                "sample_lenient_portfolio",
+                "--output-dir",
+                str(cert_dir),
+            ]
+        )
+    if exit_code != 0:
+        raise RuntimeError(f"portfolio certification returned {exit_code}")
+    checks_path = cert_dir / "portfolio_certification_checks.jsonl"
+    check_count = sum(1 for _ in checks_path.open(encoding="utf-8")) if checks_path.exists() else 1
+    return _loader_payload(loader) | {"formulas_evaluated": int(check_count)}
 
 
 def _ensure_benchmark_factor(store_dir: Path, loader: AShareDataLoader) -> str:

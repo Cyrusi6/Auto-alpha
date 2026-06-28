@@ -60,10 +60,12 @@ def _render_markdown(report: ModelRegistryReport) -> str:
         "",
         "## Active Models",
         "",
-        "| model_version_id | factor_id | status |",
-        "| --- | --- | --- |",
+        "| model_version_id | kind | factor_id | status |",
+        "| --- | --- | --- | --- |",
     ]
     for record in report.active_models:
-        lines.append(f"| {record.get('model_version_id')} | {record.get('factor_id')} | {record.get('lifecycle_status')} |")
+        lines.append(
+            f"| {record.get('model_version_id')} | {record.get('model_kind')} | {record.get('factor_id')} | {record.get('lifecycle_status')} |"
+        )
     lines.extend(["", "## Status Counts", "", "```json", json.dumps(report.manifest.get("status_counts", {}), indent=2), "```", ""])
     return "\n".join(lines)

@@ -25,6 +25,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--latest-production", action="store_true")
     parser.add_argument("--rebalance-date")
     parser.add_argument("--portfolio-method", choices=["equal_weight", "risk_aware"], default="equal_weight")
+    parser.add_argument("--portfolio-policy-path")
+    parser.add_argument("--portfolio-certification-decision-path")
+    parser.add_argument("--certified-portfolio-policy-path")
+    parser.add_argument("--require-certified-portfolio-policy", action="store_true")
+    parser.add_argument("--active-optimizer-policy", action="store_true")
+    parser.add_argument("--require-active-optimizer-policy", action="store_true")
+    parser.add_argument("--portfolio-policy-model-version-id")
     parser.add_argument("--index-code", default="000300.SH")
     parser.add_argument("--top-n", type=int, default=20)
     parser.add_argument("--max-weight", type=float, default=0.10)
@@ -127,6 +134,13 @@ def main(argv: list[str] | None = None) -> int:
         latest_production=args.latest_production,
         rebalance_date=args.rebalance_date,
         portfolio_method=args.portfolio_method,
+        portfolio_policy_path=args.portfolio_policy_path,
+        portfolio_certification_decision_path=args.portfolio_certification_decision_path,
+        certified_portfolio_policy_path=args.certified_portfolio_policy_path,
+        require_certified_portfolio_policy=args.require_certified_portfolio_policy,
+        active_optimizer_policy=args.active_optimizer_policy,
+        require_active_optimizer_policy=args.require_active_optimizer_policy,
+        portfolio_policy_model_version_id=args.portfolio_policy_model_version_id,
         index_code=args.index_code,
         top_n=args.top_n,
         max_weight=args.max_weight,

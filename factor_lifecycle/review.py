@@ -27,6 +27,9 @@ def build_model_review_package(
     validation_summary["overfit"] = _summary_from_checks(health_checks, "overfit")
     validation_summary["placebo"] = _summary_from_checks(health_checks, "placebo")
     certification_summary = _summary_from_checks(health_checks, "certification")
+    portfolio_lab_summary = _summary_from_checks(health_checks, "portfolio_scenario")
+    portfolio_certification_summary = _summary_from_checks(health_checks, "portfolio_certification")
+    optimizer_policy_summary = _summary_from_checks(health_checks, "certified_portfolio_policy")
     return ModelReviewPackage(
         model_version_id=model_version.model_version_id if model_version else None,
         factor_id=factor_record.factor_id,
@@ -51,6 +54,9 @@ def build_model_review_package(
             {"item": "settlement_nav_and_account_reconciliation_reviewed", "required": True, "checked": False},
             {"item": "validation_lab_and_overfit_reviewed", "required": True, "checked": False},
             {"item": "factor_certification_reviewed", "required": True, "checked": False},
+            {"item": "portfolio_lab_and_policy_grid_reviewed", "required": True, "checked": False},
+            {"item": "portfolio_certification_reviewed", "required": True, "checked": False},
+            {"item": "active_optimizer_policy_reviewed", "required": True, "checked": False},
         ],
         pit_summary=pit_summary,
         leakage_summary=leakage_summary,
@@ -58,6 +64,9 @@ def build_model_review_package(
         settlement_summary=settlement_summary,
         validation_summary=validation_summary,
         certification_summary=certification_summary,
+        portfolio_lab_summary=portfolio_lab_summary,
+        portfolio_certification_summary=portfolio_certification_summary,
+        optimizer_policy_summary=optimizer_policy_summary,
         lineage_graph_path=lineage_graph_path,
     )
 

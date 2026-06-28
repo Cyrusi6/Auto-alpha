@@ -97,6 +97,32 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--require-certification", action="store_true")
     parser.add_argument("--fail-on-certification-rejected", action="store_true")
+    parser.add_argument("--run-portfolio-lab", action="store_true")
+    parser.add_argument("--portfolio-lab-dir")
+    parser.add_argument("--portfolio-lab-scenario-profile", default="sample")
+    parser.add_argument("--portfolio-policy-grid-path")
+    parser.add_argument("--portfolio-methods", default="equal_weight,risk_aware")
+    parser.add_argument("--portfolio-risk-aversions", default="0.5,1.0")
+    parser.add_argument("--portfolio-turnover-penalties", default="0.0,0.1")
+    parser.add_argument("--portfolio-benchmark-weights", default="1.0")
+    parser.add_argument("--portfolio-max-weight-values", default="0.10")
+    parser.add_argument("--portfolio-max-names-values", default="2,20")
+    parser.add_argument("--portfolio-max-turnover-values", default="1.0")
+    parser.add_argument("--portfolio-max-tracking-error-values", default="1.0")
+    parser.add_argument("--portfolio-top-n-values", default="2,20")
+    parser.add_argument("--run-portfolio-certification", action="store_true")
+    parser.add_argument("--portfolio-certification-dir")
+    parser.add_argument("--portfolio-certification-policy-path")
+    parser.add_argument(
+        "--portfolio-certification-policy-profile",
+        choices=["sample_lenient_portfolio", "research_standard", "research_standard_portfolio", "production_strict", "production_strict_portfolio"],
+        default="sample_lenient_portfolio",
+    )
+    parser.add_argument("--require-portfolio-certification", action="store_true")
+    parser.add_argument("--fail-on-portfolio-certification-rejected", action="store_true")
+    parser.add_argument("--create-portfolio-policy-approval", action="store_true")
+    parser.add_argument("--portfolio-policy-approval-store-dir")
+    parser.add_argument("--register-optimizer-policy", action="store_true")
     parser.add_argument("--universe-name", default="csi300_sample")
     parser.add_argument("--index-code", default="000300.SH")
     parser.add_argument("--factor-store-dir")
@@ -299,6 +325,28 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
         certification_policy_profile=args.certification_policy_profile,
         require_certification=args.require_certification,
         fail_on_certification_rejected=args.fail_on_certification_rejected,
+        run_portfolio_lab=args.run_portfolio_lab,
+        portfolio_lab_dir=args.portfolio_lab_dir,
+        portfolio_lab_scenario_profile=args.portfolio_lab_scenario_profile,
+        portfolio_policy_grid_path=args.portfolio_policy_grid_path,
+        portfolio_methods=args.portfolio_methods,
+        portfolio_risk_aversions=args.portfolio_risk_aversions,
+        portfolio_turnover_penalties=args.portfolio_turnover_penalties,
+        portfolio_benchmark_weights=args.portfolio_benchmark_weights,
+        portfolio_max_weight_values=args.portfolio_max_weight_values,
+        portfolio_max_names_values=args.portfolio_max_names_values,
+        portfolio_max_turnover_values=args.portfolio_max_turnover_values,
+        portfolio_max_tracking_error_values=args.portfolio_max_tracking_error_values,
+        portfolio_top_n_values=args.portfolio_top_n_values,
+        run_portfolio_certification=args.run_portfolio_certification,
+        portfolio_certification_dir=args.portfolio_certification_dir,
+        portfolio_certification_policy_path=args.portfolio_certification_policy_path,
+        portfolio_certification_policy_profile=args.portfolio_certification_policy_profile,
+        require_portfolio_certification=args.require_portfolio_certification,
+        fail_on_portfolio_certification_rejected=args.fail_on_portfolio_certification_rejected,
+        create_portfolio_policy_approval=args.create_portfolio_policy_approval,
+        portfolio_policy_approval_store_dir=args.portfolio_policy_approval_store_dir,
+        register_optimizer_policy=args.register_optimizer_policy,
         universe_name=args.universe_name,
         index_code=args.index_code,
         factor_store_dir=str(args.factor_store_dir or base_dir / "store"),

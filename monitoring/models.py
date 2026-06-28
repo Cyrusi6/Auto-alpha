@@ -83,6 +83,8 @@ class MonitoringReport:
         sensitivity_validation = self.checks.get("sensitivity_validation", {}) if isinstance(self.checks, dict) else {}
         stress_validation = self.checks.get("stress_backtest_validation", {}) if isinstance(self.checks, dict) else {}
         factor_certification = self.checks.get("factor_certification", {}) if isinstance(self.checks, dict) else {}
+        portfolio_lab = self.checks.get("portfolio_lab", {}) if isinstance(self.checks, dict) else {}
+        portfolio_certification = self.checks.get("portfolio_certification", {}) if isinstance(self.checks, dict) else {}
         uncertified = self.checks.get("uncertified_production_candidate", {}) if isinstance(self.checks, dict) else {}
         return {
             "created_at": self.created_at,
@@ -206,4 +208,10 @@ class MonitoringReport:
             "certification_blocker_count": int(factor_certification.get("certification_blocker_count", 0) or 0) if isinstance(factor_certification, dict) else 0,
             "certification_required_remediation_count": int(factor_certification.get("certification_required_remediation_count", 0) or 0) if isinstance(factor_certification, dict) else 0,
             "uncertified_production_candidate": bool(uncertified.get("uncertified_production_candidate", False)) if isinstance(uncertified, dict) else False,
+            "portfolio_lab_status": str(portfolio_lab.get("portfolio_lab_status", "")) if isinstance(portfolio_lab, dict) else "",
+            "portfolio_lab_trial_count": int(portfolio_lab.get("portfolio_lab_trial_count", 0) or 0) if isinstance(portfolio_lab, dict) else 0,
+            "selected_portfolio_policy_id": str(portfolio_lab.get("selected_portfolio_policy_id", "") or "") if isinstance(portfolio_lab, dict) else "",
+            "portfolio_certification_status": str(portfolio_certification.get("portfolio_certification_status", "")) if isinstance(portfolio_certification, dict) else "",
+            "portfolio_certification_passed": bool(portfolio_certification.get("portfolio_certification_passed", False)) if isinstance(portfolio_certification, dict) else False,
+            "portfolio_certification_blocker_count": int(portfolio_certification.get("portfolio_certification_blocker_count", 0) or 0) if isinstance(portfolio_certification, dict) else 0,
         }

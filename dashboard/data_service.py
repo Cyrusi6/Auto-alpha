@@ -361,6 +361,33 @@ class AshareDashboardService:
     def load_factor_certification_checks(self) -> pd.DataFrame:
         return self._read_first_jsonl(self._certification_artifact_candidates("factor_certification_checks.jsonl"))
 
+    def load_portfolio_lab_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._portfolio_lab_artifact_candidates("portfolio_lab_report.json"))
+
+    def load_portfolio_robustness_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._portfolio_lab_artifact_candidates("portfolio_robustness_report.json"))
+
+    def load_portfolio_policy_trials(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._portfolio_lab_artifact_candidates("portfolio_policy_trials.jsonl"))
+
+    def load_portfolio_trial_metrics(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._portfolio_lab_artifact_candidates("portfolio_trial_metrics.jsonl"))
+
+    def load_selected_portfolio_policy(self) -> dict[str, Any]:
+        return self._read_first_json(self._portfolio_lab_artifact_candidates("selected_portfolio_policy.json"))
+
+    def load_portfolio_certification_decision(self) -> dict[str, Any]:
+        return self._read_first_json(self._portfolio_certification_artifact_candidates("portfolio_certification_decision.json"))
+
+    def load_portfolio_certification_scorecard(self) -> dict[str, Any]:
+        return self._read_first_json(self._portfolio_certification_artifact_candidates("portfolio_certification_scorecard.json"))
+
+    def load_certified_portfolio_policy(self) -> dict[str, Any]:
+        return self._read_first_json(self._portfolio_certification_artifact_candidates("certified_portfolio_policy.json"))
+
+    def load_portfolio_policy_activation_request(self) -> dict[str, Any]:
+        return self._read_first_json(self._portfolio_certification_artifact_candidates("portfolio_policy_activation_request.json"))
+
     def load_compute_resource_snapshot(self) -> dict[str, Any]:
         for path in self._compute_artifact_candidates("compute_resource_snapshot.json"):
             payload = self._read_json(path)
@@ -1623,6 +1650,22 @@ class AshareDashboardService:
             self.config.factor_certification_dir / filename,
             root / "factor_certification" / filename,
             root / "suite" / "factor_certification" / filename,
+        ]
+
+    def _portfolio_lab_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.portfolio_lab_dir / filename,
+            root / "portfolio_lab" / filename,
+            root / "suite" / "portfolio_lab" / filename,
+        ]
+
+    def _portfolio_certification_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.portfolio_certification_dir / filename,
+            root / "portfolio_certification" / filename,
+            root / "suite" / "portfolio_certification" / filename,
         ]
 
     def _read_first_json(self, paths: list[Path]) -> dict[str, Any]:

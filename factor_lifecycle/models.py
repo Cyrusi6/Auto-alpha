@@ -48,6 +48,10 @@ class LifecyclePolicy:
     max_pbo: float = 1.0
     min_deflated_ic_score: float = -999.0
     max_placebo_null_exceedance_ratio: float = 1.0
+    require_portfolio_certification: bool = False
+    allowed_portfolio_certification_statuses: list[str] = field(default_factory=lambda: ["certified", "conditional"])
+    max_portfolio_certification_blocker_count: int = 0
+    min_portfolio_scenario_pass_ratio: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -105,6 +109,9 @@ class ModelReviewPackage:
     feature_set_summary: dict[str, Any] = field(default_factory=dict)
     validation_summary: dict[str, Any] = field(default_factory=dict)
     certification_summary: dict[str, Any] = field(default_factory=dict)
+    portfolio_lab_summary: dict[str, Any] = field(default_factory=dict)
+    portfolio_certification_summary: dict[str, Any] = field(default_factory=dict)
+    optimizer_policy_summary: dict[str, Any] = field(default_factory=dict)
     lineage_graph_path: str | None = None
 
     def to_dict(self) -> dict[str, Any]:

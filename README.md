@@ -30,7 +30,9 @@ The current implementation is local-first. It uses deterministic sample data and
 - `factor_lifecycle/`: Factor health checks, lifecycle decisions, human review packages, activation approval flow, and lifecycle reports.
 - `risk_model/`: Security exposures, Barra-like style and industry factors, factor returns, risk decomposition, attribution, covariance, risk constraints, and risk reports.
 - `risk_controls/`: Pre-trade risk limits, kill switch state, order gate artifacts, override approval hooks, and local audit logs.
-- `portfolio_optimizer/`: Deterministic long-only benchmark-aware portfolio optimizer.
+- `portfolio_optimizer/`: Deterministic long-only benchmark-aware portfolio optimizer and serializable portfolio policies.
+- `portfolio_lab/`: Portfolio policy grids, scenario trials, robustness ranking, and selected policy artifacts for certified factors.
+- `portfolio_certification/`: Portfolio policy scorecards, certification decisions, certified policy packages, and optimizer-policy activation requests.
 - `capacity_model/`: Local capacity, participation, and impact-cost estimates from amount, volume, turnover, and volatility.
 - `backtest/`: Long-only A-share portfolio simulation, market constraints, and benchmark-aware risk mode.
 - `execution/`: Paper broker and order/fill export utilities.
@@ -91,6 +93,19 @@ uv run python -m research_suite.run_suite \
   --run-factor-certification \
   --certification-policy-profile sample_lenient_certification \
   --require-certification \
+  --run-portfolio-lab \
+  --portfolio-lab-scenario-profile sample \
+  --portfolio-methods risk_aware,equal_weight \
+  --portfolio-risk-aversions 0.5,1.0 \
+  --portfolio-turnover-penalties 0.05,0.1 \
+  --portfolio-max-weight-values 0.05,0.10 \
+  --portfolio-max-names-values 2,3 \
+  --portfolio-top-n-values 2,3 \
+  --run-portfolio-certification \
+  --portfolio-certification-policy-profile sample_lenient_portfolio \
+  --require-portfolio-certification \
+  --register-optimizer-policy \
+  --create-portfolio-policy-approval \
   --walk-forward-train-size 1 \
   --walk-forward-test-size 1 \
   --walk-forward-step-size 1 \
@@ -263,6 +278,42 @@ uv run python -m factor_certification.run_certify run \
 ```
 
 Certification policy profiles are `sample_lenient_certification`, `research_standard`, and `production_strict`. Certification is a governance gate and review artifact; it does not guarantee returns. Large real-data validation should run against an immutable `data_lake` research freeze.
+
+Portfolio certification is a separate gate after factor certification. A certified factor answers whether the signal is acceptable for promotion; a certified portfolio policy answers whether optimizer settings, cost/capacity assumptions, settlement assumptions, risk constraints, and scenario robustness are acceptable for local paper deployment.
+
+```bash
+uv run python -m portfolio_lab.run_portfolio_lab run \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --latest-approved \
+  --factor-type composite \
+  --output-dir /tmp/auto-alpha-demo/portfolio_lab \
+  --portfolio-methods risk_aware,equal_weight \
+  --risk-aversions 0.5,1.0 \
+  --turnover-penalties 0.05,0.1 \
+  --max-weight-values 0.05,0.10 \
+  --max-names-values 2,3 \
+  --top-n-values 2,3 \
+  --scenario-profile sample \
+  --pretty
+
+uv run python -m portfolio_certification.run_portfolio_certify run \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --latest-approved \
+  --factor-type composite \
+  --model-registry-dir /tmp/auto-alpha-demo/model_registry \
+  --output-dir /tmp/auto-alpha-demo/portfolio_certification \
+  --portfolio-lab-report-path /tmp/auto-alpha-demo/portfolio_lab/portfolio_lab_report.json \
+  --portfolio-robustness-report-path /tmp/auto-alpha-demo/portfolio_lab/portfolio_robustness_report.json \
+  --selected-portfolio-policy-path /tmp/auto-alpha-demo/portfolio_lab/selected_portfolio_policy.json \
+  --policy-profile sample_lenient_portfolio \
+  --register-policy \
+  --create-activation-approval \
+  --approval-store-dir /tmp/auto-alpha-demo/portfolio_policy_approvals \
+  --pretty
+```
+
+Approving the generated `portfolio_policy_activation` batch and running `portfolio_certification.run_portfolio_certify apply-approved-activation` activates an `optimizer_policy` in `model_registry/`. `backtest.run_backtest`, `strategy_manager.runner`, and `operations.run_daily` can then use `--active-optimizer-policy` and enforce `--require-certified-portfolio-policy`.
 
 Before using a real data token in production, run the data source smoke validator. It is offline by default and can use fake Tushare scenarios without network access:
 
@@ -633,6 +684,8 @@ Dashboard-specific overrides:
 - `ASHARE_DASHBOARD_CROSS_SOURCE_DIR`
 - `ASHARE_DASHBOARD_BACKFILL_DIR`
 - `ASHARE_DASHBOARD_DATA_LAKE_DIR`
+- `ASHARE_DASHBOARD_PORTFOLIO_LAB_DIR`
+- `ASHARE_DASHBOARD_PORTFOLIO_CERTIFICATION_DIR`
 - `ASHARE_DASHBOARD_SCHEMA_VALIDATION_DIR`
 - `ASHARE_DASHBOARD_RELEASE_DIR`
 - `ASHARE_DASHBOARD_CI_DIR`
@@ -640,6 +693,8 @@ Dashboard-specific overrides:
 ## Daily Production Operations
 
 The platform still has no real broker integration. Daily production uses local approval and a persistent paper account:
+
+Portfolio-level production gates can require a certified policy. Use `--portfolio-policy-path` for an explicit certified policy package, or `--active-optimizer-policy --model-registry-dir ...` to load the active `optimizer_policy` deployment. `--require-certified-portfolio-policy` fails closed when the policy is not certified or conditional, and `--require-active-optimizer-policy` fails closed when no active optimizer policy exists.
 
 ```bash
 uv run python -m paper_account.run_account \
@@ -679,6 +734,9 @@ uv run python -m operations.run_daily \
   --use-model-registry \
   --model-registry-dir /tmp/auto-alpha-demo/model_registry \
   --require-active-model \
+  --active-optimizer-policy \
+  --require-active-optimizer-policy \
+  --require-certified-portfolio-policy \
   --require-approval \
   --pretty
 
@@ -1071,4 +1129,5 @@ Current PIT boundaries:
 - Feature Factory v2 and Alpha Factory campaign funnels are available locally; future work should expand the feature catalog against full-market data, calibrate proxy scores with longer histories, and run large GPU-backed campaigns outside default CI.
 - Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.
 - One-click research suites now provide local walk-forward, promotion gates, model registry records, lifecycle review packages, active deployment state, and rollback artifacts; daily operations can require an active governed model. Future work should add richer lifecycle policies and external review workflow integrations.
+- Portfolio Lab and Portfolio Certification provide local policy-grid robustness checks, certified portfolio policy packages, optimizer-policy registration, and activation approval gates. Sample certification is only a smoke path; real certification should be tied to a governed data freeze and longer production review windows.
 - Broker adapter, file instructions, broker statement import, settlement profiles, EOD reconciliation, and account ledger are local only. No real broker integration, credential handling, network submission, verified QMT/broker file compatibility, or tax reporting interface is implemented.
