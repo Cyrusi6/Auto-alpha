@@ -21,6 +21,9 @@ class ApprovalType:
     risk_control_override = "risk_control_override"
     broker_file_handoff = "broker_file_handoff"
     broker_mapping_certification_ack = "broker_mapping_certification_ack"
+    compliance_review = "compliance_review"
+    broker_uat_review = "broker_uat_review"
+    go_live_review = "go_live_review"
 
 
 @dataclass(frozen=True)
@@ -87,6 +90,13 @@ class ApprovalBatch:
     operator_handoff_report_path: str | None = None
     broker_file_summary: dict[str, Any] = field(default_factory=dict)
     operator_handoff_summary: dict[str, Any] = field(default_factory=dict)
+    compliance_pack_path: str | None = None
+    broker_uat_report_path: str | None = None
+    go_live_gate_decision_path: str | None = None
+    go_live_status: str | None = None
+    compliance_summary: dict[str, Any] = field(default_factory=dict)
+    broker_uat_summary: dict[str, Any] = field(default_factory=dict)
+    go_live_summary: dict[str, Any] = field(default_factory=dict)
     status: str = ApprovalStatus.pending
     decision: ApprovalDecision | None = None
     metadata: dict[str, Any] = field(default_factory=dict)

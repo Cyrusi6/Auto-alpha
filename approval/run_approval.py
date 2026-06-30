@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     store = LocalApprovalStore(args.store_dir)
     try:
         if args.command == "list":
-            payload = {"batches": [batch.to_dict() for batch in store.list_batches(status=args.status)]}
+            payload = {"batches": [_summary(batch.to_dict()) for batch in store.list_batches(status=args.status)]}
         elif args.command == "show":
             payload = store.load_batch(args.approval_id).to_dict()
         elif args.command == "approve":
@@ -61,6 +61,16 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(json.dumps(payload, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0
+
+
+def _summary(payload: dict) -> dict:
+    return {
+        **payload,
+        "secret_blocker_count": int((payload.get("compliance_summary") or {}).get("secret_blocker_count", 0) or 0),
+        "uat_failed_scenario_count": int((payload.get("broker_uat_summary") or {}).get("failed_count", 0) or 0),
+        "compliance_gap_count": int((payload.get("compliance_summary") or {}).get("gap_count", 0) or 0),
+        "required_remediation_count": int((payload.get("go_live_summary") or {}).get("required_remediation_count", 0) or 0),
+    }
 
 
 if __name__ == "__main__":

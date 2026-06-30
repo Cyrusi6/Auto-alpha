@@ -26,6 +26,9 @@ def build_live_readiness_scorecard(
     broker_mapping_certification_decision_path: str | Path | None = None,
     broker_file_gateway_report_path: str | Path | None = None,
     operator_handoff_report_path: str | Path | None = None,
+    compliance_pack_path: str | Path | None = None,
+    broker_uat_report_path: str | Path | None = None,
+    go_live_gate_decision_path: str | Path | None = None,
 ) -> LiveReadinessScorecard:
     replay = _read_json(production_replay_report_path)
     shadow = _read_json(shadow_lab_report_path)
@@ -40,6 +43,9 @@ def build_live_readiness_scorecard(
     mapping_cert = _read_json(broker_mapping_certification_decision_path)
     gateway = _read_json(broker_file_gateway_report_path)
     handoff = _read_json(operator_handoff_report_path)
+    compliance = _read_json(compliance_pack_path)
+    broker_uat = _read_json(broker_uat_report_path)
+    go_live = _read_json(go_live_gate_decision_path)
     replay_summary = replay.get("summary") or {}
 
     checks = [
@@ -146,6 +152,25 @@ def build_live_readiness_scorecard(
             ),
             policy.require_no_real_submit,
             "remove any real submit path from file outbox dry-run",
+        ),
+        _optional_check(
+            "program_trading_compliance",
+            not policy.require_go_live_gate or bool(compliance),
+            policy.require_go_live_gate,
+            "build program trading compliance evidence pack",
+        ),
+        _optional_check(
+            "broker_uat",
+            not policy.require_go_live_gate or (bool(broker_uat) and int((broker_uat.get("summary") or {}).get("failed_count", 0) or 0) == 0),
+            policy.require_go_live_gate,
+            "complete BrokerAdapter UAT before advancing dry-run readiness",
+        ),
+        _optional_check(
+            "go_live_gate",
+            not policy.require_go_live_gate
+            or str(go_live.get("status") or "") in {"ready_for_file_outbox_dry_run", "ready_for_manual_pilot_review"},
+            policy.require_go_live_gate,
+            "complete local Go/No-Go gate review package",
         ),
     ]
     failed_required = [check for check in checks if check.required and check.status != "passed"]

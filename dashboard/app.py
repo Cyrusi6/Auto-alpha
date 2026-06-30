@@ -518,6 +518,23 @@ def render_app(config: DashboardConfig | None = None) -> None:
         incident_runbook = service.load_incident_runbook()
         approvals = service.load_approvals()
         approval_log = service.load_approval_log()
+        compliance_pack = service.load_program_trading_compliance_pack()
+        system_inventory = service.load_program_trading_system_inventory()
+        strategy_inventory = service.load_program_trading_strategy_inventory()
+        risk_inventory = service.load_program_trading_risk_control_inventory()
+        compliance_gaps = service.load_compliance_gap_report()
+        secret_scan = service.load_secret_scan_report()
+        secret_findings = service.load_secret_scan_findings()
+        evidence_records = service.load_program_trading_evidence_records()
+        compliance_checklist = service.load_program_trading_compliance_checklist()
+        broker_uat_report = service.load_broker_uat_report()
+        broker_uat_results = service.load_broker_uat_results()
+        adapter_capabilities = service.load_broker_adapter_capability_manifest()
+        contract_report = service.load_broker_adapter_contract_report()
+        uat_replay = service.load_broker_uat_replay_report()
+        go_live_decision = service.load_go_live_gate_decision()
+        go_live_scorecard = service.load_go_live_gate_scorecard()
+        go_live_checks = service.load_go_live_gate_checks()
         account_state = service.load_paper_account_state()
         settlement_report = service.load_settlement_report()
         settlement_events = service.load_settlement_events()
@@ -782,6 +799,40 @@ def render_app(config: DashboardConfig | None = None) -> None:
         _show_dataframe_or_empty("Monitoring Alerts", monitoring_alerts)
         if monitoring_markdown:
             st.markdown(monitoring_markdown)
+        st.subheader("Pre-Live Compliance / UAT / Gate")
+        st.json(
+            {
+                "compliance_status": compliance_pack.get("status", "") if compliance_pack else "",
+                "compliance_gap_count": (compliance_pack.get("summary") or {}).get("gap_count", 0) if compliance_pack else 0,
+                "secret_blocker_count": secret_scan.get("blocker_count", 0) if secret_scan else 0,
+                "broker_uat_status": broker_uat_report.get("status", "") if broker_uat_report else "",
+                "broker_uat_failed_count": (broker_uat_report.get("summary") or {}).get("failed_count", 0) if broker_uat_report else 0,
+                "contract_status": contract_report.get("status", "") if contract_report else "",
+                "uat_replay_status": uat_replay.get("status", "") if uat_replay else "",
+                "go_live_status": go_live_decision.get("status", "") if go_live_decision else "",
+                "go_live_required_remediation": len(go_live_decision.get("required_remediation", [])) if go_live_decision else 0,
+                "real_broker_submit_supported": system_inventory.get("real_broker_submit_supported", False) if system_inventory else False,
+                "adapter_capability": {
+                    "real_network_required": adapter_capabilities.get("real_network_required", None) if adapter_capabilities else None,
+                    "real_broker_credentials_required": adapter_capabilities.get("real_broker_credentials_required", None) if adapter_capabilities else None,
+                },
+                "strategy_inventory": {
+                    "factor_id": strategy_inventory.get("factor_id", "") if strategy_inventory else "",
+                    "portfolio_policy_id": strategy_inventory.get("portfolio_policy_id", "") if strategy_inventory else "",
+                },
+                "risk_inventory": {
+                    "kill_switch_available": risk_inventory.get("kill_switch_available", False) if risk_inventory else False,
+                    "settlement_aware": risk_inventory.get("settlement_aware", False) if risk_inventory else False,
+                },
+                "scorecard_summary": go_live_scorecard.get("summary", {}) if go_live_scorecard else {},
+                "gap_report": compliance_gaps.get("status", "") if compliance_gaps else "",
+            }
+        )
+        _show_dataframe_or_empty("Compliance Evidence", evidence_records)
+        _show_dataframe_or_empty("Compliance Checklist", compliance_checklist)
+        _show_dataframe_or_empty("Secret Scan Findings", secret_findings)
+        _show_dataframe_or_empty("Broker UAT Results", broker_uat_results)
+        _show_dataframe_or_empty("Go-Live Gate Checks", go_live_checks)
 
     with performance_tab:
         matrix_metadata = service.load_matrix_metadata()

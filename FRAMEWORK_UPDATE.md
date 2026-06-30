@@ -1885,3 +1885,43 @@
 - Validate real broker file mappings only through human-reviewed external fixtures; current profiles are dry-run skeletons.
 - Add richer operator workflow metadata such as shift owner, dual-control review evidence, and time-windowed handoff expiry.
 - Keep any real broker connectivity outside default CI and behind separate credentials, risk, approval, incident, and readiness gates.
+
+## Task 040 - Program Trading Compliance Pack, BrokerAdapter UAT, And Go/No-Go Gate
+
+- Added `program_trading_compliance/` for local program-trading evidence packs, software/strategy/risk-control inventories, evidence records, compliance checklists, secret scans, gap reports, review packages, and CLI smoke commands.
+- Added `broker_uat_lab/` for deterministic offline BrokerAdapter contract UAT with a mock adapter, sample/strict scenarios, idempotency, status-transition, cancel/replace, rejection, partial-fill, duplicate-fill, replay, kill-switch, file-outbox, settlement, and EOD checks.
+- Added `go_live_gate/` for local pre-live policy profiles, scorecards, decisions, review packages, and approval creation. Decisions are limited to local review stages: `not_ready`, `insufficient_data`, `ready_for_broker_uat`, `ready_for_file_outbox_dry_run`, and `ready_for_manual_pilot_review`.
+- Extended `approval` with `compliance_review`, `broker_uat_review`, and `go_live_review` batch types, including compliance, UAT, and Go/No-Go summary fields while preserving old approval records.
+- Integrated compliance/UAT/gate artifacts into `production_orchestrator`, `production_replay`, `live_readiness`, `monitoring`, `dashboard`, `artifact_schema`, `release_manager`, local CI, package metadata, README, CATREADME, and `.env.example`.
+- The new layer is local evidence/UAT/review infrastructure only. It does not provide legal advice, regulatory filing automation, broker authorization, real broker credentials, external network submission, or real trading capability.
+
+### New Artifacts
+- `program_trading_system_inventory.json`
+- `program_trading_strategy_inventory.json`
+- `program_trading_risk_control_inventory.json`
+- `program_trading_compliance_pack.json/md`
+- `program_trading_evidence_records.jsonl`
+- `program_trading_compliance_checklist.jsonl`
+- `compliance_gap_report.json/md`
+- `secret_scan_report.json/md`
+- `secret_scan_findings.jsonl`
+- `compliance_review_package.json/md`
+- `broker_uat_plan.json`
+- `broker_uat_report.json/md`
+- `broker_uat_scenarios.jsonl`
+- `broker_uat_results.jsonl`
+- `broker_adapter_capability_manifest.json`
+- `broker_adapter_contract_report.json`
+- `broker_uat_replay_report.json`
+- `broker_uat_issues.jsonl`
+- `go_live_gate_policy.json`
+- `go_live_gate_scorecard.json`
+- `go_live_gate_decision.json`
+- `go_live_gate_report.md`
+- `go_live_gate_checks.jsonl`
+- `go_live_review_package.json/md`
+
+### Follow-Ups
+- Calibrate Go/No-Go policies with longer shadow/paper/file dry-run windows and real operator review feedback.
+- Add richer UAT fixtures for broker file acknowledgements and external statement imports once human-reviewed samples are available.
+- Keep any real broker connectivity outside this local review layer and behind separate credentials, legal, compliance, risk, approval, incident, and operations controls.

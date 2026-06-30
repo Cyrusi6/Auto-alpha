@@ -56,6 +56,7 @@ def build_policy(profile: str = "sample_lenient_readiness") -> LiveReadinessPoli
             require_broker_mapping_certification=True,
             require_broker_file_gateway_roundtrip=True,
             require_operator_handoff=True,
+            require_go_live_gate=False,
             min_file_outbox_replay_days=1,
             max_file_roundtrip_errors=0,
             max_missing_handoff_items=0,

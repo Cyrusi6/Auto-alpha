@@ -816,6 +816,75 @@ class AshareDashboardService:
     def load_live_readiness_checks(self) -> pd.DataFrame:
         return self._read_first_jsonl(self._live_readiness_candidates("live_readiness_checks.jsonl"))
 
+    def load_program_trading_system_inventory(self) -> dict[str, Any]:
+        return self._read_first_json(self._prelive_candidates("program_trading_system_inventory.json"))
+
+    def load_program_trading_strategy_inventory(self) -> dict[str, Any]:
+        return self._read_first_json(self._prelive_candidates("program_trading_strategy_inventory.json"))
+
+    def load_program_trading_risk_control_inventory(self) -> dict[str, Any]:
+        return self._read_first_json(self._prelive_candidates("program_trading_risk_control_inventory.json"))
+
+    def load_program_trading_compliance_pack(self) -> dict[str, Any]:
+        return self._read_first_json(self._prelive_candidates("program_trading_compliance_pack.json"))
+
+    def load_program_trading_evidence_records(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._prelive_candidates("program_trading_evidence_records.jsonl"))
+
+    def load_program_trading_compliance_checklist(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._prelive_candidates("program_trading_compliance_checklist.jsonl"))
+
+    def load_compliance_gap_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._prelive_candidates("compliance_gap_report.json"))
+
+    def load_secret_scan_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._prelive_candidates("secret_scan_report.json"))
+
+    def load_secret_scan_findings(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._prelive_candidates("secret_scan_findings.jsonl"))
+
+    def load_compliance_review_package(self) -> dict[str, Any]:
+        return self._read_first_json(self._prelive_candidates("compliance_review_package.json"))
+
+    def load_broker_uat_plan(self) -> dict[str, Any]:
+        return self._read_first_json(self._prelive_candidates("broker_uat_plan.json"))
+
+    def load_broker_uat_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._prelive_candidates("broker_uat_report.json"))
+
+    def load_broker_uat_scenarios(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._prelive_candidates("broker_uat_scenarios.jsonl"))
+
+    def load_broker_uat_results(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._prelive_candidates("broker_uat_results.jsonl"))
+
+    def load_broker_adapter_capability_manifest(self) -> dict[str, Any]:
+        return self._read_first_json(self._prelive_candidates("broker_adapter_capability_manifest.json"))
+
+    def load_broker_adapter_contract_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._prelive_candidates("broker_adapter_contract_report.json"))
+
+    def load_broker_uat_replay_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._prelive_candidates("broker_uat_replay_report.json"))
+
+    def load_broker_uat_issues(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._prelive_candidates("broker_uat_issues.jsonl"))
+
+    def load_go_live_gate_policy(self) -> dict[str, Any]:
+        return self._read_first_json(self._prelive_candidates("go_live_gate_policy.json"))
+
+    def load_go_live_gate_scorecard(self) -> dict[str, Any]:
+        return self._read_first_json(self._prelive_candidates("go_live_gate_scorecard.json"))
+
+    def load_go_live_gate_decision(self) -> dict[str, Any]:
+        return self._read_first_json(self._prelive_candidates("go_live_gate_decision.json"))
+
+    def load_go_live_gate_checks(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._prelive_candidates("go_live_gate_checks.jsonl"))
+
+    def load_go_live_review_package(self) -> dict[str, Any]:
+        return self._read_first_json(self._prelive_candidates("go_live_review_package.json"))
+
     def load_incident_report(self) -> dict[str, Any]:
         return self._read_first_json(self._incident_artifact_candidates("incident_report.json"))
 
@@ -1785,6 +1854,30 @@ class AshareDashboardService:
             root / "broker_mapping_certification" / filename,
             root / "mapping_certification" / filename,
             root / "mapping" / filename,
+        ]
+
+    def _prelive_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        production_root = self.config.production_dir
+        return [
+            self.config.program_trading_compliance_dir / filename,
+            self.config.broker_uat_dir / filename,
+            self.config.go_live_gate_dir / filename,
+            production_root / "compliance" / filename,
+            production_root / "program_trading_compliance" / filename,
+            production_root / "broker_uat" / filename,
+            production_root / "broker_uat_lab" / filename,
+            production_root / "go_live_gate" / filename,
+            production_root / "prelive_gate" / filename,
+            production_root / filename,
+            root / "compliance" / filename,
+            root / "program_trading_compliance" / filename,
+            root / "broker_uat" / filename,
+            root / "broker_uat_lab" / filename,
+            root / "go_live_gate" / filename,
+            root / "prelive_gate" / filename,
+            root / "production_execute" / filename,
+            root / filename,
         ]
 
     def _compute_artifact_candidates(self, filename: str) -> list[Path]:

@@ -103,6 +103,10 @@ class ProductionOrchestratorConfig:
     target_return_mode: str = "adjusted_close"
     settlement_aware: bool = False
     risk_controls: bool = False
+    compliance_pack_path: str | None = None
+    broker_uat_report_path: str | None = None
+    go_live_gate_decision_path: str | None = None
+    require_go_live_gate: bool = False
     require_order_approval: bool = False
     approval_id: str | None = None
     stop_after_phase: str | None = None
@@ -342,6 +346,10 @@ class ProductionOrchestratorRunner:
             paper_account_dir=self.config.paper_account_dir,
             risk_control_state_dir=self.config.risk_control_state_dir,
             risk_controls=self.config.risk_controls,
+            compliance_pack_path=self.config.compliance_pack_path,
+            broker_uat_report_path=self.config.broker_uat_report_path,
+            go_live_gate_decision_path=self.config.go_live_gate_decision_path,
+            require_go_live_gate=self.config.require_go_live_gate,
         )
         for gate in readiness.gates:
             self.state.record_gate(self.production_run_id, gate)

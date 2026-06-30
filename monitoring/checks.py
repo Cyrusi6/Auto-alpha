@@ -335,6 +335,102 @@ def check_broker_mapping_certification(decision_path: str | Path | None) -> tupl
     }, alerts
 
 
+def check_program_trading_compliance_pack(pack_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(pack_path)) if pack_path else {}
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    status = str(payload.get("status", "") if payload else "")
+    gap_count = int(summary.get("gap_count", 0) or 0)
+    real_submit = bool(summary.get("real_broker_submit_supported", payload.get("real_broker_submit_supported", False))) if payload else False
+    alerts = []
+    if payload and status in {"failed"}:
+        alerts.append(MonitoringAlert("error", "program_trading_compliance", "compliance pack status failed", {"status": status}))
+    elif payload and gap_count:
+        alerts.append(MonitoringAlert("warning", "program_trading_compliance", "compliance pack has gaps", {"gap_count": gap_count}))
+    if real_submit:
+        alerts.append(MonitoringAlert("error", "program_trading_compliance", "real submit path detected in compliance pack"))
+    return {
+        "exists": bool(payload),
+        "compliance_pack_status": status,
+        "compliance_gap_count": gap_count,
+        "real_submit_path_detected": real_submit,
+    }, alerts
+
+
+def check_secret_scan(secret_scan_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(secret_scan_report_path)) if secret_scan_report_path else {}
+    blockers = int(payload.get("blocker_count", 0) or 0) if payload else 0
+    warnings = int(payload.get("warning_count", 0) or 0) if payload else 0
+    alerts = []
+    if blockers:
+        alerts.append(MonitoringAlert("error", "secret_scan", "secret scan has blockers", {"blocker_count": blockers}))
+    elif warnings:
+        alerts.append(MonitoringAlert("warning", "secret_scan", "secret scan has warnings", {"warning_count": warnings}))
+    return {"exists": bool(payload), "secret_scan_blocker_count": blockers, "secret_scan_warning_count": warnings}, alerts
+
+
+def check_broker_uat_contract(uat_report_path: str | Path | None, contract_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    report = _read_json(Path(uat_report_path)) if uat_report_path else {}
+    contract = _read_json(Path(contract_report_path)) if contract_report_path else {}
+    summary = report.get("summary", {}) if isinstance(report.get("summary"), dict) else {}
+    failed = int(summary.get("failed_count", contract.get("failed_count", 0)) or 0) if (report or contract) else 0
+    status = str(report.get("status") or contract.get("status") or "")
+    alerts = []
+    if failed:
+        alerts.append(MonitoringAlert("error", "broker_uat_contract", "BrokerAdapter UAT has failed scenarios", {"failed_count": failed}))
+    return {
+        "exists": bool(report or contract),
+        "broker_uat_status": status,
+        "broker_uat_failed_scenario_count": failed,
+        "broker_adapter_contract_status": str(contract.get("status", "")) if contract else "",
+    }, alerts
+
+
+def check_go_live_gate(decision_path: str | Path | None, scorecard_path: str | Path | None = None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    decision = _read_json(Path(decision_path)) if decision_path else {}
+    scorecard = _read_json(Path(scorecard_path)) if scorecard_path else {}
+    status = str(decision.get("status", "") if decision else "")
+    remediation = decision.get("required_remediation", []) if isinstance(decision.get("required_remediation"), list) else []
+    blocker_count = int((decision.get("metadata") or {}).get("blocker_count", 0) or 0) if isinstance(decision.get("metadata"), dict) else 0
+    alerts = []
+    if status == "not_ready" or blocker_count:
+        alerts.append(MonitoringAlert("error", "go_live_gate", "go-live gate is not ready", {"status": status, "blocker_count": blocker_count}))
+    elif status == "insufficient_data" or remediation:
+        alerts.append(MonitoringAlert("warning", "go_live_gate", "go-live gate requires remediation", {"status": status, "remediation": len(remediation)}))
+    return {
+        "exists": bool(decision),
+        "go_live_status": status,
+        "go_live_blocker_count": blocker_count,
+        "go_live_required_remediation_count": len(remediation),
+        "ready_for_manual_pilot_review": status == "ready_for_manual_pilot_review",
+        "scorecard_status": str(scorecard.get("status", "")) if scorecard else "",
+    }, alerts
+
+
+def check_no_real_submit_path(pack_path: str | Path | None, decision_path: str | Path | None = None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    pack = _read_json(Path(pack_path)) if pack_path else {}
+    decision = _read_json(Path(decision_path)) if decision_path else {}
+    real_submit = bool(pack.get("real_broker_submit_supported", False)) if pack else False
+    metadata = decision.get("metadata", {}) if isinstance(decision.get("metadata"), dict) else {}
+    real_submit = real_submit or bool(metadata.get("real_broker_submit_enabled", False))
+    alerts = [MonitoringAlert("error", "no_real_submit_path", "real submit path detected")] if real_submit else []
+    return {"real_submit_path_detected": real_submit, "ok": not real_submit}, alerts
+
+
+def check_go_live_required_remediation(decision_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    decision = _read_json(Path(decision_path)) if decision_path else {}
+    remediation = decision.get("required_remediation", []) if isinstance(decision.get("required_remediation"), list) else []
+    alerts = []
+    if remediation:
+        alerts.append(MonitoringAlert("warning", "go_live_required_remediation", "go-live gate has required remediation", {"count": len(remediation)}))
+    return {"exists": bool(decision), "required_remediation_count": len(remediation)}, alerts
+
+
+def check_manual_review_status(decision_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    decision = _read_json(Path(decision_path)) if decision_path else {}
+    status = str(decision.get("status", "") if decision else "")
+    return {"exists": bool(decision), "manual_review_status": status, "human_review_required": True}, []
+
+
 def check_compute_cluster_resources(resource_snapshot_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     payload = _read_json(Path(resource_snapshot_path)) if resource_snapshot_path else {}
     cuda_available = bool(payload.get("cuda_available", False)) if payload else False

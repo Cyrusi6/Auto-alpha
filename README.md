@@ -1244,6 +1244,43 @@ Current PIT boundaries:
 - `securities` can request `L,D,P` via `--security-list-statuses L,D,P`; if only `L` is present, reports show a current-only security-master warning rather than failing by default.
 - `adjustment_factors` and `index_members` are included in contracts but require human review for production-grade as-of semantics.
 
+## Pre-Live Compliance, Broker UAT, And Go/No-Go Review
+
+`program_trading_compliance/` builds a local program-trading evidence pack from existing artifacts. It records system, strategy, risk-control, data, model, execution, operation, incident, monitoring, release, and approval evidence by path/hash/summary rather than copying sensitive files. It also runs a low-cost secret scan and writes compliance review artifacts. This is local evidence organization only; it is not legal advice, regulatory filing, broker authorization, or trading permission.
+
+```bash
+uv run python -m program_trading_compliance.run_compliance build-pack \
+  --output-dir /tmp/auto-alpha-demo/compliance \
+  --artifact-dir /tmp/auto-alpha-demo \
+  --pretty
+```
+
+`broker_uat_lab/` runs deterministic offline BrokerAdapter contract UAT. The mock adapter covers idempotent submit, full/partial/rejected fills, cancel/replace, duplicate fills, out-of-order events, replay, rate-limit handling, kill-switch blocking, file-outbox roundtrip placeholders, settlement checks, and EOD checks without network calls or broker credentials.
+
+```bash
+uv run python -m broker_uat_lab.run_uat run \
+  --output-dir /tmp/auto-alpha-demo/broker_uat \
+  --broker-store-dir /tmp/auto-alpha-demo/broker_uat_store \
+  --profile sample \
+  --adapter mock \
+  --pretty
+```
+
+`go_live_gate/` combines compliance, secret-scan, BrokerAdapter UAT, dry-run file gateway, mapping certification, handoff, readiness, replay, risk, settlement, incident, monitoring, and release artifacts into a pre-live scorecard. Its decision can only represent local readiness stages: `not_ready`, `insufficient_data`, `ready_for_broker_uat`, `ready_for_file_outbox_dry_run`, or `ready_for_manual_pilot_review`. It does not change production mode, enable a broker route, unlock a kill switch, or submit anything externally.
+
+```bash
+uv run python -m go_live_gate.run_go_live run \
+  --policy-profile sample_lenient_go_live \
+  --output-dir /tmp/auto-alpha-demo/go_live_gate \
+  --program-trading-compliance-pack-path /tmp/auto-alpha-demo/compliance/program_trading_compliance_pack.json \
+  --secret-scan-report-path /tmp/auto-alpha-demo/compliance/secret_scan_report.json \
+  --broker-uat-report-path /tmp/auto-alpha-demo/broker_uat/broker_uat_report.json \
+  --broker-adapter-contract-report-path /tmp/auto-alpha-demo/broker_uat/broker_adapter_contract_report.json \
+  --pretty
+```
+
+`approval/` supports `compliance_review`, `broker_uat_review`, and `go_live_review` approval batches with empty order lists. These approvals are local review records only and never trigger execution.
+
 ## Current Gaps
 
 - Tushare HTTP provider, production sync scaffolding, governed backfill plans, offline fake smoke, gated online smoke/backfill, permission/rate diagnostics, audit summary, incremental recovery checks, baseline comparison, dataset versioning, and research freezes are available; production use still requires real token/quota operation, real full-market performance runs, incremental matrix refresh, and more provider pairs.
@@ -1254,4 +1291,4 @@ Current PIT boundaries:
 - Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.
 - One-click research suites now provide local walk-forward, promotion gates, model registry records, lifecycle review packages, active deployment state, and rollback artifacts; daily operations can require an active governed model. Future work should add richer lifecycle policies and external review workflow integrations.
 - Portfolio Lab and Portfolio Certification provide local policy-grid robustness checks, certified portfolio policy packages, optimizer-policy registration, and activation approval gates. Sample certification is only a smoke path; real certification should be tied to a governed data freeze and longer production review windows.
-- Broker adapter, dry-run file outbox gateway, mapping certification, operator handoff packages, broker statement import, settlement profiles, EOD reconciliation, account ledger, production-day orchestration, multi-day replay, shadow lab, live readiness, shadow-only simulation, and incident response are local only. No real broker integration, credential handling, network submission, verified QMT/broker file compatibility, or tax reporting interface is implemented.
+- Broker adapter, dry-run file outbox gateway, mapping certification, operator handoff packages, local compliance evidence packs, BrokerAdapter UAT, Go/No-Go scorecards, broker statement import, settlement profiles, EOD reconciliation, account ledger, production-day orchestration, multi-day replay, shadow lab, live readiness, shadow-only simulation, and incident response are local only. No real broker integration, credential handling, network submission, verified QMT/broker file compatibility, regulatory filing automation, legal opinion, or tax reporting interface is implemented.

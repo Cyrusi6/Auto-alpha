@@ -25,6 +25,7 @@ from .checks import (
     check_broker_rejected_orders,
     check_broker_file_gateway_report,
     check_broker_mapping_certification,
+    check_broker_uat_contract,
     check_baseline_compare,
     check_backfill_coverage,
     check_backfill_run,
@@ -125,6 +126,12 @@ from .checks import (
     check_unresolved_reconciliation_breaks,
     check_material_reconciliation_breaks,
     check_live_readiness,
+    check_go_live_gate,
+    check_go_live_required_remediation,
+    check_manual_review_status,
+    check_no_real_submit_path,
+    check_program_trading_compliance_pack,
+    check_secret_scan,
     check_multi_day_incident_trend,
 )
 from .report import build_monitoring_report, write_monitoring_report
@@ -259,6 +266,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--shadow-calibration-suggestions-path")
     parser.add_argument("--live-readiness-decision-path")
     parser.add_argument("--live-readiness-scorecard-path")
+    parser.add_argument("--program-trading-compliance-pack-path")
+    parser.add_argument("--secret-scan-report-path")
+    parser.add_argument("--broker-uat-report-path")
+    parser.add_argument("--broker-adapter-contract-report-path")
+    parser.add_argument("--go-live-gate-decision-path")
+    parser.add_argument("--go-live-gate-scorecard-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -294,6 +307,13 @@ def main(argv: list[str] | None = None) -> int:
         ("broker_file_gateway", lambda: check_broker_file_gateway_report(args.broker_file_gateway_report_path)),
         ("operator_handoff", lambda: check_operator_handoff_report(args.operator_handoff_report_path)),
         ("broker_mapping_certification", lambda: check_broker_mapping_certification(args.broker_mapping_certification_decision_path)),
+        ("program_trading_compliance", lambda: check_program_trading_compliance_pack(args.program_trading_compliance_pack_path)),
+        ("secret_scan", lambda: check_secret_scan(args.secret_scan_report_path)),
+        ("broker_uat_contract", lambda: check_broker_uat_contract(args.broker_uat_report_path, args.broker_adapter_contract_report_path)),
+        ("go_live_gate", lambda: check_go_live_gate(args.go_live_gate_decision_path, args.go_live_gate_scorecard_path)),
+        ("go_live_required_remediation", lambda: check_go_live_required_remediation(args.go_live_gate_decision_path)),
+        ("no_real_submit_path", lambda: check_no_real_submit_path(args.program_trading_compliance_pack_path, args.go_live_gate_decision_path)),
+        ("manual_review_status", lambda: check_manual_review_status(args.go_live_gate_decision_path)),
         ("pre_trade_risk_controls", lambda: check_pre_trade_risk_controls(args.risk_control_report_path or _default_risk_control_path(args.orders_dir, "risk_control_report.json"))),
         ("risk_limit_usage", lambda: check_risk_limit_usage(args.risk_limit_usage_path or _default_risk_control_path(args.orders_dir, "risk_limit_usage.jsonl"))),
         ("kill_switch_state", lambda: check_kill_switch_state(args.kill_switch_state_path or _default_risk_control_path(args.orders_dir, "kill_switch_state.json"))),

@@ -30,6 +30,10 @@ def evaluate_readiness_gates(
     paper_account_dir: str | Path | None = None,
     risk_control_state_dir: str | Path | None = None,
     risk_controls: bool = False,
+    compliance_pack_path: str | Path | None = None,
+    broker_uat_report_path: str | Path | None = None,
+    go_live_gate_decision_path: str | Path | None = None,
+    require_go_live_gate: bool = False,
 ) -> ProductionReadinessReport:
     gates: list[ProductionGateResult] = []
     actual_data_dir = Path(data_freeze_dir) / "data" if data_freeze_dir else Path(data_dir) if data_dir else None
@@ -49,6 +53,7 @@ def evaluate_readiness_gates(
         gates.append(_gate_risk_state(risk_control_state_dir))
     else:
         gates.append(ProductionGateResult("risk_state", ProductionGateStatus.skipped, "info", "risk controls disabled"))
+    gates.append(_gate_go_live(go_live_gate_decision_path, require_go_live_gate, compliance_pack_path, broker_uat_report_path))
     blocked = sum(1 for gate in gates if gate.status in {ProductionGateStatus.blocked, ProductionGateStatus.failed})
     warnings = sum(1 for gate in gates if gate.status == ProductionGateStatus.warning)
     status = "blocked" if blocked else "warning" if warnings else "passed"
@@ -150,6 +155,25 @@ def _gate_risk_state(risk_control_state_dir: str | Path | None) -> ProductionGat
     if state.active:
         return ProductionGateResult("risk_kill_switch", ProductionGateStatus.blocked, "error", "risk kill switch is active", value=state.reason)
     return ProductionGateResult("risk_kill_switch", ProductionGateStatus.passed, "info", "risk kill switch inactive")
+
+
+def _gate_go_live(
+    decision_path: str | Path | None,
+    required: bool,
+    compliance_pack_path: str | Path | None,
+    broker_uat_report_path: str | Path | None,
+) -> ProductionGateResult:
+    payload = _read_json(decision_path)
+    status = str(payload.get("status") or "")
+    accepted = {"ready_for_file_outbox_dry_run", "ready_for_manual_pilot_review"}
+    refs = _refs(decision_path, compliance_pack_path, broker_uat_report_path)
+    if not payload:
+        gate_status = ProductionGateStatus.blocked if required else ProductionGateStatus.skipped
+        return ProductionGateResult("go_live_gate", gate_status, "error" if required else "info", "go-live gate decision missing", artifact_refs=refs)
+    if status in accepted:
+        return ProductionGateResult("go_live_gate", ProductionGateStatus.passed, "info", "go-live gate accepts local file dry-run or manual review", value=status, artifact_refs=refs)
+    gate_status = ProductionGateStatus.blocked if required else ProductionGateStatus.warning
+    return ProductionGateResult("go_live_gate", gate_status, "error" if required else "warning", "go-live gate is not in an accepted local status", value=status, artifact_refs=refs)
 
 
 def _read_json(path: str | Path | None) -> dict[str, Any]:

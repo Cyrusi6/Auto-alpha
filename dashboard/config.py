@@ -25,6 +25,9 @@ class DashboardConfig:
     shadow_trading_dir: Path = Path("artifacts/shadow_trading")
     shadow_lab_dir: Path = Path("artifacts/shadow_lab")
     live_readiness_dir: Path = Path("artifacts/live_readiness")
+    program_trading_compliance_dir: Path = Path("artifacts/program_trading_compliance")
+    broker_uat_dir: Path = Path("artifacts/broker_uat")
+    go_live_gate_dir: Path = Path("artifacts/go_live_gate")
     incident_dir: Path = Path("artifacts/incidents")
     monitoring_dir: Path = Path("artifacts/monitoring")
     matrix_cache_dir: Path = Path("data/ashare/matrix_cache")
@@ -79,6 +82,11 @@ class DashboardConfig:
             shadow_trading_dir=Path(os.getenv("ASHARE_DASHBOARD_SHADOW_TRADING_DIR") or "artifacts/shadow_trading"),
             shadow_lab_dir=Path(os.getenv("ASHARE_DASHBOARD_SHADOW_LAB_DIR") or "artifacts/shadow_lab"),
             live_readiness_dir=Path(os.getenv("ASHARE_DASHBOARD_LIVE_READINESS_DIR") or "artifacts/live_readiness"),
+            program_trading_compliance_dir=Path(
+                os.getenv("ASHARE_DASHBOARD_PROGRAM_TRADING_COMPLIANCE_DIR") or "artifacts/program_trading_compliance"
+            ),
+            broker_uat_dir=Path(os.getenv("ASHARE_DASHBOARD_BROKER_UAT_DIR") or "artifacts/broker_uat"),
+            go_live_gate_dir=Path(os.getenv("ASHARE_DASHBOARD_GO_LIVE_GATE_DIR") or "artifacts/go_live_gate"),
             incident_dir=Path(os.getenv("ASHARE_DASHBOARD_INCIDENT_DIR") or "artifacts/incidents"),
             monitoring_dir=Path(os.getenv("ASHARE_DASHBOARD_MONITORING_DIR") or "artifacts/monitoring"),
             matrix_cache_dir=Path(os.getenv("ASHARE_DASHBOARD_MATRIX_CACHE_DIR") or "data/ashare/matrix_cache"),
