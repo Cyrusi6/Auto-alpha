@@ -460,6 +460,82 @@ def requests_from_corpus(path: str | Path, max_records: int | None = None) -> li
     return requests
 
 
+def requests_from_requests_json(path: str | Path) -> list[FormulaEvalRequest]:
+    target = Path(path)
+    if not target.exists():
+        raise ValueError(f"requests JSON file not found: {target}")
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid requests JSON: {target}: {exc}") from exc
+    if isinstance(payload, dict):
+        rows = payload.get("requests")
+        if not isinstance(rows, list):
+            raise ValueError("requests JSON object must contain requests: list[dict]")
+    elif isinstance(payload, list):
+        rows = payload
+    else:
+        raise ValueError("requests JSON must be list[dict] or object with requests: list[dict]")
+    return [_request_from_payload(row, idx) for idx, row in enumerate(rows)]
+
+
+def requests_from_requests_jsonl(path: str | Path) -> list[FormulaEvalRequest]:
+    target = Path(path)
+    requests: list[FormulaEvalRequest] = []
+    if not target.exists():
+        raise ValueError(f"requests JSONL file not found: {target}")
+    for idx, line in enumerate(target.read_text(encoding="utf-8").splitlines()):
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid JSONL at request[{idx}]: {exc}") from exc
+        requests.append(_request_from_payload(payload, idx))
+    return requests
+
+
+def _request_from_payload(payload: Any, idx: int) -> FormulaEvalRequest:
+    if not isinstance(payload, dict):
+        raise ValueError(f"request[{idx}] must be an object")
+    required = ("name", "formula_tokens", "formula_names", "formula_hash")
+    for field in required:
+        if field not in payload:
+            raise ValueError(f"request[{idx}] missing required field: {field}")
+        value = payload.get(field)
+        if value is None or value == "":
+            raise ValueError(f"request[{idx}] has empty required field: {field}")
+    tokens = payload.get("formula_tokens")
+    names = payload.get("formula_names")
+    if not isinstance(tokens, list) or not tokens:
+        raise ValueError(f"request[{idx}] formula_tokens must be a non-empty list")
+    if not isinstance(names, list) or not names:
+        raise ValueError(f"request[{idx}] formula_names must be a non-empty list")
+    metadata = payload.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        raise ValueError(f"request[{idx}] metadata must be an object when provided")
+    try:
+        formula_tokens = [int(token) for token in tokens]
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"request[{idx}] formula_tokens must contain integers") from exc
+    try:
+        complexity = int(payload["complexity"]) if payload.get("complexity") is not None else None
+        lookback = int(payload["lookback"]) if payload.get("lookback") is not None else None
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"request[{idx}] complexity/lookback must be integers when provided") from exc
+    return FormulaEvalRequest(
+        name=str(payload["name"]),
+        formula_tokens=formula_tokens,
+        formula_names=[str(name) for name in names],
+        formula_hash=str(payload["formula_hash"]),
+        description=str(payload["description"]) if payload.get("description") is not None else None,
+        source=str(payload["source"]) if payload.get("source") is not None else None,
+        complexity=complexity,
+        lookback=lookback,
+        metadata=metadata,
+    )
+
+
 def _resolve_device(device: str, strict: bool) -> torch.device:
     requested = str(device or "auto")
     if requested == "auto":

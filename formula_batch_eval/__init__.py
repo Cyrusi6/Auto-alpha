@@ -1,6 +1,12 @@
 """Chunked formula batch evaluation."""
 
-from .evaluator import FormulaBatchEvaluator, requests_from_candidates, requests_from_corpus
+from .evaluator import (
+    FormulaBatchEvaluator,
+    requests_from_candidates,
+    requests_from_corpus,
+    requests_from_requests_json,
+    requests_from_requests_jsonl,
+)
 from .merge import merge_shard_outputs
 from .models import (
     FormulaBatchEvalBenchmark,
@@ -23,6 +29,8 @@ __all__ = [
     "merge_shard_outputs",
     "requests_from_candidates",
     "requests_from_corpus",
+    "requests_from_requests_json",
+    "requests_from_requests_jsonl",
     "select_shard_requests",
     "write_shard_manifest",
 ]

@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from artifact_schema.writer import write_json_artifact, write_jsonl_artifact
+from compute_cluster import ComputeDeviceType, ComputeJobKind, ComputeJobSpec, ComputeSchedulerConfig, LocalComputeScheduler
 from data_lake import validate_research_input
 from factor_store import LocalFactorStore
-from formula_batch_eval import FormulaBatchEvalConfig, FormulaBatchEvaluator, FormulaEvalRequest
+from formula_batch_eval import FormulaBatchEvalConfig, FormulaBatchEvaluator, FormulaEvalRequest, merge_shard_outputs
 from model_core.data_loader import AShareDataLoader
 
 from feature_factory import build_feature_set_manifest, build_feature_tensor_artifacts, load_feature_manifest
@@ -257,6 +259,8 @@ class AlphaFactoryRunner:
             )
             for item in selected
         ]
+        if self._should_run_full_eval_with_scheduler():
+            return self._run_full_eval_with_scheduler(requests, data_dir, campaign, eval_dir)
         result = FormulaBatchEvaluator(
             FormulaBatchEvalConfig(
                 data_dir=data_dir,
@@ -296,27 +300,180 @@ class AlphaFactoryRunner:
         )
         self.paths["formula_batch_eval_result_path"] = result.paths.get("formula_batch_eval_result_path", "")
         self.paths["formula_eval_results_path"] = result.paths.get("formula_eval_results_path", "")
-        if self.config.use_compute_scheduler and self.config.compute_state_dir:
-            compute_dir = Path(self.config.compute_state_dir)
-            compute_dir.mkdir(parents=True, exist_ok=True)
-            self.paths["compute_run_report_path"] = str(
-                write_json_artifact(
-                    compute_dir / "compute_run_report.json",
-                    {
-                        "run_id": campaign.campaign_id,
-                        "status": "success",
-                        "job_count": max(self.config.shard_count, 1),
-                        "summary": {
-                            "compute_success_count": max(self.config.shard_count, 1),
-                            "compute_failed_count": 0,
-                            "fallback_to_cpu_count": 0,
-                            "cuda_oom_count": 0,
-                        },
+        return rows, summary
+
+    def _should_run_full_eval_with_scheduler(self) -> bool:
+        return bool(
+            self.config.use_batch_eval
+            and self.config.use_compute_scheduler
+            and int(self.config.shard_count or 1) > 1
+            and self.config.compute_state_dir
+        )
+
+    def _run_full_eval_with_scheduler(
+        self,
+        requests: list[FormulaEvalRequest],
+        data_dir: str,
+        campaign,
+        eval_dir: Path,
+    ) -> tuple[list[dict], dict[str, Any]]:
+        eval_dir.mkdir(parents=True, exist_ok=True)
+        request_payloads = [request.to_dict() for request in requests]
+        requests_json = eval_dir / "alpha_full_eval_requests.json"
+        requests_jsonl = eval_dir / "alpha_full_eval_requests.jsonl"
+        requests_json.write_text(json.dumps({"requests": request_payloads}, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        with requests_jsonl.open("w", encoding="utf-8") as handle:
+            for row in request_payloads:
+                handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+        self.paths["alpha_full_eval_requests_json_path"] = str(requests_json)
+        self.paths["alpha_full_eval_requests_jsonl_path"] = str(requests_jsonl)
+
+        shard_count = max(1, int(self.config.shard_count or 1))
+        shard_root = eval_dir / "shards"
+        compute_output_dir = Path(self.config.compute_output_dir) if self.config.compute_output_dir else eval_dir / "compute"
+        scheduler = LocalComputeScheduler(
+            ComputeSchedulerConfig(
+                state_dir=str(self.config.compute_state_dir),
+                output_dir=str(compute_output_dir),
+                max_parallel_cpu_jobs=max(1, int(self.config.max_parallel_cpu_jobs or 1)),
+                max_parallel_gpu_jobs=max(0, int(self.config.max_parallel_gpu_jobs or 0)),
+                resume=bool(self.config.resume),
+            )
+        )
+        jobs: list[ComputeJobSpec] = []
+        shard_output_dirs: list[Path] = []
+        for shard_id in range(shard_count):
+            shard_dir = shard_root / f"shard_{shard_id:04d}"
+            shard_factor_store = shard_dir / "factor_store"
+            shard_report_dir = shard_dir / "reports"
+            shard_output_dir = shard_dir / "output"
+            shard_output_dir.mkdir(parents=True, exist_ok=True)
+            shard_output_dirs.append(shard_output_dir)
+            self.paths[f"formula_batch_eval_shard_{shard_id:04d}_output_dir"] = str(shard_output_dir)
+            self.paths[f"formula_batch_eval_shard_{shard_id:04d}_result_path"] = str(shard_output_dir / "formula_batch_eval_result.json")
+            self.paths[f"formula_batch_eval_shard_{shard_id:04d}_results_path"] = str(shard_output_dir / "formula_eval_results.jsonl")
+            self.paths[f"formula_batch_eval_shard_{shard_id:04d}_resource_report_path"] = str(shard_output_dir / "resource_usage.json")
+            self.paths[f"formula_batch_eval_shard_{shard_id:04d}_manifest_path"] = str(shard_output_dir / "shard_manifest.json")
+            device_arg = "cuda" if str(self.config.batch_eval_device or "").startswith("cuda") else (
+                str(self.config.batch_eval_device) if str(self.config.batch_eval_device or "") not in {"", "auto"} else "cpu"
+            )
+            required_device = ComputeDeviceType.CUDA if device_arg.startswith("cuda") else ComputeDeviceType.CPU
+            args = [
+                "--requests-json",
+                str(requests_json),
+                "--data-dir",
+                str(data_dir),
+                "--factor-store-dir",
+                str(shard_factor_store),
+                "--report-dir",
+                str(shard_report_dir),
+                "--output-dir",
+                str(shard_output_dir),
+                "--shard-id",
+                str(shard_id),
+                "--shard-count",
+                str(shard_count),
+                "--write-shard-manifest",
+                "--resource-report-path",
+                str(shard_output_dir / "resource_usage.json"),
+                "--chunk-size",
+                str(max(1, int(self.config.batch_eval_chunk_size or 1))),
+                "--factor-transform",
+                self.config.factor_transform,
+                "--correlation-threshold",
+                str(float(self.config.correlation_threshold)),
+                "--min-coverage",
+                str(float(self.config.min_coverage)),
+                "--feature-set-name",
+                self.config.feature_set_name,
+                "--alpha-campaign-id",
+                campaign.campaign_id,
+                "--device",
+                device_arg,
+                "--continue-on-error",
+            ]
+            if self.config.enable_gate:
+                args.append("--enable-gate")
+            else:
+                args.append("--disable-gate")
+            if self.config.universe_name:
+                args.extend(["--universe-name", self.config.universe_name])
+            if self.config.universe_file:
+                args.extend(["--universe-file", self.config.universe_file])
+            manifest_path = self.config.feature_set_manifest_path or self.paths.get("feature_set_manifest_path")
+            if manifest_path:
+                args.extend(["--feature-set-manifest-path", manifest_path])
+            if self.config.matrix_cache_dir and (Path(self.config.matrix_cache_dir) / "metadata.json").exists():
+                args.extend(["--matrix-cache-dir", self.config.matrix_cache_dir, "--use-matrix-cache"])
+            if self.config.use_eval_cache:
+                args.extend(["--use-eval-cache", "--eval-cache-dir", str(shard_dir / "eval_cache")])
+            if self.config.register_shortlist:
+                args.append("--register-approved")
+            jobs.append(
+                ComputeJobSpec(
+                    job_id=f"{campaign.campaign_id}_formula_batch_eval_shard_{shard_id:04d}",
+                    job_kind=ComputeJobKind.FORMULA_BATCH_EVAL,
+                    command=[sys.executable, "-m", "formula_batch_eval.run_batch_eval"],
+                    args=args,
+                    cwd=str(Path.cwd()),
+                    input_paths=[str(requests_json), str(data_dir)],
+                    output_dir=str(shard_output_dir),
+                    artifact_paths={
+                        "formula_batch_eval_result": str(shard_output_dir / "formula_batch_eval_result.json"),
+                        "formula_eval_results": str(shard_output_dir / "formula_eval_results.jsonl"),
+                        "resource_usage": str(shard_output_dir / "resource_usage.json"),
+                        "shard_manifest": str(shard_output_dir / "shard_manifest.json"),
                     },
-                    "compute_run_report",
-                    "alpha_factory",
+                    required_device_type=required_device,
+                    gpu_count=1 if required_device == ComputeDeviceType.CUDA else 0,
+                    max_retries=0,
+                    shard_id=shard_id,
+                    shard_count=shard_count,
+                    metadata={"alpha_campaign_id": campaign.campaign_id, "formula_requests": len(requests)},
                 )
             )
+        scheduler.submit_jobs(jobs)
+        compute_report = scheduler.run()
+        self.paths["compute_run_report_path"] = compute_report.paths.get("compute_run_report", str(compute_output_dir / "compute_run_report.json"))
+        self.paths["compute_job_runs_path"] = compute_report.paths.get("compute_job_runs", str(compute_output_dir / "compute_job_runs.jsonl"))
+        self.paths["compute_jobs_path"] = compute_report.paths.get("compute_jobs", str(compute_output_dir / "compute_jobs.jsonl"))
+
+        merged_dir = eval_dir / "merged"
+        merged = merge_shard_outputs(shard_output_dirs, merged_dir)
+        rows = [row for row in merged.get("results", []) if isinstance(row, dict)]
+        self.paths["formula_batch_eval_result_path"] = str(merged.get("paths", {}).get("formula_batch_eval_result_path", merged_dir / "formula_batch_eval_result.json"))
+        self.paths["formula_eval_results_path"] = str(merged.get("paths", {}).get("formula_eval_results_path", merged_dir / "formula_eval_results.jsonl"))
+        self.paths["formula_batch_eval_merged_dir"] = str(merged_dir)
+
+        summary = dict(merged.get("summary") or {})
+        summary.update(
+            {
+                "enabled": True,
+                "evaluated": len(rows),
+                "batch_id": merged.get("batch_id"),
+                "scheduler_enabled": True,
+                "scheduler_status": compute_report.status,
+                "compute_job_count": int(compute_report.job_count),
+                "compute_success_count": int(compute_report.success_count),
+                "compute_failed_count": int(compute_report.failed_count),
+                "compute_skipped_count": int(compute_report.skipped_count),
+                "compute_run_report_path": self.paths.get("compute_run_report_path"),
+                "formula_batch_eval_result_path": self.paths.get("formula_batch_eval_result_path"),
+            }
+        )
+        warnings = []
+        if compute_report.status != "success" or int(compute_report.success_count) < int(compute_report.job_count):
+            warnings.append(
+                f"compute scheduler incomplete: status={compute_report.status}, success={compute_report.success_count}/{compute_report.job_count}"
+            )
+        if self.config.register_shortlist:
+            warnings.append("scheduler shard jobs register only into shard-local factor stores; main factor store registration is deferred")
+        self.warnings.extend(warnings)
+        if warnings:
+            summary["warnings"] = warnings
+        self.paths["alpha_full_eval_summary_path"] = str(
+            write_json_artifact(self.output_dir / "alpha_full_eval_summary.json", summary, "alpha_full_eval_summary", "alpha_factory")
+        )
         return rows, summary
 
     def _annotate_registered_shortlist(self, shortlist, campaign_id: str) -> None:

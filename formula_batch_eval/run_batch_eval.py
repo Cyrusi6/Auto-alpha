@@ -8,7 +8,13 @@ import json
 from factor_engine import SUPPORTED_TRANSFORMS
 from research.candidates import default_candidates, load_candidates_json
 
-from .evaluator import FormulaBatchEvaluator, requests_from_candidates, requests_from_corpus
+from .evaluator import (
+    FormulaBatchEvaluator,
+    requests_from_candidates,
+    requests_from_corpus,
+    requests_from_requests_json,
+    requests_from_requests_jsonl,
+)
 from .merge import merge_shard_outputs
 from .models import FormulaBatchEvalConfig
 from .sharding import select_shard_requests, write_shard_manifest
@@ -22,6 +28,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--factor-store-dir", required=True)
     parser.add_argument("--report-dir", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--requests-json")
+    parser.add_argument("--requests-jsonl")
     parser.add_argument("--corpus-path", "--formula-corpus-path", dest="corpus_path")
     parser.add_argument("--candidates-json")
     parser.add_argument("--max-formulas", type=int)
@@ -63,21 +71,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
+    parser = _build_parser()
+    args = parser.parse_args(argv)
     if args.merge_shards:
         payload = merge_shard_outputs(args.shard_dir, args.merge_output_dir or args.output_dir)
         print(json.dumps(payload, ensure_ascii=False, indent=2 if args.pretty else None))
         return 0 if payload.get("status") in {"success", "warning"} else 1
-    if args.corpus_path:
-        requests = requests_from_corpus(args.corpus_path, max_records=args.max_formulas)
-    elif args.candidates_json:
-        requests = requests_from_candidates(load_candidates_json(args.candidates_json))
-        if args.max_formulas is not None:
-            requests = requests[: args.max_formulas]
-    else:
-        requests = requests_from_candidates(default_candidates())
-        if args.max_formulas is not None:
-            requests = requests[: args.max_formulas]
+    try:
+        requests, source_path = _load_requests(args, parser)
+    except ValueError as exc:
+        parser.error(str(exc))
     requests = select_shard_requests(requests, args.shard_id, args.shard_count)
     if args.write_shard_manifest and args.shard_id is not None:
         write_shard_manifest(
@@ -85,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
             args.output_dir,
             args.shard_id,
             args.shard_count,
-            args.corpus_path or args.candidates_json,
+            source_path,
             manifest_path=args.shard_manifest_path,
         )
     config = FormulaBatchEvalConfig(
@@ -122,6 +125,38 @@ def main(argv: list[str] | None = None) -> int:
     result = FormulaBatchEvaluator(config).run(requests)
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))
     return 0
+
+
+def _load_requests(args: argparse.Namespace, parser: argparse.ArgumentParser) -> tuple[list, str | None]:
+    sources = [
+        ("--requests-json", args.requests_json),
+        ("--requests-jsonl", args.requests_jsonl),
+        ("--corpus-path", args.corpus_path),
+        ("--candidates-json", args.candidates_json),
+    ]
+    provided = [(name, value) for name, value in sources if value]
+    if len(provided) > 1:
+        parser.error("formula request source arguments are mutually exclusive: " + ", ".join(name for name, _ in provided))
+    if args.requests_json:
+        requests = requests_from_requests_json(args.requests_json)
+        source_path = args.requests_json
+    elif args.requests_jsonl:
+        requests = requests_from_requests_jsonl(args.requests_jsonl)
+        source_path = args.requests_jsonl
+    elif args.corpus_path:
+        requests = requests_from_corpus(args.corpus_path, max_records=args.max_formulas)
+        source_path = args.corpus_path
+    elif args.candidates_json:
+        requests = requests_from_candidates(load_candidates_json(args.candidates_json))
+        source_path = args.candidates_json
+        if args.max_formulas is not None:
+            requests = requests[: args.max_formulas]
+    else:
+        requests = requests_from_candidates(default_candidates())
+        source_path = None
+        if args.max_formulas is not None:
+            requests = requests[: args.max_formulas]
+    return requests, source_path
 
 
 if __name__ == "__main__":

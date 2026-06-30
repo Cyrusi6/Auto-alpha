@@ -1958,3 +1958,14 @@
 - Validate any real broker UAT profile only through human-reviewed local approval, explicit network gate, redacted credential references, and read-only endpoints.
 - Add richer external fixture mapping once reviewed account/order/fill/statement samples are available.
 - Keep real order submission, cancellation, replacement, regulatory filing, automatic pilot trading, and broker compatibility claims out of this layer.
+
+## Maintenance - Formula Batch Eval Requests And Compute Scheduler Closure
+
+- Added explicit `--requests-json` and `--requests-jsonl` inputs for `formula_batch_eval.run_batch_eval`, with strict request validation and clear CLI errors for malformed request files or mutually exclusive sources.
+- Replaced Alpha Factory's synthetic compute report path with real `ComputeJobSpec` shard jobs when `use_compute_scheduler` and multi-shard batch eval are enabled. Each shard now writes to its own factor store/report/output directories, then merges via `formula_batch_eval.merge`.
+- Updated `LocalComputeScheduler` to run bounded parallel CPU/GPU batches with `ThreadPoolExecutor`, respect `max_parallel_cpu_jobs` / `max_parallel_gpu_jobs`, retain pending CUDA jobs when leases are unavailable, and protect JSON/JSONL job state updates with `threading.RLock`.
+- Added focused tests for explicit request JSON/JSONL input, bounded CPU scheduler execution, and Alpha Factory's real compute-scheduler batch-eval path.
+
+### Follow-Ups
+- Keep unified main factor-store registration out of parallel shard jobs until a dedicated consolidation/approval path is added.
+- Extend scheduler observability later with queue wait timing and richer pending-job status, without introducing an external queue service.
