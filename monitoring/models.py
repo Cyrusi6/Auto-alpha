@@ -91,6 +91,12 @@ class MonitoringReport:
         production_phases = self.checks.get("production_phase_failures", {}) if isinstance(self.checks, dict) else {}
         shadow_run = self.checks.get("shadow_trading_run", {}) if isinstance(self.checks, dict) else {}
         shadow_drift = self.checks.get("shadow_drift", {}) if isinstance(self.checks, dict) else {}
+        production_replay = self.checks.get("production_replay", {}) if isinstance(self.checks, dict) else {}
+        replay_days = self.checks.get("replay_day_failures", {}) if isinstance(self.checks, dict) else {}
+        shadow_lab = self.checks.get("shadow_lab", {}) if isinstance(self.checks, dict) else {}
+        shadow_drift_aggregate = self.checks.get("shadow_drift_aggregate", {}) if isinstance(self.checks, dict) else {}
+        shadow_calibration = self.checks.get("shadow_calibration_suggestions", {}) if isinstance(self.checks, dict) else {}
+        live_readiness = self.checks.get("live_readiness", {}) if isinstance(self.checks, dict) else {}
         incidents = self.checks.get("incidents", {}) if isinstance(self.checks, dict) else {}
         close_day = self.checks.get("production_close_day_status", {}) if isinstance(self.checks, dict) else {}
         return {
@@ -233,6 +239,23 @@ class MonitoringReport:
             "shadow_fill_rate": float(shadow_run.get("shadow_fill_rate", 0.0) or 0.0) if isinstance(shadow_run, dict) else 0.0,
             "shadow_target_weight_drift": float(shadow_drift.get("shadow_target_weight_drift", 0.0) or 0.0) if isinstance(shadow_drift, dict) else 0.0,
             "shadow_position_weight_drift": float(shadow_drift.get("shadow_position_weight_drift", 0.0) or 0.0) if isinstance(shadow_drift, dict) else 0.0,
+            "replay_id": production_replay.get("replay_id") if isinstance(production_replay, dict) else None,
+            "replay_day_count": int(production_replay.get("replay_day_count", replay_days.get("replay_day_count", 0) if isinstance(replay_days, dict) else 0) or 0) if isinstance(production_replay, dict) else 0,
+            "replay_success_day_count": int(production_replay.get("replay_success_day_count", 0) or 0) if isinstance(production_replay, dict) else 0,
+            "replay_failed_day_count": int(production_replay.get("replay_failed_day_count", replay_days.get("replay_failed_day_count", 0) if isinstance(replay_days, dict) else 0) or 0) if isinstance(production_replay, dict) else 0,
+            "replay_blocked_day_count": int(production_replay.get("replay_blocked_day_count", replay_days.get("replay_blocked_day_count", 0) if isinstance(replay_days, dict) else 0) or 0) if isinstance(production_replay, dict) else 0,
+            "shadow_lab_status": str(shadow_lab.get("shadow_lab_status", "")) if isinstance(shadow_lab, dict) else "",
+            "shadow_day_count": int(shadow_lab.get("shadow_day_count", 0) or 0) if isinstance(shadow_lab, dict) else 0,
+            "shadow_cumulative_return": float(shadow_lab.get("shadow_cumulative_return", 0.0) or 0.0) if isinstance(shadow_lab, dict) else 0.0,
+            "shadow_max_drawdown": float(shadow_lab.get("shadow_max_drawdown", 0.0) or 0.0) if isinstance(shadow_lab, dict) else 0.0,
+            "shadow_average_fill_rate": float(shadow_lab.get("shadow_average_fill_rate", 0.0) or 0.0) if isinstance(shadow_lab, dict) else 0.0,
+            "shadow_order_rejection_rate": float(shadow_lab.get("shadow_order_rejection_rate", 0.0) or 0.0) if isinstance(shadow_lab, dict) else 0.0,
+            "shadow_aggregate_target_weight_drift": float(shadow_drift_aggregate.get("shadow_target_weight_drift", 0.0) or 0.0) if isinstance(shadow_drift_aggregate, dict) else 0.0,
+            "shadow_aggregate_position_weight_drift": float(shadow_drift_aggregate.get("shadow_position_weight_drift", 0.0) or 0.0) if isinstance(shadow_drift_aggregate, dict) else 0.0,
+            "calibration_suggestion_count": int(shadow_calibration.get("calibration_suggestion_count", shadow_lab.get("calibration_suggestion_count", 0) if isinstance(shadow_lab, dict) else 0) or 0) if isinstance(shadow_calibration, dict) else 0,
+            "live_readiness_status": str(live_readiness.get("live_readiness_status", "")) if isinstance(live_readiness, dict) else "",
+            "readiness_failed_check_count": int(live_readiness.get("readiness_failed_check_count", 0) or 0) if isinstance(live_readiness, dict) else 0,
+            "readiness_required_remediation_count": int(live_readiness.get("readiness_required_remediation_count", 0) or 0) if isinstance(live_readiness, dict) else 0,
             "incident_open_count": int(incidents.get("incident_open_count", 0) or 0) if isinstance(incidents, dict) else 0,
             "incident_critical_count": int(incidents.get("incident_critical_count", 0) or 0) if isinstance(incidents, dict) else 0,
             "incident_unresolved_count": int(incidents.get("incident_unresolved_count", 0) or 0) if isinstance(incidents, dict) else 0,

@@ -1560,6 +1560,113 @@ def check_production_close_day_status(report_path: str | Path | None) -> tuple[d
     return {"exists": bool(payload), "close_day_status": status, "production_run_status": payload.get("status", "") if payload else ""}, alerts
 
 
+def check_production_replay(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    failed = int(summary.get("replay_failed_day_count", 0) or 0)
+    blocked = int(summary.get("replay_blocked_day_count", 0) or 0)
+    alerts = []
+    if failed or blocked:
+        alerts.append(MonitoringAlert("error", "production_replay", "production replay has failed or blocked days", {"failed": failed, "blocked": blocked}))
+    return {
+        "exists": bool(payload),
+        "replay_id": payload.get("replay_id") if payload else None,
+        "replay_status": payload.get("status", "") if payload else "",
+        "replay_day_count": int(summary.get("replay_day_count", 0) or 0),
+        "replay_success_day_count": int(summary.get("replay_success_day_count", 0) or 0),
+        "replay_failed_day_count": failed,
+        "replay_blocked_day_count": blocked,
+        "replay_warning_day_count": int(summary.get("replay_warning_day_count", 0) or 0),
+    }, alerts
+
+
+def check_replay_day_failures(days_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(days_path)) if days_path else []
+    failed = [row for row in rows if row.get("status") == "failed"]
+    blocked = [row for row in rows if row.get("status") == "blocked"]
+    alerts = []
+    if failed or blocked:
+        alerts.append(MonitoringAlert("error", "replay_day_failures", "replay day failures exist", {"failed": len(failed), "blocked": len(blocked)}))
+    return {"exists": bool(rows), "replay_day_count": len(rows), "replay_failed_day_count": len(failed), "replay_blocked_day_count": len(blocked)}, alerts
+
+
+def check_shadow_lab(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    perf = payload.get("performance_summary", {}) if isinstance(payload.get("performance_summary"), dict) else {}
+    drift = payload.get("drift_summary", {}) if isinstance(payload.get("drift_summary"), dict) else {}
+    suggestions = payload.get("calibration_suggestions", []) if isinstance(payload.get("calibration_suggestions"), list) else []
+    status = str(payload.get("status", "") if payload else "")
+    alerts = []
+    if status in {"failed", "error"}:
+        alerts.append(MonitoringAlert("error", "shadow_lab", "shadow lab failed", {"status": status}))
+    elif suggestions:
+        alerts.append(MonitoringAlert("warning", "shadow_lab", "shadow lab produced calibration suggestions", {"count": len(suggestions)}))
+    return {
+        "exists": bool(payload),
+        "shadow_lab_status": status,
+        "shadow_day_count": int(perf.get("shadow_day_count", 0) or 0),
+        "shadow_cumulative_return": float(perf.get("shadow_cumulative_return", 0.0) or 0.0),
+        "shadow_max_drawdown": float(perf.get("shadow_max_drawdown", 0.0) or 0.0),
+        "shadow_average_fill_rate": float(perf.get("shadow_average_fill_rate", 0.0) or 0.0),
+        "shadow_order_rejection_rate": float(perf.get("shadow_order_rejection_rate", 0.0) or 0.0),
+        "shadow_target_weight_drift": float(drift.get("shadow_target_weight_drift", 0.0) or 0.0),
+        "shadow_position_weight_drift": float(drift.get("shadow_position_weight_drift", 0.0) or 0.0),
+        "calibration_suggestion_count": len(suggestions),
+    }, alerts
+
+
+def check_shadow_drift_aggregate(drift_summary_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(drift_summary_path)) if drift_summary_path else {}
+    target = float(payload.get("shadow_target_weight_drift", 0.0) or 0.0) if payload else 0.0
+    position = float(payload.get("shadow_position_weight_drift", 0.0) or 0.0) if payload else 0.0
+    alerts = []
+    if payload and not payload.get("passed", True):
+        alerts.append(MonitoringAlert("warning", "shadow_drift_aggregate", "aggregate shadow drift exceeds threshold", {"target": target, "position": position}))
+    return {"exists": bool(payload), "shadow_target_weight_drift": target, "shadow_position_weight_drift": position, "shadow_drift_breach_count": int(payload.get("shadow_drift_breach_count", 0) or 0) if payload else 0}, alerts
+
+
+def check_shadow_calibration_suggestions(suggestions_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(suggestions_path)) if suggestions_path else {}
+    suggestions = payload.get("suggestions", []) if isinstance(payload.get("suggestions"), list) else []
+    alerts = [MonitoringAlert("warning", "shadow_calibration_suggestions", "shadow calibration suggestions require review", {"count": len(suggestions)})] if suggestions else []
+    return {"exists": bool(payload), "calibration_suggestion_count": len(suggestions)}, alerts
+
+
+def check_live_readiness(decision_path: str | Path | None, scorecard_path: str | Path | None = None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    decision = _read_json(Path(decision_path)) if decision_path else {}
+    scorecard = _read_json(Path(scorecard_path)) if scorecard_path else {}
+    failed = int((scorecard.get("summary") or {}).get("readiness_failed_check_count", 0) or 0) if isinstance(scorecard.get("summary"), dict) else 0
+    remediation = int((scorecard.get("summary") or {}).get("readiness_required_remediation_count", 0) or 0) if isinstance(scorecard.get("summary"), dict) else len(decision.get("required_remediation", []) if isinstance(decision.get("required_remediation"), list) else [])
+    status = str(decision.get("status", "") if decision else scorecard.get("status", ""))
+    alerts = []
+    if status == "not_ready" or failed:
+        alerts.append(MonitoringAlert("error", "live_readiness", "live readiness gate is not ready", {"failed": failed}))
+    elif status == "conditional":
+        alerts.append(MonitoringAlert("warning", "live_readiness", "live readiness is conditional"))
+    return {
+        "exists": bool(decision or scorecard),
+        "live_readiness_status": status,
+        "readiness_failed_check_count": failed,
+        "readiness_required_remediation_count": remediation,
+        "readiness_score": float(decision.get("score", scorecard.get("score", 0.0)) or 0.0) if (decision or scorecard) else 0.0,
+    }, alerts
+
+
+def check_readiness_remediation(decision_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(decision_path)) if decision_path else {}
+    remediation = payload.get("required_remediation", []) if isinstance(payload.get("required_remediation"), list) else []
+    alerts = [MonitoringAlert("error", "readiness_remediation", "required readiness remediation exists", {"count": len(remediation)})] if remediation else []
+    return {"exists": bool(payload), "readiness_required_remediation_count": len(remediation)}, alerts
+
+
+def check_multi_day_incident_trend(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    days = payload.get("day_results", []) if isinstance(payload.get("day_results"), list) else []
+    incident_days = sum(1 for day in days if int(day.get("incident_open_count", 0) or 0) > 0)
+    alerts = [MonitoringAlert("warning", "multi_day_incident_trend", "incidents occurred during replay", {"incident_days": incident_days})] if incident_days else []
+    return {"exists": bool(payload), "incident_replay_day_count": incident_days}, alerts
+
+
 def _eod_summary(report_path: str | Path | None) -> dict[str, Any]:
     payload = _read_json(Path(report_path)) if report_path else {}
     summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}

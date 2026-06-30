@@ -768,6 +768,36 @@ class AshareDashboardService:
     def load_shadow_performance_report(self) -> dict[str, Any]:
         return self._read_first_json(self._shadow_artifact_candidates("shadow_performance_report.json"))
 
+    def load_production_replay_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._production_replay_candidates("production_replay_report.json"))
+
+    def load_production_replay_days(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._production_replay_candidates("production_replay_days.jsonl"))
+
+    def load_production_replay_events(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._production_replay_candidates("production_replay_events.jsonl"))
+
+    def load_shadow_lab_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._shadow_lab_candidates("shadow_lab_report.json"))
+
+    def load_shadow_day_summaries(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._shadow_lab_candidates("shadow_day_summaries.jsonl"))
+
+    def load_shadow_drift_summary(self) -> dict[str, Any]:
+        return self._read_first_json(self._shadow_lab_candidates("shadow_drift_summary.json"))
+
+    def load_shadow_calibration_suggestions(self) -> dict[str, Any]:
+        return self._read_first_json(self._shadow_lab_candidates("shadow_calibration_suggestions.json"))
+
+    def load_live_readiness_decision(self) -> dict[str, Any]:
+        return self._read_first_json(self._live_readiness_candidates("live_readiness_decision.json"))
+
+    def load_live_readiness_scorecard(self) -> dict[str, Any]:
+        return self._read_first_json(self._live_readiness_candidates("live_readiness_scorecard.json"))
+
+    def load_live_readiness_checks(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._live_readiness_candidates("live_readiness_checks.jsonl"))
+
     def load_incident_report(self) -> dict[str, Any]:
         return self._read_first_json(self._incident_artifact_candidates("incident_report.json"))
 
@@ -1490,6 +1520,29 @@ class AshareDashboardService:
             root / "shadow_trading" / filename,
             root / "production_shadow" / "shadow" / filename,
             root / "production_propose" / "shadow" / filename,
+        ]
+
+    def _production_replay_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.production_replay_dir / filename,
+            root / "production_replay" / filename,
+            root / "replay" / filename,
+        ]
+
+    def _shadow_lab_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.shadow_lab_dir / filename,
+            root / "shadow_lab" / filename,
+        ]
+
+    def _live_readiness_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.live_readiness_dir / filename,
+            root / "live_readiness" / filename,
+            root / "readiness" / filename,
         ]
 
     def _incident_artifact_candidates(self, filename: str) -> list[Path]:

@@ -70,6 +70,7 @@ from .checks import (
     check_package_build_artifacts,
     check_pre_trade_risk_controls,
     check_production_close_day_status,
+    check_production_replay,
     check_production_gate_blockers,
     check_production_orchestrator,
     check_production_phase_failures,
@@ -78,6 +79,8 @@ from .checks import (
     check_provider_readiness,
     check_quality_report,
     check_release_gate,
+    check_replay_day_failures,
+    check_readiness_remediation,
     check_research_freeze,
     check_risk_limit_usage,
     check_kill_switch_state,
@@ -106,6 +109,9 @@ from .checks import (
     check_settlement_fee_tax,
     check_settlement_report,
     check_shadow_drift,
+    check_shadow_drift_aggregate,
+    check_shadow_calibration_suggestions,
+    check_shadow_lab,
     check_shadow_trading_run,
     check_statement_staleness,
     check_stale_gpu_leases,
@@ -115,6 +121,8 @@ from .checks import (
     check_unresolved_critical_incidents,
     check_unresolved_reconciliation_breaks,
     check_material_reconciliation_breaks,
+    check_live_readiness,
+    check_multi_day_incident_trend,
 )
 from .report import build_monitoring_report, write_monitoring_report
 
@@ -233,6 +241,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--incident-report-path")
     parser.add_argument("--incident-records-path")
     parser.add_argument("--incident-runbook-path")
+    parser.add_argument("--production-replay-report-path")
+    parser.add_argument("--production-replay-days-path")
+    parser.add_argument("--shadow-lab-report-path")
+    parser.add_argument("--shadow-drift-summary-path")
+    parser.add_argument("--shadow-calibration-suggestions-path")
+    parser.add_argument("--live-readiness-decision-path")
+    parser.add_argument("--live-readiness-scorecard-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -330,8 +345,16 @@ def main(argv: list[str] | None = None) -> int:
         ("production_phase_failures", lambda: check_production_phase_failures(args.production_phase_runs_path)),
         ("production_gate_blockers", lambda: check_production_gate_blockers(args.production_gate_results_path)),
         ("production_close_day_status", lambda: check_production_close_day_status(args.production_orchestrator_report_path)),
+        ("production_replay", lambda: check_production_replay(args.production_replay_report_path)),
+        ("replay_day_failures", lambda: check_replay_day_failures(args.production_replay_days_path)),
         ("shadow_trading_run", lambda: check_shadow_trading_run(args.shadow_run_report_path)),
         ("shadow_drift", lambda: check_shadow_drift(args.shadow_drift_report_path)),
+        ("shadow_lab", lambda: check_shadow_lab(args.shadow_lab_report_path)),
+        ("shadow_drift_aggregate", lambda: check_shadow_drift_aggregate(args.shadow_drift_summary_path)),
+        ("shadow_calibration_suggestions", lambda: check_shadow_calibration_suggestions(args.shadow_calibration_suggestions_path)),
+        ("live_readiness", lambda: check_live_readiness(args.live_readiness_decision_path, args.live_readiness_scorecard_path)),
+        ("readiness_remediation", lambda: check_readiness_remediation(args.live_readiness_decision_path)),
+        ("multi_day_incident_trend", lambda: check_multi_day_incident_trend(args.production_replay_report_path)),
         ("incidents", lambda: check_incidents(args.incident_report_path, args.incident_records_path)),
         ("unresolved_critical_incidents", lambda: check_unresolved_critical_incidents(args.incident_report_path)),
         ("runbook_completion", lambda: check_runbook_completion(args.incident_runbook_path or args.production_runbook_path)),

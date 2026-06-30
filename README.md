@@ -46,7 +46,10 @@ The current implementation is local-first. It uses deterministic sample data and
 - `paper_account/`: Persistent local paper cash, positions, trades, settlement artifacts, snapshots, and performance ledger.
 - `operations/`: Daily production run orchestration from production factor to proposed orders, approval-gated execution, account update, and production report.
 - `production_orchestrator/`: Trading-day production calendar, readiness gates, phase plan/state, resume packaging, fail-safe close-day reports, and orchestration CLI.
+- `production_replay/`: Multi-day local replay of production plans, shadow/paper runs, approvals, close-day phases, state, and replay reports.
 - `shadow_trading/`: Local shadow-only order book, simulated shadow fills, shadow snapshots, drift reports, and performance artifacts.
+- `shadow_lab/`: Multi-day shadow aggregation, performance series, drift summaries, and calibration suggestions.
+- `live_readiness/`: Policy-driven live readiness scorecards and decisions from replay, shadow, certification, incident, monitoring, and settlement artifacts.
 - `incident_response/`: Local incident records, runbook steps, acknowledge/resolve/suppress lifecycle, detection from production artifacts, and incident reports.
 - `monitoring/`: Local production checks for data freshness, quality, factor drift, fill quality, account performance, and alerts.
 - `release_manager/`: Local release manifest, dependency/module/CLI inventory, package build summary, release gate report, and release notes draft.
@@ -856,6 +859,44 @@ uv run python -m incident_response.run_incident \
 
 The orchestrator writes `production_run_plan.json/md`, `production_orchestrator_report.json/md`, `production_readiness_report.json`, `production_phase_runs.jsonl`, `production_gate_results.jsonl`, `production_run_events.jsonl`, `production_runbook.json`, and `production_day_package.json`. Shadow trading writes `shadow_run_report.json/md`, shadow orders/fills/positions/snapshots, drift, performance, and comparison reports. Incidents write `incident_report.json/md`, `incident_records.jsonl`, `incident_events.jsonl`, and `incident_runbook.json`.
 
+`production_replay/` runs the daily orchestrator across multiple trade dates with local replay state. It can run shadow-only days, approval-gated paper-simulated days, or a mixed window, then writes `production_replay_report.json/md`, `production_replay_plan.json`, day/event JSONL files, a replay package, and a replay artifact catalog.
+
+```bash
+uv run python -m production_replay.run_replay run \
+  --replay-name sample_shadow_replay \
+  --replay-mode shadow_only \
+  --replay-state-dir /tmp/auto-alpha-demo/replay_state \
+  --output-dir /tmp/auto-alpha-demo/production_replay \
+  --start-date 20240102 \
+  --end-date 20240104 \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --approval-store-dir /tmp/auto-alpha-demo/approvals \
+  --paper-account-dir /tmp/auto-alpha-demo/account \
+  --orders-root-dir /tmp/auto-alpha-demo/replay_orders \
+  --shadow-root-dir /tmp/auto-alpha-demo/replay_shadow \
+  --top-n 2 \
+  --max-weight 0.10 \
+  --pretty
+```
+
+`shadow_lab/` summarizes replay shadow artifacts across days, including cumulative return, drawdown, fill/reject rates, weight drift, and calibration suggestions. `live_readiness/` turns replay, shadow lab, certification, freeze, incident, monitoring, settlement, and reconciliation artifacts into a scorecard and a readiness decision. The default `sample_lenient_readiness` profile is for local smoke only; stricter profiles require longer replay windows and governed certification artifacts.
+
+```bash
+uv run python -m shadow_lab.run_shadow_lab analyze \
+  --replay-report-path /tmp/auto-alpha-demo/production_replay/production_replay_report.json \
+  --output-dir /tmp/auto-alpha-demo/shadow_lab \
+  --min-shadow-days 1 \
+  --pretty
+
+uv run python -m live_readiness.run_readiness run \
+  --policy-profile sample_lenient_readiness \
+  --production-replay-report-path /tmp/auto-alpha-demo/production_replay/production_replay_report.json \
+  --shadow-lab-report-path /tmp/auto-alpha-demo/shadow_lab/shadow_lab_report.json \
+  --output-dir /tmp/auto-alpha-demo/live_readiness \
+  --pretty
+```
+
 End-of-day statement reconciliation can run after execution or as a standalone reconcile-only step. A local smoke statement can be synthesized from internal broker and paper-account artifacts:
 
 ```bash
@@ -1180,4 +1221,4 @@ Current PIT boundaries:
 - Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.
 - One-click research suites now provide local walk-forward, promotion gates, model registry records, lifecycle review packages, active deployment state, and rollback artifacts; daily operations can require an active governed model. Future work should add richer lifecycle policies and external review workflow integrations.
 - Portfolio Lab and Portfolio Certification provide local policy-grid robustness checks, certified portfolio policy packages, optimizer-policy registration, and activation approval gates. Sample certification is only a smoke path; real certification should be tied to a governed data freeze and longer production review windows.
-- Broker adapter, file instructions, broker statement import, settlement profiles, EOD reconciliation, account ledger, production-day orchestration, shadow-only simulation, and incident response are local only. No real broker integration, credential handling, network submission, verified QMT/broker file compatibility, or tax reporting interface is implemented.
+- Broker adapter, file instructions, broker statement import, settlement profiles, EOD reconciliation, account ledger, production-day orchestration, multi-day replay, shadow lab, live readiness, shadow-only simulation, and incident response are local only. No real broker integration, credential handling, network submission, verified QMT/broker file compatibility, or tax reporting interface is implemented.

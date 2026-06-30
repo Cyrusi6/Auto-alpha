@@ -543,6 +543,15 @@ def render_app(config: DashboardConfig | None = None) -> None:
         adjustment_ledger = service.load_adjustment_ledger()
         model_registry_report = service.load_model_registry_report()
         lifecycle_report = service.load_factor_lifecycle_report()
+        production_replay = service.load_production_replay_report()
+        production_replay_days = service.load_production_replay_days()
+        shadow_lab_report = service.load_shadow_lab_report()
+        shadow_day_summaries = service.load_shadow_day_summaries()
+        shadow_drift_summary = service.load_shadow_drift_summary()
+        shadow_calibration = service.load_shadow_calibration_suggestions()
+        live_readiness_decision = service.load_live_readiness_decision()
+        live_readiness_scorecard = service.load_live_readiness_scorecard()
+        live_readiness_checks = service.load_live_readiness_checks()
         st.subheader("Production Run")
         st.json(
             production_run
@@ -582,6 +591,42 @@ def render_app(config: DashboardConfig | None = None) -> None:
         _show_dataframe_or_empty("Shadow Orders", shadow_orders)
         _show_dataframe_or_empty("Shadow Fills", shadow_fills)
         _show_dataframe_or_empty("Shadow Positions", shadow_positions)
+        st.subheader("Production Replay")
+        st.json(
+            {
+                "replay_id": production_replay.get("replay_id"),
+                "status": production_replay.get("status"),
+                "summary": production_replay.get("summary", {}),
+            }
+            if production_replay
+            else {"status": "No production replay artifacts found"}
+        )
+        _show_dataframe_or_empty("Production Replay Days", production_replay_days)
+        st.subheader("Shadow Lab")
+        st.json(
+            {
+                "status": shadow_lab_report.get("status"),
+                "performance": shadow_lab_report.get("performance_summary", {}),
+                "drift": shadow_drift_summary or shadow_lab_report.get("drift_summary", {}),
+                "calibration_suggestions": shadow_calibration.get("suggestions", []),
+            }
+            if shadow_lab_report or shadow_drift_summary or shadow_calibration
+            else {"status": "No shadow lab artifacts found"}
+        )
+        _show_dataframe_or_empty("Shadow Day Summaries", shadow_day_summaries)
+        st.subheader("Live Readiness")
+        st.json(
+            {
+                "status": live_readiness_decision.get("status"),
+                "passed": live_readiness_decision.get("passed"),
+                "new_status": live_readiness_decision.get("new_status"),
+                "score": live_readiness_decision.get("score", live_readiness_scorecard.get("score")),
+                "summary": live_readiness_scorecard.get("summary", {}),
+            }
+            if live_readiness_decision or live_readiness_scorecard
+            else {"status": "No live readiness artifacts found"}
+        )
+        _show_dataframe_or_empty("Live Readiness Checks", live_readiness_checks)
         st.subheader("Incidents")
         st.json(
             {

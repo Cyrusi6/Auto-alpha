@@ -5,8 +5,11 @@ from pathlib import Path
 
 ROOTS = [
     Path("production_orchestrator"),
+    Path("production_replay"),
     Path("shadow_trading"),
+    Path("shadow_lab"),
     Path("incident_response"),
+    Path("live_readiness"),
 ]
 
 BANNED_TERMS = [

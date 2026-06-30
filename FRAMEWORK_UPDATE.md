@@ -1813,3 +1813,37 @@
 - Add richer phase-level resume hash checks and operator assignment metadata.
 - Wire production close-day to larger real-data freeze governance once production calendars and data freezes are reviewed with real Tushare data.
 - Keep real broker connectivity out of scope until broker adapter, risk controls, approval, and incident procedures are reviewed in a controlled environment.
+
+## Task 038 - Real-Data Shadow/Paper Multi-Day Production Validation, Drift Evaluation, And Live Readiness Gate
+
+- Added `production_replay/` for multi-day local production replay over a trade-date window, including replay plans, day results, events, resume state, replay packages, and reports.
+- Added `shadow_lab/` for aggregating shadow runs across replay days into performance summaries, drift summaries, day series, issues, and calibration suggestions.
+- Added `live_readiness/` for policy-driven readiness scorecards and decisions using replay, shadow lab, certification, freeze, incident, monitoring, settlement, and reconciliation artifacts.
+- Extended `artifact_schema`, `release_manager`, package metadata, local CI, monitoring, and dashboard artifact readers for replay, shadow lab, and live readiness artifacts.
+- Replay execution remains local-only: `shadow_only` does not mutate broker/file/account state, `paper_simulated` requires local approval before paper execution, and no real broker or default network path is introduced.
+
+### New Artifacts
+- `production_replay_plan.json`
+- `production_replay_report.json/md`
+- `production_replay_days.jsonl`
+- `production_replay_events.jsonl`
+- `production_replay_state.json`
+- `production_replay_package.json`
+- `production_replay_artifact_catalog.json`
+- `shadow_lab_report.json/md`
+- `shadow_day_summaries.jsonl`
+- `shadow_performance_series.jsonl`
+- `shadow_drift_series.jsonl`
+- `shadow_drift_summary.json`
+- `shadow_calibration_suggestions.json`
+- `shadow_lab_issues.jsonl`
+- `live_readiness_policy.json`
+- `live_readiness_scorecard.json`
+- `live_readiness_decision.json`
+- `live_readiness_checks.jsonl`
+- `live_readiness_package.json`
+
+### Follow-Ups
+- Calibrate live readiness policies on longer frozen real-data shadow windows.
+- Add richer replay drift diagnostics once multiple production days are available.
+- Keep any real broker route behind the existing broker adapter, approval, risk-control, and incident gates.

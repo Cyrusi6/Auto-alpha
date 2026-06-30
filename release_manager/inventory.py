@@ -50,17 +50,20 @@ PLATFORM_MODULES = [
     "portfolio_lab",
     "portfolio_optimizer",
     "production_orchestrator",
+    "production_replay",
     "reconciliation_center",
     "research",
     "research_suite",
     "risk_model",
     "risk_controls",
     "settlement_engine",
+    "shadow_lab",
     "shadow_trading",
     "leakage_audit",
     "strategy_manager",
     "universe",
     "validation_lab",
+    "live_readiness",
 ]
 
 
