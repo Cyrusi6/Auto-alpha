@@ -58,6 +58,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--data-freeze-dir")
     parser.add_argument("--data-version-manifest-path")
     parser.add_argument("--require-data-freeze", action="store_true")
+    parser.add_argument("--real-data-profile-path")
+    parser.add_argument("--require-real-data-freeze", action="store_true")
+    parser.add_argument("--real-data-sla-report-path")
+    parser.add_argument("--require-real-data-sla-pass", action="store_true")
+    parser.add_argument("--matrix-refresh-report-path")
     parser.add_argument("--factor-store-dir", required=True)
     parser.add_argument("--factor-id")
     parser.add_argument("--factor-type", choices=["single", "composite", "any"], default="any")
@@ -112,9 +117,11 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run(args: argparse.Namespace) -> dict[str, Any]:
-    freeze_report = validate_research_input(args.data_dir, args.data_freeze_dir, args.require_data_freeze)
-    if freeze_report.error_count > 0 and args.require_data_freeze:
+    freeze_report = validate_research_input(args.data_dir, args.data_freeze_dir, args.require_data_freeze or args.require_real_data_freeze)
+    if freeze_report.error_count > 0 and (args.require_data_freeze or args.require_real_data_freeze):
         raise RuntimeError("data freeze validation failed")
+    if args.require_real_data_sla_pass and not _real_data_sla_passed(args.real_data_sla_report_path):
+        raise RuntimeError("real data SLA did not pass")
     data_dir = str(Path(args.data_freeze_dir) / "data") if args.data_freeze_dir else args.data_dir
     if not data_dir:
         raise ValueError("--data-dir or --data-freeze-dir is required")
@@ -313,6 +320,11 @@ def _read_json(path: str | None) -> dict[str, Any]:
     if not target.exists():
         return {}
     return json.loads(target.read_text(encoding="utf-8"))
+
+
+def _real_data_sla_passed(path: str | None) -> bool:
+    payload = _read_json(path)
+    return str(payload.get("status") or "") in {"pass", "warning"}
 
 
 def _utc_now() -> str:

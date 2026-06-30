@@ -25,6 +25,9 @@ def write_data_source_smoke_report(report: DataSourceSmokeReport, output_dir: st
         "incremental_recovery_report_path": root / "incremental_recovery_report.json",
         "baseline_compare_summary_path": root / "baseline_compare_summary.json",
         "dataset_contracts_path": root / "dataset_contracts.json",
+        "provider_readiness_matrix_path": root / "provider_readiness_matrix.json",
+        "api_permission_matrix_path": root / "api_permission_matrix.json",
+        "required_dataset_status_path": root / "required_dataset_status.json",
     }
     _write_json(paths["data_source_smoke_report_path"], payload, "data_source_smoke_report")
     paths["data_source_smoke_report_md_path"].write_text(_render_smoke_markdown(payload), encoding="utf-8")
@@ -34,7 +37,69 @@ def write_data_source_smoke_report(report: DataSourceSmokeReport, output_dir: st
     _write_json(paths["incremental_recovery_report_path"], payload.get("incremental_recovery", {}) or {}, "incremental_recovery_report")
     _write_json(paths["baseline_compare_summary_path"], payload.get("baseline_compare", {}) or {}, "baseline_compare_summary")
     _write_json(paths["dataset_contracts_path"], {"datasets": [contract.to_dict() for contract in DATASET_CONTRACTS.values()]}, "dataset_contracts")
+    _write_json(paths["provider_readiness_matrix_path"], _provider_readiness_matrix(payload), "provider_readiness_matrix")
+    _write_json(paths["api_permission_matrix_path"], _api_permission_matrix(payload), "api_permission_matrix")
+    _write_json(paths["required_dataset_status_path"], _required_dataset_status(payload), "required_dataset_status")
     return {name: str(path) for name, path in paths.items()}
+
+
+def _provider_readiness_matrix(payload: dict[str, Any]) -> dict[str, Any]:
+    diagnostics = payload.get("provider_probe", [])
+    return {
+        "provider": payload.get("provider"),
+        "status": payload.get("status"),
+        "token_redaction_check": _token_redaction_check(payload),
+        "rows": [
+            {
+                "dataset": item.get("dataset"),
+                "api_name": item.get("api_name"),
+                "status": item.get("status"),
+                "diagnostic_code": item.get("diagnostic_code"),
+                "records": item.get("records", 0),
+            }
+            for item in diagnostics
+        ],
+    }
+
+
+def _api_permission_matrix(payload: dict[str, Any]) -> dict[str, Any]:
+    rows = []
+    for item in payload.get("provider_probe", []):
+        code = item.get("diagnostic_code")
+        rows.append(
+            {
+                "api_name": item.get("api_name"),
+                "dataset": item.get("dataset"),
+                "permission_status": "blocked" if code in {"permission_denied", "invalid_token"} else "rate_limited" if code == "rate_limited" else "ok" if item.get("status") == "OK" else "unknown",
+                "diagnostic_code": code,
+                "missing_fields": item.get("missing_fields", []),
+            }
+        )
+    return {"rows": rows, "permission_issue_count": sum(row["permission_status"] in {"blocked", "rate_limited"} for row in rows)}
+
+
+def _required_dataset_status(payload: dict[str, Any]) -> dict[str, Any]:
+    datasets = payload.get("datasets", [])
+    return {
+        "datasets": [
+            {
+                "dataset": item.get("dataset"),
+                "status": item.get("status"),
+                "records": item.get("records", 0),
+                "quality_errors": item.get("quality_errors", 0),
+                "quality_warnings": item.get("quality_warnings", 0),
+            }
+            for item in datasets
+        ],
+        "missing_required_dataset_count": sum(int(item.get("records", 0) or 0) <= 0 for item in datasets),
+    }
+
+
+def _token_redaction_check(payload: dict[str, Any]) -> dict[str, Any]:
+    text = json.dumps(payload, ensure_ascii=False)
+    config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+    bad = ["TUSHARE_TOKEN=", "fake-token-redacted"]
+    return {"passed": not any(item in text for item in bad), "provider": payload.get("provider"), "allow_network": config.get("allow_network")}
 
 
 def write_incremental_recovery_report(result: IncrementalRecoveryResult, output_dir: str | Path) -> tuple[Path, Path]:

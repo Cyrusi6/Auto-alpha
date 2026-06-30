@@ -38,6 +38,8 @@ class DashboardConfig:
     data_source_smoke_dir: Path = Path("artifacts/data_source_smoke")
     backfill_dir: Path = Path("artifacts/backfill")
     data_lake_dir: Path = Path("artifacts/data_lake")
+    real_data_dir: Path = Path("artifacts/real_data")
+    matrix_refresh_dir: Path = Path("artifacts/matrix_refresh")
     compute_dir: Path = Path("artifacts/compute")
     experiment_dir: Path = Path("artifacts/experiment")
     schema_validation_dir: Path = Path("artifacts/schema_validation")
@@ -99,6 +101,8 @@ class DashboardConfig:
             data_source_smoke_dir=Path(os.getenv("ASHARE_DASHBOARD_DATA_SOURCE_SMOKE_DIR") or "artifacts/data_source_smoke"),
             backfill_dir=Path(os.getenv("ASHARE_DASHBOARD_BACKFILL_DIR") or "artifacts/backfill"),
             data_lake_dir=Path(os.getenv("ASHARE_DASHBOARD_DATA_LAKE_DIR") or "artifacts/data_lake"),
+            real_data_dir=Path(os.getenv("ASHARE_DASHBOARD_REAL_DATA_DIR") or os.getenv("ASHARE_REAL_DATA_OUTPUT_DIR") or "artifacts/real_data"),
+            matrix_refresh_dir=Path(os.getenv("ASHARE_DASHBOARD_MATRIX_REFRESH_DIR") or "artifacts/matrix_refresh"),
             compute_dir=Path(os.getenv("ASHARE_DASHBOARD_COMPUTE_DIR") or "artifacts/compute"),
             experiment_dir=Path(os.getenv("ASHARE_DASHBOARD_EXPERIMENT_DIR") or "artifacts/experiment"),
             schema_validation_dir=Path(os.getenv("ASHARE_DASHBOARD_SCHEMA_VALIDATION_DIR") or "artifacts/schema_validation"),

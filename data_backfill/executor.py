@@ -15,6 +15,7 @@ from data_pipeline.ashare.config import AShareDataConfig
 from data_pipeline.ashare.providers import create_ashare_provider
 from data_pipeline.ashare.providers.tushare import TushareAShareDataProvider
 from data_pipeline.ashare.quality import validate_all_datasets, write_quality_report
+from data_pipeline.ashare.rate_limit import RequestRateLimitConfig, SimpleRateLimiter
 from data_pipeline.ashare.stats import compute_all_dataset_stats, write_dataset_stats
 from data_pipeline.ashare.storage import LocalAshareStorage, StorageWriteResult
 from data_pipeline.ashare.sync_plan import SyncJob
@@ -53,6 +54,11 @@ def execute_backfill_plan(
     allow_network: bool = False,
     require_token: bool = False,
     max_requests: int | None = None,
+    rate_limit_per_minute: int | None = None,
+    disable_rate_limit: bool = False,
+    profile_name: str | None = None,
+    profile_hash: str | None = None,
+    token_expiry: str | None = None,
     fail_fast: bool = False,
     fake_tushare_scenario: str | None = None,
     dry_run: bool = False,
@@ -71,7 +77,15 @@ def execute_backfill_plan(
         for dataset in plan.scope.datasets:
             storage.write_dataset(dataset, [], mode="overwrite")
 
-    provider = _provider(config, fake_tushare_scenario)
+    rate_limiter = None
+    if config.provider == "tushare" and not fake_tushare_scenario and not disable_rate_limit:
+        rate_limiter = SimpleRateLimiter(
+            RequestRateLimitConfig(
+                requests_per_minute=float(rate_limit_per_minute or 150),
+                enabled=True,
+            )
+        )
+    provider = _provider(config, fake_tushare_scenario, rate_limiter=rate_limiter)
     cache = TushareResponseCache(data_dir, enabled=cache_enabled) if cache_enabled else None
     auditor = ApiRequestAuditor(Path(data_dir) / "api_audit.jsonl") if audit_enabled else None
     completed = successful_job_ids(state)
@@ -140,13 +154,29 @@ def execute_backfill_plan(
     coverage_paths = write_backfill_coverage(coverage, root)
     status = "blocked" if blocked else ("failed" if any(job.status == BackfillJobStatus.failed for job in jobs) else "success")
     summary = {
+        "profile_name": profile_name,
+        "profile_hash": profile_hash,
         "job_count": len(jobs),
         "success_jobs": sum(job.status == BackfillJobStatus.success for job in jobs),
         "failed_jobs": sum(job.status == BackfillJobStatus.failed for job in jobs),
         "skipped_jobs": sum(job.status == BackfillJobStatus.skipped for job in jobs),
         "resumed_jobs": sum(job.status == BackfillJobStatus.resumed for job in jobs),
+        "quarantined_jobs": sum(job.status == BackfillJobStatus.failed for job in jobs),
         "records": sum(job.records for job in jobs if job.status in {BackfillJobStatus.success, BackfillJobStatus.resumed}),
         "coverage_gap_count": coverage.gap_count,
+        "token_expiry": token_expiry,
+        "request_budget_used": sum(job.estimated_requests for job in jobs if job.status in {BackfillJobStatus.success, BackfillJobStatus.failed}),
+        "request_budget_remaining": None if max_requests is None else max(0, int(max_requests) - sum(job.estimated_requests for job in jobs if job.status in {BackfillJobStatus.success, BackfillJobStatus.failed})),
+        "rate_limit_summary": rate_limiter.summary().to_dict() if rate_limiter is not None else {
+            "enabled": False,
+            "requests_per_minute": float(rate_limit_per_minute or 0),
+            "total_wait_seconds": 0.0,
+            "average_wait_seconds": 0.0,
+            "rate_limit_event_count": 0,
+            "events": [],
+        },
+        "dataset_chunk_strategy": plan.scope.metadata.get("chunk_strategy") if isinstance(plan.scope.metadata, dict) else None,
+        "dataset_chunk_days": plan.scope.metadata.get("dataset_chunk_days") if isinstance(plan.scope.metadata, dict) else {},
     }
     report = BackfillRunReport(
         plan_id=plan.plan_id,
@@ -184,9 +214,11 @@ def run_sample_backfill(
     return execute_backfill_plan(plan, config, config.data_dir, output_dir, validate=True, write_stats=True)
 
 
-def _provider(config: AShareDataConfig, fake_tushare_scenario: str | None):
+def _provider(config: AShareDataConfig, fake_tushare_scenario: str | None, rate_limiter: SimpleRateLimiter | None = None):
     if config.provider == "tushare" and fake_tushare_scenario:
         return TushareAShareDataProvider(client=FakeTushareHttpClient(fake_tushare_scenario))
+    if config.provider == "tushare" and rate_limiter is not None:
+        return TushareAShareDataProvider(rate_limiter=rate_limiter)
     return create_ashare_provider(config)
 
 

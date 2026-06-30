@@ -1969,3 +1969,16 @@
 ### Follow-Ups
 - Keep unified main factor-store registration out of parallel shard jobs until a dedicated consolidation/approval path is added.
 - Extend scheduler observability later with queue wait timing and richer pending-job status, without introducing an external queue service.
+
+## Task 042 - Real Tushare Backfill, Rate Limits, Production Data Lake, And Matrix Refresh
+
+- Added `real_data_ops/` for gated production data operations: local env loading with token redaction, built-in sample/fake/online Tushare profiles, readiness reports, backfill orchestration, data lake version registration, research freezes, SLA checks, storage-size reports, runbooks, and optional matrix refresh.
+- Added `matrix_refresh/` for incremental matrix cache governance. It compares dataset-version content hashes with matrix metadata, supports `skip_if_fresh`, `validate_only`, and `full_rebuild`, and writes refresh plans, source diffs, freshness reports, result reports, and issue JSONL artifacts.
+- Added a request pacing helper under `data_pipeline/ashare/rate_limit.py` and wired Tushare backfill execution through the default 150 requests/minute limiter, cache/audit metadata, resumable state, profile metadata, dataset-specific chunk strategies, and request-budget summaries.
+- Extended `data_backfill`, `data_lake`, `data_source_validation`, `monitoring`, `dashboard`, `artifact_schema`, `release_manager`, local CI, and top-level CLIs to understand real-data profiles, SLA/status artifacts, size reports, matrix refresh status, and latest validated real-data versions.
+- Updated docs, package metadata, `.env.example`, `.gitignore`, and focused tests for real-data ops, production chunk plans, rate limiting, fake Tushare offline runs, and matrix refresh freshness.
+
+### Follow-Ups
+- Run the full online Tushare profile only with an explicit local token, `RUN_TUSHARE_ONLINE_BACKFILL=1`, and operator-supervised request budgeting.
+- Calibrate dataset-specific chunk windows and SLA thresholds after the first real full-market backfill.
+- Expand matrix refresh to field-level partial updates once production cache sizes justify more granular rebuilds.

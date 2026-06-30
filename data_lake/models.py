@@ -52,6 +52,15 @@ class DatasetVersionRecord:
     status: str = "validated"
     content_hash: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    data_version_status: str | None = None
+    provider_profile: str | None = None
+    real_data_profile_id: str | None = None
+    real_data_sla_status: str | None = None
+    matrix_cache_dir: str | None = None
+    matrix_refresh_report_path: str | None = None
+    real_data_size_report_path: str | None = None
+    latest_trade_date: str | None = None
+    data_staleness_days: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

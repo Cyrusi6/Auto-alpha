@@ -26,6 +26,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--data-freeze-dir")
     parser.add_argument("--data-version-manifest-path")
     parser.add_argument("--require-data-freeze", action="store_true")
+    parser.add_argument("--real-data-profile-path")
+    parser.add_argument("--require-real-data-freeze", action="store_true")
+    parser.add_argument("--real-data-sla-report-path")
+    parser.add_argument("--require-real-data-sla-pass", action="store_true")
+    parser.add_argument("--matrix-refresh-report-path")
     parser.add_argument("--factor-store-dir", default="artifacts/factor_store")
     parser.add_argument("--formula-corpus-path")
     parser.add_argument("--candidates-json")
@@ -98,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         report_dir=args.report_dir,
         data_freeze_dir=args.data_freeze_dir,
         data_version_manifest_path=args.data_version_manifest_path,
-        require_data_freeze=args.require_data_freeze,
+        require_data_freeze=args.require_data_freeze or args.require_real_data_freeze,
         formula_corpus_path=args.formula_corpus_path,
         candidates_json=args.candidates_json,
         matrix_cache_dir=args.matrix_cache_dir,

@@ -133,6 +133,9 @@ class AuditSummary:
     duration_p95: float
     duration_max: float
     errors_by_category: dict[str, int]
+    rate_limit_total_wait_seconds: float = 0.0
+    rate_limit_average_wait_seconds: float = 0.0
+    rate_limit_event_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

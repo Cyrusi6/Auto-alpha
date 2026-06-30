@@ -22,6 +22,8 @@ class ApiRequestAuditEntry:
     started_at: str
     finished_at: str
     duration_seconds: float
+    rate_limit_wait_seconds: float = 0.0
+    rate_limit_request_index: int | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

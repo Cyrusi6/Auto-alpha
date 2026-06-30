@@ -33,6 +33,39 @@ class AshareDashboardService:
     def load_dataset_stats(self) -> dict[str, Any]:
         return self._read_json(self.config.data_dir / "dataset_stats.json")
 
+    def load_real_data_profile(self) -> dict[str, Any]:
+        return self._read_first_json(self._real_data_artifact_candidates("real_data_profile.json"))
+
+    def load_real_data_readiness_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._real_data_artifact_candidates("real_data_readiness_report.json"))
+
+    def load_real_data_pipeline_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._real_data_artifact_candidates("real_data_pipeline_report.json"))
+
+    def load_real_data_runbook(self) -> dict[str, Any]:
+        return self._read_first_json(self._real_data_artifact_candidates("real_data_runbook.json"))
+
+    def load_real_data_sla_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._real_data_artifact_candidates("real_data_sla_report.json"))
+
+    def load_real_data_size_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._real_data_artifact_candidates("real_data_size_report.json"))
+
+    def load_provider_readiness_matrix(self) -> dict[str, Any]:
+        return self._read_first_json(self._real_data_artifact_candidates("provider_readiness_matrix.json"))
+
+    def load_api_permission_matrix(self) -> dict[str, Any]:
+        return self._read_first_json(self._real_data_artifact_candidates("api_permission_matrix.json"))
+
+    def load_required_dataset_status(self) -> dict[str, Any]:
+        return self._read_first_json(self._real_data_artifact_candidates("required_dataset_status.json"))
+
+    def load_matrix_refresh_result(self) -> dict[str, Any]:
+        return self._read_first_json(self._matrix_refresh_artifact_candidates("matrix_refresh_result.json"))
+
+    def load_matrix_freshness_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._matrix_refresh_artifact_candidates("matrix_freshness_report.json"))
+
     def load_snapshot_summary(self) -> pd.DataFrame:
         snapshots_dir = self.config.data_dir / "snapshots"
         records: list[dict[str, Any]] = []
@@ -2016,6 +2049,37 @@ class AshareDashboardService:
             self.config.portfolio_certification_dir / filename,
             root / "portfolio_certification" / filename,
             root / "suite" / "portfolio_certification" / filename,
+        ]
+
+    def _real_data_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.data_dir / filename,
+            self.config.real_data_dir / filename,
+            self.config.data_lake_dir / filename,
+            self.config.backfill_dir / filename,
+            self.config.data_source_smoke_dir / filename,
+            root / "real_data" / filename,
+            root / "real_data_sample" / filename,
+            root / "real_data_fake_tushare" / filename,
+            root / "data_smoke" / "sample_smoke" / filename,
+            root / "sample_smoke" / filename,
+            root / "production_data" / filename,
+            root / filename,
+        ]
+
+    def _matrix_refresh_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.matrix_refresh_dir / filename,
+            self.config.real_data_dir / "matrix_refresh" / filename,
+            self.config.data_dir / "matrix_refresh" / filename,
+            self.config.data_dir / "matrix_cache" / filename,
+            root / "matrix_refresh" / filename,
+            root / "real_data" / "matrix_refresh" / filename,
+            root / "real_data_sample" / "matrix_refresh" / filename,
+            root / "real_data_fake_tushare" / "matrix_refresh" / filename,
+            root / filename,
         ]
 
     def _read_first_json(self, paths: list[Path]) -> dict[str, Any]:

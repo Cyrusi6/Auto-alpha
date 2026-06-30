@@ -207,6 +207,27 @@ uv run python -m data_backfill.run_backfill execute \
   --pretty
 ```
 
+`real_data_ops/` wraps readiness, governed backfill, data lake registration, research freeze creation, SLA checks, size reporting, and optional matrix refresh into one production-data command. Real Tushare runs remain gated by `--allow-network`, `RUN_TUSHARE_ONLINE_BACKFILL=1`, and a token; sample and fake Tushare profiles are fully offline.
+
+```bash
+uv run python -m real_data_ops.run_real_data run \
+  --profile-name fake_tushare_small \
+  --provider tushare \
+  --fake-tushare-scenario success \
+  --data-dir /tmp/auto-alpha-demo/fake_tushare_data \
+  --output-dir /tmp/auto-alpha-demo/real_data_ops \
+  --datasets securities,trade_calendar,daily_bars,daily_basic,financial_features,daily_limits,adjustment_factors,index_members,corporate_actions \
+  --index-codes 000300.SH \
+  --cache \
+  --audit \
+  --validate \
+  --stats \
+  --refresh-matrix \
+  --pretty
+```
+
+The full-data profiles `tushare_online_smoke`, `tushare_full_ashare_2010_2026`, and `tushare_full_ashare_incremental` include request budgets, dataset-specific chunking, a 150 requests/minute default limiter, token redaction metadata, runbook/resume hints, SLA summaries, and storage-size reports. Keep real token values in `.env.local` or another ignored local file; reports only record redacted token metadata.
+
 After governed sync or backfill, register a dataset version and freeze research input data. A freeze copies or hardlinks local JSONL records plus universe artifacts, writes hashes and manifests, and can be required by matrix build, research suite, backtest, and operations commands:
 
 ```bash
@@ -434,6 +455,18 @@ uv run python -m matrix_store.run_build_matrix \
 ```
 
 `AShareDataLoader(..., use_matrix_cache=True, matrix_cache_dir=...)` reads `metadata.json`, `ts_codes.json`, `trade_dates.json`, `fields.json`, and `<field>.npy` matrices before building the same feature tensor and target return outputs as the JSONL path. If the cache is missing, the loader raises a clear file error; the default loader path remains JSONL.
+
+`matrix_refresh/` validates whether an existing cache still matches the governed data version. `skip_if_fresh` compares the dataset-version content hash with matrix metadata and avoids rebuilding unchanged caches; `full_rebuild` recreates the cache and writes freshness and source-diff reports.
+
+```bash
+uv run python -m matrix_refresh.run_matrix_refresh refresh \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --data-version-manifest-path /tmp/auto-alpha-demo/data_version/dataset_version_manifest.json \
+  --matrix-cache-dir /tmp/auto-alpha-demo/data/matrix_cache \
+  --output-dir /tmp/auto-alpha-demo/matrix_refresh \
+  --refresh-mode skip_if_fresh \
+  --pretty
+```
 
 Run local performance and cross-source checks:
 
@@ -1303,12 +1336,12 @@ uv run python -m go_live_gate.run_go_live run \
 
 ## Current Gaps
 
-- Tushare HTTP provider, production sync scaffolding, governed backfill plans, offline fake smoke, gated online smoke/backfill, permission/rate diagnostics, audit summary, incremental recovery checks, baseline comparison, dataset versioning, and research freezes are available; production use still requires real token/quota operation, real full-market performance runs, incremental matrix refresh, and more provider pairs.
+- Tushare HTTP provider, production sync scaffolding, governed backfill plans, offline fake smoke, gated online smoke/backfill, permission/rate diagnostics, audit summary, incremental recovery checks, baseline comparison, dataset versioning, research freezes, real-data runbooks, SLA checks, storage-size reports, and incremental matrix refresh are available; production use still requires real token/quota operation, real full-market performance runs, and more provider pairs.
 - Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
 - Local daily simulation supports A-share constraints, pre-trade risk controls, local kill switch, override approvals, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, settlement-aware paper accounting, lot cost, realized PnL, NAV reconciliation, generic statement import, external account mirroring, EOD break management, and execution quality reports; future work should add finer real-world matching, minute-level volume modeling, verified real broker statement mappings, richer limit policies, and real broker connectivity.
 - Local formula search, batch formula evaluation, formula corpus construction, offline AlphaGPT supervised pretraining, a first neural-guided policy-search path, and a local CPU/GPU compute scheduler are available; future work should add stronger reinforcement learning, larger offline corpora, more operators, true full-market 4-GPU stress runs, richer DDP training, and broader stability validation.
 - Feature Factory v2 and Alpha Factory campaign funnels are available locally; future work should expand the feature catalog against full-market data, calibrate proxy scores with longer histories, and run large GPU-backed campaigns outside default CI.
-- Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.
+- Matrix cache, incremental matrix refresh, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs and more provider pairs.
 - One-click research suites now provide local walk-forward, promotion gates, model registry records, lifecycle review packages, active deployment state, and rollback artifacts; daily operations can require an active governed model. Future work should add richer lifecycle policies and external review workflow integrations.
 - Portfolio Lab and Portfolio Certification provide local policy-grid robustness checks, certified portfolio policy packages, optimizer-policy registration, and activation approval gates. Sample certification is only a smoke path; real certification should be tied to a governed data freeze and longer production review windows.
 - Broker adapter, safe read-only UAT connectivity shell, read-only account mirror, dry-run file outbox gateway, mapping certification, operator handoff packages, local compliance evidence packs, BrokerAdapter UAT, Go/No-Go scorecards, broker statement import, settlement profiles, EOD reconciliation, account ledger, production-day orchestration, multi-day replay, shadow lab, live readiness, shadow-only simulation, and incident response are local/review infrastructure only. No real order submission, cancellation, replacement, automatic live trading, verified QMT/broker compatibility, regulatory filing automation, legal opinion, or tax reporting interface is implemented.

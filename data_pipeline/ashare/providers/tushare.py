@@ -10,6 +10,7 @@ from typing import Any
 from ..audit import ApiRequestAuditEntry, ApiRequestAuditor, utc_now
 from ..cache import TushareResponseCache
 from ..config import AShareDataConfig
+from ..rate_limit import SimpleRateLimiter
 from ..schema import (
     AdjustmentFactor,
     CorporateAction,
@@ -27,8 +28,9 @@ from .tushare_client import TushareHttpClient
 
 
 class TushareAShareDataProvider:
-    def __init__(self, client: Any | None = None):
+    def __init__(self, client: Any | None = None, rate_limiter: SimpleRateLimiter | None = None):
         self.client = client
+        self.rate_limiter = rate_limiter
 
     def fetch_dataset_job(
         self,
@@ -38,7 +40,7 @@ class TushareAShareDataProvider:
         auditor: ApiRequestAuditor | None = None,
     ) -> list[object]:
         job_config = _config_for_job(config, job)
-        base_client = self.client if self.client is not None else TushareHttpClient(job_config)
+        base_client = self.client if self.client is not None else TushareHttpClient(job_config, rate_limiter=self.rate_limiter)
         client = _CachedAuditedClient(
             client=base_client,
             job=job,
@@ -395,6 +397,7 @@ class _CachedAuditedClient:
         records: list[dict[str, Any]] = []
         status = "success"
         error: str | None = None
+        rate_event = None
         try:
             cached = self.cache.read(api_name, params=params, fields=fields) if self.cache is not None else None
             if cached is not None and cached.hit:
@@ -403,6 +406,7 @@ class _CachedAuditedClient:
                 return records
 
             records = self.client.post(api_name, params=params, fields=fields)
+            rate_event = getattr(self.client, "last_rate_limit_event", None)
             if self.cache is not None:
                 self.cache.write(api_name, params=params, fields=fields, records=records)
             return records
@@ -427,6 +431,8 @@ class _CachedAuditedClient:
                         started_at=started_at,
                         finished_at=finished_at,
                         duration_seconds=max(0.0, time.perf_counter() - started),
+                        rate_limit_wait_seconds=float(getattr(rate_event, "waited_seconds", 0.0) or 0.0),
+                        rate_limit_request_index=getattr(rate_event, "request_index", None),
                     )
                 )
 

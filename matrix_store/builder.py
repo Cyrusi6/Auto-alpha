@@ -178,6 +178,7 @@ def build_matrix_cache(
         "dataset_version_id": _dataset_version_id(data_version_manifest_path),
         "data_freeze_id": data_freeze_id or freeze_report.freeze_id,
         "data_freeze_hash": freeze_report.content_hash,
+        "source_content_hash": _source_content_hash(data_version_manifest_path) or freeze_report.content_hash,
         "freeze_validation_status": freeze_report.status,
         "source_data_hashes": _source_hashes(data_version_manifest_path),
     }
@@ -243,6 +244,20 @@ def _source_hashes(path: str | Path | None) -> dict[str, str]:
         for item in payload.get("dataset_fingerprints", [])
         if isinstance(item, dict)
     }
+
+
+def _source_content_hash(path: str | Path | None) -> str | None:
+    if path is None:
+        return None
+    target = Path(path)
+    if not target.exists():
+        return None
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    content_hash = payload.get("content_hash")
+    return str(content_hash) if content_hash else None
 
 
 def _stable_cache_hash(

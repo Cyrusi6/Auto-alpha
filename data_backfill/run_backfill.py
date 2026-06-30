@@ -10,6 +10,7 @@ from pathlib import Path
 from data_pipeline.ashare.config import AShareDataConfig
 from data_pipeline.ashare.pipeline import ASHARE_DATASETS
 
+from .chunking import dataset_chunk_days_for_strategy, parse_dataset_chunk_days
 from .coverage import analyze_backfill_coverage, write_backfill_coverage
 from .executor import execute_backfill_plan
 from .models import BackfillPlan
@@ -41,6 +42,8 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--security-list-statuses", default="L")
     parser.add_argument("--corporate-action-query-date-field", default="ex_date")
     parser.add_argument("--chunk-days", type=int, default=30)
+    parser.add_argument("--chunk-strategy", default="uniform")
+    parser.add_argument("--dataset-chunk-days")
     parser.add_argument("--mode", choices=["overwrite", "append"], default="append")
     parser.add_argument("--cache", dest="cache", action="store_true")
     parser.add_argument("--no-cache", dest="cache", action="store_false")
@@ -54,6 +57,11 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--allow-network", action="store_true")
     parser.add_argument("--require-token", action="store_true")
     parser.add_argument("--max-requests", type=int)
+    parser.add_argument("--rate-limit-per-minute", type=int, default=150)
+    parser.add_argument("--disable-rate-limit", action="store_true")
+    parser.add_argument("--profile-name")
+    parser.add_argument("--profile-hash")
+    parser.add_argument("--token-expiry")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--fail-fast", action="store_true")
     parser.add_argument("--fail-on-error", action="store_true")
@@ -84,7 +92,14 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2 if args.pretty else None, sort_keys=args.pretty))
         return 1 if args.fail_on_error and matrix.gap_count else 0
     if args.command in {"plan", "validate", "report"}:
-        plan = build_backfill_plan(config, datasets=datasets, chunk_days=args.chunk_days, max_requests=args.max_requests)
+        plan = build_backfill_plan(
+            config,
+            datasets=datasets,
+            chunk_days=args.chunk_days,
+            chunk_strategy=args.chunk_strategy,
+            dataset_chunk_days=_dataset_chunk_days(args),
+            max_requests=args.max_requests,
+        )
         plan_json, plan_md = write_backfill_plan(plan, args.output_dir)
         payload = plan.to_dict() | {"paths": {"backfill_plan_path": str(plan_json), "backfill_plan_md_path": str(plan_md)}}
         print(json.dumps(payload, ensure_ascii=False, indent=2 if args.pretty else None, sort_keys=args.pretty))
@@ -109,6 +124,11 @@ def main(argv: list[str] | None = None) -> int:
         allow_network=args.allow_network,
         require_token=args.require_token,
         max_requests=args.max_requests,
+        rate_limit_per_minute=args.rate_limit_per_minute,
+        disable_rate_limit=args.disable_rate_limit,
+        profile_name=args.profile_name,
+        profile_hash=args.profile_hash,
+        token_expiry=args.token_expiry,
         fail_fast=args.fail_fast,
         fake_tushare_scenario=args.fake_tushare_scenario,
         dry_run=args.dry_run or args.command == "smoke" and False,
@@ -142,8 +162,16 @@ def _load_or_build_plan(args: argparse.Namespace, config: AShareDataConfig, data
         config,
         datasets=datasets,
         chunk_days=args.chunk_days,
+        chunk_strategy=args.chunk_strategy,
+        dataset_chunk_days=_dataset_chunk_days(args),
         max_requests=args.max_requests,
     )
+
+
+def _dataset_chunk_days(args: argparse.Namespace) -> dict[str, int]:
+    values = dataset_chunk_days_for_strategy(args.chunk_strategy, args.chunk_days)
+    values.update(parse_dataset_chunk_days(args.dataset_chunk_days))
+    return values
 
 
 if __name__ == "__main__":

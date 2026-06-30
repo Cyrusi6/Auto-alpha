@@ -21,7 +21,7 @@ from .retention import write_retention_report
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Manage local A-share data lake versions and freezes.")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ["create-version", "create-freeze", "validate-version", "validate-freeze", "list-versions", "list-freezes", "lineage", "report", "retire-freeze", "smoke"]:
+    for name in ["create-version", "create-freeze", "validate-version", "validate-freeze", "list-versions", "list-freezes", "promote-version", "latest-version", "latest-freeze", "size-report", "lineage", "report", "retire-freeze", "smoke"]:
         _add_common(sub.add_parser(name))
     return parser
 
@@ -35,6 +35,8 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--freeze-mode", choices=["copy", "hardlink", "manifest_only"], default="copy")
     parser.add_argument("--dataset-version-id")
     parser.add_argument("--data-freeze-id")
+    parser.add_argument("--status", default="validated")
+    parser.add_argument("--profile-name")
     parser.add_argument("--provider", default="sample")
     parser.add_argument("--start-date", default="20240102")
     parser.add_argument("--end-date", default="20240104")
@@ -48,6 +50,9 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--pit-validation-report-path")
     parser.add_argument("--leakage-audit-report-path")
     parser.add_argument("--corporate-actions-report-path")
+    parser.add_argument("--real-data-sla-report-path")
+    parser.add_argument("--matrix-refresh-report-path")
+    parser.add_argument("--real-data-size-report-path")
     parser.add_argument("--matrix-cache-dir")
     parser.add_argument("--artifact-dir", action="append", default=[])
     parser.add_argument("--artifact-catalog-path", action="append", default=[])
@@ -108,6 +113,25 @@ def main(argv: list[str] | None = None) -> int:
         payload = {"versions": [record.to_dict() for record in registry.list_versions()]}
     elif args.command == "list-freezes":
         payload = {"freezes": [record.to_dict() for record in registry.list_freezes()]}
+    elif args.command == "promote-version":
+        if not args.dataset_version_id:
+            raise SystemExit("--dataset-version-id is required")
+        version = registry.promote_dataset_version(args.dataset_version_id, args.status)
+        payload = {"status": "ok" if version else "not_found", "dataset_version": version.to_dict() if version else None}
+    elif args.command == "latest-version":
+        version = registry.latest_validated_real_data(provider=args.provider) or registry.latest_dataset_version(provider=args.provider, status=args.status)
+        payload = {"status": "ok" if version else "not_found", "dataset_version": version.to_dict() if version else None}
+    elif args.command == "latest-freeze":
+        freeze = registry.latest_freeze_by_profile(args.profile_name) if args.profile_name else (registry.list_freezes()[-1] if registry.list_freezes() else None)
+        payload = {"status": "ok" if freeze else "not_found", "freeze": freeze.to_dict() if freeze else None}
+    elif args.command == "size-report":
+        from real_data_ops.size_report import compute_data_size_report, write_size_report
+
+        if not args.data_dir:
+            raise SystemExit("--data-dir is required")
+        report = compute_data_size_report(args.data_dir, matrix_cache_dir=args.matrix_cache_dir, freeze_dir=args.freeze_dir)
+        json_path, md_path = write_size_report(report, output_dir)
+        payload = {"status": "ok", "size_report": report.to_dict(), "paths": {"real_data_size_report_path": str(json_path), "real_data_size_report_md_path": str(md_path)}}
     elif args.command == "report":
         json_path, md_path = write_data_lake_report(registry, output_dir)
         retention_path = write_retention_report(registry, output_dir)
@@ -140,11 +164,19 @@ def _create_version(args: argparse.Namespace, registry: LocalDataLakeRegistry) -
         pit_validation_report_path=args.pit_validation_report_path,
         leakage_audit_report_path=args.leakage_audit_report_path,
         corporate_actions_report_path=args.corporate_actions_report_path,
+        real_data_sla_status=_status_from_report(args.real_data_sla_report_path),
+        matrix_cache_dir=args.matrix_cache_dir,
+        matrix_refresh_report_path=args.matrix_refresh_report_path,
+        real_data_size_report_path=args.real_data_size_report_path,
+        latest_trade_date=max((item.last_date or "" for item in fingerprints), default="") or None,
+        data_version_status=args.status,
+        provider_profile=args.profile_name,
+        real_data_profile_id=_profile_id_from_report(args.real_data_sla_report_path) or args.profile_name,
         data_source_smoke_report_path=args.data_source_smoke_report_path,
         created_at=utc_now(),
-        status="validated",
+        status=args.status,
         content_hash=content_hash,
-        metadata={},
+        metadata={"profile_name": args.profile_name} if args.profile_name else {},
     )
     return registry.register_dataset_version(version)
 
@@ -166,7 +198,36 @@ def _artifact_paths(args: argparse.Namespace) -> dict[str, str | None]:
         "pit_validation_report_path": args.pit_validation_report_path,
         "leakage_audit_report_path": args.leakage_audit_report_path,
         "corporate_actions_report_path": args.corporate_actions_report_path,
+        "real_data_sla_report_path": args.real_data_sla_report_path,
+        "matrix_refresh_report_path": args.matrix_refresh_report_path,
+        "real_data_size_report_path": args.real_data_size_report_path,
     }
+
+
+def _status_from_report(path: str | None) -> str | None:
+    if not path:
+        return None
+    target = Path(path)
+    if not target.exists():
+        return None
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    return payload.get("status")
+
+
+def _profile_id_from_report(path: str | None) -> str | None:
+    if not path:
+        return None
+    target = Path(path)
+    if not target.exists():
+        return None
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    return payload.get("profile", {}).get("profile_id") or payload.get("summary", {}).get("profile_id")
 
 
 if __name__ == "__main__":

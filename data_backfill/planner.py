@@ -29,6 +29,8 @@ def build_backfill_plan(
     index_codes: Sequence[str] | None = None,
     security_list_statuses: Sequence[str] | None = None,
     chunk_days: int = 30,
+    chunk_strategy: str = "uniform",
+    dataset_chunk_days: dict[str, int] | None = None,
     max_requests: int | None = None,
     universe_name: str | None = None,
 ) -> BackfillPlan:
@@ -41,16 +43,31 @@ def build_backfill_plan(
         index_codes=tuple(index_codes or config.index_codes),
         security_list_statuses=tuple(statuses or config.security_list_statuses),
     )
-    sync_plan = build_sync_plan(
-        scoped_config,
-        datasets=selected,
-        chunk_days=chunk_days,
-        index_codes=scoped_config.index_codes,
-        start_date=scoped_config.start_date,
-        end_date=scoped_config.end_date,
-    )
+    per_dataset_chunks = dict(dataset_chunk_days or {})
+    if per_dataset_chunks:
+        sync_jobs = []
+        for dataset in selected:
+            sync_jobs.extend(
+                build_sync_plan(
+                    scoped_config,
+                    datasets=[dataset],
+                    chunk_days=max(1, int(per_dataset_chunks.get(dataset, chunk_days))),
+                    index_codes=scoped_config.index_codes,
+                    start_date=scoped_config.start_date,
+                    end_date=scoped_config.end_date,
+                ).jobs
+            )
+    else:
+        sync_jobs = build_sync_plan(
+            scoped_config,
+            datasets=selected,
+            chunk_days=chunk_days,
+            index_codes=scoped_config.index_codes,
+            start_date=scoped_config.start_date,
+            end_date=scoped_config.end_date,
+        ).jobs
     jobs: list[BackfillJob] = []
-    for job in sync_plan.jobs:
+    for job in sync_jobs:
         if job.dataset == "securities" and statuses:
             for status in statuses:
                 jobs.append(
@@ -83,12 +100,18 @@ def build_backfill_plan(
         security_list_statuses=statuses,
         chunk_days=chunk_days,
         universe_name=universe_name,
-        metadata={"corporate_action_query_date_field": scoped_config.corporate_action_query_date_field},
+        metadata={
+            "corporate_action_query_date_field": scoped_config.corporate_action_query_date_field,
+            "chunk_strategy": chunk_strategy,
+            "dataset_chunk_days": per_dataset_chunks,
+        },
     )
     payload = {
         "scope": scope.to_dict(),
         "jobs": [job.to_dict() for job in jobs],
         "max_requests": max_requests,
+        "chunk_strategy": chunk_strategy,
+        "dataset_chunk_days": per_dataset_chunks,
     }
     digest = hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
     return BackfillPlan(

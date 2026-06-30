@@ -52,6 +52,12 @@ class MonitoringReport:
         provider = self.checks.get("provider_readiness", {}) if isinstance(self.checks, dict) else {}
         field_coverage = self.checks.get("field_coverage", {}) if isinstance(self.checks, dict) else {}
         data_audit = self.checks.get("data_source_audit", {}) if isinstance(self.checks, dict) else {}
+        real_data = self.checks.get("real_data_readiness", {}) if isinstance(self.checks, dict) else {}
+        real_data_sla = self.checks.get("real_data_sla", {}) if isinstance(self.checks, dict) else {}
+        real_data_size = self.checks.get("real_data_size", {}) if isinstance(self.checks, dict) else {}
+        matrix_refresh = self.checks.get("matrix_refresh", {}) if isinstance(self.checks, dict) else {}
+        matrix_freshness = self.checks.get("matrix_freshness", {}) if isinstance(self.checks, dict) else {}
+        api_permission_matrix = self.checks.get("api_permission_matrix", {}) if isinstance(self.checks, dict) else {}
         baseline = self.checks.get("baseline_compare", {}) if isinstance(self.checks, dict) else {}
         backfill_run = self.checks.get("backfill_run", {}) if isinstance(self.checks, dict) else {}
         backfill_coverage = self.checks.get("backfill_coverage", {}) if isinstance(self.checks, dict) else {}
@@ -163,6 +169,16 @@ class MonitoringReport:
             "missing_field_count": int(field_coverage.get("missing_field_count", 0) or 0) if isinstance(field_coverage, dict) else 0,
             "empty_dataset_count": int(field_coverage.get("empty_dataset_count", 0) or 0) if isinstance(field_coverage, dict) else 0,
             "data_source_cache_hit_rate": float(data_audit.get("data_source_cache_hit_rate", 0.0) or 0.0) if isinstance(data_audit, dict) else 0.0,
+            "real_data_profile_name": str(real_data.get("real_data_profile_name", "")) if isinstance(real_data, dict) else "",
+            "real_data_pipeline_status": str(real_data.get("real_data_pipeline_status", "")) if isinstance(real_data, dict) else "",
+            "real_data_sla_status": str(real_data_sla.get("real_data_sla_status", "")) if isinstance(real_data_sla, dict) else "",
+            "api_permission_matrix_issue_count": int(api_permission_matrix.get("api_permission_issue_count", 0) or 0) if isinstance(api_permission_matrix, dict) else 0,
+            "request_budget_used": int(real_data.get("request_budget_used", 0) or 0) if isinstance(real_data, dict) else 0,
+            "total_data_size_gb": float(real_data_size.get("total_data_size_gb", 0.0) or 0.0) if isinstance(real_data_size, dict) else 0.0,
+            "matrix_cache_size_gb": float(real_data_size.get("matrix_cache_size_gb", 0.0) or 0.0) if isinstance(real_data_size, dict) else 0.0,
+            "matrix_refresh_status": str(matrix_refresh.get("matrix_refresh_status", "")) if isinstance(matrix_refresh, dict) else "",
+            "matrix_freshness_status": str(matrix_freshness.get("matrix_freshness_status", "")) if isinstance(matrix_freshness, dict) else "",
+            "matrix_source_hash_drift_count": int(matrix_refresh.get("matrix_source_hash_drift_count", 0) or 0) if isinstance(matrix_refresh, dict) else 0,
             "baseline_diff_count": int(baseline.get("baseline_diff_count", 0) or 0) if isinstance(baseline, dict) else 0,
             "backfill_status": str(backfill_run.get("backfill_status", "")) if isinstance(backfill_run, dict) else "",
             "backfill_failed_jobs": int(backfill_run.get("backfill_failed_jobs", 0) or 0) if isinstance(backfill_run, dict) else 0,

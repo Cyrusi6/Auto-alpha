@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterable
 
 from ..config import AShareDataConfig
+from ..rate_limit import RateLimitEvent, SimpleRateLimiter
 
 
 class TushareApiError(ValueError):
@@ -63,12 +64,15 @@ class TushareHttpClient:
         self,
         config: AShareDataConfig,
         urlopen: Callable[..., Any] | None = None,
+        rate_limiter: SimpleRateLimiter | None = None,
     ):
         self.api_url = config.tushare_api_url
         self.token = config.tushare_token
         self.timeout_seconds = config.tushare_timeout_seconds
         self.retry_count = config.tushare_retry_count
         self._urlopen = urllib.request.urlopen if urlopen is None else urlopen
+        self.rate_limiter = rate_limiter
+        self.last_rate_limit_event: RateLimitEvent | None = None
 
     def post(
         self,
@@ -103,6 +107,9 @@ class TushareHttpClient:
         )
 
         started = time.perf_counter()
+        self.last_rate_limit_event = None
+        if self.rate_limiter is not None:
+            self.last_rate_limit_event = self.rate_limiter.wait(api_name)
         response_payload = self._send_with_retry(request)
         code = response_payload.get("code", 0)
         message = str(response_payload.get("msg") or "")

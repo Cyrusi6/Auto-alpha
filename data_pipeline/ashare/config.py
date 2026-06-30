@@ -17,6 +17,7 @@ class AShareDataConfig:
     tushare_api_url: str = "http://api.tushare.pro"
     tushare_timeout_seconds: int = 30
     tushare_retry_count: int = 3
+    tushare_rate_limit_per_minute: int = 150
     database_url: str | None = None
     data_dir: Path = Path("data/ashare")
     start_date: str = "20150101"
@@ -46,6 +47,7 @@ class AShareDataConfig:
             tushare_api_url=env.get("TUSHARE_API_URL") or "http://api.tushare.pro",
             tushare_timeout_seconds=env.get("TUSHARE_TIMEOUT_SECONDS") or 30,
             tushare_retry_count=env.get("TUSHARE_RETRY_COUNT") or 3,
+            tushare_rate_limit_per_minute=env.get("TUSHARE_RATE_LIMIT_PER_MINUTE") or 150,
             database_url=database_url,
             data_dir=Path(env.get("ASHARE_DATA_DIR") or "data/ashare"),
             start_date=env.get("ASHARE_START_DATE", "20150101"),
@@ -73,6 +75,11 @@ class AShareDataConfig:
             self,
             "tushare_retry_count",
             self._coerce_positive_int(self.tushare_retry_count, "tushare_retry_count"),
+        )
+        object.__setattr__(
+            self,
+            "tushare_rate_limit_per_minute",
+            self._coerce_positive_int(self.tushare_rate_limit_per_minute, "tushare_rate_limit_per_minute"),
         )
 
         if self.adjust not in {"none", "qfq", "hfq"}:

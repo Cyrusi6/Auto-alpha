@@ -19,6 +19,9 @@ def summarize_api_audit(path: str | Path) -> AuditSummary:
     cache_hits = sum(1 for row in rows if row.get("cache_hit") is True)
     durations = sorted(_to_float(row.get("duration_seconds")) for row in rows)
     durations = [value for value in durations if value is not None]
+    waits = [_to_float(row.get("rate_limit_wait_seconds")) or 0.0 for row in rows]
+    wait_total = sum(waits)
+    event_count = sum(1 for row in rows if row.get("rate_limit_request_index") is not None)
     return AuditSummary(
         path=str(audit_path),
         total_requests=total,
@@ -32,6 +35,9 @@ def summarize_api_audit(path: str | Path) -> AuditSummary:
         duration_p95=_percentile(durations, 0.95),
         duration_max=max(durations) if durations else 0.0,
         errors_by_category=dict(Counter(_error_category(row.get("error")) for row in rows if row.get("error"))),
+        rate_limit_total_wait_seconds=float(wait_total),
+        rate_limit_average_wait_seconds=float(wait_total / event_count) if event_count else 0.0,
+        rate_limit_event_count=int(event_count),
     )
 
 

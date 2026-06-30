@@ -23,6 +23,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--data-version-manifest-path")
     parser.add_argument("--freeze-validation-report-path")
     parser.add_argument("--require-data-freeze", action="store_true")
+    parser.add_argument("--real-data-profile-path")
+    parser.add_argument("--require-real-data-freeze", action="store_true")
+    parser.add_argument("--real-data-sla-report-path")
+    parser.add_argument("--require-real-data-sla-pass", action="store_true")
+    parser.add_argument("--matrix-refresh-report-path")
     parser.add_argument("--create-data-version", action="store_true")
     parser.add_argument("--data-lake-registry-dir")
     parser.add_argument("--create-research-freeze", action="store_true")
@@ -258,7 +263,7 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
         data_freeze_id=args.data_freeze_id,
         data_version_manifest_path=args.data_version_manifest_path,
         freeze_validation_report_path=args.freeze_validation_report_path,
-        require_data_freeze=args.require_data_freeze,
+        require_data_freeze=args.require_data_freeze or args.require_real_data_freeze,
         create_data_version=args.create_data_version,
         data_lake_registry_dir=args.data_lake_registry_dir,
         create_research_freeze=args.create_research_freeze,

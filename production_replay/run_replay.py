@@ -34,6 +34,11 @@ def _add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--data-freeze-dir")
     parser.add_argument("--data-version-manifest-path")
     parser.add_argument("--require-data-freeze", action="store_true")
+    parser.add_argument("--real-data-profile-path")
+    parser.add_argument("--require-real-data-freeze", action="store_true")
+    parser.add_argument("--real-data-sla-report-path")
+    parser.add_argument("--require-real-data-sla-pass", action="store_true")
+    parser.add_argument("--matrix-refresh-report-path")
     parser.add_argument("--factor-store-dir")
     parser.add_argument("--model-registry-dir")
     parser.add_argument("--require-active-model", action="store_true")
@@ -166,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
         risk_controls=args.risk_controls,
         data_freeze_dir=args.data_freeze_dir,
         data_version_manifest_path=args.data_version_manifest_path,
-        require_data_freeze=args.require_data_freeze,
+        require_data_freeze=args.require_data_freeze or args.require_real_data_freeze,
         require_active_model=args.require_active_model,
         require_active_optimizer_policy=args.require_active_optimizer_policy,
         certified_portfolio_policy_path=args.certified_portfolio_policy_path,

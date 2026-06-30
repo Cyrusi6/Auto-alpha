@@ -87,11 +87,18 @@ from .checks import (
     check_release_gate,
     check_replay_day_failures,
     check_readiness_remediation,
+    check_api_permission_matrix,
+    check_matrix_freshness,
+    check_matrix_refresh,
     check_research_freeze,
     check_risk_limit_usage,
     check_kill_switch_state,
     check_risk_overrides,
     check_risk_report,
+    check_real_data_readiness,
+    check_real_data_size,
+    check_real_data_sla,
+    check_real_data_token_redaction,
     check_account_reconciliation,
     check_pending_model_reviews,
     check_quarantined_or_paused_model_usage,
@@ -281,6 +288,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--broker-adapter-contract-report-path")
     parser.add_argument("--go-live-gate-decision-path")
     parser.add_argument("--go-live-gate-scorecard-path")
+    parser.add_argument("--real-data-readiness-report-path")
+    parser.add_argument("--real-data-pipeline-report-path")
+    parser.add_argument("--real-data-sla-report-path")
+    parser.add_argument("--real-data-size-report-path")
+    parser.add_argument("--provider-readiness-matrix-path")
+    parser.add_argument("--api-permission-matrix-path")
+    parser.add_argument("--required-dataset-status-path")
+    parser.add_argument("--matrix-refresh-result-path")
+    parser.add_argument("--matrix-freshness-report-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -354,6 +370,13 @@ def main(argv: list[str] | None = None) -> int:
         ("adjustment_application", lambda: check_adjustment_application(args.adjustment_application_result_path)),
         ("data_source_smoke", lambda: check_data_source_smoke(args.data_source_smoke_report_path)),
         ("provider_readiness", lambda: check_provider_readiness(args.data_source_smoke_report_path)),
+        ("real_data_readiness", lambda: check_real_data_readiness(args.real_data_readiness_report_path or args.real_data_pipeline_report_path)),
+        ("api_permission_matrix", lambda: check_api_permission_matrix(args.api_permission_matrix_path)),
+        ("real_data_sla", lambda: check_real_data_sla(args.real_data_sla_report_path)),
+        ("real_data_size", lambda: check_real_data_size(args.real_data_size_report_path)),
+        ("matrix_refresh", lambda: check_matrix_refresh(args.matrix_refresh_result_path)),
+        ("matrix_freshness", lambda: check_matrix_freshness(args.matrix_freshness_report_path)),
+        ("real_data_token_redaction", lambda: check_real_data_token_redaction(args.real_data_readiness_report_path or args.real_data_pipeline_report_path)),
         ("field_coverage", lambda: check_field_coverage(args.field_coverage_path)),
         ("data_source_audit", lambda: check_data_source_audit(args.audit_summary_path)),
         ("alpha_factory_campaign", lambda: check_alpha_factory_campaign(args.alpha_factory_report_path, args.alpha_campaign_manifest_path)),

@@ -15,6 +15,74 @@ from model_registry import LocalModelRegistry
 from .models import MonitoringAlert
 
 
+def check_real_data_readiness(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    status = str(payload.get("status") or "")
+    alerts = []
+    if status in {"blocked", "failed", "error"}:
+        alerts.append(MonitoringAlert("error", "real_data_readiness", "real data readiness is blocked", {"status": status}))
+    return {
+        "exists": bool(payload),
+        "real_data_pipeline_status": status,
+        "real_data_profile_name": payload.get("profile_name", ""),
+        "request_budget_used": int(payload.get("request_budget_used", payload.get("estimated_requests", 0)) or 0),
+    }, alerts
+
+
+def check_api_permission_matrix(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    issue_count = int(payload.get("permission_issue_count", 0) or 0)
+    alerts = [MonitoringAlert("warning", "api_permission_matrix", "API permission matrix contains issues", {"count": issue_count})] if issue_count else []
+    return {"exists": bool(payload), "api_permission_issue_count": issue_count}, alerts
+
+
+def check_real_data_sla(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    status = str(payload.get("status") or "")
+    alerts = []
+    if status == "fail":
+        alerts.append(MonitoringAlert("error", "real_data_sla", "real data SLA failed"))
+    elif status == "warning":
+        alerts.append(MonitoringAlert("warning", "real_data_sla", "real data SLA has warnings"))
+    return {"exists": bool(payload), "real_data_sla_status": status, "real_data_sla_summary": payload.get("summary", {})}, alerts
+
+
+def check_real_data_size(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    return {
+        "exists": bool(payload),
+        "total_data_size_gb": float(payload.get("total_size_gb", 0.0) or 0.0),
+        "matrix_cache_size_gb": float(payload.get("matrix_cache_size_bytes", 0) or 0) / (1024**3),
+    }, []
+
+
+def check_matrix_refresh(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    status = str(payload.get("status") or "")
+    alerts = [MonitoringAlert("warning", "matrix_refresh", "matrix refresh is not fresh", {"status": status})] if status in {"failed", "stale"} else []
+    return {
+        "exists": bool(payload),
+        "matrix_refresh_status": status,
+        "matrix_source_hash_drift_count": int(((payload.get("source_diff") or {}).get("drift_count", 0)) if isinstance(payload.get("source_diff"), dict) else 0),
+    }, alerts
+
+
+def check_matrix_freshness(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    status = str(payload.get("status") or "")
+    alerts = [MonitoringAlert("warning", "matrix_freshness", "matrix freshness check is not fresh", {"status": status})] if status not in {"", "fresh"} else []
+    return {"exists": bool(payload), "matrix_freshness_status": status, "n_stocks": payload.get("n_stocks", 0), "n_dates": payload.get("n_dates", 0)}, alerts
+
+
+def check_real_data_token_redaction(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    if not path or not Path(path).exists():
+        return {"exists": False, "token_redaction_passed": True}, []
+    text = Path(path).read_text(encoding="utf-8")
+    leaked = "TUSHARE_TOKEN=" in text
+    alerts = [MonitoringAlert("error", "real_data_token_redaction", "token-like value leaked in real data artifact")] if leaked else []
+    return {"exists": True, "token_redaction_passed": not leaked}, alerts
+
+
 def check_data_freshness(data_dir: str | Path, as_of_date: str) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     records = _read_jsonl(Path(data_dir) / "trade_calendar" / "records.jsonl")
     open_dates = sorted(str(record.get("trade_date")) for record in records if record.get("is_open") is True)
