@@ -1,3 +1,4 @@
+import gzip
 import json
 
 import pytest
@@ -13,8 +14,10 @@ from data_pipeline.ashare.providers.tushare_client import (
 
 
 class FakeResponse:
-    def __init__(self, payload):
+    def __init__(self, payload, headers=None, raw=None):
         self.payload = payload
+        self.headers = headers or {}
+        self.raw = raw
 
     def __enter__(self):
         return self
@@ -23,6 +26,8 @@ class FakeResponse:
         return False
 
     def read(self):
+        if self.raw is not None:
+            return self.raw
         return json.dumps(self.payload).encode("utf-8")
 
 
@@ -85,6 +90,25 @@ def test_tushare_http_client_post_with_metadata_redacts_params_token():
     assert envelope.records == [{"ts_code": "000001.SZ", "close": 10.5}]
     assert envelope.item_count == 1
     assert "secret-token" not in json.dumps(envelope.to_dict())
+
+
+def test_tushare_http_client_decodes_gzip_response():
+    payload = {
+        "code": 0,
+        "msg": "",
+        "data": {
+            "fields": ["ts_code", "close"],
+            "items": [["000001.SZ", 10.5]],
+        },
+    }
+
+    def fake_urlopen(request, timeout):
+        assert request.headers["Accept-encoding"] == "gzip"
+        return FakeResponse(payload, headers={"Content-Encoding": "gzip"}, raw=gzip.compress(json.dumps(payload).encode("utf-8")))
+
+    client = TushareHttpClient(AShareDataConfig(tushare_token="secret-token", tushare_retry_count=1), urlopen=fake_urlopen)
+
+    assert client.post("daily", fields=["ts_code", "close"]) == [{"ts_code": "000001.SZ", "close": 10.5}]
 
 
 def test_tushare_http_client_raises_api_error_on_nonzero_code():

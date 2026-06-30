@@ -112,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         data_dir=args.data_dir,
         output_dir=args.output_dir,
         staging_dir=args.staging_dir,
+        cache_dir=args.cache_dir,
         state_path=args.state_path,
         mode=args.mode,
         cache_enabled=args.cache,

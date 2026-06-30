@@ -17,7 +17,7 @@ from data_pipeline.ashare.providers.tushare import TushareAShareDataProvider
 from data_pipeline.ashare.quality import validate_all_datasets, write_quality_report
 from data_pipeline.ashare.rate_limit import RequestRateLimitConfig, SimpleRateLimiter
 from data_pipeline.ashare.stats import compute_all_dataset_stats, write_dataset_stats
-from data_pipeline.ashare.storage import LocalAshareStorage, StorageWriteResult
+from data_pipeline.ashare.storage import DATASET_PRIMARY_KEYS, LocalAshareStorage, StorageWriteResult
 from data_pipeline.ashare.sync_plan import SyncJob
 from data_source_validation.fake_tushare import FakeTushareHttpClient
 
@@ -42,6 +42,7 @@ def execute_backfill_plan(
     data_dir: str | Path,
     output_dir: str | Path,
     staging_dir: str | Path | None = None,
+    cache_dir: str | Path | None = None,
     state_path: str | Path | None = None,
     mode: str = "append",
     cache_enabled: bool = False,
@@ -76,6 +77,14 @@ def execute_backfill_plan(
     if mode == "overwrite" and not resume and not dry_run and quota.status == "ok":
         for dataset in plan.scope.datasets:
             storage.write_dataset(dataset, [], mode="overwrite")
+    dataset_counts = {
+        dataset: _count_jsonl_lines(storage.dataset_path(dataset))
+        for dataset in plan.scope.datasets
+    }
+    dataset_key_sets = {
+        dataset: _load_existing_keys(storage, dataset)
+        for dataset in plan.scope.datasets
+    }
 
     rate_limiter = None
     if config.provider == "tushare" and not fake_tushare_scenario and not disable_rate_limit:
@@ -86,7 +95,8 @@ def execute_backfill_plan(
             )
         )
     provider = _provider(config, fake_tushare_scenario, rate_limiter=rate_limiter)
-    cache = TushareResponseCache(data_dir, enabled=cache_enabled) if cache_enabled else None
+    cache_root = cache_dir if cache_dir is not None else data_dir
+    cache = TushareResponseCache(cache_root, enabled=cache_enabled) if cache_enabled else None
     auditor = ApiRequestAuditor(Path(data_dir) / "api_audit.jsonl") if audit_enabled else None
     completed = successful_job_ids(state)
     jobs: list[BackfillJob] = []
@@ -108,12 +118,12 @@ def execute_backfill_plan(
             records = _fetch_job(provider, config, job, cache=cache, auditor=auditor)
             staging_records_path, _, record_count = write_staging_records(staging_root, job, records)
             payloads = _read_jsonl(staging_records_path)
-            storage.write_dataset(job.dataset, payloads, mode="append")
-            merged_records = len(storage.read_dataset(job.dataset))
+            written = _append_records_fast(storage, job.dataset, payloads, dataset_key_sets.get(job.dataset))
+            dataset_counts[job.dataset] = dataset_counts.get(job.dataset, 0) + written
             done = replace(
                 job,
                 status=BackfillJobStatus.success,
-                records=merged_records,
+                records=dataset_counts[job.dataset],
                 output_path=str(storage.dataset_path(job.dataset)),
                 staging_path=str(staging_records_path),
             )
@@ -132,9 +142,10 @@ def execute_backfill_plan(
     if compact:
         for dataset in plan.scope.datasets:
             if storage.dataset_exists(dataset):
-                storage.compact_dataset(dataset)
+                result = storage.compact_dataset(dataset)
+                dataset_counts[dataset] = result.records
     manifest_results = [
-        StorageWriteResult(dataset=dataset, path=str(storage.dataset_path(dataset)), records=len(storage.read_dataset(dataset)))
+        StorageWriteResult(dataset=dataset, path=str(storage.dataset_path(dataset)), records=dataset_counts.get(dataset, _count_jsonl_lines(storage.dataset_path(dataset))))
         for dataset in plan.scope.datasets
         if storage.dataset_exists(dataset)
     ]
@@ -254,3 +265,74 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
             if line.strip():
                 rows.append(json.loads(line))
     return rows
+
+
+def _append_records_fast(
+    storage: LocalAshareStorage,
+    dataset: str,
+    records: list[dict[str, Any]],
+    existing_keys: set[tuple[Any, ...]] | None = None,
+) -> int:
+    if not records:
+        storage.dataset_path(dataset).parent.mkdir(parents=True, exist_ok=True)
+        storage.dataset_path(dataset).touch(exist_ok=True)
+        return 0
+    path = storage.dataset_path(dataset)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    written = 0
+    with path.open("a", encoding="utf-8") as handle:
+        for payload in records:
+            if existing_keys is not None:
+                key = _record_key(dataset, payload)
+                if key is not None:
+                    if key in existing_keys:
+                        continue
+                    existing_keys.add(key)
+            handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+            handle.write("\n")
+            written += 1
+    return written
+
+
+def _count_jsonl_lines(path: Path) -> int:
+    if not path.exists():
+        return 0
+    count = 0
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                count += 1
+    return count
+
+
+def _load_existing_keys(storage: LocalAshareStorage, dataset: str) -> set[tuple[Any, ...]] | None:
+    if dataset not in DATASET_PRIMARY_KEYS:
+        return None
+    path = storage.dataset_path(dataset)
+    keys: set[tuple[Any, ...]] = set()
+    if not path.exists():
+        return keys
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                payload = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                key = _record_key(dataset, payload)
+                if key is not None:
+                    keys.add(key)
+    return keys
+
+
+def _record_key(dataset: str, record: dict[str, Any]) -> tuple[Any, ...] | None:
+    fields = DATASET_PRIMARY_KEYS.get(dataset)
+    if fields is None:
+        return None
+    key = tuple(record.get(field) for field in fields)
+    if any(value is None for value in key):
+        return None
+    return key

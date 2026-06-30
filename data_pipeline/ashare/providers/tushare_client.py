@@ -6,6 +6,7 @@ import json
 import time
 import urllib.error
 import urllib.request
+import gzip
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable
 
@@ -102,7 +103,7 @@ class TushareHttpClient:
         request = urllib.request.Request(
             self.api_url,
             data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "Accept-Encoding": "gzip"},
             method="POST",
         )
 
@@ -146,7 +147,7 @@ class TushareHttpClient:
         for attempt in range(max(1, self.retry_count)):
             try:
                 with self._urlopen(request, timeout=self.timeout_seconds) as response:
-                    raw = response.read().decode("utf-8")
+                    raw = _decode_response_body(response.read(), response)
                 payload = json.loads(raw)
                 if not isinstance(payload, dict):
                     raise TushareSchemaError("Tushare response must be a JSON object")
@@ -186,3 +187,16 @@ def _safe_error(error: Exception | None) -> str:
     if error is None:
         return "unknown error"
     return str(error).replace("\n", " ")
+
+
+def _decode_response_body(raw: bytes, response: Any) -> str:
+    encoding = ""
+    headers = getattr(response, "headers", None)
+    if headers is not None:
+        try:
+            encoding = str(headers.get("Content-Encoding", "") or "").lower()
+        except AttributeError:
+            encoding = ""
+    if "gzip" in encoding or raw.startswith(b"\x1f\x8b"):
+        raw = gzip.decompress(raw)
+    return raw.decode("utf-8")

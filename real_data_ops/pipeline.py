@@ -129,6 +129,7 @@ def run_real_data_pipeline(
         data_dir=data_dir,
         output_dir=root,
         staging_dir=staging_dir,
+        cache_dir=cache_dir,
         mode=mode,
         cache_enabled=cache,
         audit_enabled=audit,

@@ -413,8 +413,11 @@ class _CachedAuditedClient:
         except Exception as exc:
             status = "error"
             error = str(exc)
+            rate_event = getattr(self.client, "last_rate_limit_event", None)
             raise
         finally:
+            if rate_event is None:
+                rate_event = getattr(self.client, "last_rate_limit_event", None)
             if self.auditor is not None:
                 finished_at = utc_now()
                 self.auditor.write(

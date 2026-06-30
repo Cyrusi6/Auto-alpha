@@ -1982,3 +1982,9 @@
 - Run the full online Tushare profile only with an explicit local token, `RUN_TUSHARE_ONLINE_BACKFILL=1`, and operator-supervised request budgeting.
 - Calibrate dataset-specific chunk windows and SLA thresholds after the first real full-market backfill.
 - Expand matrix refresh to field-level partial updates once production cache sizes justify more granular rebuilds.
+
+### Online Backfill Hardening
+- Tushare HTTP responses may be gzip-compressed even when using the standard-library client; the client now advertises gzip support and transparently decodes gzip payloads before JSON parsing.
+- Backfill execution now uses the configured cache directory for Tushare response cache files, preserving data/cache separation for long production runs.
+- Production append writes now keep per-dataset primary-key sets and append only unseen records, avoiding per-job full dataset rewrites while preserving append/resume deduplication semantics.
+- Error-path audit records now retain the latest rate-limit event when provider calls fail, which keeps long-run request pacing diagnostics intact.
