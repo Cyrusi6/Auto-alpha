@@ -451,6 +451,11 @@ def render_app(config: DashboardConfig | None = None) -> None:
         broker_events = service.load_broker_events()
         broker_fills = service.load_broker_fills()
         broker_manifest = service.load_broker_instruction_manifest()
+        broker_file_gateway = service.load_broker_file_gateway_report()
+        broker_file_manifest = service.load_broker_file_manifest()
+        broker_file_roundtrip = service.load_broker_file_roundtrip_report()
+        operator_handoff = service.load_operator_handoff_report()
+        mapping_certification = service.load_broker_mapping_certification_decision()
         st.plotly_chart(plot_order_distribution(orders), use_container_width=True)
         st.subheader("Capacity And Execution Quality")
         st.json(
@@ -470,6 +475,17 @@ def render_app(config: DashboardConfig | None = None) -> None:
                 "status_distribution": broker_status_counts,
                 "reconciliation": broker_reconciliation,
                 "file_manifest": broker_manifest,
+                "broker_file_gateway": broker_file_gateway.get("summary", broker_file_gateway) if broker_file_gateway else {},
+                "broker_file_manifest": {
+                    "file_batch_id": broker_file_manifest.get("file_batch_id") if broker_file_manifest else "",
+                    "order_count": broker_file_manifest.get("order_count", broker_file_manifest.get("orders", 0)) if broker_file_manifest else 0,
+                },
+                "roundtrip": broker_file_roundtrip.get("summary", broker_file_roundtrip) if broker_file_roundtrip else {},
+                "operator_handoff": {
+                    "status": operator_handoff.get("status", "") if operator_handoff else "",
+                    "missing_required_items": operator_handoff.get("missing_required_items", []) if operator_handoff else [],
+                },
+                "mapping_certification_status": mapping_certification.get("status", "") if mapping_certification else "",
             }
         )
         _show_dataframe_or_empty("Target Positions", targets)
@@ -699,10 +715,21 @@ def render_app(config: DashboardConfig | None = None) -> None:
         _show_dataframe_or_empty("Risk Limit Usage", risk_limit_usage)
         _show_dataframe_or_empty("Risk Override Records", risk_override_records)
         st.subheader("Broker")
+        broker_file_gateway = service.load_broker_file_gateway_report()
+        broker_file_roundtrip = service.load_broker_file_roundtrip_report()
+        operator_handoff = service.load_operator_handoff_report()
+        mapping_certification = service.load_broker_mapping_certification_decision()
         st.json(
             {
                 "broker_summary": broker_report.get("summary", {}) if broker_report else {},
                 "reconciliation": broker_reconciliation,
+                "broker_file_gateway": broker_file_gateway.get("summary", broker_file_gateway) if broker_file_gateway else {},
+                "broker_file_roundtrip": broker_file_roundtrip.get("summary", broker_file_roundtrip) if broker_file_roundtrip else {},
+                "operator_handoff": {
+                    "status": operator_handoff.get("status", "") if operator_handoff else "",
+                    "missing_required_items": operator_handoff.get("missing_required_items", []) if operator_handoff else [],
+                },
+                "mapping_certification_status": mapping_certification.get("status", "") if mapping_certification else "",
             }
         )
         st.subheader("Broker Statement And EOD Reconciliation")

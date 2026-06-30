@@ -19,6 +19,8 @@ class ApprovalType:
     portfolio_policy_activation = "portfolio_policy_activation"
     account_reconciliation_adjustment = "account_reconciliation_adjustment"
     risk_control_override = "risk_control_override"
+    broker_file_handoff = "broker_file_handoff"
+    broker_mapping_certification_ack = "broker_mapping_certification_ack"
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,13 @@ class ApprovalBatch:
     risk_override_scope: str | None = None
     risk_override_expiry_date: str | None = None
     risk_override_max_usage_count: int | None = None
+    broker_file_batch_id: str | None = None
+    operator_handoff_id: str | None = None
+    broker_mapping_certification_decision_path: str | None = None
+    broker_file_gateway_report_path: str | None = None
+    operator_handoff_report_path: str | None = None
+    broker_file_summary: dict[str, Any] = field(default_factory=dict)
+    operator_handoff_summary: dict[str, Any] = field(default_factory=dict)
     status: str = ApprovalStatus.pending
     decision: ApprovalDecision | None = None
     metadata: dict[str, Any] = field(default_factory=dict)

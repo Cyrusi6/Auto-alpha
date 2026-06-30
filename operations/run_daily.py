@@ -52,6 +52,19 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--broker-auto-fill", action="store_true", default=True)
     parser.add_argument("--broker-reconcile", action="store_true")
     parser.add_argument("--broker-price-type", default="MARKET")
+    parser.add_argument("--broker-file-gateway", action="store_true")
+    parser.add_argument("--broker-file-profile", default="generic_broker_csv")
+    parser.add_argument("--broker-file-profile-config")
+    parser.add_argument("--broker-file-gateway-store-dir")
+    parser.add_argument("--broker-file-outbox-dir")
+    parser.add_argument("--broker-file-inbox-dir")
+    parser.add_argument("--broker-file-handoff-dir")
+    parser.add_argument("--operator-handoff-store-dir")
+    parser.add_argument("--operator-handoff-approval-store-dir")
+    parser.add_argument("--mapping-certification-decision-path")
+    parser.add_argument("--require-mapping-certification", action="store_true")
+    parser.add_argument("--file-outbox-dry-run", action="store_true")
+    parser.add_argument("--auto-confirm-local-smoke", action="store_true")
     parser.add_argument("--use-model-registry", action="store_true")
     parser.add_argument("--model-registry-dir")
     parser.add_argument("--model-version-id")
@@ -166,6 +179,19 @@ def main(argv: list[str] | None = None) -> int:
         broker_auto_fill=args.broker_auto_fill,
         broker_reconcile=args.broker_reconcile,
         broker_price_type=args.broker_price_type,
+        broker_file_gateway=args.broker_file_gateway,
+        broker_file_profile=args.broker_file_profile,
+        broker_file_profile_config=args.broker_file_profile_config,
+        broker_file_gateway_store_dir=args.broker_file_gateway_store_dir,
+        broker_file_outbox_dir=args.broker_file_outbox_dir,
+        broker_file_inbox_dir=args.broker_file_inbox_dir,
+        broker_file_handoff_dir=args.broker_file_handoff_dir,
+        operator_handoff_store_dir=args.operator_handoff_store_dir,
+        operator_handoff_approval_store_dir=args.operator_handoff_approval_store_dir,
+        mapping_certification_decision_path=args.mapping_certification_decision_path,
+        require_mapping_certification=args.require_mapping_certification,
+        file_outbox_dry_run=args.file_outbox_dry_run,
+        auto_confirm_local_smoke=args.auto_confirm_local_smoke,
         use_model_registry=args.use_model_registry,
         model_registry_dir=args.model_registry_dir,
         model_version_id=args.model_version_id,

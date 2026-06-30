@@ -9,6 +9,7 @@ from typing import Any
 class ReplayMode:
     shadow_only = "shadow_only"
     paper_simulated = "paper_simulated"
+    file_outbox_dry_run = "file_outbox_dry_run"
     mixed = "mixed"
 
 
@@ -51,6 +52,19 @@ class ProductionReplayConfig:
     settlement_dir: str | None = None
     broker_store_dir: str | None = None
     broker_adapter: str = "paper"
+    broker_file_gateway: bool = False
+    broker_file_profile: str = "generic_broker_csv"
+    broker_file_profile_config: str | None = None
+    broker_file_gateway_store_dir: str | None = None
+    broker_file_outbox_root_dir: str | None = None
+    broker_file_inbox_root_dir: str | None = None
+    broker_file_handoff_root_dir: str | None = None
+    operator_handoff_store_dir: str | None = None
+    operator_handoff_approval_store_dir: str | None = None
+    mapping_certification_decision_path: str | None = None
+    require_mapping_certification: bool = False
+    file_outbox_dry_run: bool = False
+    auto_confirm_local_smoke: bool = False
     monitoring_root_dir: str | None = None
     incident_store_dir: str | None = None
     risk_control_state_dir: str | None = None

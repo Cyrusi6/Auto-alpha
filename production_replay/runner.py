@@ -108,14 +108,14 @@ class ProductionReplayRunner:
             plan_payload = self._call_json(production_main, ["plan-day", *common])
             paths.update(_extract_paths(plan_payload))
             run_args = ["run-day", *common]
-            if run_mode == ReplayMode.paper_simulated:
+            if run_mode in {ReplayMode.paper_simulated, ReplayMode.file_outbox_dry_run}:
                 run_args.append("--require-order-approval")
                 run_args.extend(["--stop-after-phase", "wait_for_approval"])
             run_payload = self._call_json(production_main, run_args)
             paths.update(_extract_paths(run_payload))
             approval_id = _approval_id(run_payload)
             resume_payload: dict[str, Any] = {}
-            if run_mode == ReplayMode.paper_simulated:
+            if run_mode in {ReplayMode.paper_simulated, ReplayMode.file_outbox_dry_run}:
                 if approval_id and self.config.auto_approve_paper_local:
                     self._approve(approval_id)
                     self.store.record_approval(self.config.replay_id, trade_date, approval_id, "auto_approve_paper_local")
@@ -187,7 +187,7 @@ class ProductionReplayRunner:
             "--output-dir",
             str(day_root),
             "--run-mode",
-            run_mode,
+            "file_outbox" if run_mode == ReplayMode.file_outbox_dry_run else run_mode,
             "--trade-date",
             trade_date,
             "--as-of-date",
@@ -217,10 +217,34 @@ class ProductionReplayRunner:
             "--max-weight",
             str(self.config.max_weight),
             "--broker-adapter",
-            self.config.broker_adapter,
+            "file" if run_mode == ReplayMode.file_outbox_dry_run else self.config.broker_adapter,
         ]
         if self.config.broker_store_dir:
             args.extend(["--broker-store-dir", str(Path(self.config.broker_store_dir) / trade_date)])
+        if run_mode == ReplayMode.file_outbox_dry_run or self.config.broker_file_gateway:
+            args.append("--broker-file-gateway")
+            args.extend(["--broker-file-profile", self.config.broker_file_profile])
+            args.append("--file-outbox-dry-run")
+            if self.config.auto_confirm_local_smoke:
+                args.append("--auto-confirm-local-smoke")
+            if self.config.broker_file_profile_config:
+                args.extend(["--broker-file-profile-config", self.config.broker_file_profile_config])
+            gateway_root = Path(self.config.broker_file_gateway_store_dir or self.output_dir / "broker_file_gateway") / trade_date
+            args.extend(["--broker-file-gateway-store-dir", str(gateway_root)])
+            outbox_root = Path(self.config.broker_file_outbox_root_dir or gateway_root / "outbox")
+            inbox_root = Path(self.config.broker_file_inbox_root_dir or gateway_root / "inbox")
+            handoff_root = Path(self.config.broker_file_handoff_root_dir or self.output_dir / "handoff") / trade_date
+            args.extend(["--broker-file-outbox-dir", str(outbox_root)])
+            args.extend(["--broker-file-inbox-dir", str(inbox_root)])
+            args.extend(["--broker-file-handoff-dir", str(handoff_root)])
+            if self.config.operator_handoff_store_dir:
+                args.extend(["--operator-handoff-store-dir", str(Path(self.config.operator_handoff_store_dir) / trade_date)])
+            if self.config.operator_handoff_approval_store_dir:
+                args.extend(["--operator-handoff-approval-store-dir", self.config.operator_handoff_approval_store_dir])
+            if self.config.mapping_certification_decision_path:
+                args.extend(["--mapping-certification-decision-path", self.config.mapping_certification_decision_path])
+            if self.config.require_mapping_certification:
+                args.append("--require-mapping-certification")
         if self.config.settlement_dir:
             args.extend(["--settlement-dir", str(Path(self.config.settlement_dir) / trade_date)])
         if self.config.risk_control_state_dir:

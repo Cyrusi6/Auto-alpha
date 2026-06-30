@@ -24,7 +24,7 @@ def _build_parser() -> argparse.ArgumentParser:
 def _add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--replay-id")
     parser.add_argument("--replay-name", default="local_replay")
-    parser.add_argument("--replay-mode", choices=[ReplayMode.shadow_only, ReplayMode.paper_simulated, ReplayMode.mixed], default=ReplayMode.shadow_only)
+    parser.add_argument("--replay-mode", choices=[ReplayMode.shadow_only, ReplayMode.paper_simulated, ReplayMode.file_outbox_dry_run, ReplayMode.mixed], default=ReplayMode.shadow_only)
     parser.add_argument("--replay-state-dir", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--start-date", required=True)
@@ -48,6 +48,22 @@ def _add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--settlement-dir")
     parser.add_argument("--broker-store-dir")
     parser.add_argument("--broker-adapter", choices=["simulated", "paper", "file"], default="paper")
+    parser.add_argument("--broker-file-gateway", action="store_true")
+    parser.add_argument("--broker-file-profile", default="generic_broker_csv")
+    parser.add_argument("--broker-file-profile-config")
+    parser.add_argument("--broker-file-gateway-store-dir")
+    parser.add_argument("--broker-file-outbox-root-dir", dest="broker_file_outbox_root_dir")
+    parser.add_argument("--broker-file-outbox-dir", dest="broker_file_outbox_root_dir")
+    parser.add_argument("--broker-file-inbox-root-dir", dest="broker_file_inbox_root_dir")
+    parser.add_argument("--broker-file-inbox-dir", dest="broker_file_inbox_root_dir")
+    parser.add_argument("--broker-file-handoff-root-dir", dest="broker_file_handoff_root_dir")
+    parser.add_argument("--broker-file-handoff-dir", dest="broker_file_handoff_root_dir")
+    parser.add_argument("--operator-handoff-store-dir")
+    parser.add_argument("--operator-handoff-approval-store-dir")
+    parser.add_argument("--mapping-certification-decision-path")
+    parser.add_argument("--require-mapping-certification", action="store_true")
+    parser.add_argument("--file-outbox-dry-run", action="store_true")
+    parser.add_argument("--auto-confirm-local-smoke", action="store_true")
     parser.add_argument("--risk-control-state-dir")
     parser.add_argument("--risk-control-output-root")
     parser.add_argument("--incident-store-dir")
@@ -101,6 +117,19 @@ def main(argv: list[str] | None = None) -> int:
         settlement_dir=args.settlement_dir,
         broker_store_dir=args.broker_store_dir,
         broker_adapter=args.broker_adapter,
+        broker_file_gateway=args.broker_file_gateway,
+        broker_file_profile=args.broker_file_profile,
+        broker_file_profile_config=args.broker_file_profile_config,
+        broker_file_gateway_store_dir=args.broker_file_gateway_store_dir,
+        broker_file_outbox_root_dir=args.broker_file_outbox_root_dir,
+        broker_file_inbox_root_dir=args.broker_file_inbox_root_dir,
+        broker_file_handoff_root_dir=args.broker_file_handoff_root_dir,
+        operator_handoff_store_dir=args.operator_handoff_store_dir,
+        operator_handoff_approval_store_dir=args.operator_handoff_approval_store_dir,
+        mapping_certification_decision_path=args.mapping_certification_decision_path,
+        require_mapping_certification=args.require_mapping_certification,
+        file_outbox_dry_run=args.file_outbox_dry_run,
+        auto_confirm_local_smoke=args.auto_confirm_local_smoke,
         monitoring_root_dir=args.monitoring_root_dir,
         incident_store_dir=args.incident_store_dir,
         risk_control_state_dir=args.risk_control_state_dir,

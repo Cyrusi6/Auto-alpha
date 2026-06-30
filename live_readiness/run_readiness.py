@@ -37,6 +37,9 @@ def _add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--risk-control-report-path")
     parser.add_argument("--settlement-report-path")
     parser.add_argument("--eod-reconciliation-report-path")
+    parser.add_argument("--broker-mapping-certification-decision-path")
+    parser.add_argument("--broker-file-gateway-report-path")
+    parser.add_argument("--operator-handoff-report-path")
     parser.add_argument("--pretty", action="store_true")
 
 
@@ -56,6 +59,9 @@ def main(argv: list[str] | None = None) -> int:
         risk_control_report_path=args.risk_control_report_path,
         settlement_report_path=args.settlement_report_path,
         eod_reconciliation_report_path=args.eod_reconciliation_report_path,
+        broker_mapping_certification_decision_path=args.broker_mapping_certification_decision_path,
+        broker_file_gateway_report_path=args.broker_file_gateway_report_path,
+        operator_handoff_report_path=args.operator_handoff_report_path,
     )
     decision = make_live_readiness_decision(scorecard)
     paths = write_live_readiness_artifacts(policy, scorecard, decision, args.output_dir)

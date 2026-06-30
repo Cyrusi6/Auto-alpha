@@ -12,6 +12,12 @@ from corporate_actions.models import CorporateActionEvent
 from corporate_actions.normalizer import normalize_corporate_action_records
 from corporate_actions.report import read_jsonl, write_corporate_action_report
 from approval import ApprovalStatus, LocalApprovalStore
+from broker_file_gateway.inbox import import_inbox_files, synthesize_inbox_files
+from broker_file_gateway.packager import export_file_batch
+from broker_file_gateway.profiles import load_profile
+from broker_file_gateway.report import write_gateway_report
+from broker_file_gateway.roundtrip import run_file_roundtrip_check
+from broker_mapping_certification.certifier import load_mapping_decision
 from broker_adapter import (
     BrokerAdapterConfig,
     FileInstructionBrokerAdapter,
@@ -27,6 +33,9 @@ from factor_store import LocalFactorStore
 from model_core.data_loader import AShareDataLoader
 from model_registry import LocalModelRegistry, ModelKind, ModelLifecycleStatus, write_model_registry_report
 from paper_account import LocalPaperAccount, compute_account_performance
+from operator_handoff.checklist import required_item_ids
+from operator_handoff.report import write_operator_handoff_report
+from operator_handoff.store import LocalOperatorHandoffStore, create_package
 from portfolio_optimizer import load_portfolio_policy, portfolio_policy_from_payload, validate_certified_portfolio_policy
 from risk_controls import LocalRiskControlState
 from strategy_manager.runner import AShareStrategyRunner
@@ -76,6 +85,19 @@ class ProductionDailyRunner:
         broker_auto_fill: bool = True,
         broker_reconcile: bool = False,
         broker_price_type: str = "MARKET",
+        broker_file_gateway: bool = False,
+        broker_file_profile: str = "generic_broker_csv",
+        broker_file_profile_config: str | Path | None = None,
+        broker_file_gateway_store_dir: str | Path | None = None,
+        broker_file_outbox_dir: str | Path | None = None,
+        broker_file_inbox_dir: str | Path | None = None,
+        broker_file_handoff_dir: str | Path | None = None,
+        operator_handoff_store_dir: str | Path | None = None,
+        operator_handoff_approval_store_dir: str | Path | None = None,
+        mapping_certification_decision_path: str | Path | None = None,
+        require_mapping_certification: bool = False,
+        file_outbox_dry_run: bool = False,
+        auto_confirm_local_smoke: bool = False,
         use_model_registry: bool = False,
         model_registry_dir: str | Path | None = None,
         model_version_id: str | None = None,
@@ -186,6 +208,19 @@ class ProductionDailyRunner:
         self.broker_auto_fill = bool(broker_auto_fill)
         self.broker_reconcile = bool(broker_reconcile)
         self.broker_price_type = broker_price_type
+        self.broker_file_gateway = bool(broker_file_gateway)
+        self.broker_file_profile = broker_file_profile
+        self.broker_file_profile_config = Path(broker_file_profile_config) if broker_file_profile_config is not None else None
+        self.broker_file_gateway_store_dir = Path(broker_file_gateway_store_dir) if broker_file_gateway_store_dir is not None else self.output_dir / "broker_file_gateway"
+        self.broker_file_outbox_dir = Path(broker_file_outbox_dir) if broker_file_outbox_dir is not None else self.broker_file_gateway_store_dir / "outbox"
+        self.broker_file_inbox_dir = Path(broker_file_inbox_dir) if broker_file_inbox_dir is not None else self.broker_file_gateway_store_dir / "inbox"
+        self.broker_file_handoff_dir = Path(broker_file_handoff_dir) if broker_file_handoff_dir is not None else self.output_dir / "operator_handoff_package"
+        self.operator_handoff_store_dir = Path(operator_handoff_store_dir) if operator_handoff_store_dir is not None else self.output_dir / "operator_handoff"
+        self.operator_handoff_approval_store_dir = Path(operator_handoff_approval_store_dir) if operator_handoff_approval_store_dir is not None else self.approval_store_dir
+        self.mapping_certification_decision_path = Path(mapping_certification_decision_path) if mapping_certification_decision_path is not None else None
+        self.require_mapping_certification = bool(require_mapping_certification)
+        self.file_outbox_dry_run = bool(file_outbox_dry_run)
+        self.auto_confirm_local_smoke = bool(auto_confirm_local_smoke)
         self.use_model_registry = bool(use_model_registry)
         self.model_registry_dir = Path(model_registry_dir) if model_registry_dir is not None else self.output_dir.parent / "model_registry"
         self.model_version_id = model_version_id
@@ -739,6 +774,13 @@ class ProductionDailyRunner:
             if self.risk_controls and not self.force_risk_local_override and not self._approved_risk_override_exists(self.risk_override_approval_id or batch.approval_id)
             else None
         )
+        if self.broker_adapter == "file" and self.broker_file_gateway:
+            return self._execute_with_broker_file_gateway(
+                batch=batch,
+                child_orders=child_orders,
+                parent_orders=parent_orders,
+                requests=requests,
+            )
         if self.broker_adapter == "simulated":
             adapter = SimulatedBrokerAdapter(
                 self.broker_store_dir,
@@ -811,6 +853,142 @@ class ProductionDailyRunner:
         if self.broker_adapter == "file" and not fills:
             broker_summary["status"] = "broker_exported"
         return fills, broker_summary, broker_paths
+
+    def _execute_with_broker_file_gateway(
+        self,
+        *,
+        batch,
+        child_orders: list[ChildOrder],
+        parent_orders: list[ParentOrder],
+        requests: list[Any],
+    ) -> tuple[list[Any], dict[str, Any], dict[str, str]]:
+        profile = load_profile(self.broker_file_profile, self.broker_file_profile_config)
+        certification = load_mapping_decision(self.mapping_certification_decision_path)
+        certification_status = str(certification.get("status") or "")
+        if self.require_mapping_certification and certification_status != "certified_for_dry_run":
+            raise ValueError("broker file mapping certification is required and is not certified_for_dry_run")
+        export = export_file_batch(
+            store_dir=self.broker_file_gateway_store_dir,
+            outbox_dir=self.broker_file_outbox_dir,
+            profile=profile,
+            child_orders=[order.to_dict() for order in child_orders],
+            broker_requests=[request.to_dict() if hasattr(request, "to_dict") else dict(request) for request in requests],
+            production_run_id=self.production_run_id or batch.approval_id,
+            approval_id=batch.approval_id,
+            broker_batch_id=batch.approval_id,
+            trade_date=batch.rebalance_date,
+            account_id="paper_ashare",
+            source_order_paths={"orders_dir": str(self.orders_dir), "execution_plan_dir": str(self.execution_plan_dir)},
+            refresh=True,
+            zip_package=True,
+            handoff_dir=self.broker_file_handoff_dir,
+        )
+        roundtrip_payload: dict[str, Any] = {}
+        if self.file_outbox_dry_run:
+            synthesize_inbox_files(
+                outbox_dir=self.broker_file_outbox_dir,
+                inbox_dir=self.broker_file_inbox_dir,
+                profile=profile,
+                file_batch_id=export["file_batch_id"],
+            )
+            import_inbox_files(
+                store_dir=self.broker_file_gateway_store_dir,
+                inbox_dir=self.broker_file_inbox_dir,
+                output_dir=self.broker_file_gateway_store_dir,
+                profile=profile,
+                file_batch_id=export["file_batch_id"],
+            )
+            roundtrip_payload = run_file_roundtrip_check(
+                store_dir=self.broker_file_gateway_store_dir,
+                outbox_dir=self.broker_file_outbox_dir,
+                normalized_dir=self.broker_file_gateway_store_dir,
+                output_dir=self.broker_file_gateway_store_dir,
+                file_batch_id=export["file_batch_id"],
+                broker_batch_id=batch.approval_id,
+            )
+        gateway_report = write_gateway_report(
+            store_dir=self.broker_file_gateway_store_dir,
+            output_dir=self.broker_file_gateway_store_dir,
+            profile=profile,
+            file_batch_id=export["file_batch_id"],
+            manifest=export,
+            roundtrip=roundtrip_payload.get("roundtrip") if roundtrip_payload else None,
+        )
+        handoff_store = LocalOperatorHandoffStore(self.operator_handoff_store_dir)
+        handoff_id = f"handoff_{export['file_batch_id']}"
+        package = handoff_store.load_by_file_batch(export["file_batch_id"]) or create_package(
+            handoff_id=handoff_id,
+            file_batch_id=export["file_batch_id"],
+            approval_id=batch.approval_id,
+            production_run_id=self.production_run_id or batch.approval_id,
+            trade_date=batch.rebalance_date,
+            broker_file_gateway_report_path=str(gateway_report.get("report_path", "")),
+            broker_file_manifest_path=str(export.get("manifest_path", "")),
+            checksum_manifest_path=str(export.get("checksum_manifest_path", "")),
+            outbox_dir=str(self.broker_file_outbox_dir),
+            handoff_dir=str(self.broker_file_handoff_dir),
+            mapping_certification_decision_path=str(self.mapping_certification_decision_path) if self.mapping_certification_decision_path else None,
+            metadata={"mode": "file_outbox_dry_run", "no_real_submit": True, "profile_id": profile.profile_id},
+        )
+        handoff_store.save_package(package)
+        if self.auto_confirm_local_smoke:
+            for item_id in required_item_ids():
+                package = handoff_store.mark_item(package.handoff_id, item_id, checked=True, checked_by="local_smoke")
+        handoff_report = write_operator_handoff_report(self.operator_handoff_store_dir, package.handoff_id, self.operator_handoff_store_dir)
+        requested = sum(float(order.order_value) for order in child_orders)
+        roundtrip = roundtrip_payload.get("roundtrip", {}) if roundtrip_payload else {}
+        quality = {
+            "parent_order_count": len(parent_orders),
+            "child_order_count": len(child_orders),
+            "filled_child_orders": 0,
+            "partial_child_orders": 0,
+            "rejected_child_orders": 0,
+            "requested_value": float(requested),
+            "filled_value": 0.0,
+            "unfilled_order_value": float(requested),
+            "execution_fill_rate": 0.0,
+        }
+        broker_summary = {
+            "adapter": "file",
+            "status": "broker_file_dry_run",
+            "batch_id": batch.approval_id,
+            "broker_file_gateway": True,
+            "file_batch_id": export["file_batch_id"],
+            "broker_orders": len(child_orders),
+            "broker_fills": 0,
+            "inbox_fills": 0,
+            "idempotent_replay_count": int(export.get("idempotent_replay_count", 0) or 0),
+            "duplicate_request_count": 0,
+            "execution_quality": quality,
+            "mapping_certification_status": certification_status,
+            "operator_handoff_id": package.handoff_id,
+            "operator_handoff_missing_required_items": handoff_report.get("missing_required_items", []),
+            "roundtrip_error_count": int(roundtrip.get("error_count", 0) or 0),
+            "roundtrip_missing_ack_count": int(roundtrip.get("missing_ack_count", 0) or 0),
+            "file_outbox_real_submit_detected": False,
+            "no_real_submit": True,
+            "unfilled_value": float(requested),
+            "open_orders": len(child_orders),
+            "rejected_orders": 0,
+        }
+        paths = {
+            "broker_file_gateway_report_path": str(gateway_report.get("report_path", "")),
+            "broker_file_gateway_report_md_path": str(gateway_report.get("report_md_path", "")),
+            "broker_file_batch_path": str(export.get("batch_path", "")),
+            "broker_file_manifest_path": str(export.get("manifest_path", "")),
+            "broker_file_checksum_manifest_path": str(export.get("checksum_manifest_path", "")),
+            "broker_file_outbox_manifest_path": str(export.get("manifest_path", "")),
+            "broker_outbox_manifest_path": str(export.get("manifest_path", "")),
+            "broker_file_outbox_dir": str(self.broker_file_outbox_dir),
+            "broker_file_handoff_dir": str(self.broker_file_handoff_dir),
+            "operator_handoff_report_path": str(handoff_report.get("report_path", "")),
+            "operator_handoff_report_md_path": str(handoff_report.get("report_md_path", "")),
+            "mapping_certification_decision_path": str(self.mapping_certification_decision_path) if self.mapping_certification_decision_path else "",
+        }
+        if roundtrip_payload:
+            paths["broker_file_roundtrip_report_path"] = str(roundtrip_payload.get("report_path", ""))
+            paths["broker_file_roundtrip_report_md_path"] = str(roundtrip_payload.get("report_md_path", ""))
+        return [], broker_summary, paths
 
     def _risk_kill_switch_blocked(self, approval_id: str | None = None):
         if not self.risk_controls or not self.block_on_kill_switch:

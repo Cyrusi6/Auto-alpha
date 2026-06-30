@@ -897,6 +897,39 @@ uv run python -m live_readiness.run_readiness run \
   --pretty
 ```
 
+## Broker File Dry-Run Gateway
+
+`broker_file_gateway/` is a local file-outbox safety layer for manual broker-file dry-runs. It maps approved child orders into a profile-driven generic CSV/JSONL schema, writes checksums and manifests, can synthesize/import local inbox files for roundtrip checks, and writes `broker_file_gateway_report.json/md`. It never submits orders, never reads broker credentials, and does not claim compatibility with a real broker counter.
+
+`broker_mapping_certification/` certifies a mapping profile for dry-run use only. Built-in profiles include `generic_broker_csv`, `generic_broker_jsonl`, and `qmt_skeleton_csv`; the QMT profile is explicitly a skeleton with no real compatibility guarantee.
+
+`operator_handoff/` packages the outbox for a human operator with a checklist, evidence log, optional local approval, and `operator_handoff_report.json/md`.
+
+```bash
+uv run python -m broker_mapping_certification.run_mapping_certify \
+  --output-dir /tmp/auto-alpha-demo/mapping_certification \
+  --profile-name generic_broker_csv \
+  --policy dry_run_standard \
+  --pretty
+
+uv run python -m broker_file_gateway.run_gateway smoke \
+  --gateway-store-dir /tmp/auto-alpha-demo/broker_file_gateway \
+  --output-dir /tmp/auto-alpha-demo/broker_file_gateway \
+  --outbox-dir /tmp/auto-alpha-demo/broker_file_gateway/outbox \
+  --inbox-dir /tmp/auto-alpha-demo/broker_file_gateway/inbox \
+  --pretty
+
+uv run python -m operator_handoff.run_handoff smoke \
+  --handoff-store-dir /tmp/auto-alpha-demo/operator_handoff \
+  --approval-store-dir /tmp/auto-alpha-demo/approvals \
+  --output-dir /tmp/auto-alpha-demo/operator_handoff \
+  --file-batch-id demo_file_batch \
+  --approval-id demo_order_approval \
+  --pretty
+```
+
+`operations.run_daily` and `production_orchestrator.run_production` can route an approved batch through this dry-run gateway with `--broker-adapter file --broker-file-gateway --file-outbox-dry-run --require-mapping-certification`. The resulting readiness target is `ready_for_file_outbox_dry_run`; the platform still has no `ready_for_live_trading` status.
+
 End-of-day statement reconciliation can run after execution or as a standalone reconcile-only step. A local smoke statement can be synthesized from internal broker and paper-account artifacts:
 
 ```bash
@@ -1221,4 +1254,4 @@ Current PIT boundaries:
 - Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.
 - One-click research suites now provide local walk-forward, promotion gates, model registry records, lifecycle review packages, active deployment state, and rollback artifacts; daily operations can require an active governed model. Future work should add richer lifecycle policies and external review workflow integrations.
 - Portfolio Lab and Portfolio Certification provide local policy-grid robustness checks, certified portfolio policy packages, optimizer-policy registration, and activation approval gates. Sample certification is only a smoke path; real certification should be tied to a governed data freeze and longer production review windows.
-- Broker adapter, file instructions, broker statement import, settlement profiles, EOD reconciliation, account ledger, production-day orchestration, multi-day replay, shadow lab, live readiness, shadow-only simulation, and incident response are local only. No real broker integration, credential handling, network submission, verified QMT/broker file compatibility, or tax reporting interface is implemented.
+- Broker adapter, dry-run file outbox gateway, mapping certification, operator handoff packages, broker statement import, settlement profiles, EOD reconciliation, account ledger, production-day orchestration, multi-day replay, shadow lab, live readiness, shadow-only simulation, and incident response are local only. No real broker integration, credential handling, network submission, verified QMT/broker file compatibility, or tax reporting interface is implemented.

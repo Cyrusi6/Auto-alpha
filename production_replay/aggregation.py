@@ -18,8 +18,19 @@ def aggregate_replay_days(day_results: list[ProductionReplayDayResult | dict[str
     fill_rates = [float(row.get("paper_fill_rate") or row.get("shadow_fill_rate") or 0.0) for row in rows]
     avg_fill_rate = sum(fill_rates) / len(fill_rates) if fill_rates else 0.0
     broker_unfilled = sum(float(row.get("broker_unfilled_value") or 0.0) for row in rows)
+    file_outbox_rows = [row for row in rows if row.get("run_mode") == "file_outbox_dry_run"]
+    file_roundtrip_errors = 0
+    real_submit_detected = False
+    for row in file_outbox_rows:
+        summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
+        broker_summary = summary.get("broker_summary") if isinstance(summary.get("broker_summary"), dict) else {}
+        file_roundtrip_errors += int(broker_summary.get("roundtrip_error_count", 0) or 0)
+        real_submit_detected = real_submit_detected or bool(broker_summary.get("file_outbox_real_submit_detected"))
     return {
         "replay_day_count": total,
+        "file_outbox_day_count": len(file_outbox_rows),
+        "file_outbox_roundtrip_error_count": file_roundtrip_errors,
+        "file_outbox_real_submit_detected": real_submit_detected,
         "replay_success_day_count": success,
         "replay_warning_day_count": warning,
         "replay_failed_day_count": failed,

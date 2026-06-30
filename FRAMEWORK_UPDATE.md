@@ -1847,3 +1847,41 @@
 - Calibrate live readiness policies on longer frozen real-data shadow windows.
 - Add richer replay drift diagnostics once multiple production days are available.
 - Keep any real broker route behind the existing broker adapter, approval, risk-control, and incident gates.
+
+## Task 039 - Broker File Dry-Run Gateway, Mapping Certification, And Operator Handoff
+
+- Added `broker_file_gateway/` for dry-run/manual broker file outbox generation, profile-driven field mapping, checksum manifests, operator readme files, optional package zip, inbox normalization, roundtrip checks, gateway state, and gateway reports.
+- Added `operator_handoff/` for local operator handoff packages, required review checklist, evidence records, local handoff approval support, and handoff reports.
+- Added `broker_mapping_certification/` for dry-run mapping profile certification, deterministic sample fixtures, roundtrip-based policy decisions, scorecards, decision artifacts, packages, and reports.
+- Extended `approval`, `operations`, `production_orchestrator`, `production_replay`, `live_readiness`, `monitoring`, `dashboard`, `artifact_schema`, `release_manager`, local CI, package metadata, README, CATREADME, and `.env.example` for broker file gateway and handoff artifacts.
+- File outbox remains local dry-run/manual handoff only. It never submits orders, never reads broker credentials, and the QMT profile is an explicit skeleton with no real compatibility guarantee. `live_readiness` can produce `ready_for_file_outbox_dry_run`; no live-trading readiness status was added.
+
+### New Artifacts
+- `broker_file_gateway_report.json/md`
+- `broker_file_batch.json`
+- `broker_file_manifest.json`
+- `broker_order_manifest.json`
+- `broker_file_checksum_manifest.json`
+- `broker_file_operator_readme.md`
+- `broker_file_roundtrip_report.json/md`
+- `broker_file_roundtrip_issues.jsonl`
+- `broker_file_events.jsonl`
+- `normalized_broker_file_ack.jsonl`
+- `normalized_broker_file_status.jsonl`
+- `normalized_broker_file_fills.jsonl`
+- `normalized_broker_file_rejects.jsonl`
+- `operator_handoff_report.json/md`
+- `operator_handoff_state.json`
+- `operator_handoff_events.jsonl`
+- `operator_handoff_evidence.jsonl`
+- `broker_mapping_certification_policy.json`
+- `broker_mapping_certification_scorecard.json`
+- `broker_mapping_certification_decision.json`
+- `broker_mapping_certification_package.json`
+- `broker_mapping_certification_report.md`
+- `broker_mapping_certification_checks.jsonl`
+
+### Follow-Ups
+- Validate real broker file mappings only through human-reviewed external fixtures; current profiles are dry-run skeletons.
+- Add richer operator workflow metadata such as shift owner, dual-control review evidence, and time-windowed handoff expiry.
+- Keep any real broker connectivity outside default CI and behind separate credentials, risk, approval, incident, and readiness gates.

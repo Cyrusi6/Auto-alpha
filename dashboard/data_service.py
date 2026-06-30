@@ -620,6 +620,24 @@ class AshareDashboardService:
                 return payload
         return {}
 
+    def load_broker_file_gateway_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._broker_file_gateway_candidates("broker_file_gateway_report.json"))
+
+    def load_broker_file_manifest(self) -> dict[str, Any]:
+        return self._read_first_json(self._broker_file_gateway_candidates("broker_file_manifest.json"))
+
+    def load_broker_file_checksum_manifest(self) -> dict[str, Any]:
+        return self._read_first_json(self._broker_file_gateway_candidates("broker_file_checksum_manifest.json"))
+
+    def load_broker_file_roundtrip_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._broker_file_gateway_candidates("broker_file_roundtrip_report.json"))
+
+    def load_operator_handoff_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._operator_handoff_candidates("operator_handoff_report.json"))
+
+    def load_broker_mapping_certification_decision(self) -> dict[str, Any]:
+        return self._read_first_json(self._mapping_certification_candidates("broker_mapping_certification_decision.json"))
+
     def load_broker_statement_manifest(self) -> dict[str, Any]:
         for path in self._statement_artifact_candidates("broker_statement_manifest.json"):
             payload = self._read_json(path)
@@ -1734,6 +1752,39 @@ class AshareDashboardService:
             root / "production_execute_replay" / "broker" / filename,
             root / "broker" / filename,
             root / "broker_file" / "outbox" / filename,
+        ]
+
+    def _broker_file_gateway_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.broker_file_gateway_dir / filename,
+            self.config.broker_file_gateway_dir / "outbox" / filename,
+            self.config.orders_dir / "broker_file_gateway" / filename,
+            self.config.orders_dir / "plan" / filename,
+            root / "broker_file_gateway" / filename,
+            root / "production_execute" / "broker_file_gateway" / filename,
+            root / "production_execute" / filename,
+            root / "production_execute_replay" / "broker_file_gateway" / filename,
+            root / "daily_orders_execute" / "broker_file_gateway" / filename,
+        ]
+
+    def _operator_handoff_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.operator_handoff_dir / filename,
+            root / "operator_handoff" / filename,
+            root / "production_execute" / "operator_handoff" / filename,
+            root / "production_execute" / filename,
+            root / "production_execute_replay" / "operator_handoff" / filename,
+        ]
+
+    def _mapping_certification_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.broker_mapping_certification_dir / filename,
+            root / "broker_mapping_certification" / filename,
+            root / "mapping_certification" / filename,
+            root / "mapping" / filename,
         ]
 
     def _compute_artifact_candidates(self, filename: str) -> list[Path]:

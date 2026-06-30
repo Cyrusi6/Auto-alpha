@@ -99,6 +99,9 @@ class MonitoringReport:
         live_readiness = self.checks.get("live_readiness", {}) if isinstance(self.checks, dict) else {}
         incidents = self.checks.get("incidents", {}) if isinstance(self.checks, dict) else {}
         close_day = self.checks.get("production_close_day_status", {}) if isinstance(self.checks, dict) else {}
+        broker_file_gateway = self.checks.get("broker_file_gateway", {}) if isinstance(self.checks, dict) else {}
+        operator_handoff = self.checks.get("operator_handoff", {}) if isinstance(self.checks, dict) else {}
+        broker_mapping_certification = self.checks.get("broker_mapping_certification", {}) if isinstance(self.checks, dict) else {}
         return {
             "created_at": self.created_at,
             "as_of_date": self.as_of_date,
@@ -256,6 +259,13 @@ class MonitoringReport:
             "live_readiness_status": str(live_readiness.get("live_readiness_status", "")) if isinstance(live_readiness, dict) else "",
             "readiness_failed_check_count": int(live_readiness.get("readiness_failed_check_count", 0) or 0) if isinstance(live_readiness, dict) else 0,
             "readiness_required_remediation_count": int(live_readiness.get("readiness_required_remediation_count", 0) or 0) if isinstance(live_readiness, dict) else 0,
+            "broker_file_gateway_status": str(broker_file_gateway.get("broker_file_gateway_status", "")) if isinstance(broker_file_gateway, dict) else "",
+            "broker_file_roundtrip_error_count": int(broker_file_gateway.get("broker_file_roundtrip_error_count", 0) or 0) if isinstance(broker_file_gateway, dict) else 0,
+            "broker_file_missing_ack_count": int(broker_file_gateway.get("broker_file_missing_ack_count", 0) or 0) if isinstance(broker_file_gateway, dict) else 0,
+            "file_outbox_real_submit_detected": bool(broker_file_gateway.get("file_outbox_real_submit_detected", False)) if isinstance(broker_file_gateway, dict) else False,
+            "operator_handoff_status": str(operator_handoff.get("operator_handoff_status", "")) if isinstance(operator_handoff, dict) else "",
+            "operator_handoff_missing_required_count": int(operator_handoff.get("operator_handoff_missing_required_count", 0) or 0) if isinstance(operator_handoff, dict) else 0,
+            "broker_mapping_certification_status": str(broker_mapping_certification.get("broker_mapping_certification_status", "")) if isinstance(broker_mapping_certification, dict) else "",
             "incident_open_count": int(incidents.get("incident_open_count", 0) or 0) if isinstance(incidents, dict) else 0,
             "incident_critical_count": int(incidents.get("incident_critical_count", 0) or 0) if isinstance(incidents, dict) else 0,
             "incident_unresolved_count": int(incidents.get("incident_unresolved_count", 0) or 0) if isinstance(incidents, dict) else 0,

@@ -70,6 +70,19 @@ class ProductionOrchestratorConfig:
     settlement_dir: str | None = None
     broker_store_dir: str | None = None
     broker_adapter: str = "paper"
+    broker_file_gateway: bool = False
+    broker_file_profile: str = "generic_broker_csv"
+    broker_file_profile_config: str | None = None
+    broker_file_gateway_store_dir: str | None = None
+    broker_file_outbox_dir: str | None = None
+    broker_file_inbox_dir: str | None = None
+    broker_file_handoff_dir: str | None = None
+    operator_handoff_store_dir: str | None = None
+    operator_handoff_approval_store_dir: str | None = None
+    mapping_certification_decision_path: str | None = None
+    require_mapping_certification: bool = False
+    file_outbox_dry_run: bool = False
+    auto_confirm_local_smoke: bool = False
     broker_statement_dir: str | None = None
     eod_reconciliation_dir: str | None = None
     risk_control_state_dir: str | None = None
@@ -138,9 +151,11 @@ class ProductionOrchestratorRunner:
                 return self._finish("waiting_approval")
             self._phase_shadow_execute()
             return self._finish("success")
-        if self.config.run_mode == ProductionRunMode.paper_simulated:
+        if self.config.run_mode in {ProductionRunMode.paper_simulated, ProductionRunMode.file_outbox}:
             if self.config.approval_id:
                 self._phase_execute_approved()
+                if self.config.run_mode == ProductionRunMode.file_outbox:
+                    self._record_file_outbox_phases()
                 return self._finish("success")
             self._phase_operations_propose()
             if self.config.stop_after_phase == ProductionPhase.wait_for_approval or self.config.require_order_approval:
@@ -266,7 +281,49 @@ class ProductionOrchestratorRunner:
             argv.append("--block-on-kill-switch")
         if execute and self.config.broker_adapter == "simulated":
             argv.append("--broker-auto-fill")
+        if execute and self.config.broker_file_gateway:
+            argv.append("--broker-file-gateway")
+            argv.extend(["--broker-file-profile", self.config.broker_file_profile])
+            if self.config.broker_file_profile_config:
+                argv.extend(["--broker-file-profile-config", self.config.broker_file_profile_config])
+            if self.config.broker_file_gateway_store_dir:
+                argv.extend(["--broker-file-gateway-store-dir", self.config.broker_file_gateway_store_dir])
+            if self.config.broker_file_outbox_dir:
+                argv.extend(["--broker-file-outbox-dir", self.config.broker_file_outbox_dir])
+            if self.config.broker_file_inbox_dir:
+                argv.extend(["--broker-file-inbox-dir", self.config.broker_file_inbox_dir])
+            if self.config.broker_file_handoff_dir:
+                argv.extend(["--broker-file-handoff-dir", self.config.broker_file_handoff_dir])
+            if self.config.operator_handoff_store_dir:
+                argv.extend(["--operator-handoff-store-dir", self.config.operator_handoff_store_dir])
+            if self.config.operator_handoff_approval_store_dir:
+                argv.extend(["--operator-handoff-approval-store-dir", self.config.operator_handoff_approval_store_dir])
+            if self.config.mapping_certification_decision_path:
+                argv.extend(["--mapping-certification-decision-path", self.config.mapping_certification_decision_path])
+            if self.config.require_mapping_certification:
+                argv.append("--require-mapping-certification")
+            if self.config.file_outbox_dry_run:
+                argv.append("--file-outbox-dry-run")
+            if self.config.auto_confirm_local_smoke:
+                argv.append("--auto-confirm-local-smoke")
         return [item for item in argv if item != ""]
+
+    def _record_file_outbox_phases(self) -> None:
+        latest = self.phase_runs[-1].summary if self.phase_runs else {}
+        summary = latest.get("summary", latest) if isinstance(latest, dict) else {}
+        broker_summary = summary.get("broker_summary", {}) if isinstance(summary, dict) else {}
+        for phase in [
+            ProductionPhase.mapping_certification_check,
+            ProductionPhase.export_broker_files,
+            ProductionPhase.create_operator_handoff,
+            ProductionPhase.wait_handoff_approval,
+            ProductionPhase.import_broker_file_inbox,
+            ProductionPhase.broker_file_roundtrip_check,
+        ]:
+            status = ProductionPhaseStatus.success
+            if phase == ProductionPhase.wait_handoff_approval and broker_summary.get("operator_handoff_missing_required_items"):
+                status = ProductionPhaseStatus.waiting_approval
+            self._record_phase(phase, status, summary)
 
     def _readiness(self) -> ProductionReadinessReport:
         readiness = evaluate_readiness_gates(

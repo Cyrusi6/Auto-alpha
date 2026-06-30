@@ -66,7 +66,21 @@ def build_production_plan(
             ]
         )
     elif run_mode == ProductionRunMode.file_outbox:
-        phases.extend([ProductionPhase.generate_orders, ProductionPhase.create_order_approval, ProductionPhase.execute_approved, ProductionPhase.publish_report])
+        phases.extend(
+            [
+                ProductionPhase.generate_orders,
+                ProductionPhase.pre_trade_risk_gate,
+                ProductionPhase.create_order_approval,
+                ProductionPhase.wait_for_approval,
+                ProductionPhase.mapping_certification_check,
+                ProductionPhase.export_broker_files,
+                ProductionPhase.create_operator_handoff,
+                ProductionPhase.wait_handoff_approval,
+                ProductionPhase.import_broker_file_inbox,
+                ProductionPhase.broker_file_roundtrip_check,
+                ProductionPhase.publish_report,
+            ]
+        )
     else:
         phases.extend([ProductionPhase.monitoring, ProductionPhase.publish_report])
     return ProductionRunPlan(run_id, trade_date, as_of_date, run_mode, environment, phases, utc_now(), metadata={"phase_count": len(phases)})

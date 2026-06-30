@@ -23,6 +23,8 @@ from .checks import (
     check_broker_reconciliation,
     check_broker_statement_import,
     check_broker_rejected_orders,
+    check_broker_file_gateway_report,
+    check_broker_mapping_certification,
     check_baseline_compare,
     check_backfill_coverage,
     check_backfill_run,
@@ -66,6 +68,7 @@ from .checks import (
     check_model_registry,
     check_model_rollback_state,
     check_order_fill_quality,
+    check_operator_handoff_report,
     check_paper_account,
     check_package_build_artifacts,
     check_pre_trade_risk_controls,
@@ -146,6 +149,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--broker-batch-id")
     parser.add_argument("--broker-reconciliation-path")
     parser.add_argument("--broker-outbox-manifest-path")
+    parser.add_argument("--broker-file-gateway-report-path")
+    parser.add_argument("--broker-file-batch-path")
+    parser.add_argument("--broker-file-roundtrip-report-path")
+    parser.add_argument("--broker-file-roundtrip-issues-path")
+    parser.add_argument("--operator-handoff-report-path")
+    parser.add_argument("--operator-handoff-checklist-path")
+    parser.add_argument("--broker-mapping-certification-decision-path")
+    parser.add_argument("--broker-mapping-certification-scorecard-path")
     parser.add_argument("--data-source-smoke-report-path")
     parser.add_argument("--field-coverage-path")
     parser.add_argument("--audit-summary-path")
@@ -280,6 +291,9 @@ def main(argv: list[str] | None = None) -> int:
             "broker_file_outbox",
             lambda: check_broker_file_outbox(args.broker_outbox_manifest_path or _default_broker_outbox_manifest(args.orders_dir)),
         ),
+        ("broker_file_gateway", lambda: check_broker_file_gateway_report(args.broker_file_gateway_report_path)),
+        ("operator_handoff", lambda: check_operator_handoff_report(args.operator_handoff_report_path)),
+        ("broker_mapping_certification", lambda: check_broker_mapping_certification(args.broker_mapping_certification_decision_path)),
         ("pre_trade_risk_controls", lambda: check_pre_trade_risk_controls(args.risk_control_report_path or _default_risk_control_path(args.orders_dir, "risk_control_report.json"))),
         ("risk_limit_usage", lambda: check_risk_limit_usage(args.risk_limit_usage_path or _default_risk_control_path(args.orders_dir, "risk_limit_usage.jsonl"))),
         ("kill_switch_state", lambda: check_kill_switch_state(args.kill_switch_state_path or _default_risk_control_path(args.orders_dir, "kill_switch_state.json"))),

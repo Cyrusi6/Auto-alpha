@@ -279,6 +279,62 @@ def check_broker_file_outbox(outbox_manifest_path: str | Path | None) -> tuple[d
     }, alerts
 
 
+def check_broker_file_gateway_report(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    status = str(payload.get("status", summary.get("status", "")) or "")
+    errors = int(summary.get("roundtrip_error_count", payload.get("roundtrip_error_count", 0)) or 0) if payload else 0
+    missing_ack = int(summary.get("roundtrip_missing_ack_count", payload.get("roundtrip_missing_ack_count", 0)) or 0) if payload else 0
+    real_submit = bool(summary.get("file_outbox_real_submit_detected", payload.get("file_outbox_real_submit_detected", False))) if payload else False
+    alerts = []
+    if errors or missing_ack:
+        alerts.append(MonitoringAlert("warning", "broker_file_gateway", "broker file roundtrip has issues", {"errors": errors, "missing_ack": missing_ack}))
+    if real_submit:
+        alerts.append(MonitoringAlert("error", "broker_file_gateway", "file outbox dry-run detected real submit path"))
+    return {
+        "exists": bool(payload),
+        "broker_file_gateway_status": status,
+        "broker_file_roundtrip_error_count": errors,
+        "broker_file_missing_ack_count": missing_ack,
+        "file_outbox_real_submit_detected": real_submit,
+        "no_real_submit": bool(summary.get("no_real_submit", payload.get("no_real_submit", False))) if payload else False,
+    }, alerts
+
+
+def check_operator_handoff_report(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    missing = payload.get("missing_required_items", []) if isinstance(payload.get("missing_required_items"), list) else []
+    checked = int(payload.get("checked_required_items", 0) or 0) if payload else 0
+    required = int(payload.get("required_items", 0) or 0) if payload else 0
+    alerts = []
+    if missing:
+        alerts.append(MonitoringAlert("warning", "operator_handoff", "operator handoff checklist has missing required items", {"missing": missing}))
+    return {
+        "exists": bool(payload),
+        "operator_handoff_status": str(payload.get("status", "")) if payload else "",
+        "operator_handoff_missing_required_count": len(missing),
+        "operator_handoff_checked_required_items": checked,
+        "operator_handoff_required_items": required,
+        "no_real_submit_confirmed": bool(payload.get("no_real_submit_confirmed", False)) if payload else False,
+    }, alerts
+
+
+def check_broker_mapping_certification(decision_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(decision_path)) if decision_path else {}
+    status = str(payload.get("status", "") if payload else "")
+    reasons = payload.get("reasons", []) if isinstance(payload.get("reasons"), list) else []
+    alerts = []
+    if payload and status != "certified_for_dry_run":
+        alerts.append(MonitoringAlert("warning", "broker_mapping_certification", "broker mapping is not certified_for_dry_run", {"status": status, "reasons": reasons}))
+    return {
+        "exists": bool(payload),
+        "broker_mapping_certification_status": status,
+        "broker_mapping_certification_reason_count": len(reasons),
+        "profile_id": payload.get("profile_id", "") if payload else "",
+        "schema_name": payload.get("schema_name", "") if payload else "",
+    }, alerts
+
+
 def check_compute_cluster_resources(resource_snapshot_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     payload = _read_json(Path(resource_snapshot_path)) if resource_snapshot_path else {}
     cuda_available = bool(payload.get("cuda_available", False)) if payload else False

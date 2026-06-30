@@ -19,6 +19,9 @@ class DashboardConfig:
     production_dir: Path = Path("artifacts/production")
     production_orchestrator_dir: Path = Path("artifacts/production_orchestrator")
     production_replay_dir: Path = Path("artifacts/production_replay")
+    broker_file_gateway_dir: Path = Path("artifacts/broker_file_gateway")
+    operator_handoff_dir: Path = Path("artifacts/operator_handoff")
+    broker_mapping_certification_dir: Path = Path("artifacts/broker_mapping_certification")
     shadow_trading_dir: Path = Path("artifacts/shadow_trading")
     shadow_lab_dir: Path = Path("artifacts/shadow_lab")
     live_readiness_dir: Path = Path("artifacts/live_readiness")
@@ -68,6 +71,11 @@ class DashboardConfig:
                 os.getenv("ASHARE_DASHBOARD_PRODUCTION_ORCHESTRATOR_DIR") or "artifacts/production_orchestrator"
             ),
             production_replay_dir=Path(os.getenv("ASHARE_DASHBOARD_PRODUCTION_REPLAY_DIR") or "artifacts/production_replay"),
+            broker_file_gateway_dir=Path(os.getenv("ASHARE_DASHBOARD_BROKER_FILE_GATEWAY_DIR") or "artifacts/broker_file_gateway"),
+            operator_handoff_dir=Path(os.getenv("ASHARE_DASHBOARD_OPERATOR_HANDOFF_DIR") or "artifacts/operator_handoff"),
+            broker_mapping_certification_dir=Path(
+                os.getenv("ASHARE_DASHBOARD_BROKER_MAPPING_CERTIFICATION_DIR") or "artifacts/broker_mapping_certification"
+            ),
             shadow_trading_dir=Path(os.getenv("ASHARE_DASHBOARD_SHADOW_TRADING_DIR") or "artifacts/shadow_trading"),
             shadow_lab_dir=Path(os.getenv("ASHARE_DASHBOARD_SHADOW_LAB_DIR") or "artifacts/shadow_lab"),
             live_readiness_dir=Path(os.getenv("ASHARE_DASHBOARD_LIVE_READINESS_DIR") or "artifacts/live_readiness"),

@@ -31,6 +31,13 @@ class LiveReadinessPolicy:
     require_data_freeze: bool = False
     require_risk_controls: bool = False
     allow_file_outbox_only: bool = True
+    require_broker_mapping_certification: bool = False
+    require_broker_file_gateway_roundtrip: bool = False
+    require_operator_handoff: bool = False
+    min_file_outbox_replay_days: int = 0
+    max_file_roundtrip_errors: int = 0
+    max_missing_handoff_items: int = 0
+    require_no_real_submit: bool = True
     weights: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
