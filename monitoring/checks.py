@@ -301,6 +301,66 @@ def check_broker_file_gateway_report(report_path: str | Path | None) -> tuple[di
     }, alerts
 
 
+def check_broker_connectivity(
+    report_path: str | Path | None,
+    network_guard_path: str | Path | None = None,
+    credential_manifest_path: str | Path | None = None,
+) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    report = _read_json(Path(report_path)) if report_path else {}
+    guard_report = _read_json(Path(network_guard_path)) if network_guard_path else {}
+    credentials = _read_json(Path(credential_manifest_path)) if credential_manifest_path else {}
+    summary = report.get("summary", {}) if isinstance(report.get("summary"), dict) else {}
+    guard = guard_report.get("network_guard", guard_report) if isinstance(guard_report, dict) else {}
+    credential_summary = credentials.get("summary", {}) if isinstance(credentials.get("summary"), dict) else {}
+    status = str(report.get("status", "") if report else "")
+    readonly = bool(summary.get("readonly_only", False))
+    real_submit = bool(summary.get("real_submit_supported", report.get("real_submit_supported", False))) if report else False
+    secret_blockers = int(credential_summary.get("secret_blocker_count", 0) or 0) if credentials else 0
+    alerts: list[MonitoringAlert] = []
+    if report and status not in {"passed", "warning"}:
+        alerts.append(MonitoringAlert("warning", "broker_connectivity", "broker connectivity probe did not pass", {"status": status}))
+    if report and (not readonly or real_submit):
+        alerts.append(MonitoringAlert("error", "broker_connectivity", "broker connectivity evidence is not read-only", {"readonly_only": readonly, "real_submit_supported": real_submit}))
+    if secret_blockers:
+        alerts.append(MonitoringAlert("error", "broker_connectivity", "credential reference manifest has secret blockers", {"secret_blocker_count": secret_blockers}))
+    return {
+        "exists": bool(report),
+        "broker_connectivity_status": status,
+        "broker_connectivity_mode": str(summary.get("connectivity_mode", "")),
+        "broker_network_guard_status": str(summary.get("network_guard_status") or guard.get("status", "")),
+        "broker_connectivity_readonly_only": readonly,
+        "broker_connectivity_real_submit_supported": real_submit,
+        "broker_connectivity_secret_blocker_count": secret_blockers,
+        "credential_ref_count": int(credential_summary.get("credential_ref_count", 0) or 0) if credentials else 0,
+    }, alerts
+
+
+def check_broker_readonly_mirror(
+    report_path: str | Path | None,
+    reconciliation_report_path: str | Path | None = None,
+) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    report = _read_json(Path(report_path)) if report_path else {}
+    reconciliation = _read_json(Path(reconciliation_report_path)) if reconciliation_report_path else {}
+    summary = report.get("summary", {}) if isinstance(report.get("summary"), dict) else {}
+    status = str(report.get("status", "") if report else "")
+    breaks = int(reconciliation.get("break_count", summary.get("readonly_mirror_break_count", 0)) or 0) if (report or reconciliation) else 0
+    real_submit = bool(summary.get("real_submit_supported", report.get("real_submit_supported", False))) if report else False
+    alerts: list[MonitoringAlert] = []
+    if breaks:
+        alerts.append(MonitoringAlert("warning", "broker_readonly_mirror", "read-only broker mirror has reconciliation breaks", {"break_count": breaks}))
+    if real_submit:
+        alerts.append(MonitoringAlert("error", "broker_readonly_mirror", "read-only broker mirror unexpectedly reports real submit support"))
+    return {
+        "exists": bool(report),
+        "broker_readonly_mirror_status": status,
+        "broker_readonly_mirror_break_count": breaks,
+        "broker_readonly_position_count": int(summary.get("readonly_position_count", 0) or 0) if summary else 0,
+        "broker_readonly_order_count": int(summary.get("readonly_order_count", 0) or 0) if summary else 0,
+        "broker_readonly_fill_count": int(summary.get("readonly_fill_count", 0) or 0) if summary else 0,
+        "broker_readonly_real_submit_supported": real_submit,
+    }, alerts
+
+
 def check_operator_handoff_report(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     payload = _read_json(Path(report_path)) if report_path else {}
     missing = payload.get("missing_required_items", []) if isinstance(payload.get("missing_required_items"), list) else []

@@ -815,7 +815,7 @@ uv run python -m monitoring.run_monitor \
 
 Daily production writes `production_run.json/md`; approvals are stored under `approvals/<approval_id>.json` plus `approval_log.jsonl`; the paper account writes `account_state.json`, `positions.jsonl`, `cash_ledger.jsonl`, `trade_ledger.jsonl`, settlement artifacts, and `account_snapshots.jsonl`; broker-enabled runs write `broker_report.json/md`, `broker_orders.jsonl`, `broker_events.jsonl`, `broker_fills.jsonl`, and `broker_reconciliation.json/md`; model-governed runs record model version/deployment context; monitoring writes `monitoring_report.json/md` and `alerts.jsonl`.
 
-`production_orchestrator/` wraps the daily path with a trading-day plan, readiness gates, phase state, resume metadata, incident creation, and a production day package. `shadow_only` generates approvals and a shadow book without broker/file submission or paper-account mutation. `paper_simulated` routes an approved batch through the existing simulated broker, paper account, settlement, and reconciliation path.
+`production_orchestrator/` wraps the daily path with a trading-day plan, readiness gates, phase state, resume metadata, incident creation, and a production day package. `shadow_only` generates approvals and a shadow book without broker/file submission or paper-account mutation. `paper_simulated` routes an approved batch through the existing simulated broker, paper account, settlement, and reconciliation path. It can optionally run `--broker-connectivity-profile mock_readonly --run-broker-readonly-mirror` as a read-only health phase; this still never calls submit/cancel/replace.
 
 ```bash
 uv run python -m production_orchestrator.run_production plan-day \
@@ -859,7 +859,7 @@ uv run python -m incident_response.run_incident \
 
 The orchestrator writes `production_run_plan.json/md`, `production_orchestrator_report.json/md`, `production_readiness_report.json`, `production_phase_runs.jsonl`, `production_gate_results.jsonl`, `production_run_events.jsonl`, `production_runbook.json`, and `production_day_package.json`. Shadow trading writes `shadow_run_report.json/md`, shadow orders/fills/positions/snapshots, drift, performance, and comparison reports. Incidents write `incident_report.json/md`, `incident_records.jsonl`, `incident_events.jsonl`, and `incident_runbook.json`.
 
-`production_replay/` runs the daily orchestrator across multiple trade dates with local replay state. It can run shadow-only days, approval-gated paper-simulated days, or a mixed window, then writes `production_replay_report.json/md`, `production_replay_plan.json`, day/event JSONL files, a replay package, and a replay artifact catalog.
+`production_replay/` runs the daily orchestrator across multiple trade dates with local replay state. It can run shadow-only days, approval-gated paper-simulated days, or a mixed window, then writes `production_replay_report.json/md`, `production_replay_plan.json`, day/event JSONL files, a replay package, and a replay artifact catalog. Replay summaries include read-only broker connectivity and mirror success counts when the optional health phases are enabled.
 
 ```bash
 uv run python -m production_replay.run_replay run \
@@ -1266,6 +1266,26 @@ uv run python -m broker_uat_lab.run_uat run \
   --pretty
 ```
 
+`broker_connectivity/` adds the safe read-only UAT connection shell. The default `mock_readonly` profile is fully offline. Any real network UAT probe must be explicitly gated by `--allow-network`, `BROKER_UAT_ALLOW_NETWORK=1`, redacted credential references, and a local `broker_connectivity_review` approval when required. It never exposes submit, cancel, replace, transfer, withdraw, or trade methods.
+
+```bash
+uv run python -m broker_connectivity.run_connectivity probe \
+  --profile-name mock_readonly \
+  --output-dir /tmp/auto-alpha-demo/broker_connectivity \
+  --trade-date 20240104 \
+  --as-of-date 20240104 \
+  --pretty
+```
+
+`broker_readonly_mirror/` turns read-only account, cash, position, order, fill, and statement payloads into normalized local mirror artifacts and statement-compatible external files for reconciliation.
+
+```bash
+uv run python -m broker_readonly_mirror.run_readonly_mirror snapshot \
+  --connectivity-report-path /tmp/auto-alpha-demo/broker_connectivity/broker_connectivity_report.json \
+  --output-dir /tmp/auto-alpha-demo/broker_readonly_mirror \
+  --pretty
+```
+
 `go_live_gate/` combines compliance, secret-scan, BrokerAdapter UAT, dry-run file gateway, mapping certification, handoff, readiness, replay, risk, settlement, incident, monitoring, and release artifacts into a pre-live scorecard. Its decision can only represent local readiness stages: `not_ready`, `insufficient_data`, `ready_for_broker_uat`, `ready_for_file_outbox_dry_run`, or `ready_for_manual_pilot_review`. It does not change production mode, enable a broker route, unlock a kill switch, or submit anything externally.
 
 ```bash
@@ -1279,7 +1299,7 @@ uv run python -m go_live_gate.run_go_live run \
   --pretty
 ```
 
-`approval/` supports `compliance_review`, `broker_uat_review`, and `go_live_review` approval batches with empty order lists. These approvals are local review records only and never trigger execution.
+`approval/` supports `compliance_review`, `broker_uat_review`, `broker_connectivity_review`, and `go_live_review` approval batches with empty order lists. These approvals are local review records only and never trigger execution.
 
 ## Current Gaps
 
@@ -1291,4 +1311,4 @@ uv run python -m go_live_gate.run_go_live run \
 - Matrix cache, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, incremental matrix refresh, and more provider pairs.
 - One-click research suites now provide local walk-forward, promotion gates, model registry records, lifecycle review packages, active deployment state, and rollback artifacts; daily operations can require an active governed model. Future work should add richer lifecycle policies and external review workflow integrations.
 - Portfolio Lab and Portfolio Certification provide local policy-grid robustness checks, certified portfolio policy packages, optimizer-policy registration, and activation approval gates. Sample certification is only a smoke path; real certification should be tied to a governed data freeze and longer production review windows.
-- Broker adapter, dry-run file outbox gateway, mapping certification, operator handoff packages, local compliance evidence packs, BrokerAdapter UAT, Go/No-Go scorecards, broker statement import, settlement profiles, EOD reconciliation, account ledger, production-day orchestration, multi-day replay, shadow lab, live readiness, shadow-only simulation, and incident response are local only. No real broker integration, credential handling, network submission, verified QMT/broker file compatibility, regulatory filing automation, legal opinion, or tax reporting interface is implemented.
+- Broker adapter, safe read-only UAT connectivity shell, read-only account mirror, dry-run file outbox gateway, mapping certification, operator handoff packages, local compliance evidence packs, BrokerAdapter UAT, Go/No-Go scorecards, broker statement import, settlement profiles, EOD reconciliation, account ledger, production-day orchestration, multi-day replay, shadow lab, live readiness, shadow-only simulation, and incident response are local/review infrastructure only. No real order submission, cancellation, replacement, automatic live trading, verified QMT/broker compatibility, regulatory filing automation, legal opinion, or tax reporting interface is implemented.

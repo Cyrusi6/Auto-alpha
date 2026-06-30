@@ -64,12 +64,19 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _summary(payload: dict) -> dict:
+    broker_connectivity = payload.get("broker_connectivity_summary") or {}
+    broker_readonly = payload.get("broker_readonly_summary") or {}
     return {
         **payload,
         "secret_blocker_count": int((payload.get("compliance_summary") or {}).get("secret_blocker_count", 0) or 0),
         "uat_failed_scenario_count": int((payload.get("broker_uat_summary") or {}).get("failed_count", 0) or 0),
         "compliance_gap_count": int((payload.get("compliance_summary") or {}).get("gap_count", 0) or 0),
         "required_remediation_count": int((payload.get("go_live_summary") or {}).get("required_remediation_count", 0) or 0),
+        "broker_connectivity_profile": broker_connectivity.get("profile_name"),
+        "broker_connectivity_mode": broker_connectivity.get("connectivity_mode"),
+        "broker_readonly_only": broker_connectivity.get("readonly_only"),
+        "broker_network_guard_status": broker_connectivity.get("network_guard_status"),
+        "broker_readonly_mirror_break_count": int(broker_readonly.get("readonly_mirror_break_count", 0) or 0),
     }
 
 

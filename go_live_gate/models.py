@@ -28,6 +28,8 @@ class GoLiveGatePolicy:
     require_operator_handoff: bool = False
     require_compliance_pack: bool = True
     require_broker_uat: bool = True
+    require_broker_connectivity_for_broker_uat: bool = False
+    require_readonly_mirror_for_manual_pilot_review: bool = False
     require_secret_scan_clean: bool = True
     require_no_open_critical_incidents: bool = True
     require_kill_switch_available: bool = True
@@ -40,6 +42,8 @@ class GoLiveGatePolicy:
     max_unresolved_incidents: int = 0
     max_secret_blockers: int = 0
     max_uat_failed_scenarios: int = 0
+    max_connectivity_secret_blocker_count: int = 0
+    max_readonly_mirror_break_count: int = 0
     max_file_roundtrip_errors: int = 0
     max_eod_breaks: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)

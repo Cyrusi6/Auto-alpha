@@ -100,6 +100,8 @@ class MonitoringReport:
         incidents = self.checks.get("incidents", {}) if isinstance(self.checks, dict) else {}
         close_day = self.checks.get("production_close_day_status", {}) if isinstance(self.checks, dict) else {}
         broker_file_gateway = self.checks.get("broker_file_gateway", {}) if isinstance(self.checks, dict) else {}
+        broker_connectivity = self.checks.get("broker_connectivity", {}) if isinstance(self.checks, dict) else {}
+        broker_readonly_mirror = self.checks.get("broker_readonly_mirror", {}) if isinstance(self.checks, dict) else {}
         operator_handoff = self.checks.get("operator_handoff", {}) if isinstance(self.checks, dict) else {}
         broker_mapping_certification = self.checks.get("broker_mapping_certification", {}) if isinstance(self.checks, dict) else {}
         return {
@@ -263,6 +265,13 @@ class MonitoringReport:
             "broker_file_roundtrip_error_count": int(broker_file_gateway.get("broker_file_roundtrip_error_count", 0) or 0) if isinstance(broker_file_gateway, dict) else 0,
             "broker_file_missing_ack_count": int(broker_file_gateway.get("broker_file_missing_ack_count", 0) or 0) if isinstance(broker_file_gateway, dict) else 0,
             "file_outbox_real_submit_detected": bool(broker_file_gateway.get("file_outbox_real_submit_detected", False)) if isinstance(broker_file_gateway, dict) else False,
+            "broker_connectivity_status": str(broker_connectivity.get("broker_connectivity_status", "")) if isinstance(broker_connectivity, dict) else "",
+            "broker_network_guard_status": str(broker_connectivity.get("broker_network_guard_status", "")) if isinstance(broker_connectivity, dict) else "",
+            "broker_connectivity_secret_blocker_count": int(broker_connectivity.get("broker_connectivity_secret_blocker_count", 0) or 0) if isinstance(broker_connectivity, dict) else 0,
+            "broker_connectivity_real_submit_supported": bool(broker_connectivity.get("broker_connectivity_real_submit_supported", False)) if isinstance(broker_connectivity, dict) else False,
+            "broker_readonly_mirror_status": str(broker_readonly_mirror.get("broker_readonly_mirror_status", "")) if isinstance(broker_readonly_mirror, dict) else "",
+            "broker_readonly_mirror_break_count": int(broker_readonly_mirror.get("broker_readonly_mirror_break_count", 0) or 0) if isinstance(broker_readonly_mirror, dict) else 0,
+            "broker_readonly_real_submit_supported": bool(broker_readonly_mirror.get("broker_readonly_real_submit_supported", False)) if isinstance(broker_readonly_mirror, dict) else False,
             "operator_handoff_status": str(operator_handoff.get("operator_handoff_status", "")) if isinstance(operator_handoff, dict) else "",
             "operator_handoff_missing_required_count": int(operator_handoff.get("operator_handoff_missing_required_count", 0) or 0) if isinstance(operator_handoff, dict) else 0,
             "broker_mapping_certification_status": str(broker_mapping_certification.get("broker_mapping_certification_status", "")) if isinstance(broker_mapping_certification, dict) else "",

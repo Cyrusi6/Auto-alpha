@@ -24,6 +24,7 @@ class ApprovalType:
     compliance_review = "compliance_review"
     broker_uat_review = "broker_uat_review"
     go_live_review = "go_live_review"
+    broker_connectivity_review = "broker_connectivity_review"
 
 
 @dataclass(frozen=True)
@@ -92,10 +93,15 @@ class ApprovalBatch:
     operator_handoff_summary: dict[str, Any] = field(default_factory=dict)
     compliance_pack_path: str | None = None
     broker_uat_report_path: str | None = None
+    broker_connectivity_profile_path: str | None = None
+    broker_connectivity_report_path: str | None = None
+    broker_readonly_mirror_report_path: str | None = None
     go_live_gate_decision_path: str | None = None
     go_live_status: str | None = None
     compliance_summary: dict[str, Any] = field(default_factory=dict)
     broker_uat_summary: dict[str, Any] = field(default_factory=dict)
+    broker_connectivity_summary: dict[str, Any] = field(default_factory=dict)
+    broker_readonly_summary: dict[str, Any] = field(default_factory=dict)
     go_live_summary: dict[str, Any] = field(default_factory=dict)
     status: str = ApprovalStatus.pending
     decision: ApprovalDecision | None = None

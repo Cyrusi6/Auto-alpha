@@ -37,6 +37,13 @@ def _add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--live-readiness-decision-path")
     parser.add_argument("--broker-mapping-certification-decision-path")
     parser.add_argument("--broker-file-gateway-report-path")
+    parser.add_argument("--broker-uat-report-path")
+    parser.add_argument("--broker-connectivity-profile-path")
+    parser.add_argument("--broker-connectivity-report-path")
+    parser.add_argument("--broker-network-guard-report-path")
+    parser.add_argument("--broker-credential-ref-manifest-path")
+    parser.add_argument("--broker-readonly-mirror-report-path")
+    parser.add_argument("--readonly-mirror-reconciliation-report-path")
     parser.add_argument("--operator-handoff-report-path")
     parser.add_argument("--risk-control-report-path")
     parser.add_argument("--settlement-report-path")
@@ -75,6 +82,12 @@ def _build_outputs(args: argparse.Namespace) -> tuple[dict, dict[str, str], int]
         "live_readiness": args.live_readiness_decision_path,
         "mapping_certification": args.broker_mapping_certification_decision_path,
         "broker_file_dry_run": args.broker_file_gateway_report_path,
+        "broker_connectivity": args.broker_connectivity_report_path,
+        "broker_connectivity_profile": args.broker_connectivity_profile_path,
+        "broker_network_guard": args.broker_network_guard_report_path,
+        "broker_credential_refs": args.broker_credential_ref_manifest_path,
+        "broker_readonly_mirror": args.broker_readonly_mirror_report_path,
+        "broker_readonly_mirror_reconciliation": args.readonly_mirror_reconciliation_report_path,
         "handoff_checklist": args.operator_handoff_report_path,
         "risk_controls": args.risk_control_report_path,
         "settlement": args.settlement_report_path,

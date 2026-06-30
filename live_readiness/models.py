@@ -33,6 +33,8 @@ class LiveReadinessPolicy:
     allow_file_outbox_only: bool = True
     require_broker_mapping_certification: bool = False
     require_broker_file_gateway_roundtrip: bool = False
+    require_broker_connectivity: bool = False
+    require_broker_readonly_mirror: bool = False
     require_operator_handoff: bool = False
     require_go_live_gate: bool = False
     min_file_outbox_replay_days: int = 0

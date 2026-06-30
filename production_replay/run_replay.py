@@ -58,6 +58,15 @@ def _add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--broker-file-inbox-dir", dest="broker_file_inbox_root_dir")
     parser.add_argument("--broker-file-handoff-root-dir", dest="broker_file_handoff_root_dir")
     parser.add_argument("--broker-file-handoff-dir", dest="broker_file_handoff_root_dir")
+    parser.add_argument("--broker-connectivity-profile")
+    parser.add_argument("--broker-connectivity-profile-config")
+    parser.add_argument("--broker-connectivity-store-dir")
+    parser.add_argument("--broker-readonly-mirror-root-dir")
+    parser.add_argument("--broker-readonly-mirror-dir", dest="broker_readonly_mirror_root_dir")
+    parser.add_argument("--broker-connectivity-approval-id")
+    parser.add_argument("--allow-broker-readonly-network", action="store_true")
+    parser.add_argument("--require-broker-connectivity", action="store_true")
+    parser.add_argument("--run-broker-readonly-mirror", action="store_true")
     parser.add_argument("--operator-handoff-store-dir")
     parser.add_argument("--operator-handoff-approval-store-dir")
     parser.add_argument("--mapping-certification-decision-path")
@@ -124,6 +133,14 @@ def main(argv: list[str] | None = None) -> int:
         broker_file_outbox_root_dir=args.broker_file_outbox_root_dir,
         broker_file_inbox_root_dir=args.broker_file_inbox_root_dir,
         broker_file_handoff_root_dir=args.broker_file_handoff_root_dir,
+        broker_connectivity_profile=args.broker_connectivity_profile,
+        broker_connectivity_profile_config=args.broker_connectivity_profile_config,
+        broker_connectivity_store_dir=args.broker_connectivity_store_dir,
+        broker_readonly_mirror_root_dir=args.broker_readonly_mirror_root_dir,
+        broker_connectivity_approval_id=args.broker_connectivity_approval_id,
+        allow_broker_readonly_network=args.allow_broker_readonly_network,
+        require_broker_connectivity=args.require_broker_connectivity,
+        run_broker_readonly_mirror=args.run_broker_readonly_mirror,
         operator_handoff_store_dir=args.operator_handoff_store_dir,
         operator_handoff_approval_store_dir=args.operator_handoff_approval_store_dir,
         mapping_certification_decision_path=args.mapping_certification_decision_path,

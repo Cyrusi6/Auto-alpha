@@ -18,6 +18,9 @@ def aggregate_replay_days(day_results: list[ProductionReplayDayResult | dict[str
     fill_rates = [float(row.get("paper_fill_rate") or row.get("shadow_fill_rate") or 0.0) for row in rows]
     avg_fill_rate = sum(fill_rates) / len(fill_rates) if fill_rates else 0.0
     broker_unfilled = sum(float(row.get("broker_unfilled_value") or 0.0) for row in rows)
+    broker_connectivity_success = sum(1 for row in rows if row.get("broker_connectivity_status") in {"passed", "warning"})
+    readonly_mirror_success = sum(1 for row in rows if row.get("broker_readonly_mirror_status") in {"success", "warning"})
+    readonly_mirror_break_count = sum(int(row.get("readonly_mirror_break_count") or 0) for row in rows)
     go_live_statuses = [str(row.get("go_live_status") or "") for row in rows if row.get("go_live_status")]
     broker_uat_statuses = [str(row.get("broker_uat_status") or "") for row in rows if row.get("broker_uat_status")]
     compliance_gap_count = sum(int(row.get("compliance_gap_count") or 0) for row in rows)
@@ -42,6 +45,9 @@ def aggregate_replay_days(day_results: list[ProductionReplayDayResult | dict[str
         "close_day_success_count": sum(1 for row in rows if row.get("close_status") == "closed"),
         "average_fill_rate": avg_fill_rate,
         "broker_unfilled_value": broker_unfilled,
+        "broker_connectivity_success_day_count": broker_connectivity_success,
+        "readonly_mirror_success_day_count": readonly_mirror_success,
+        "readonly_mirror_break_count": readonly_mirror_break_count,
         "go_live_status": go_live_statuses[-1] if go_live_statuses else "",
         "broker_uat_status": broker_uat_statuses[-1] if broker_uat_statuses else "",
         "compliance_gap_count": compliance_gap_count,

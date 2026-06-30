@@ -15,6 +15,10 @@ def build_go_live_scorecard(policy: GoLiveGatePolicy, **paths: str | Path | None
         _check_exists("compliance_pack_check", paths.get("program_trading_compliance_pack_path"), policy.require_compliance_pack),
         _check_secret(paths.get("secret_scan_report_path"), policy),
         _check_uat(paths.get("broker_uat_report_path"), paths.get("broker_adapter_contract_report_path"), policy),
+        _check_broker_connectivity(paths.get("broker_connectivity_report_path"), policy),
+        _check_network_guard(paths.get("broker_network_guard_report_path"), policy),
+        _check_credential_refs(paths.get("broker_credential_ref_manifest_path"), policy),
+        _check_readonly_mirror(paths.get("broker_readonly_mirror_report_path"), paths.get("readonly_mirror_reconciliation_report_path"), policy),
         _check_status("mapping_certification_check", paths.get("broker_mapping_certification_decision_path"), {"certified_for_dry_run"}, policy.require_mapping_certification),
         _check_file_gateway(paths.get("broker_file_gateway_report_path"), policy),
         _check_exists("operator_handoff_check", paths.get("operator_handoff_report_path"), policy.require_operator_handoff),
@@ -101,6 +105,86 @@ def _check_secret(path: str | Path | None, policy: GoLiveGatePolicy) -> GoLiveGa
         "secret scan clean" if ok else "secret scan has blockers or is missing",
         {"path": str(path)} if path else {},
         policy.require_secret_scan_clean,
+    )
+
+
+def _check_broker_connectivity(path: str | Path | None, policy: GoLiveGatePolicy) -> GoLiveGateCheck:
+    payload = _read_json(path)
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    status = str(payload.get("status") or "")
+    readonly = bool(summary.get("readonly_only", False))
+    real_submit = bool(summary.get("real_submit_supported", payload.get("real_submit_supported", False)))
+    ok = bool(payload) and status in {"passed", "warning"} and readonly and not real_submit
+    required = policy.require_broker_connectivity_for_broker_uat
+    return GoLiveGateCheck(
+        "broker_connectivity_readonly_check",
+        "passed" if ok else "failed" if payload else "missing",
+        "info" if ok else "blocker" if real_submit else "error" if required else "warning",
+        {"status": status, "readonly_only": readonly, "real_submit_supported": real_submit},
+        {"status": ["passed", "warning"], "readonly_only": True, "real_submit_supported": False},
+        "read-only broker connectivity evidence accepted" if ok else "broker connectivity evidence missing or unsafe",
+        {"path": str(path)} if path else {},
+        required,
+    )
+
+
+def _check_network_guard(path: str | Path | None, policy: GoLiveGatePolicy) -> GoLiveGateCheck:
+    payload = _read_json(path)
+    guard = payload.get("network_guard", payload) if isinstance(payload, dict) else {}
+    readonly = bool(guard.get("readonly_only", True)) if guard else False
+    status = str(guard.get("status") or "")
+    ok = bool(payload) and readonly and status in {"passed", "skipped", "blocked"}
+    required = policy.require_broker_connectivity_for_broker_uat
+    return GoLiveGateCheck(
+        "broker_network_guard_check",
+        "passed" if ok else "failed" if payload else "missing",
+        "info" if ok else "error" if required else "warning",
+        {"status": status, "readonly_only": readonly},
+        {"readonly_only": True},
+        "network guard is read-only" if ok else "network guard missing or not read-only",
+        {"path": str(path)} if path else {},
+        required,
+    )
+
+
+def _check_credential_refs(path: str | Path | None, policy: GoLiveGatePolicy) -> GoLiveGateCheck:
+    payload = _read_json(path)
+    refs = payload.get("credential_refs") if isinstance(payload.get("credential_refs"), list) else []
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    blocker_count = int(summary.get("secret_blocker_count", payload.get("secret_blocker_count", 0)) or 0)
+    raw_values = [ref for ref in refs if any(key in str(ref).lower() for key in ["password=", "secret=", "token="])]
+    ok = bool(payload) and blocker_count <= policy.max_connectivity_secret_blocker_count and not raw_values
+    required = policy.require_broker_connectivity_for_broker_uat
+    return GoLiveGateCheck(
+        "broker_credential_redaction_check",
+        "passed" if ok else "failed" if payload else "missing",
+        "info" if ok else "blocker" if blocker_count or raw_values else "error" if required else "warning",
+        {"credential_ref_count": len(refs), "secret_blocker_count": blocker_count, "raw_secret_like_values": len(raw_values)},
+        {"max_secret_blockers": policy.max_connectivity_secret_blocker_count, "raw_secret_like_values": 0},
+        "credential references are metadata only" if ok else "credential references missing or unsafe",
+        {"path": str(path)} if path else {},
+        required,
+    )
+
+
+def _check_readonly_mirror(mirror_path: str | Path | None, reconciliation_path: str | Path | None, policy: GoLiveGatePolicy) -> GoLiveGateCheck:
+    mirror = _read_json(mirror_path)
+    reconciliation = _read_json(reconciliation_path)
+    summary = mirror.get("summary", {}) if isinstance(mirror.get("summary"), dict) else {}
+    status = str(mirror.get("status") or "")
+    real_submit = bool(summary.get("real_submit_supported", mirror.get("real_submit_supported", False)))
+    breaks = int((reconciliation.get("break_count", 0) if reconciliation else summary.get("readonly_mirror_break_count", 0)) or 0)
+    ok = bool(mirror) and status in {"success", "warning"} and breaks <= policy.max_readonly_mirror_break_count and not real_submit
+    required = policy.require_readonly_mirror_for_manual_pilot_review
+    return GoLiveGateCheck(
+        "broker_readonly_mirror_check",
+        "passed" if ok else "failed" if mirror else "missing",
+        "info" if ok else "blocker" if real_submit else "error" if required else "warning",
+        {"status": status, "break_count": breaks, "real_submit_supported": real_submit},
+        {"max_break_count": policy.max_readonly_mirror_break_count, "real_submit_supported": False},
+        "read-only broker mirror evidence accepted" if ok else "read-only broker mirror missing or has breaks",
+        {"broker_readonly_mirror_report_path": str(mirror_path or ""), "readonly_mirror_reconciliation_report_path": str(reconciliation_path or "")},
+        required,
     )
 
 

@@ -1925,3 +1925,36 @@
 - Calibrate Go/No-Go policies with longer shadow/paper/file dry-run windows and real operator review feedback.
 - Add richer UAT fixtures for broker file acknowledgements and external statement imports once human-reviewed samples are available.
 - Keep any real broker connectivity outside this local review layer and behind separate credentials, legal, compliance, risk, approval, incident, and operations controls.
+
+## Task 041 - Broker UAT Safe Connectivity, Read-Only Mirror, And External Access Gates
+
+- Added `broker_connectivity/` for broker UAT connection profiles, credential references, redaction metadata, network guard checks, read-only probe sessions, mock/generic/qmt-skeleton clients, and connectivity reports. Default execution is offline `mock_readonly`; network probes require `--allow-network`, `BROKER_UAT_ALLOW_NETWORK=1`, and an approved `broker_connectivity_review` when requested.
+- Added `broker_readonly_mirror/` for normalizing read-only account snapshots, cash, positions, orders, fills, and statements into local mirror artifacts plus statement-compatible normalized external files and mirror reconciliation reports.
+- Extended `approval` with `broker_connectivity_review`, and added broker connectivity/read-only mirror evidence to `program_trading_compliance`, `go_live_gate`, `live_readiness`, `broker_uat_lab`, `monitoring`, `dashboard`, `artifact_schema`, `release_manager`, local CI, package metadata, README, CATREADME, and `.env.example`.
+- `broker_uat_lab` can now opt into read-only connectivity, credential redaction, network guard, and mirror reconciliation scenarios without changing the default sample scenario set.
+- `production_orchestrator` and `production_replay` can opt into read-only broker health phases for `mock_readonly` connectivity probes, read-only mirror snapshots, and replay-level mirror break summaries without invoking submit, cancel, or replace paths.
+- Go/No-Go statuses remain limited to local review milestones: `not_ready`, `insufficient_data`, `ready_for_broker_uat`, `ready_for_file_outbox_dry_run`, and `ready_for_manual_pilot_review`.
+
+### New Artifacts
+- `broker_connectivity_profile.json`
+- `broker_credential_ref_manifest.json`
+- `broker_network_guard_report.json`
+- `broker_connectivity_probe_report.json`
+- `broker_connectivity_report.json/md`
+- `broker_connectivity_sessions.jsonl`
+- `broker_connectivity_events.jsonl`
+- `broker_connectivity_issues.jsonl`
+- `broker_readonly_snapshot.json`
+- `broker_readonly_mirror_report.json/md`
+- `readonly_broker_cash.jsonl`
+- `readonly_broker_positions.jsonl`
+- `readonly_broker_orders.jsonl`
+- `readonly_broker_fills.jsonl`
+- `readonly_broker_statements.jsonl`
+- `readonly_mirror_reconciliation_report.json`
+- `readonly_mirror_reconciliation_issues.jsonl`
+
+### Follow-Ups
+- Validate any real broker UAT profile only through human-reviewed local approval, explicit network gate, redacted credential references, and read-only endpoints.
+- Add richer external fixture mapping once reviewed account/order/fill/statement samples are available.
+- Keep real order submission, cancellation, replacement, regulatory filing, automatic pilot trading, and broker compatibility claims out of this layer.

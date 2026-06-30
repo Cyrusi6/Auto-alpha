@@ -20,6 +20,8 @@ from incident_response import (
     write_incident_report,
 )
 from incident_response.runbook import build_runbook_steps
+from broker_connectivity.run_connectivity import main as broker_connectivity_main
+from broker_readonly_mirror.run_readonly_mirror import main as broker_readonly_mirror_main
 from operations.run_daily import main as operations_main
 from shadow_trading import run_shadow_trading
 
@@ -77,6 +79,14 @@ class ProductionOrchestratorConfig:
     broker_file_outbox_dir: str | None = None
     broker_file_inbox_dir: str | None = None
     broker_file_handoff_dir: str | None = None
+    broker_connectivity_profile: str | None = None
+    broker_connectivity_profile_config: str | None = None
+    broker_connectivity_store_dir: str | None = None
+    broker_readonly_mirror_dir: str | None = None
+    broker_connectivity_approval_id: str | None = None
+    allow_broker_readonly_network: bool = False
+    require_broker_connectivity: bool = False
+    run_broker_readonly_mirror: bool = False
     operator_handoff_store_dir: str | None = None
     operator_handoff_approval_store_dir: str | None = None
     mapping_certification_decision_path: str | None = None
@@ -149,6 +159,8 @@ class ProductionOrchestratorRunner:
             return {"status": "blocked", "production_run_id": self.production_run_id, "paths": {**self.artifact_paths, **paths, **incident_paths}, "readiness": self.readiness.to_dict()}
         if close_only:
             return self.close_day()
+        if self._phase_broker_readonly_health_check():
+            return self._finish("blocked")
         if self.config.run_mode == ProductionRunMode.shadow_only:
             self._phase_operations_propose()
             if self.config.stop_after_phase == ProductionPhase.wait_for_approval:
@@ -209,6 +221,95 @@ class ProductionOrchestratorRunner:
         self.artifact_paths.update(report.paths)
         self._record_phase(ProductionPhase.shadow_execute, ProductionPhaseStatus.success, report.summary)
         return report.to_dict()
+
+    def _phase_broker_readonly_health_check(self) -> bool:
+        should_probe = any(
+            [
+                self.config.broker_connectivity_profile,
+                self.config.broker_connectivity_profile_config,
+                self.config.require_broker_connectivity,
+                self.config.run_broker_readonly_mirror,
+            ]
+        )
+        if not should_probe:
+            return False
+        probe_payload = self._phase_broker_connectivity_probe()
+        probe_status = str(probe_payload.get("status") or "")
+        blocked = self.config.require_broker_connectivity and probe_status not in {"passed", "warning"}
+        if self.config.run_broker_readonly_mirror:
+            mirror_payload = self._phase_broker_readonly_snapshot()
+            mirror_status = str(mirror_payload.get("status") or "")
+            blocked = blocked or (self.config.require_broker_connectivity and mirror_status in {"failed"})
+        return blocked
+
+    def _phase_broker_connectivity_probe(self) -> dict[str, Any]:
+        output_dir = self.output_dir / "broker_connectivity"
+        argv = [
+            "probe",
+            "--profile-name",
+            self.config.broker_connectivity_profile or "mock_readonly",
+            "--output-dir",
+            str(output_dir),
+            "--connectivity-store-dir",
+            self.config.broker_connectivity_store_dir or str(output_dir / "store"),
+            "--trade-date",
+            self.config.trade_date,
+            "--as-of-date",
+            self.config.as_of_date,
+            "--account-id",
+            "paper_account",
+        ]
+        if self.config.broker_connectivity_profile_config:
+            argv.extend(["--profile-config", self.config.broker_connectivity_profile_config])
+        if self.config.approval_store_dir:
+            argv.extend(["--approval-store-dir", self.config.approval_store_dir])
+        approval_id = self.config.broker_connectivity_approval_id
+        if approval_id:
+            argv.extend(["--approval-id", approval_id, "--require-approval"])
+        if self.config.allow_broker_readonly_network:
+            argv.append("--allow-network")
+        payload, stdout_tail = self._call_json("broker_connectivity_probe", broker_connectivity_main, argv)
+        self.artifact_paths.update(_extract_paths(payload))
+        status = ProductionPhaseStatus.success if payload.get("status") in {"passed", "warning"} else ProductionPhaseStatus.blocked
+        self._record_phase(ProductionPhase.broker_connectivity_probe, status, payload, error=payload.get("error"), stdout_tail=stdout_tail)
+        return payload
+
+    def _phase_broker_readonly_snapshot(self) -> dict[str, Any]:
+        output_dir = Path(self.config.broker_readonly_mirror_dir or str(self.output_dir / "broker_readonly_mirror"))
+        connectivity_report = self.artifact_paths.get("broker_connectivity_report_path")
+        argv = [
+            "snapshot",
+            "--profile-name",
+            self.config.broker_connectivity_profile or "mock_readonly",
+            "--output-dir",
+            str(output_dir),
+            "--mirror-store-dir",
+            str(output_dir / "store"),
+            "--trade-date",
+            self.config.trade_date,
+            "--as-of-date",
+            self.config.as_of_date,
+            "--account-id",
+            "paper_account",
+        ]
+        if self.config.broker_connectivity_profile_config:
+            argv.extend(["--profile-config", self.config.broker_connectivity_profile_config])
+        if connectivity_report:
+            argv.extend(["--connectivity-report-path", connectivity_report])
+        if self.config.paper_account_dir:
+            argv.extend(["--paper-account-dir", self.config.paper_account_dir])
+        if self.config.broker_store_dir:
+            argv.extend(["--broker-store-dir", self.config.broker_store_dir])
+        if self.config.settlement_dir:
+            argv.extend(["--settlement-dir", self.config.settlement_dir])
+        if self.config.allow_broker_readonly_network:
+            argv.append("--allow-network")
+        payload, stdout_tail = self._call_json("broker_readonly_snapshot", broker_readonly_mirror_main, argv)
+        self.artifact_paths.update(_extract_paths(payload))
+        status = ProductionPhaseStatus.success if payload.get("status") in {"success", "warning"} else ProductionPhaseStatus.failed
+        self._record_phase(ProductionPhase.broker_readonly_snapshot, status, payload, error=payload.get("error"), stdout_tail=stdout_tail)
+        self._record_phase(ProductionPhase.broker_readonly_reconciliation, status, payload)
+        return payload
 
     def _operations_base_args(self, output_dir: Path, execute: bool) -> list[str]:
         if not self.config.factor_store_dir or not self.config.approval_store_dir or not self.config.paper_account_dir:
@@ -414,6 +515,10 @@ class ProductionOrchestratorRunner:
             "gate_warning_count": self.readiness.summary.get("warning_count", 0),
             "approval_id": self._latest_approval_id(),
             "close_day_status": "closed" if status == "closed" else "",
+            "broker_connectivity_status": self._phase_summary_value(ProductionPhase.broker_connectivity_probe, "status", ""),
+            "broker_readonly_mirror_status": self._phase_summary_value(ProductionPhase.broker_readonly_snapshot, "status", ""),
+            "broker_readonly_break_count": int(self._phase_summary_value(ProductionPhase.broker_readonly_snapshot, "readonly_mirror_break_count", 0) or 0),
+            "real_submit_supported": False,
         }
         return ProductionRunReport(
             production_run_id=self.production_run_id,
@@ -485,6 +590,12 @@ class ProductionOrchestratorRunner:
             if approval:
                 return str(approval)
         return self.config.approval_id
+
+    def _phase_summary_value(self, phase_name: str, key: str, default: Any) -> Any:
+        for phase in reversed(self.phase_runs):
+            if phase.phase == phase_name and isinstance(phase.summary, dict):
+                return phase.summary.get(key, default)
+        return default
 
 
 def _extract_paths(payload: dict[str, Any]) -> dict[str, str]:

@@ -25,6 +25,8 @@ def build_live_readiness_scorecard(
     eod_reconciliation_report_path: str | Path | None = None,
     broker_mapping_certification_decision_path: str | Path | None = None,
     broker_file_gateway_report_path: str | Path | None = None,
+    broker_connectivity_report_path: str | Path | None = None,
+    broker_readonly_mirror_report_path: str | Path | None = None,
     operator_handoff_report_path: str | Path | None = None,
     compliance_pack_path: str | Path | None = None,
     broker_uat_report_path: str | Path | None = None,
@@ -42,6 +44,8 @@ def build_live_readiness_scorecard(
     eod = _read_json(eod_reconciliation_report_path)
     mapping_cert = _read_json(broker_mapping_certification_decision_path)
     gateway = _read_json(broker_file_gateway_report_path)
+    connectivity = _read_json(broker_connectivity_report_path)
+    readonly_mirror = _read_json(broker_readonly_mirror_report_path)
     handoff = _read_json(operator_handoff_report_path)
     compliance = _read_json(compliance_pack_path)
     broker_uat = _read_json(broker_uat_report_path)
@@ -135,6 +139,29 @@ def build_live_readiness_scorecard(
             or (bool(gateway) and int((gateway.get("summary") or {}).get("roundtrip_error_count", gateway.get("roundtrip_error_count", 0)) or 0) <= policy.max_file_roundtrip_errors),
             policy.require_broker_file_gateway_roundtrip,
             "fix broker file roundtrip issues",
+        ),
+        _optional_check(
+            "broker_connectivity_readonly",
+            not policy.require_broker_connectivity
+            or (
+                bool(connectivity)
+                and str(connectivity.get("status") or "") in {"passed", "warning"}
+                and bool((connectivity.get("summary") or {}).get("readonly_only", False))
+                and not bool((connectivity.get("summary") or {}).get("real_submit_supported", connectivity.get("real_submit_supported", False)))
+            ),
+            policy.require_broker_connectivity,
+            "complete read-only broker connectivity review",
+        ),
+        _optional_check(
+            "broker_readonly_mirror",
+            not policy.require_broker_readonly_mirror
+            or (
+                bool(readonly_mirror)
+                and str(readonly_mirror.get("status") or "") in {"success", "warning"}
+                and not bool((readonly_mirror.get("summary") or {}).get("real_submit_supported", readonly_mirror.get("real_submit_supported", False)))
+            ),
+            policy.require_broker_readonly_mirror,
+            "capture and review read-only broker account mirror",
         ),
         _optional_check(
             "operator_handoff",

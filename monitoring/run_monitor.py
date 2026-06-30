@@ -24,6 +24,8 @@ from .checks import (
     check_broker_statement_import,
     check_broker_rejected_orders,
     check_broker_file_gateway_report,
+    check_broker_connectivity,
+    check_broker_readonly_mirror,
     check_broker_mapping_certification,
     check_broker_uat_contract,
     check_baseline_compare,
@@ -160,6 +162,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--broker-file-batch-path")
     parser.add_argument("--broker-file-roundtrip-report-path")
     parser.add_argument("--broker-file-roundtrip-issues-path")
+    parser.add_argument("--broker-connectivity-report-path")
+    parser.add_argument("--broker-connectivity-profile-path")
+    parser.add_argument("--broker-readonly-mirror-report-path")
+    parser.add_argument("--broker-readonly-snapshot-path")
+    parser.add_argument("--broker-network-guard-report-path")
+    parser.add_argument("--broker-credential-ref-manifest-path")
+    parser.add_argument("--readonly-mirror-reconciliation-report-path")
     parser.add_argument("--operator-handoff-report-path")
     parser.add_argument("--operator-handoff-checklist-path")
     parser.add_argument("--broker-mapping-certification-decision-path")
@@ -305,6 +314,21 @@ def main(argv: list[str] | None = None) -> int:
             lambda: check_broker_file_outbox(args.broker_outbox_manifest_path or _default_broker_outbox_manifest(args.orders_dir)),
         ),
         ("broker_file_gateway", lambda: check_broker_file_gateway_report(args.broker_file_gateway_report_path)),
+        (
+            "broker_connectivity",
+            lambda: check_broker_connectivity(
+                args.broker_connectivity_report_path,
+                args.broker_network_guard_report_path,
+                args.broker_credential_ref_manifest_path,
+            ),
+        ),
+        (
+            "broker_readonly_mirror",
+            lambda: check_broker_readonly_mirror(
+                args.broker_readonly_mirror_report_path,
+                args.readonly_mirror_reconciliation_report_path,
+            ),
+        ),
         ("operator_handoff", lambda: check_operator_handoff_report(args.operator_handoff_report_path)),
         ("broker_mapping_certification", lambda: check_broker_mapping_certification(args.broker_mapping_certification_decision_path)),
         ("program_trading_compliance", lambda: check_program_trading_compliance_pack(args.program_trading_compliance_pack_path)),

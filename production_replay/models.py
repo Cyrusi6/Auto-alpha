@@ -59,6 +59,14 @@ class ProductionReplayConfig:
     broker_file_outbox_root_dir: str | None = None
     broker_file_inbox_root_dir: str | None = None
     broker_file_handoff_root_dir: str | None = None
+    broker_connectivity_profile: str | None = None
+    broker_connectivity_profile_config: str | None = None
+    broker_connectivity_store_dir: str | None = None
+    broker_readonly_mirror_root_dir: str | None = None
+    broker_connectivity_approval_id: str | None = None
+    allow_broker_readonly_network: bool = False
+    require_broker_connectivity: bool = False
+    run_broker_readonly_mirror: bool = False
     operator_handoff_store_dir: str | None = None
     operator_handoff_approval_store_dir: str | None = None
     mapping_certification_decision_path: str | None = None
@@ -136,6 +144,9 @@ class ProductionReplayDayResult:
     shadow_fill_rate: float = 0.0
     paper_fill_rate: float = 0.0
     broker_unfilled_value: float = 0.0
+    broker_connectivity_status: str = ""
+    broker_readonly_mirror_status: str = ""
+    readonly_mirror_break_count: int = 0
     incident_open_count: int = 0
     paths: dict[str, str] = field(default_factory=dict)
     summary: dict[str, Any] = field(default_factory=dict)

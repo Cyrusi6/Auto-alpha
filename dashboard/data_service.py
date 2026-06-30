@@ -870,6 +870,42 @@ class AshareDashboardService:
     def load_broker_uat_issues(self) -> pd.DataFrame:
         return self._read_first_jsonl(self._prelive_candidates("broker_uat_issues.jsonl"))
 
+    def load_broker_connectivity_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._broker_connectivity_candidates("broker_connectivity_report.json"))
+
+    def load_broker_connectivity_profile(self) -> dict[str, Any]:
+        return self._read_first_json(self._broker_connectivity_candidates("broker_connectivity_profile.json"))
+
+    def load_broker_network_guard_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._broker_connectivity_candidates("broker_network_guard_report.json"))
+
+    def load_broker_credential_ref_manifest(self) -> dict[str, Any]:
+        return self._read_first_json(self._broker_connectivity_candidates("broker_credential_ref_manifest.json"))
+
+    def load_broker_connectivity_sessions(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._broker_connectivity_candidates("broker_connectivity_sessions.jsonl"))
+
+    def load_broker_connectivity_issues(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._broker_connectivity_candidates("broker_connectivity_issues.jsonl"))
+
+    def load_broker_readonly_mirror_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._broker_readonly_mirror_candidates("broker_readonly_mirror_report.json"))
+
+    def load_broker_readonly_snapshot(self) -> dict[str, Any]:
+        return self._read_first_json(self._broker_readonly_mirror_candidates("broker_readonly_snapshot.json"))
+
+    def load_readonly_mirror_reconciliation_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._broker_readonly_mirror_candidates("readonly_mirror_reconciliation_report.json"))
+
+    def load_readonly_broker_positions(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._broker_readonly_mirror_candidates("readonly_broker_positions.jsonl"))
+
+    def load_readonly_broker_orders(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._broker_readonly_mirror_candidates("readonly_broker_orders.jsonl"))
+
+    def load_readonly_broker_fills(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._broker_readonly_mirror_candidates("readonly_broker_fills.jsonl"))
+
     def load_go_live_gate_policy(self) -> dict[str, Any]:
         return self._read_first_json(self._prelive_candidates("go_live_gate_policy.json"))
 
@@ -1877,6 +1913,32 @@ class AshareDashboardService:
             root / "go_live_gate" / filename,
             root / "prelive_gate" / filename,
             root / "production_execute" / filename,
+            root / filename,
+        ]
+
+    def _broker_connectivity_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.broker_connectivity_dir / filename,
+            self.config.broker_uat_dir / "broker_connectivity" / filename,
+            self.config.production_dir / "broker_connectivity" / filename,
+            root / "broker_connectivity" / filename,
+            root / "broker_uat" / "broker_connectivity" / filename,
+            root / "broker_uat_lab" / "broker_connectivity" / filename,
+            root / "production_execute" / "broker_connectivity" / filename,
+            root / filename,
+        ]
+
+    def _broker_readonly_mirror_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.broker_readonly_mirror_dir / filename,
+            self.config.broker_uat_dir / "broker_readonly_mirror" / filename,
+            self.config.production_dir / "broker_readonly_mirror" / filename,
+            root / "broker_readonly_mirror" / filename,
+            root / "broker_uat" / "broker_readonly_mirror" / filename,
+            root / "broker_uat_lab" / "broker_readonly_mirror" / filename,
+            root / "production_execute" / "broker_readonly_mirror" / filename,
             root / filename,
         ]
 

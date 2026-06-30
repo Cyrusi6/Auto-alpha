@@ -5,7 +5,7 @@ from __future__ import annotations
 from .models import BrokerUatScenario, BrokerUatScenarioType, BrokerUatStatus
 
 
-def build_default_uat_scenarios(profile: str = "sample") -> list[BrokerUatScenario]:
+def build_default_uat_scenarios(profile: str = "sample", *, include_readonly: bool = False, readonly_metadata: dict | None = None) -> list[BrokerUatScenario]:
     base = [
         BrokerUatScenario("uat_submit_idempotency", BrokerUatScenarioType.submit_idempotency, "Submit idempotency"),
         BrokerUatScenario("uat_full_fill", BrokerUatScenarioType.full_fill, "Full fill"),
@@ -26,6 +26,16 @@ def build_default_uat_scenarios(profile: str = "sample") -> list[BrokerUatScenar
                 BrokerUatScenario("uat_rate_limit", BrokerUatScenarioType.rate_limit, "Rate limit handling", expected_status=BrokerUatStatus.warning),
                 BrokerUatScenario("uat_eod_reconciliation", BrokerUatScenarioType.eod_reconciliation, "EOD reconciliation"),
                 BrokerUatScenario("uat_settlement_reconciliation", BrokerUatScenarioType.settlement_reconciliation, "Settlement reconciliation"),
+            ]
+        )
+    if include_readonly:
+        metadata = dict(readonly_metadata or {})
+        base.extend(
+            [
+                BrokerUatScenario("uat_readonly_connectivity", BrokerUatScenarioType.readonly_connectivity, "Read-only broker connectivity", metadata=metadata),
+                BrokerUatScenario("uat_credential_redaction", BrokerUatScenarioType.credential_redaction, "Credential reference redaction", metadata=metadata),
+                BrokerUatScenario("uat_network_guard", BrokerUatScenarioType.network_guard, "Network guard remains read-only", metadata=metadata),
+                BrokerUatScenario("uat_readonly_mirror_reconciliation", BrokerUatScenarioType.readonly_mirror_reconciliation, "Read-only mirror reconciliation", metadata=metadata),
             ]
         )
     return base

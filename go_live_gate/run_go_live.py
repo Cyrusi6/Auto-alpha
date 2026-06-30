@@ -33,6 +33,11 @@ def _add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--secret-scan-report-path")
     parser.add_argument("--broker-uat-report-path")
     parser.add_argument("--broker-adapter-contract-report-path")
+    parser.add_argument("--broker-connectivity-report-path")
+    parser.add_argument("--broker-readonly-mirror-report-path")
+    parser.add_argument("--broker-network-guard-report-path")
+    parser.add_argument("--broker-credential-ref-manifest-path")
+    parser.add_argument("--readonly-mirror-reconciliation-report-path")
     parser.add_argument("--broker-mapping-certification-decision-path")
     parser.add_argument("--broker-file-gateway-report-path")
     parser.add_argument("--operator-handoff-report-path")
@@ -59,9 +64,14 @@ def main(argv: list[str] | None = None) -> int:
     scorecard = build_go_live_scorecard(
         policy,
         program_trading_compliance_pack_path=args.program_trading_compliance_pack_path,
-        secret_scan_report_path=args.secret_scan_report_path,
+        secret_scan_report_path=args.secret_scan_report_path or _sibling(args.program_trading_compliance_pack_path, "secret_scan_report.json"),
         broker_uat_report_path=args.broker_uat_report_path,
         broker_adapter_contract_report_path=args.broker_adapter_contract_report_path,
+        broker_connectivity_report_path=args.broker_connectivity_report_path,
+        broker_readonly_mirror_report_path=args.broker_readonly_mirror_report_path,
+        broker_network_guard_report_path=args.broker_network_guard_report_path,
+        broker_credential_ref_manifest_path=args.broker_credential_ref_manifest_path,
+        readonly_mirror_reconciliation_report_path=args.readonly_mirror_reconciliation_report_path,
         broker_mapping_certification_decision_path=args.broker_mapping_certification_decision_path,
         broker_file_gateway_report_path=args.broker_file_gateway_report_path,
         operator_handoff_report_path=args.operator_handoff_report_path,
@@ -119,6 +129,15 @@ def _create_review_approval(args: argparse.Namespace, decision, paths: dict[str,
     )
     store.save_batch(approval)
     return approval
+
+
+def _sibling(path: str | None, filename: str) -> str | None:
+    if not path:
+        return None
+    from pathlib import Path
+
+    candidate = Path(path).parent / filename
+    return str(candidate) if candidate.exists() else None
 
 
 def _utc_now() -> str:

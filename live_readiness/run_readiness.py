@@ -39,6 +39,8 @@ def _add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--eod-reconciliation-report-path")
     parser.add_argument("--broker-mapping-certification-decision-path")
     parser.add_argument("--broker-file-gateway-report-path")
+    parser.add_argument("--broker-connectivity-report-path")
+    parser.add_argument("--broker-readonly-mirror-report-path")
     parser.add_argument("--operator-handoff-report-path")
     parser.add_argument("--program-trading-compliance-pack-path")
     parser.add_argument("--broker-uat-report-path")
@@ -64,6 +66,8 @@ def main(argv: list[str] | None = None) -> int:
         eod_reconciliation_report_path=args.eod_reconciliation_report_path,
         broker_mapping_certification_decision_path=args.broker_mapping_certification_decision_path,
         broker_file_gateway_report_path=args.broker_file_gateway_report_path,
+        broker_connectivity_report_path=args.broker_connectivity_report_path,
+        broker_readonly_mirror_report_path=args.broker_readonly_mirror_report_path,
         operator_handoff_report_path=args.operator_handoff_report_path,
         compliance_pack_path=args.program_trading_compliance_pack_path,
         broker_uat_report_path=args.broker_uat_report_path,

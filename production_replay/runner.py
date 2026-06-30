@@ -150,6 +150,9 @@ class ProductionReplayRunner:
                 shadow_fill_rate=float(summary.get("shadow_fill_rate", 0.0) or 0.0),
                 paper_fill_rate=float(summary.get("fill_rate", summary.get("paper_fill_rate", 0.0)) or 0.0),
                 broker_unfilled_value=float(summary.get("broker_unfilled_value", 0.0) or 0.0),
+                broker_connectivity_status=str(summary.get("broker_connectivity_status") or ""),
+                broker_readonly_mirror_status=str(summary.get("broker_readonly_mirror_status") or ""),
+                readonly_mirror_break_count=int(summary.get("broker_readonly_break_count", summary.get("readonly_mirror_break_count", 0)) or 0),
                 incident_open_count=int(summary.get("incident_open_count", 0) or 0),
                 paths=paths,
                 summary=summary,
@@ -221,6 +224,22 @@ class ProductionReplayRunner:
         ]
         if self.config.broker_store_dir:
             args.extend(["--broker-store-dir", str(Path(self.config.broker_store_dir) / trade_date)])
+        if self.config.broker_connectivity_profile:
+            args.extend(["--broker-connectivity-profile", self.config.broker_connectivity_profile])
+        if self.config.broker_connectivity_profile_config:
+            args.extend(["--broker-connectivity-profile-config", self.config.broker_connectivity_profile_config])
+        if self.config.broker_connectivity_store_dir:
+            args.extend(["--broker-connectivity-store-dir", str(Path(self.config.broker_connectivity_store_dir) / trade_date)])
+        if self.config.broker_readonly_mirror_root_dir:
+            args.extend(["--broker-readonly-mirror-dir", str(Path(self.config.broker_readonly_mirror_root_dir) / trade_date)])
+        if self.config.broker_connectivity_approval_id:
+            args.extend(["--broker-connectivity-approval-id", self.config.broker_connectivity_approval_id])
+        if self.config.allow_broker_readonly_network:
+            args.append("--allow-broker-readonly-network")
+        if self.config.require_broker_connectivity:
+            args.append("--require-broker-connectivity")
+        if self.config.run_broker_readonly_mirror:
+            args.append("--run-broker-readonly-mirror")
         if run_mode == ReplayMode.file_outbox_dry_run or self.config.broker_file_gateway:
             args.append("--broker-file-gateway")
             args.extend(["--broker-file-profile", self.config.broker_file_profile])

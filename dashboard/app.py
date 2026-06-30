@@ -532,6 +532,18 @@ def render_app(config: DashboardConfig | None = None) -> None:
         adapter_capabilities = service.load_broker_adapter_capability_manifest()
         contract_report = service.load_broker_adapter_contract_report()
         uat_replay = service.load_broker_uat_replay_report()
+        broker_connectivity = service.load_broker_connectivity_report()
+        broker_connectivity_profile = service.load_broker_connectivity_profile()
+        broker_network_guard = service.load_broker_network_guard_report()
+        broker_credentials = service.load_broker_credential_ref_manifest()
+        broker_connectivity_sessions = service.load_broker_connectivity_sessions()
+        broker_connectivity_issues = service.load_broker_connectivity_issues()
+        readonly_mirror = service.load_broker_readonly_mirror_report()
+        readonly_snapshot = service.load_broker_readonly_snapshot()
+        readonly_reconciliation = service.load_readonly_mirror_reconciliation_report()
+        readonly_positions = service.load_readonly_broker_positions()
+        readonly_orders = service.load_readonly_broker_orders()
+        readonly_fills = service.load_readonly_broker_fills()
         go_live_decision = service.load_go_live_gate_decision()
         go_live_scorecard = service.load_go_live_gate_scorecard()
         go_live_checks = service.load_go_live_gate_checks()
@@ -660,6 +672,38 @@ def render_app(config: DashboardConfig | None = None) -> None:
             else {"status": "No live readiness artifacts found"}
         )
         _show_dataframe_or_empty("Live Readiness Checks", live_readiness_checks)
+        st.subheader("Broker Connectivity And Read-Only Mirror")
+        st.json(
+            {
+                "connectivity": {
+                    "status": broker_connectivity.get("status", ""),
+                    "profile_name": (broker_connectivity.get("summary") or {}).get("profile_name")
+                    or broker_connectivity_profile.get("profile_name", ""),
+                    "mode": (broker_connectivity.get("summary") or {}).get("connectivity_mode")
+                    or broker_connectivity_profile.get("connectivity_mode", ""),
+                    "network_guard_status": (broker_connectivity.get("summary") or {}).get("network_guard_status")
+                    or (broker_network_guard.get("network_guard") or {}).get("status", ""),
+                    "secret_blocker_count": (broker_credentials.get("summary") or {}).get("secret_blocker_count", 0),
+                    "real_submit_supported": (broker_connectivity.get("summary") or {}).get("real_submit_supported", False),
+                },
+                "readonly_mirror": {
+                    "status": readonly_mirror.get("status", ""),
+                    "snapshot_id": readonly_snapshot.get("snapshot_id", ""),
+                    "break_count": readonly_reconciliation.get("break_count", 0),
+                    "position_count": (readonly_mirror.get("summary") or {}).get("readonly_position_count", 0),
+                    "order_count": (readonly_mirror.get("summary") or {}).get("readonly_order_count", 0),
+                    "fill_count": (readonly_mirror.get("summary") or {}).get("readonly_fill_count", 0),
+                    "real_submit_supported": (readonly_mirror.get("summary") or {}).get("real_submit_supported", False),
+                },
+            }
+            if broker_connectivity or readonly_mirror
+            else {"status": "No broker connectivity or read-only mirror artifacts found"}
+        )
+        _show_dataframe_or_empty("Broker Connectivity Sessions", broker_connectivity_sessions)
+        _show_dataframe_or_empty("Broker Connectivity Issues", broker_connectivity_issues)
+        _show_dataframe_or_empty("Read-Only Broker Positions", readonly_positions)
+        _show_dataframe_or_empty("Read-Only Broker Orders", readonly_orders)
+        _show_dataframe_or_empty("Read-Only Broker Fills", readonly_fills)
         st.subheader("Incidents")
         st.json(
             {

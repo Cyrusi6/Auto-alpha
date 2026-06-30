@@ -42,6 +42,10 @@ def run_broker_adapter_contract_suite(adapter, scenarios: list[BrokerUatScenario
         supports_statement_import=False,
         supports_idempotency=True,
         supports_kill_switch_block=True,
+        supports_readonly_connectivity=any(result.scenario_type == BrokerUatScenarioType.readonly_connectivity and result.status == BrokerUatStatus.passed for result in results),
+        supports_readonly_account_snapshot=any(result.scenario_type == BrokerUatScenarioType.readonly_connectivity and result.status == BrokerUatStatus.passed for result in results),
+        supports_readonly_mirror=any(result.scenario_type == BrokerUatScenarioType.readonly_mirror_reconciliation and result.status == BrokerUatStatus.passed for result in results),
+        prohibits_real_submit_in_uat=True,
         real_network_required=False,
         real_broker_credentials_required=False,
     )
@@ -61,6 +65,13 @@ def run_broker_adapter_contract_suite(adapter, scenarios: list[BrokerUatScenario
 
 def _run_scenario(adapter, scenario: BrokerUatScenario) -> BrokerUatResult:
     try:
+        if scenario.scenario_type in {
+            BrokerUatScenarioType.readonly_connectivity,
+            BrokerUatScenarioType.credential_redaction,
+            BrokerUatScenarioType.network_guard,
+            BrokerUatScenarioType.readonly_mirror_reconciliation,
+        }:
+            return _run_readonly_scenario(scenario)
         if not hasattr(adapter, "set_scenario") and scenario.scenario_type in {
             BrokerUatScenarioType.partial_fill,
             BrokerUatScenarioType.reject_order,
@@ -87,6 +98,8 @@ def _run_scenario(adapter, scenario: BrokerUatScenario) -> BrokerUatResult:
         if scenario.scenario_type == BrokerUatScenarioType.cancel_order:
             result = adapter.submit_orders([request], batch_id=request.batch_id)
             order = result.orders[0]
+            if order.status == BrokerOrderStatus.CANCELLED:
+                return BrokerUatResult(scenario.scenario_id, scenario.scenario_type, BrokerUatStatus.passed, "cancel already processed", {"status": order.status})
             if order.status in {BrokerOrderStatus.FILLED, BrokerOrderStatus.REJECTED}:
                 return BrokerUatResult(scenario.scenario_id, scenario.scenario_type, BrokerUatStatus.warning, "order terminal before cancel", {"status": order.status})
             cancelled = adapter.cancel_order(order.broker_order_id, "uat_cancel")
@@ -94,6 +107,14 @@ def _run_scenario(adapter, scenario: BrokerUatScenario) -> BrokerUatResult:
         if scenario.scenario_type == BrokerUatScenarioType.replace_order:
             result = adapter.submit_orders([request], batch_id=request.batch_id)
             order = result.orders[0]
+            if order.status == BrokerOrderStatus.REPLACED and order.replace_count >= 1:
+                return BrokerUatResult(
+                    scenario.scenario_id,
+                    scenario.scenario_type,
+                    BrokerUatStatus.passed,
+                    "replace already processed",
+                    {"status": order.status, "replace_count": order.replace_count},
+                )
             if order.status in {BrokerOrderStatus.FILLED, BrokerOrderStatus.REJECTED}:
                 return BrokerUatResult(scenario.scenario_id, scenario.scenario_type, BrokerUatStatus.warning, "order terminal before replace", {"status": order.status})
             replaced = adapter.replace_order(order.broker_order_id, shares=200, reason="uat_replace")
@@ -133,6 +154,45 @@ def _result(scenario: BrokerUatScenario, ok: bool, message: str, observed: dict[
     return BrokerUatResult(scenario.scenario_id, scenario.scenario_type, status, message, observed, [] if ok else [{"severity": "error", "code": "unexpected_outcome", "message": message}])
 
 
+def _run_readonly_scenario(scenario: BrokerUatScenario) -> BrokerUatResult:
+    metadata = dict(scenario.metadata or {})
+    if scenario.scenario_type == BrokerUatScenarioType.readonly_connectivity:
+        report = _read_json(metadata.get("broker_connectivity_report_path"))
+        summary = report.get("summary", {}) if isinstance(report.get("summary"), dict) else {}
+        ok = bool(report) and str(report.get("status") or "") in {"passed", "warning"} and bool(summary.get("readonly_only")) and not bool(summary.get("real_submit_supported"))
+        return _result(scenario, ok, "read-only connectivity evidence checked", {"status": report.get("status"), "summary": summary})
+    if scenario.scenario_type == BrokerUatScenarioType.credential_redaction:
+        manifest = _read_json(metadata.get("broker_credential_ref_manifest_path"))
+        summary = manifest.get("summary", {}) if isinstance(manifest.get("summary"), dict) else {}
+        ok = bool(manifest) and not bool(manifest.get("secret_values_stored")) and int(summary.get("secret_blocker_count", 0) or 0) == 0
+        return _result(scenario, ok, "credential references are redacted", {"summary": summary, "secret_values_stored": manifest.get("secret_values_stored")})
+    if scenario.scenario_type == BrokerUatScenarioType.network_guard:
+        guard = _read_json(metadata.get("broker_network_guard_report_path"))
+        payload = guard.get("network_guard", guard) if isinstance(guard, dict) else {}
+        ok = bool(guard) and bool(payload.get("readonly_only", False))
+        return _result(scenario, ok, "network guard is read-only", {"network_guard": payload})
+    mirror = _read_json(metadata.get("readonly_mirror_reconciliation_report_path"))
+    real_submit_supported = bool(mirror.get("real_submit_supported", False))
+    break_count = int(mirror.get("break_count", 0) or 0)
+    if not mirror or real_submit_supported:
+        return _result(
+            scenario,
+            False,
+            "read-only mirror reconciliation checked",
+            {"break_count": mirror.get("break_count"), "status": mirror.get("status"), "real_submit_supported": real_submit_supported},
+        )
+    if break_count:
+        return BrokerUatResult(
+            scenario.scenario_id,
+            scenario.scenario_type,
+            BrokerUatStatus.warning,
+            "read-only mirror reconciliation has local mirror breaks",
+            {"break_count": break_count, "status": mirror.get("status"), "real_submit_supported": real_submit_supported},
+            [{"severity": "warning", "code": "readonly_mirror_breaks", "message": "read-only mirror breaks require review"}],
+        )
+    return _result(scenario, True, "read-only mirror reconciliation checked", {"break_count": break_count, "status": mirror.get("status")})
+
+
 def _request(scenario_id: str) -> BrokerOrderRequest:
     return BrokerOrderRequest(
         client_order_id=f"uat_client_{scenario_id}",
@@ -168,3 +228,18 @@ def _adapter_scenario(scenario_type: str) -> str:
         BrokerUatScenarioType.settlement_reconciliation: "full_fill",
     }
     return mapping.get(scenario_type, "full_fill")
+
+
+def _read_json(path: Any) -> dict[str, Any]:
+    if not path:
+        return {}
+    target = Path(str(path))
+    if not target.exists():
+        return {}
+    try:
+        import json
+
+        payload = json.loads(target.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}

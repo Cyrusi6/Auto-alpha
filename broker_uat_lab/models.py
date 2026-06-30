@@ -29,6 +29,10 @@ class BrokerUatScenarioType:
     file_outbox_roundtrip = "file_outbox_roundtrip"
     eod_reconciliation = "eod_reconciliation"
     settlement_reconciliation = "settlement_reconciliation"
+    readonly_connectivity = "readonly_connectivity"
+    credential_redaction = "credential_redaction"
+    network_guard = "network_guard"
+    readonly_mirror_reconciliation = "readonly_mirror_reconciliation"
 
 
 @dataclass(frozen=True)
@@ -70,6 +74,10 @@ class BrokerAdapterCapabilityManifest:
     supports_statement_import: bool
     supports_idempotency: bool
     supports_kill_switch_block: bool
+    supports_readonly_connectivity: bool = False
+    supports_readonly_account_snapshot: bool = False
+    supports_readonly_mirror: bool = False
+    prohibits_real_submit_in_uat: bool = True
     real_network_required: bool = False
     real_broker_credentials_required: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
