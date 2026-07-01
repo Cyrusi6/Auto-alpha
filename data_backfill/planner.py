@@ -208,9 +208,10 @@ def _make_backfill_job(
         "start_date": start_date,
         "end_date": end_date,
         "index_code": index_code,
-        "ts_code": ts_code,
         "list_status": list_status,
     }
+    if ts_code is not None:
+        payload["ts_code"] = ts_code
     digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
     return BackfillJob(
         job_id=f"bfjob_{digest[:16]}",
