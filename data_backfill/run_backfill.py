@@ -56,6 +56,7 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--snapshot", action="store_true")
     parser.add_argument("--direct-append", action="store_true")
     parser.add_argument("--trade-days-only", action="store_true")
+    parser.add_argument("--trade-day-datasets")
     parser.add_argument("--financial-by-ts-code", action="store_true")
     parser.add_argument("--financial-ts-codes")
     parser.add_argument("--allow-network", action="store_true")
@@ -171,6 +172,7 @@ def _load_or_build_plan(args: argparse.Namespace, config: AShareDataConfig, data
         chunk_strategy=args.chunk_strategy,
         dataset_chunk_days=_dataset_chunk_days(args),
         trade_dates=_load_trade_dates(config.data_dir, config.start_date, config.end_date) if args.trade_days_only else None,
+        trade_day_datasets=_trade_day_datasets(args),
         financial_ts_codes=_financial_ts_codes(args, config.data_dir) if args.financial_by_ts_code else None,
         max_requests=args.max_requests,
     )
@@ -180,6 +182,12 @@ def _dataset_chunk_days(args: argparse.Namespace) -> dict[str, int]:
     values = dataset_chunk_days_for_strategy(args.chunk_strategy, args.chunk_days)
     values.update(parse_dataset_chunk_days(args.dataset_chunk_days))
     return values
+
+
+def _trade_day_datasets(args: argparse.Namespace) -> list[str] | None:
+    if not args.trade_day_datasets:
+        return None
+    return [item.strip() for item in args.trade_day_datasets.split(",") if item.strip()]
 
 
 def _load_trade_dates(data_dir: Path, start_date: str, end_date: str | None) -> list[str]:
