@@ -1,8 +1,9 @@
 import json
 
 from data_pipeline.ashare import AShareDataConfig, build_pipeline_plan
+from data_pipeline.ashare.dataset_registry import FULL_RESEARCH_DATASETS
 
-EXPECTED_DATASETS = [
+EXPECTED_CORE_DATASETS = [
     "securities",
     "trade_calendar",
     "daily_bars",
@@ -20,7 +21,9 @@ def test_build_pipeline_plan_default_datasets():
     plan = build_pipeline_plan(config)
 
     assert plan.provider == "tushare"
-    assert [dataset.name for dataset in plan.datasets] == EXPECTED_DATASETS
+    names = [dataset.name for dataset in plan.datasets]
+    assert names == list(FULL_RESEARCH_DATASETS)
+    assert set(names) >= set(EXPECTED_CORE_DATASETS)
     assert all(dataset.target.startswith("data/ashare/") for dataset in plan.datasets)
 
 

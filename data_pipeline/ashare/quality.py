@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
+from .dataset_registry import DATASET_DEFINITIONS
 from .pipeline import ASHARE_DATASETS
 from .storage import DATASET_PRIMARY_KEYS, LocalAshareStorage
 from .validators import is_valid_ts_code, is_valid_yyyymmdd
@@ -93,6 +94,8 @@ def validate_dataset(dataset_name: str, records: Sequence[dict[str, Any]]) -> Da
         _validate_index_members(records, issues)
     elif dataset_name == "corporate_actions":
         _validate_corporate_actions(records, issues)
+    elif dataset_name in DATASET_DEFINITIONS:
+        _validate_generic_dataset(dataset_name, records, issues)
 
     errors = sum(issue.severity == "error" for issue in issues)
     warnings = sum(issue.severity == "warning" for issue in issues)
@@ -105,12 +108,16 @@ def validate_dataset(dataset_name: str, records: Sequence[dict[str, Any]]) -> Da
     )
 
 
-def validate_all_datasets(storage: LocalAshareStorage) -> DataQualityReport:
+def validate_all_datasets(
+    storage: LocalAshareStorage,
+    datasets: Sequence[str] | None = None,
+) -> DataQualityReport:
+    selected = list(ASHARE_DATASETS if datasets is None else datasets)
     return DataQualityReport(
         generated_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         datasets=[
             validate_dataset(dataset_name, storage.read_dataset(dataset_name))
-            for dataset_name in ASHARE_DATASETS
+            for dataset_name in selected
         ],
     )
 
@@ -456,6 +463,66 @@ def _validate_corporate_actions(records: Sequence[dict[str, Any]], issues: list[
                 severity="warning",
                 code="no_implemented_actions",
                 message="corporate_actions has no implemented events",
+            )
+        )
+
+
+def _validate_generic_dataset(
+    dataset_name: str,
+    records: Sequence[dict[str, Any]],
+    issues: list[DataQualityIssue],
+) -> None:
+    definition = DATASET_DEFINITIONS[dataset_name]
+    for record in records:
+        key = _record_key(record, definition.primary_key)
+        for field_name in definition.primary_key:
+            if record.get(field_name) in {None, ""}:
+                issues.append(
+                    DataQualityIssue(
+                        dataset=dataset_name,
+                        severity="error",
+                        code="missing_primary_key_field",
+                        message=f"{field_name} is required for primary key",
+                        key=key,
+                    )
+                )
+        for field_name in {definition.date_field, definition.effective_date_field, definition.availability_date_field}:
+            if not field_name:
+                continue
+            value = record.get(field_name)
+            if value not in {None, ""}:
+                _require_date(dataset_name, field_name, value, issues, key)
+            elif field_name == definition.availability_date_field and definition.pit_safe:
+                issues.append(
+                    DataQualityIssue(
+                        dataset=dataset_name,
+                        severity="error",
+                        code="missing_availability_date",
+                        message=f"{field_name} is required for point-in-time availability",
+                        key=key,
+                    )
+                )
+        ts_code = record.get("ts_code")
+        if ts_code not in {None, ""}:
+            _require_ts_code(dataset_name, str(ts_code), issues)
+        index_code = record.get("index_code")
+        if "index_code" in definition.primary_key and index_code in {None, ""}:
+            issues.append(
+                DataQualityIssue(
+                    dataset=dataset_name,
+                    severity="error",
+                    code="missing_index_code",
+                    message="index_code is required",
+                    key=key,
+                )
+            )
+    if records and definition.weak_pit:
+        issues.append(
+            DataQualityIssue(
+                dataset=dataset_name,
+                severity="warning",
+                code="weak_pit_contract",
+                message="dataset has uncertain publication timing and is marked weak_pit",
             )
         )
 

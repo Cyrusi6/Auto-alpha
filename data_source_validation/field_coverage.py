@@ -30,7 +30,21 @@ def analyze_field_coverage(data_dir: str | Path, datasets: Iterable[str] | None 
         dates = sorted(
             str(record[field])
             for record in records
-            for field in ("trade_date", "list_date", "announce_date", "report_period")
+            for field in (
+                "trade_date",
+                "list_date",
+                "announce_date",
+                "ann_date",
+                "report_period",
+                "end_date",
+                "suspend_date",
+                "ipo_date",
+                "issue_date",
+                "start_date",
+                "float_date",
+                "in_date",
+                "out_date",
+            )
             if record.get(field) not in {None, ""}
         )
         keys = _keys(contract.dataset, records)

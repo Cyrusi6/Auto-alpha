@@ -60,8 +60,12 @@ def compute_dataset_stats(storage: LocalAshareStorage, dataset_name: str) -> Dat
     )
 
 
-def compute_all_dataset_stats(storage: LocalAshareStorage) -> list[DatasetStats]:
-    return [compute_dataset_stats(storage, dataset_name) for dataset_name in ASHARE_DATASETS]
+def compute_all_dataset_stats(
+    storage: LocalAshareStorage,
+    datasets: list[str] | None = None,
+) -> list[DatasetStats]:
+    selected = list(ASHARE_DATASETS if datasets is None else datasets)
+    return [compute_dataset_stats(storage, dataset_name) for dataset_name in selected]
 
 
 def write_dataset_stats(stats: list[DatasetStats], path: str | Path) -> Path:
@@ -92,7 +96,24 @@ def _null_counts(records: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def _record_date_value(record: dict[str, Any]) -> Any:
-    for field in ("trade_date", "ex_date", "pay_date", "ann_date", "announce_date", "record_date"):
+    for field in (
+        "trade_date",
+        "ex_date",
+        "pay_date",
+        "ann_date",
+        "announce_date",
+        "record_date",
+        "end_date",
+        "report_period",
+        "suspend_date",
+        "resume_date",
+        "ipo_date",
+        "issue_date",
+        "start_date",
+        "float_date",
+        "in_date",
+        "out_date",
+    ):
         value = record.get(field)
         if value not in {None, ""}:
             return value

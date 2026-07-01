@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
+from data_pipeline.ashare.dataset_registry import DATASET_DEFINITIONS, AShareDatasetDefinition
 from data_pipeline.ashare.providers.tushare_client import (
     TushareApiError,
     TushareNetworkError,
@@ -140,8 +141,58 @@ def _rows_for_api(api_name: str) -> list[dict[str, Any]]:
         ],
     }
     if api_name not in mapping:
-        raise TushareApiError(f"unsupported fake api_name: {api_name}")
+        definition = _definition_for_api(api_name)
+        if definition is None:
+            raise TushareApiError(f"unsupported fake api_name: {api_name}")
+        return [_generic_row(definition)]
     return mapping[api_name]
+
+
+def _definition_for_api(api_name: str) -> AShareDatasetDefinition | None:
+    for definition in DATASET_DEFINITIONS.values():
+        if definition.api_name == api_name:
+            return definition
+    return None
+
+
+def _generic_row(definition: AShareDatasetDefinition) -> dict[str, Any]:
+    return {field: _generic_value(field, definition) for field in definition.fields}
+
+
+def _generic_value(field: str, definition: AShareDatasetDefinition) -> Any:
+    if field in {"ts_code", "con_code"}:
+        if definition.dataset == "index_basic":
+            return "000300.SH"
+        if definition.index_param == "ts_code":
+            return "000300.SH"
+        return "000001.SZ"
+    if field in {"index_code", "l1_code"}:
+        return "801010.SI"
+    if field == "l2_code":
+        return "801011.SI"
+    if field == "l3_code" or field == "industry_code":
+        return "851011.SI"
+    if field in {"trade_date", "suspend_date", "ann_date", "f_ann_date", "first_ann_date", "actual_date", "modify_date", "ipo_date", "issue_date", "begin_date", "close_date", "start_date", "in_date", "float_date", "list_date"}:
+        return "20240102"
+    if field in {"end_date", "report_period", "pre_date", "out_date", "resume_date", "exp_date", "release_date"}:
+        return "20231231"
+    if field in {"name", "fullname", "holder_name", "buyer", "seller", "exalter", "publisher", "audit_agency", "audit_sign", "pledgor"}:
+        return "样例"
+    if field in {"market", "exchange", "exchange_id"}:
+        return "SSE"
+    if field == "src":
+        return "SW2021"
+    if field == "level":
+        return "L1"
+    if field in {"industry_name", "l1_name", "l2_name", "l3_name", "bz_item"}:
+        return "银行"
+    if field in {"is_new", "is_pub", "is_audit", "is_release", "update_flag"}:
+        return "1"
+    if field in {"report_type", "comp_type", "end_type", "curr_type", "type", "proc", "side", "reason", "change_reason", "suspend_reason", "reason_type", "holder_type", "in_de", "share_type", "category", "index_type", "weight_rule", "audit_result", "remark", "summary", "perf_summary", "desc"}:
+        return "样例"
+    if field == "base_date":
+        return "20041231"
+    return 1.0
 
 
 def _response_fields(api_name: str) -> list[str]:

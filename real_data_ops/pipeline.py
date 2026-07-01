@@ -12,6 +12,7 @@ from typing import Any
 from artifact_schema.writer import utc_now, write_json_artifact
 from data_backfill.executor import execute_backfill_plan
 from data_backfill.planner import build_backfill_plan, write_backfill_plan
+from data_pipeline.ashare.dataset_registry import TS_CODE_SPLIT_DATASETS
 from data_lake import LocalDataLakeRegistry, create_research_freeze
 from data_lake.fingerprint import content_hash_for_fingerprints, fingerprint_data_dir
 from data_lake.freeze import write_freeze_validation_report, validate_freeze
@@ -51,6 +52,12 @@ def run_real_data_pipeline(
     stats: bool = False,
     compact: bool = False,
     snapshot: bool = False,
+    direct_append: bool = False,
+    trade_days_only: bool = False,
+    trade_day_datasets: list[str] | None = None,
+    financial_by_ts_code: bool = False,
+    financial_ts_codes: list[str] | None = None,
+    ts_code_split_datasets: list[str] | None = None,
     build_matrix: bool = False,
     refresh_matrix: bool = False,
     allow_network: bool = False,
@@ -93,6 +100,10 @@ def run_real_data_pipeline(
             chunk_days=chunk_days,
             chunk_strategy=effective_profile.chunk_strategy,
             dataset_chunk_days=effective_profile.dataset_chunk_days,
+            trade_dates=_load_trade_dates(config.data_dir, config.start_date, config.end_date) if trade_days_only else None,
+            trade_day_datasets=trade_day_datasets,
+            financial_ts_codes=_effective_ts_codes(financial_by_ts_code, financial_ts_codes, config.data_dir),
+            ts_code_split_datasets=ts_code_split_datasets or (list(TS_CODE_SPLIT_DATASETS) if financial_by_ts_code else None),
             max_requests=effective_profile.max_requests,
         )
         plan_json, plan_md = write_backfill_plan(plan, root)
@@ -118,6 +129,10 @@ def run_real_data_pipeline(
         chunk_days=chunk_days,
         chunk_strategy=effective_profile.chunk_strategy,
         dataset_chunk_days=effective_profile.dataset_chunk_days,
+        trade_dates=_load_trade_dates(config.data_dir, config.start_date, config.end_date) if trade_days_only else None,
+        trade_day_datasets=trade_day_datasets,
+        financial_ts_codes=_effective_ts_codes(financial_by_ts_code, financial_ts_codes, config.data_dir),
+        ts_code_split_datasets=ts_code_split_datasets or (list(TS_CODE_SPLIT_DATASETS) if financial_by_ts_code else None),
         max_requests=effective_profile.max_requests,
     )
     plan_json, plan_md = write_backfill_plan(plan, root)
@@ -138,6 +153,7 @@ def run_real_data_pipeline(
         write_stats=stats,
         compact=compact,
         snapshot=snapshot,
+        direct_append=direct_append,
         allow_network=allow_network,
         require_token=require_token,
         max_requests=effective_profile.max_requests,
@@ -332,6 +348,47 @@ def _missing_matrix_datasets(data_dir: str | Path) -> list[str]:
     root = Path(data_dir)
     required = ["securities", "trade_calendar", "daily_bars", "daily_basic", "financial_features"]
     return [dataset for dataset in required if not (root / dataset / "records.jsonl").exists()]
+
+
+def _load_trade_dates(data_dir: str | Path, start_date: str, end_date: str | None) -> list[str]:
+    path = Path(data_dir) / "trade_calendar" / "records.jsonl"
+    if not path.exists():
+        return []
+    end = end_date or start_date
+    dates: list[str] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            trade_date = str(payload.get("trade_date") or "")
+            if start_date <= trade_date <= end and bool(payload.get("is_open")):
+                dates.append(trade_date)
+    return sorted(set(dates))
+
+
+def _effective_ts_codes(
+    enabled: bool,
+    explicit_codes: list[str] | None,
+    data_dir: str | Path,
+) -> list[str] | None:
+    if not enabled:
+        return None
+    if explicit_codes:
+        return sorted(set(explicit_codes))
+    path = Path(data_dir) / "securities" / "records.jsonl"
+    if not path.exists():
+        return []
+    codes: list[str] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            code = str(payload.get("ts_code") or "").strip()
+            if code:
+                codes.append(code)
+    return sorted(set(codes))
 
 
 def _write_pipeline_run(

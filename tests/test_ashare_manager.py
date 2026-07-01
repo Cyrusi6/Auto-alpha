@@ -2,8 +2,9 @@ import json
 from pathlib import Path
 
 from data_pipeline.ashare import AShareDataConfig, AShareDataManager, LocalAshareStorage
+from data_pipeline.ashare.dataset_registry import FULL_RESEARCH_DATASETS
 
-EXPECTED_DATASETS = [
+EXPECTED_CORE_DATASETS = [
     "securities",
     "trade_calendar",
     "daily_bars",
@@ -20,7 +21,9 @@ def test_ashare_data_manager_sync_writes_all_datasets(tmp_path):
     config = AShareDataConfig(provider="sample", data_dir=tmp_path)
     result = AShareDataManager(config).sync()
 
-    assert [dataset.dataset for dataset in result.datasets] == EXPECTED_DATASETS
+    names = [dataset.dataset for dataset in result.datasets]
+    assert names == list(FULL_RESEARCH_DATASETS)
+    assert set(names) >= set(EXPECTED_CORE_DATASETS)
     for dataset in result.datasets:
         path = Path(dataset.path)
         assert path.is_relative_to(tmp_path)

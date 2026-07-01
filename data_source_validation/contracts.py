@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from data_pipeline.ashare.dataset_registry import DATASET_DEFINITIONS
 from data_pipeline.ashare.storage import DATASET_PRIMARY_KEYS
 
 
@@ -121,6 +122,18 @@ DATASET_CONTRACTS: dict[str, DatasetContract] = {
         primary_key=list(DATASET_PRIMARY_KEYS["corporate_actions"]),
     ),
 }
+
+for _dataset, _definition in DATASET_DEFINITIONS.items():
+    DATASET_CONTRACTS.setdefault(
+        _dataset,
+        DatasetContract(
+            dataset=_dataset,
+            api_name=_definition.api_name,
+            request_fields=list(_definition.fields),
+            local_fields=list(_definition.fields),
+            primary_key=list(DATASET_PRIMARY_KEYS[_dataset]),
+        ),
+    )
 
 
 def contracts_for_datasets(datasets: list[str] | None = None) -> dict[str, DatasetContract]:

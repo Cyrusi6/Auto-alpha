@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from data_pipeline.ashare.dataset_registry import DATASET_DEFINITIONS
+
 from .models import DatasetAvailabilityTiming, PITDatasetContract
 
 
@@ -156,6 +158,36 @@ PIT_DATASET_CONTRACTS: dict[str, PITDatasetContract] = {
         point_in_time_safe_by_default=False,
     ),
 }
+
+for _dataset, _definition in DATASET_DEFINITIONS.items():
+    if _dataset in PIT_DATASET_CONTRACTS:
+        continue
+    _timing = DatasetAvailabilityTiming.unknown
+    if _definition.availability_date_field == "ann_date":
+        _timing = DatasetAvailabilityTiming.announced_date
+    elif _definition.date_field == "trade_date":
+        _timing = DatasetAvailabilityTiming.after_market_close
+    elif _definition.effective_date_field:
+        _timing = DatasetAvailabilityTiming.effective_date
+    _required = sorted(
+        {
+            *list(_definition.primary_key),
+            *[field for field in (_definition.date_field, _definition.availability_date_field, _definition.effective_date_field) if field],
+        }
+    )
+    PIT_DATASET_CONTRACTS[_dataset] = PITDatasetContract(
+        dataset=_dataset,
+        date_field=_definition.date_field,
+        entity_field="ts_code" if "ts_code" in _definition.fields else ("index_code" if "index_code" in _definition.fields else None),
+        availability_date_field=_definition.availability_date_field,
+        effective_date_field=_definition.effective_date_field,
+        required_fields=_required,
+        max_allowed_lag_days=None,
+        timing=_timing,
+        allow_forward_fill=_definition.date_field != "trade_date",
+        point_in_time_safe_by_default=bool(_definition.pit_safe),
+        notes="weak_pit: publication timing is uncertain and requires policy review." if _definition.weak_pit else "",
+    )
 
 
 def contracts_for_datasets(datasets: list[str] | None = None) -> dict[str, PITDatasetContract]:

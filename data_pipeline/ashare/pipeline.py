@@ -5,19 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .config import AShareDataConfig
+from .dataset_registry import FULL_RESEARCH_DATASETS, dataset_description
 
 
-ASHARE_DATASETS = (
-    "securities",
-    "trade_calendar",
-    "daily_bars",
-    "daily_basic",
-    "financial_features",
-    "daily_limits",
-    "adjustment_factors",
-    "index_members",
-    "corporate_actions",
-)
+ASHARE_DATASETS = FULL_RESEARCH_DATASETS
 
 
 @dataclass(frozen=True)
@@ -59,22 +50,11 @@ class PipelinePlan:
 
 
 def build_pipeline_plan(config: AShareDataConfig) -> PipelinePlan:
-    dataset_descriptions = {
-        "securities": "Listed A-share securities.",
-        "trade_calendar": "Exchange trading calendar.",
-        "daily_bars": "Daily price and volume bars.",
-        "daily_basic": "Daily market indicators.",
-        "financial_features": "Financial features aligned by announcement date.",
-        "daily_limits": "Daily limit up/down prices.",
-        "adjustment_factors": "Daily adjustment factors.",
-        "index_members": "Index constituent weights.",
-        "corporate_actions": "Cash dividend and stock distribution events.",
-    }
     datasets = [
         DatasetPlan(
             name=name,
             target=str(config.data_dir / name / "records.jsonl"),
-            description=dataset_descriptions[name],
+            description=dataset_description(name),
         )
         for name in ASHARE_DATASETS
     ]

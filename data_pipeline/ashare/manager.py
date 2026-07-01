@@ -122,8 +122,7 @@ class AShareDataManager:
         else:
             write_results = []
             for dataset in selected:
-                fetcher = getattr(self.provider, f"fetch_{dataset}")
-                records = fetcher(self.config)
+                records = self._fetch_dataset_direct(dataset)
                 write_results.append(self.storage.write_dataset(dataset, records, mode=mode))
 
         manifest = self.storage.write_manifest(self.config, write_results)
@@ -165,13 +164,23 @@ class AShareDataManager:
 
         stats_path: str | None = None
         if write_stats:
-            stats_path = str(write_dataset_stats(compute_all_dataset_stats(self.storage), self.storage.data_dir / "dataset_stats.json"))
+            stats_path = str(write_dataset_stats(compute_all_dataset_stats(self.storage, selected), self.storage.data_dir / "dataset_stats.json"))
 
         quality_report_path: str | None = None
         quality_summary: dict[str, Any] | None = None
         has_errors = False
         if validate:
-            report = validate_all_datasets(self.storage)
+            validation_datasets = selected
+            if fail_on_quality_error:
+                validation_datasets = sorted(
+                    set(selected)
+                    | {
+                        dataset
+                        for dataset in ASHARE_DATASETS
+                        if self.storage.dataset_exists(dataset)
+                    }
+                )
+            report = validate_all_datasets(self.storage, validation_datasets)
             target_report_path = self.storage.data_dir / "quality_report.json"
             quality_report_path = str(write_quality_report(report, target_report_path))
             report_payload = report.to_dict()
@@ -314,7 +323,12 @@ class AShareDataManager:
         if overrides:
             job_config = replace(self.config, **overrides)
 
-        fetcher = getattr(self.provider, f"fetch_{job.dataset}")
+        fetcher = getattr(self.provider, f"fetch_{job.dataset}", None)
+        if fetcher is None:
+            generic = getattr(self.provider, "fetch_generic_dataset", None)
+            if generic is None:
+                raise AttributeError(f"provider does not support dataset: {job.dataset}")
+            fetcher = lambda cfg: generic(job.dataset, cfg)
         started_at = utc_now()
         started = time.perf_counter()
         records: list[object] = []
@@ -345,6 +359,15 @@ class AShareDataManager:
                         duration_seconds=max(0.0, time.perf_counter() - started),
                     )
                 )
+
+    def _fetch_dataset_direct(self, dataset: str) -> list[object]:
+        fetcher = getattr(self.provider, f"fetch_{dataset}", None)
+        if fetcher is not None:
+            return list(fetcher(self.config))
+        generic = getattr(self.provider, "fetch_generic_dataset", None)
+        if generic is not None:
+            return list(generic(dataset, self.config))
+        raise AttributeError(f"provider does not support dataset: {dataset}")
 
 
 def sync_ashare_datasets(

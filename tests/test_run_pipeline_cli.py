@@ -2,10 +2,11 @@ import json
 from pathlib import Path
 
 from data_pipeline import run_pipeline
+from data_pipeline.ashare.dataset_registry import FULL_RESEARCH_DATASETS
 from data_pipeline.ashare import LocalAshareStorage
 from data_pipeline.ashare.providers.sample import SampleAShareDataProvider
 
-EXPECTED_DATASETS = [
+EXPECTED_CORE_DATASETS = [
     "securities",
     "trade_calendar",
     "daily_bars",
@@ -62,7 +63,9 @@ def test_run_pipeline_sync_sample_writes_local_files(tmp_path, capsys):
     assert result == 0
     payload = json.loads(captured.out)
     assert payload["provider"] == "sample"
-    assert [dataset["dataset"] for dataset in payload["datasets"]] == EXPECTED_DATASETS
+    names = [dataset["dataset"] for dataset in payload["datasets"]]
+    assert names == list(FULL_RESEARCH_DATASETS)
+    assert set(names) >= set(EXPECTED_CORE_DATASETS)
     for dataset in payload["datasets"]:
         assert Path(dataset["path"]).is_relative_to(tmp_path)
         assert Path(dataset["path"]).exists()
@@ -191,7 +194,9 @@ def test_run_pipeline_sync_tushare_with_fake_provider_writes_local_files(
     assert result == 0
     payload = json.loads(captured.out)
     assert payload["provider"] == "tushare"
-    assert [dataset["dataset"] for dataset in payload["datasets"]] == EXPECTED_DATASETS
+    names = [dataset["dataset"] for dataset in payload["datasets"]]
+    assert names == list(FULL_RESEARCH_DATASETS)
+    assert set(names) >= set(EXPECTED_CORE_DATASETS)
     for dataset in payload["datasets"]:
         assert Path(dataset["path"]).is_relative_to(tmp_path)
         assert Path(dataset["path"]).exists()

@@ -11,6 +11,7 @@ from typing import Sequence
 
 from artifact_schema.writer import write_json_artifact
 from data_pipeline.ashare.config import AShareDataConfig
+from data_pipeline.ashare.dataset_registry import TRADE_DAY_DATASETS, TS_CODE_SPLIT_DATASETS
 from data_pipeline.ashare.pipeline import ASHARE_DATASETS
 from data_pipeline.ashare.sync_plan import build_sync_plan
 
@@ -21,7 +22,7 @@ TRADE_DAY_WINDOWED_DATASETS = {
     "daily_basic",
     "daily_limits",
     "adjustment_factors",
-}
+} | set(TRADE_DAY_DATASETS)
 
 
 def utc_now() -> str:
@@ -41,6 +42,7 @@ def build_backfill_plan(
     trade_dates: Sequence[str] | None = None,
     trade_day_datasets: Sequence[str] | None = None,
     financial_ts_codes: Sequence[str] | None = None,
+    ts_code_split_datasets: Sequence[str] | None = None,
     max_requests: int | None = None,
     universe_name: str | None = None,
 ) -> BackfillPlan:
@@ -57,9 +59,10 @@ def build_backfill_plan(
     filtered_trade_dates = sorted({str(date) for date in (trade_dates or []) if str(date)})
     use_trade_days_for = set(trade_day_datasets or TRADE_DAY_WINDOWED_DATASETS)
     financial_codes = sorted({str(code).strip() for code in (financial_ts_codes or []) if str(code).strip()})
+    split_datasets = set(ts_code_split_datasets or (TS_CODE_SPLIT_DATASETS if financial_codes else ()))
     sync_jobs = []
     for dataset in selected:
-        if dataset == "financial_features" and financial_codes:
+        if dataset in split_datasets and financial_codes:
             continue
         dataset_trade_dates = filtered_trade_dates if dataset in use_trade_days_for and filtered_trade_dates else None
         if per_dataset_chunks:
@@ -96,18 +99,19 @@ def build_backfill_plan(
             end_date=scoped_config.end_date,
         ).jobs
     jobs: list[BackfillJob] = []
-    if "financial_features" in selected and financial_codes:
-        for ts_code in financial_codes:
-            jobs.append(
-                _make_backfill_job(
-                    provider=scoped_config.provider,
-                    dataset="financial_features",
-                    start_date=scoped_config.start_date,
-                    end_date=scoped_config.end_date,
-                    ts_code=ts_code,
-                    metadata={"split": "ts_code"},
+    for dataset in selected:
+        if dataset in split_datasets and financial_codes:
+            for ts_code in financial_codes:
+                jobs.append(
+                    _make_backfill_job(
+                        provider=scoped_config.provider,
+                        dataset=dataset,
+                        start_date=scoped_config.start_date,
+                        end_date=scoped_config.end_date,
+                        ts_code=ts_code,
+                        metadata={"split": "ts_code"},
+                    )
                 )
-            )
     for job in sync_jobs:
         if job.dataset == "securities" and statuses:
             for status in statuses:
@@ -149,6 +153,7 @@ def build_backfill_plan(
             "trade_day_datasets": sorted(use_trade_days_for),
             "financial_split": "ts_code" if financial_codes else None,
             "financial_ts_code_count": len(financial_codes),
+            "ts_code_split_datasets": sorted(split_datasets),
         },
     )
     payload = {

@@ -128,7 +128,7 @@ def run_data_source_smoke(
             )
             if max_records_per_dataset is not None:
                 _truncate_datasets(storage, selected, max_records_per_dataset)
-            quality_by_dataset = _quality_by_dataset(storage) if validate else {}
+            quality_by_dataset = _quality_by_dataset(storage, selected) if validate else {}
             dataset_results = [
                 DatasetSmokeResult(
                     dataset=item.dataset,
@@ -167,10 +167,10 @@ def run_data_source_smoke(
         ]
 
     if validate and storage.data_dir.exists():
-        quality_report = validate_all_datasets(storage)
+        quality_report = validate_all_datasets(storage, selected)
         write_quality_report(quality_report, storage.data_dir / "quality_report.json")
     if stats and storage.data_dir.exists():
-        write_dataset_stats(compute_all_dataset_stats(storage), storage.data_dir / "dataset_stats.json")
+        write_dataset_stats(compute_all_dataset_stats(storage, selected), storage.data_dir / "dataset_stats.json")
 
     field_coverage = analyze_field_coverage(config.data_dir, selected)
     quality_summary = _read_json(storage.data_dir / "quality_report.json")
@@ -307,8 +307,8 @@ def _truncate_datasets(storage: LocalAshareStorage, datasets: list[str], limit: 
             storage.write_dataset(dataset, records[:limit], mode="overwrite")
 
 
-def _quality_by_dataset(storage: LocalAshareStorage) -> dict[str, dict]:
-    report = validate_all_datasets(storage).to_dict()
+def _quality_by_dataset(storage: LocalAshareStorage, datasets: list[str]) -> dict[str, dict]:
+    report = validate_all_datasets(storage, datasets).to_dict()
     return {item["dataset"]: item for item in report.get("datasets", [])}
 
 

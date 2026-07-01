@@ -325,6 +325,10 @@ It writes `monitoring_report.json`, `monitoring_report.md`, and `alerts.jsonl`.
 
 Data-source smoke writes `data_source_smoke_report.json/md`, `provider_probe.json`, `field_coverage.json`, `audit_summary.json`, `incremental_recovery_report.json`, `baseline_compare_summary.json`, and `dataset_contracts.json`. Default tests use sample and fake Tushare clients only; a real Tushare token is used only when an operator explicitly passes `--allow-network --require-token`.
 
+The raw-data registry now includes the core daily set plus expanded index, industry, security-status, full financial statement, money-flow, margin, trading-event, holder, pledge, repurchase, share-unlock, and northbound holding datasets. Each expanded dataset has a Tushare API name, fields, primary key, date/availability metadata, chunk strategy, storage dedup key, field-coverage contract, statistics/fingerprint support, and PIT contract. Weak publication-timing datasets are marked `weak_pit`.
+
+`real_data_ops` exposes batch profiles for `core_daily`, `index_industry_status`, `financial_statements`, `flow_margin_trading`, `holder_event_risk`, and `full_research_data`. Real raw-first backfills stay behind explicit local gates: `--env-file .env.local --allow-network --require-token --rate-limit-per-minute 150 --resume --cache --audit --mode append`; use `--direct-append`, `--trade-days-only`, and `--financial-by-ts-code` / `--ts-code-split-datasets` for high-throughput capture and provider-required single-security requests.
+
 ## Point-In-Time And Leakage Governance
 
 `point_in_time/` owns the as-of data governance layer. It defines availability contracts for current local datasets, builds `security_lifecycle.jsonl`, produces `active_security_mask.jsonl`, validates financial announcement dates, flags current-only security masters, and writes PIT plus survivorship reports. Daily end-of-day fields are explicitly governed by `feature_cutoff_mode`; `next_trade_day_open` prevents same-day after-close features from being considered available for same-day open decisions.

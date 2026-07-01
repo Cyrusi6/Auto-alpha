@@ -53,6 +53,12 @@ def _add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--stats", action="store_true")
     parser.add_argument("--compact", action="store_true")
     parser.add_argument("--snapshot", action="store_true")
+    parser.add_argument("--direct-append", action="store_true")
+    parser.add_argument("--trade-days-only", action="store_true")
+    parser.add_argument("--trade-day-datasets")
+    parser.add_argument("--financial-by-ts-code", action="store_true")
+    parser.add_argument("--financial-ts-codes")
+    parser.add_argument("--ts-code-split-datasets")
     parser.add_argument("--build-matrix", action="store_true")
     parser.add_argument("--refresh-matrix", action="store_true")
     parser.add_argument("--allow-network", action="store_true")
@@ -128,6 +134,12 @@ def main(argv: list[str] | None = None) -> int:
         stats=args.stats or args.command == "smoke",
         compact=args.compact,
         snapshot=args.snapshot,
+        direct_append=args.direct_append,
+        trade_days_only=args.trade_days_only,
+        trade_day_datasets=_csv(args.trade_day_datasets),
+        financial_by_ts_code=args.financial_by_ts_code,
+        financial_ts_codes=_csv_or_file(args.financial_ts_codes),
+        ts_code_split_datasets=_csv(args.ts_code_split_datasets),
         build_matrix=args.build_matrix or args.command == "smoke",
         refresh_matrix=args.refresh_matrix or args.command == "smoke",
         allow_network=args.allow_network,
@@ -146,6 +158,15 @@ def main(argv: list[str] | None = None) -> int:
 
 def _csv(value: str | None) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()] if value else []
+
+
+def _csv_or_file(value: str | None) -> list[str]:
+    if not value:
+        return []
+    path = Path(value)
+    if path.exists():
+        return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return _csv(value)
 
 
 if __name__ == "__main__":

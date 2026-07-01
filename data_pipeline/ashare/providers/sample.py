@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ..config import AShareDataConfig
+from ..dataset_registry import DATASET_DEFINITIONS, AShareDatasetDefinition
 from ..schema import (
     AdjustmentFactor,
     DailyBar,
@@ -349,3 +350,61 @@ class SampleAShareDataProvider:
                 raw_status="预案",
             ),
         ]
+
+    def fetch_generic_dataset(self, dataset: str, config: AShareDataConfig) -> list[dict[str, object]]:
+        definition = DATASET_DEFINITIONS[dataset]
+        if definition.index_param:
+            return [
+                _generic_sample_row(definition, config, index_code=index_code)
+                for index_code in config.index_codes
+            ]
+        return [_generic_sample_row(definition, config)]
+
+
+def _generic_sample_row(
+    definition: AShareDatasetDefinition,
+    config: AShareDataConfig,
+    index_code: str | None = None,
+) -> dict[str, object]:
+    row: dict[str, object] = {}
+    for field in definition.fields:
+        row[field] = _sample_value(field, definition, config, index_code=index_code)
+    return row
+
+
+def _sample_value(
+    field: str,
+    definition: AShareDatasetDefinition,
+    config: AShareDataConfig,
+    index_code: str | None = None,
+) -> object:
+    date = config.start_date
+    if field in {"ts_code", "con_code"}:
+        if definition.dataset == "index_basic":
+            return "000300.SH"
+        return index_code if definition.index_param == "ts_code" and index_code else "000001.SZ"
+    if field in {"index_code", "l1_code"}:
+        return index_code or "801010.SI"
+    if field in {"l2_code", "l3_code", "industry_code"}:
+        return {"l2_code": "801011.SI", "l3_code": "851011.SI"}.get(field, "801010.SI")
+    if field in {"trade_date", "cal_date", "suspend_date", "ann_date", "f_ann_date", "first_ann_date", "actual_date", "modify_date", "ipo_date", "issue_date", "begin_date", "close_date", "start_date", "in_date", "float_date", "list_date"}:
+        return date
+    if field in {"end_date", "report_period", "pre_date", "out_date", "resume_date", "exp_date", "release_date"}:
+        return "20231231"
+    if field in {"name", "fullname", "holder_name", "buyer", "seller", "exalter", "publisher", "audit_agency", "audit_sign", "pledgor"}:
+        return "样例"
+    if field in {"market", "exchange", "exchange_id"}:
+        return "SSE"
+    if field in {"src"}:
+        return "SW2021"
+    if field in {"level"}:
+        return "L1"
+    if field in {"industry_name", "l1_name", "l2_name", "l3_name", "bz_item"}:
+        return "银行"
+    if field in {"is_new", "is_pub", "is_audit", "is_release", "update_flag"}:
+        return "1"
+    if field in {"report_type", "comp_type", "end_type", "curr_type", "type", "proc", "side", "reason", "change_reason", "suspend_reason", "reason_type", "holder_type", "in_de", "share_type", "category", "index_type", "weight_rule", "audit_result", "remark", "summary", "perf_summary", "desc"}:
+        return "样例"
+    if field in {"base_date"}:
+        return "20041231"
+    return 1.0

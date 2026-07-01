@@ -10,19 +10,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .config import AShareDataConfig
-
-
-DATASET_PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
-    "securities": ("ts_code",),
-    "trade_calendar": ("trade_date",),
-    "daily_bars": ("ts_code", "trade_date"),
-    "daily_basic": ("ts_code", "trade_date"),
-    "financial_features": ("ts_code", "report_period", "announce_date"),
-    "daily_limits": ("ts_code", "trade_date"),
-    "adjustment_factors": ("ts_code", "trade_date"),
-    "index_members": ("index_code", "ts_code", "trade_date"),
-    "corporate_actions": ("ts_code", "ann_date", "end_date", "ex_date", "div_proc"),
-}
+from .dataset_registry import DATASET_PRIMARY_KEYS
 
 
 @dataclass(frozen=True)

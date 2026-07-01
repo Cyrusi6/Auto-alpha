@@ -1994,3 +1994,18 @@
 - Added `--trade-days-only` planning for high-volume daily datasets, using local `trade_calendar` records to skip weekends and market holidays while preserving deterministic job ids for completed trade-day jobs.
 - Added `--financial-by-ts-code` / `--financial-ts-codes` planning and a `ts_code` config override for Tushare `fina_indicator`, allowing financial feature backfills to satisfy providers that require single-security requests.
 - These options are opt-in and leave existing sample/offline/default backfill behavior unchanged.
+
+## Task 042-C - Expanded Real Raw Data Collection Coverage
+
+- Added `data_pipeline/ashare/dataset_registry.py` as the governed dataset registry for the expanded real-data universe. It defines local dataset names, Tushare API names, request fields, primary keys, date/availability fields, chunk strategies, recommended ts-code split behavior, expanded index codes, and `weak_pit` flags.
+- Expanded raw dataset support beyond the core 9 datasets to include index basics/daily bars/daily valuation, industry classification and members, suspensions, name changes, new shares, full income/balance/cashflow statements, forecasts, express reports, disclosure calendars, audit opinions, main business segments, money flow, margin summary/detail, top lists, institution seats, block trades, holder counts/trades/top holders, pledge detail/statistics, repurchases, share unlocks, and northbound holdings.
+- Tushare provider now keeps the existing typed core mappings and adds a generic dataset fetch path for registry-backed datasets. Sample and fake Tushare providers can emit deterministic offline rows for every expanded dataset.
+- Storage primary keys, sync planning, production chunk strategies, quality checks, dataset statistics, data-source field coverage contracts, and point-in-time contracts now recognize all expanded datasets. Weak publication-timing datasets are marked as `weak_pit` instead of being treated as automatically PIT-safe.
+- `data_backfill` and `real_data_ops` now expose `--ts-code-split-datasets`, and `real_data_ops` exposes `--direct-append`, `--trade-days-only`, `--financial-by-ts-code`, and `--financial-ts-codes` for high-throughput raw-first acquisition.
+- Added real-data profiles: `core_daily`, `index_industry_status`, `financial_statements`, `flow_margin_trading`, `holder_event_risk`, and `full_research_data`, with the expanded 12-code index list required for production research data.
+- Added focused offline tests and ran the fake Tushare full-research-data smoke path over all 40 datasets without network access.
+
+### Follow-Ups
+- Continue the current core online backfill to completion before launching expanded real-data groups, so request budget and API throttling stay controlled.
+- Run financial statement and holder/event groups with ts-code splitting when the provider requires single-security requests.
+- After raw capture, compact, validate, snapshot/freeze, and refresh matrix caches from the governed data lake; never commit real data or `.env.local`.

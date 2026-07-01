@@ -163,10 +163,10 @@ def execute_backfill_plan(
             snapshot_path = str(paths[0].parents[1])
     quality_path: str | None = None
     if validate:
-        quality_path = str(write_quality_report(validate_all_datasets(storage), Path(data_dir) / "quality_report.json"))
+        quality_path = str(write_quality_report(validate_all_datasets(storage, plan.scope.datasets), Path(data_dir) / "quality_report.json"))
     stats_path: str | None = None
     if write_stats:
-        stats_path = str(write_dataset_stats(compute_all_dataset_stats(storage), Path(data_dir) / "dataset_stats.json"))
+        stats_path = str(write_dataset_stats(compute_all_dataset_stats(storage, plan.scope.datasets), Path(data_dir) / "dataset_stats.json"))
     coverage = analyze_backfill_coverage(data_dir, plan)
     coverage_paths = write_backfill_coverage(coverage, root)
     status = "blocked" if blocked else ("failed" if any(job.status == BackfillJobStatus.failed for job in jobs) else "success")
@@ -263,7 +263,12 @@ def _fetch_job(provider: Any, config: AShareDataConfig, job: BackfillJob, cache:
     )
     if hasattr(provider, "fetch_dataset_job"):
         return list(provider.fetch_dataset_job(sync_job, job_config, cache=cache, auditor=auditor))
-    fetcher = getattr(provider, f"fetch_{job.dataset}")
+    fetcher = getattr(provider, f"fetch_{job.dataset}", None)
+    if fetcher is None:
+        generic = getattr(provider, "fetch_generic_dataset", None)
+        if generic is None:
+            raise AttributeError(f"provider does not support dataset: {job.dataset}")
+        fetcher = lambda cfg: generic(job.dataset, cfg)
     return list(fetcher(job_config))
 
 

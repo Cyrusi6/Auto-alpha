@@ -9,18 +9,9 @@ from datetime import datetime, timedelta
 from typing import Sequence
 
 from .config import AShareDataConfig
+from .dataset_registry import INDEX_CODE_DATASETS, WINDOWED_DATASETS
 from .pipeline import ASHARE_DATASETS
 from .validators import is_valid_yyyymmdd
-
-
-WINDOWED_DATASETS = {
-    "daily_bars",
-    "daily_basic",
-    "financial_features",
-    "daily_limits",
-    "adjustment_factors",
-    "corporate_actions",
-}
 
 
 @dataclass(frozen=True)
@@ -92,7 +83,7 @@ def build_sync_plan(
             jobs.append(_make_job(config.provider, dataset))
         elif dataset == "trade_calendar":
             jobs.append(_make_job(config.provider, dataset, plan_start, plan_end))
-        elif dataset == "index_members":
+        elif dataset in INDEX_CODE_DATASETS:
             for index_code in codes:
                 for window_start, window_end in windows:
                     jobs.append(

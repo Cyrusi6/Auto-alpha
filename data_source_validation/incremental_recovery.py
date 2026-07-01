@@ -69,9 +69,9 @@ def run_incremental_recovery_check(
             snapshot_name="incremental_recovery",
             write_stats=True,
         )
-        report = validate_all_datasets(storage)
+        report = validate_all_datasets(storage, selected)
         write_quality_report(report, storage.data_dir / "quality_report.json")
-        write_dataset_stats(compute_all_dataset_stats(storage), storage.data_dir / "dataset_stats.json")
+        write_dataset_stats(compute_all_dataset_stats(storage, selected), storage.data_dir / "dataset_stats.json")
         duplicate_counts_after = {dataset: _duplicate_count(storage, dataset) for dataset in selected}
     except Exception as exc:  # smoke reports should capture recovery failures structurally
         errors.append(str(exc))

@@ -10,6 +10,7 @@ from typing import Any
 from ..audit import ApiRequestAuditEntry, ApiRequestAuditor, utc_now
 from ..cache import TushareResponseCache
 from ..config import AShareDataConfig
+from ..dataset_registry import DATASET_DEFINITIONS, AShareDatasetDefinition
 from ..rate_limit import SimpleRateLimiter
 from ..schema import (
     AdjustmentFactor,
@@ -48,7 +49,11 @@ class TushareAShareDataProvider:
             auditor=auditor,
         )
         provider = TushareAShareDataProvider(client=client)
-        fetcher = getattr(provider, f"fetch_{job.dataset}")
+        fetcher = getattr(provider, f"fetch_{job.dataset}", None)
+        if fetcher is None and job.dataset in DATASET_DEFINITIONS:
+            return provider.fetch_generic_dataset(job.dataset, job_config)
+        if fetcher is None:
+            raise ValueError(f"unsupported Tushare dataset: {job.dataset}")
         return fetcher(job_config)
 
     def fetch_securities(self, config: AShareDataConfig) -> list[Security]:
@@ -336,6 +341,15 @@ class TushareAShareDataProvider:
                 )
         return records
 
+    def fetch_generic_dataset(self, dataset: str, config: AShareDataConfig) -> list[dict[str, Any]]:
+        definition = DATASET_DEFINITIONS[dataset]
+        records: list[dict[str, Any]] = []
+        for params in _generic_param_batches(definition, config):
+            rows = self._post(config, definition.api_name, params=params, fields=definition.field_string)
+            for row in rows:
+                records.append(_normalise_generic_row(row, definition))
+        return records
+
     def _post(
         self,
         config: AShareDataConfig,
@@ -352,6 +366,46 @@ def _date_params(config: AShareDataConfig, **extra: str) -> dict[str, str]:
     if config.end_date:
         params["end_date"] = config.end_date
     return params
+
+
+def _generic_param_batches(
+    definition: AShareDatasetDefinition,
+    config: AShareDataConfig,
+) -> list[dict[str, Any]]:
+    base: dict[str, Any] = dict(definition.default_params or {})
+    if definition.ts_code_split_recommended and config.ts_code:
+        base["ts_code"] = config.ts_code
+    date_batches = _generic_date_batches(definition, config)
+    index_values = list(config.index_codes) if definition.index_param else [None]
+    batches: list[dict[str, Any]] = []
+    for date_params in date_batches:
+        for index_code in index_values:
+            params = {**base, **date_params}
+            if definition.index_param and index_code:
+                params[definition.index_param] = index_code
+            batches.append(params)
+    return batches or [base]
+
+
+def _generic_date_batches(
+    definition: AShareDatasetDefinition,
+    config: AShareDataConfig,
+) -> list[dict[str, Any]]:
+    if definition.date_param_mode == "none":
+        return [{}]
+    if definition.date_param_mode == "single":
+        param_name = definition.single_date_param or definition.date_field or "trade_date"
+        end_date = config.end_date or config.start_date
+        return [{param_name: value} for value in _date_range(config.start_date, end_date)]
+    return [_date_params(config)]
+
+
+def _normalise_generic_row(row: dict[str, Any], definition: AShareDatasetDefinition) -> dict[str, Any]:
+    payload = {field: _clean(row.get(field)) for field in definition.fields}
+    for key, value in row.items():
+        if key not in payload:
+            payload[key] = _clean(value)
+    return payload
 
 
 def _date_range(start_date: str, end_date: str) -> list[str]:
