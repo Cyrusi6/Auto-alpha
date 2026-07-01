@@ -1988,3 +1988,9 @@
 - Backfill execution now uses the configured cache directory for Tushare response cache files, preserving data/cache separation for long production runs.
 - Production append writes now keep per-dataset primary-key sets and append only unseen records, avoiding per-job full dataset rewrites while preserving append/resume deduplication semantics.
 - Error-path audit records now retain the latest rate-limit event when provider calls fail, which keeps long-run request pacing diagnostics intact.
+
+### Raw Backfill Fast Path
+- Added `data_backfill.run_backfill --direct-append` so raw-first online backfills can append provider records directly to governed JSONL storage without writing and re-reading per-job staging payloads.
+- Added `--trade-days-only` planning for high-volume daily datasets, using local `trade_calendar` records to skip weekends and market holidays while preserving deterministic job ids for completed trade-day jobs.
+- Added `--financial-by-ts-code` / `--financial-ts-codes` planning and a `ts_code` config override for Tushare `fina_indicator`, allowing financial feature backfills to satisfy providers that require single-security requests.
+- These options are opt-in and leave existing sample/offline/default backfill behavior unchanged.

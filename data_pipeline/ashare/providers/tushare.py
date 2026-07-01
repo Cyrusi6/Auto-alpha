@@ -172,10 +172,13 @@ class TushareAShareDataProvider:
         return records
 
     def fetch_financial_features(self, config: AShareDataConfig) -> list[FinancialFeature]:
+        params = _date_params(config)
+        if config.ts_code:
+            params["ts_code"] = config.ts_code
         rows = self._post(
             config,
             "fina_indicator",
-            params=_date_params(config),
+            params=params,
             fields=(
                 "ts_code,end_date,ann_date,roe,roa,grossprofit_margin,or_yoy,"
                 "netprofit_yoy,debt_to_assets,ocfps"

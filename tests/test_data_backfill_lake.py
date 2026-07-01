@@ -2,8 +2,10 @@ import json
 from pathlib import Path
 
 from artifact_schema.run_validate import main as validate_artifacts_main
+from data_backfill.planner import build_backfill_plan
 from data_backfill.run_backfill import main as backfill_main
 from data_lake.run_lake import main as lake_main
+from data_pipeline.ashare import AShareDataConfig
 from dashboard.config import DashboardConfig
 from dashboard.data_service import AshareDashboardService
 
@@ -50,6 +52,59 @@ def test_backfill_execute_writes_governed_artifacts(tmp_path, capsys):
     assert (output_dir / "backfill_coverage_report.json").exists()
     manifest = json.loads((data_dir / "manifest.json").read_text(encoding="utf-8"))
     assert {item["dataset"] for item in manifest["datasets"]} >= {"securities", "daily_bars", "index_members"}
+
+
+def test_backfill_direct_append_skips_staging_records(tmp_path, capsys):
+    data_dir = tmp_path / "data"
+    output_dir = tmp_path / "backfill"
+
+    assert backfill_main(
+        [
+            "execute",
+            "--provider",
+            "sample",
+            "--data-dir",
+            str(data_dir),
+            "--output-dir",
+            str(output_dir),
+            "--start-date",
+            "20240102",
+            "--end-date",
+            "20240104",
+            "--datasets",
+            "daily_bars",
+            "--direct-append",
+        ]
+    ) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["status"] == "success"
+    assert payload["summary"]["direct_append"] is True
+    assert not (output_dir / "staging" / "jobs").exists()
+    assert (data_dir / "daily_bars" / "records.jsonl").exists()
+
+
+def test_backfill_plan_supports_trade_days_and_financial_ts_code_split(tmp_path):
+    config = AShareDataConfig(
+        provider="tushare",
+        tushare_token="test-token",
+        data_dir=tmp_path,
+        start_date="20240101",
+        end_date="20240105",
+    )
+
+    plan = build_backfill_plan(
+        config,
+        datasets=["daily_limits", "financial_features"],
+        chunk_days=1,
+        trade_dates=["20240102", "20240103"],
+        financial_ts_codes=["000001.SZ", "000002.SZ"],
+    )
+
+    daily_jobs = [job for job in plan.jobs if job.dataset == "daily_limits"]
+    financial_jobs = [job for job in plan.jobs if job.dataset == "financial_features"]
+    assert [(job.start_date, job.end_date) for job in daily_jobs] == [("20240102", "20240102"), ("20240103", "20240103")]
+    assert {job.ts_code for job in financial_jobs} == {"000001.SZ", "000002.SZ"}
 
 
 def test_data_lake_version_freeze_lineage_and_schema_validation(tmp_path, capsys):

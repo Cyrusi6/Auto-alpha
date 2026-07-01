@@ -40,6 +40,7 @@ class BackfillJob:
     start_date: str | None = None
     end_date: str | None = None
     index_code: str | None = None
+    ts_code: str | None = None
     list_status: str | None = None
     estimated_requests: int = 1
     request_budget_group: str = "default"

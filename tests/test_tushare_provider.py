@@ -214,6 +214,24 @@ def test_tushare_provider_uses_expected_api_names_and_params():
     assert client.calls[8]["params"] == {"ex_date": "20240101"}
 
 
+def test_tushare_financial_features_can_use_ts_code_param():
+    client = FakeTushareClient()
+    provider = TushareAShareDataProvider(client=client)
+    config = AShareDataConfig(
+        provider="tushare",
+        tushare_token="test-token",
+        start_date="20240101",
+        end_date="20240103",
+        ts_code="000001.SZ",
+    )
+
+    records = provider.fetch_financial_features(config)
+
+    assert records
+    assert client.calls[-1]["api_name"] == "fina_indicator"
+    assert client.calls[-1]["params"]["ts_code"] == "000001.SZ"
+
+
 def test_factory_returns_tushare_provider():
     provider = create_ashare_provider(AShareDataConfig(provider="tushare"))
 

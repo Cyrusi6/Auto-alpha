@@ -54,6 +54,10 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--stats", action="store_true")
     parser.add_argument("--compact", action="store_true")
     parser.add_argument("--snapshot", action="store_true")
+    parser.add_argument("--direct-append", action="store_true")
+    parser.add_argument("--trade-days-only", action="store_true")
+    parser.add_argument("--financial-by-ts-code", action="store_true")
+    parser.add_argument("--financial-ts-codes")
     parser.add_argument("--allow-network", action="store_true")
     parser.add_argument("--require-token", action="store_true")
     parser.add_argument("--max-requests", type=int)
@@ -122,6 +126,7 @@ def main(argv: list[str] | None = None) -> int:
         write_stats=args.stats,
         compact=args.compact,
         snapshot=args.snapshot,
+        direct_append=args.direct_append,
         allow_network=args.allow_network,
         require_token=args.require_token,
         max_requests=args.max_requests,
@@ -165,6 +170,8 @@ def _load_or_build_plan(args: argparse.Namespace, config: AShareDataConfig, data
         chunk_days=args.chunk_days,
         chunk_strategy=args.chunk_strategy,
         dataset_chunk_days=_dataset_chunk_days(args),
+        trade_dates=_load_trade_dates(config.data_dir, config.start_date, config.end_date) if args.trade_days_only else None,
+        financial_ts_codes=_financial_ts_codes(args, config.data_dir) if args.financial_by_ts_code else None,
         max_requests=args.max_requests,
     )
 
@@ -173,6 +180,44 @@ def _dataset_chunk_days(args: argparse.Namespace) -> dict[str, int]:
     values = dataset_chunk_days_for_strategy(args.chunk_strategy, args.chunk_days)
     values.update(parse_dataset_chunk_days(args.dataset_chunk_days))
     return values
+
+
+def _load_trade_dates(data_dir: Path, start_date: str, end_date: str | None) -> list[str]:
+    path = data_dir / "trade_calendar" / "records.jsonl"
+    if not path.exists():
+        return []
+    end = end_date or start_date
+    values: list[str] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            trade_date = str(payload.get("trade_date") or "")
+            if start_date <= trade_date <= end and bool(payload.get("is_open")):
+                values.append(trade_date)
+    return sorted(set(values))
+
+
+def _financial_ts_codes(args: argparse.Namespace, data_dir: Path) -> list[str]:
+    if args.financial_ts_codes:
+        source = Path(args.financial_ts_codes)
+        if source.exists():
+            return [line.strip() for line in source.read_text(encoding="utf-8").splitlines() if line.strip()]
+        return [item.strip() for item in args.financial_ts_codes.split(",") if item.strip()]
+    path = data_dir / "securities" / "records.jsonl"
+    if not path.exists():
+        return []
+    codes: list[str] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            code = str(payload.get("ts_code") or "").strip()
+            if code:
+                codes.append(code)
+    return sorted(set(codes))
 
 
 if __name__ == "__main__":

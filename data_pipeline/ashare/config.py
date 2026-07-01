@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
-from .validators import is_valid_yyyymmdd
+from .validators import is_valid_ts_code, is_valid_yyyymmdd
 
 
 @dataclass(frozen=True)
@@ -25,6 +25,7 @@ class AShareDataConfig:
     adjust: str = "qfq"
     universe: str = "all_a"
     index_codes: tuple[str, ...] = ("000300.SH",)
+    ts_code: str | None = None
     security_list_statuses: tuple[str, ...] = ("L",)
     include_corporate_actions: bool = True
     corporate_action_query_date_field: str = "ex_date"
@@ -94,6 +95,10 @@ class AShareDataConfig:
         object.__setattr__(self, "index_codes", tuple(str(code).strip() for code in self.index_codes if str(code).strip()))
         if not self.index_codes:
             raise ValueError("index_codes must include at least one index code")
+        ts_code = None if self.ts_code is None else str(self.ts_code).strip()
+        if ts_code and not is_valid_ts_code(ts_code):
+            raise ValueError("ts_code must be a valid A-share code")
+        object.__setattr__(self, "ts_code", ts_code or None)
         statuses = tuple(str(status).strip().upper() for status in self.security_list_statuses if str(status).strip())
         if not statuses:
             raise ValueError("security_list_statuses must include at least one status")

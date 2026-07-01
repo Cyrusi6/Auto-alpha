@@ -67,6 +67,7 @@ def build_sync_plan(
     index_codes: Sequence[str] | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    trade_dates: Sequence[str] | None = None,
 ) -> SyncPlan:
     selected = list(ASHARE_DATASETS if datasets is None else datasets)
     unsupported = sorted(set(selected) - set(ASHARE_DATASETS))
@@ -84,7 +85,7 @@ def build_sync_plan(
     if not codes:
         raise ValueError("sync plan index_codes must include at least one code")
 
-    windows = split_date_windows(plan_start, plan_end, chunk_days)
+    windows = split_date_windows(plan_start, plan_end, chunk_days, trade_dates=trade_dates)
     jobs: list[SyncJob] = []
     for dataset in selected:
         if dataset == "securities":

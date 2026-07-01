@@ -27,6 +27,7 @@ from .planner import build_backfill_plan
 from .quota import evaluate_backfill_quota
 from .report import write_full_backfill_report
 from .staging import (
+    _to_jsonable,
     load_backfill_state,
     mark_job,
     quarantine_job,
@@ -63,6 +64,7 @@ def execute_backfill_plan(
     fail_fast: bool = False,
     fake_tushare_scenario: str | None = None,
     dry_run: bool = False,
+    direct_append: bool = False,
 ) -> BackfillRunReport:
     started = utc_now()
     root = Path(output_dir)
@@ -116,8 +118,12 @@ def execute_backfill_plan(
             continue
         try:
             records = _fetch_job(provider, config, job, cache=cache, auditor=auditor)
-            staging_records_path, _, record_count = write_staging_records(staging_root, job, records)
-            payloads = _read_jsonl(staging_records_path)
+            if direct_append:
+                staging_records_path = None
+                payloads = [_to_jsonable(record) for record in records]
+            else:
+                staging_records_path, _, record_count = write_staging_records(staging_root, job, records)
+                payloads = _read_jsonl(staging_records_path)
             written = _append_records_fast(storage, job.dataset, payloads, dataset_key_sets.get(job.dataset))
             dataset_counts[job.dataset] = dataset_counts.get(job.dataset, 0) + written
             done = replace(
@@ -125,7 +131,7 @@ def execute_backfill_plan(
                 status=BackfillJobStatus.success,
                 records=dataset_counts[job.dataset],
                 output_path=str(storage.dataset_path(job.dataset)),
-                staging_path=str(staging_records_path),
+                staging_path=str(staging_records_path) if staging_records_path is not None else None,
             )
             state = mark_job(state, done)
             save_backfill_state(state, target_state)
@@ -188,6 +194,7 @@ def execute_backfill_plan(
         },
         "dataset_chunk_strategy": plan.scope.metadata.get("chunk_strategy") if isinstance(plan.scope.metadata, dict) else None,
         "dataset_chunk_days": plan.scope.metadata.get("dataset_chunk_days") if isinstance(plan.scope.metadata, dict) else {},
+        "direct_append": direct_append,
     }
     report = BackfillRunReport(
         plan_id=plan.plan_id,
@@ -241,6 +248,8 @@ def _fetch_job(provider: Any, config: AShareDataConfig, job: BackfillJob, cache:
         overrides["end_date"] = job.end_date
     if job.index_code:
         overrides["index_codes"] = (job.index_code,)
+    if job.ts_code:
+        overrides["ts_code"] = job.ts_code
     if job.list_status:
         overrides["security_list_statuses"] = (job.list_status,)
     job_config = replace(config, **overrides) if overrides else config
