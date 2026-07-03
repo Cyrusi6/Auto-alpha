@@ -92,6 +92,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-regime-validation", action="store_true")
     parser.add_argument("--run-sensitivity-validation", action="store_true")
     parser.add_argument("--run-stress-backtest-validation", action="store_true")
+    parser.add_argument("--run-validation-campaign-store", action="store_true")
+    parser.add_argument("--validation-campaign-store-dir")
+    parser.add_argument("--validation-candidate-pool-path")
+    parser.add_argument("--validation-campaign-shard-count", type=int, default=1)
+    parser.add_argument("--validation-campaign-max-candidates", type=int, default=0)
+    parser.add_argument("--validation-campaign-top-k-certification", type=int, default=20)
+    parser.add_argument("--write-factor-certification-queue", action="store_true")
     parser.add_argument("--run-factor-certification", action="store_true")
     parser.add_argument("--factor-certification-dir")
     parser.add_argument("--certification-policy-path")
@@ -324,6 +331,13 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
         run_regime_validation=args.run_regime_validation,
         run_sensitivity_validation=args.run_sensitivity_validation,
         run_stress_backtest_validation=args.run_stress_backtest_validation,
+        run_validation_campaign_store=args.run_validation_campaign_store,
+        validation_campaign_store_dir=args.validation_campaign_store_dir,
+        validation_candidate_pool_path=args.validation_candidate_pool_path,
+        validation_campaign_shard_count=args.validation_campaign_shard_count,
+        validation_campaign_max_candidates=args.validation_campaign_max_candidates,
+        validation_campaign_top_k_certification=args.validation_campaign_top_k_certification,
+        write_factor_certification_queue=args.write_factor_certification_queue,
         run_factor_certification=args.run_factor_certification,
         factor_certification_dir=args.factor_certification_dir,
         certification_policy_path=args.certification_policy_path,

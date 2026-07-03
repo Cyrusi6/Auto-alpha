@@ -24,6 +24,8 @@ def create_experiment_plan(config: dict[str, Any]) -> ExperimentPlan:
     workflow = str(config.get("workflow") or "full_research_compute_smoke")
     if workflow in {"real_data_alpha_factory_large_plan", "real_data_alpha_factory_4gpu_template", "alpha_factory_campaign_warehouse_smoke"}:
         return _create_alpha_large_plan(config, output_dir, experiment_id, workflow)
+    if workflow in {"validation_campaign_plan", "validation_campaign_smoke", "real_data_validation_campaign_large_plan"}:
+        return _create_validation_large_plan(config, output_dir, experiment_id, workflow)
     shard_count = max(1, int(config.get("shard_count") or 1))
     formula_corpus_path = config.get("formula_corpus_path")
     shards = []
@@ -239,6 +241,110 @@ def _write_alpha_large_artifacts(plan: ExperimentPlan, output_dir: Path, resourc
     (output_dir / "alpha_large_campaign_plan.md").write_text(md, encoding="utf-8")
 
 
+def _create_validation_large_plan(config: dict[str, Any], output_dir: Path, experiment_id: str, workflow: str) -> ExperimentPlan:
+    readiness = _read_validation_readiness(config.get("research_readiness_decision_path"))
+    require_ready = bool(config.get("require_validation_ready"))
+    blocked = require_ready and not bool(readiness.get("ready"))
+    shard_count = max(1, int(config.get("shard_count") or 1))
+    candidate_budget = int(config.get("candidate_budget") or config.get("max_candidates") or 0)
+    max_per_shard = int(config.get("max_candidates_per_shard") or (max(1, candidate_budget // shard_count) if candidate_budget else 0))
+    resource_plan = {
+        "workflow": workflow,
+        "status": "blocked" if blocked else "planned",
+        "shard_count": shard_count,
+        "candidate_budget": candidate_budget,
+        "max_candidates_per_shard": max_per_shard,
+        "validation_campaign_store_dir": config.get("validation_campaign_store_dir"),
+        "source_candidate_pool_path": config.get("source_candidate_pool_path"),
+        "data_freeze_dir": config.get("data_freeze_dir"),
+        "matrix_cache_dir": config.get("matrix_cache_dir"),
+        "factor_store_dir": config.get("factor_store_dir"),
+        "feature_set_name": config.get("feature_set_name") or "ashare_features_v2",
+        "blocked_reason": "research readiness does not allow validation" if blocked else "",
+        "readiness": readiness,
+    }
+    nodes = [
+        ExperimentGraphNode("validation_readiness_gate", ExperimentStage.DATA_FREEZE_VALIDATE, metadata={"blocked": blocked, "readiness": readiness}),
+        ExperimentGraphNode("validation_campaign_shards", ExperimentStage.WALK_FORWARD_BACKTEST_SHARD, metadata={"shard_count": shard_count}),
+        ExperimentGraphNode("validation_campaign_consolidation", ExperimentStage.ARTIFACT_VALIDATION),
+        ExperimentGraphNode("factor_certification_queue", ExperimentStage.ARTIFACT_VALIDATION),
+    ]
+    edges = [
+        ExperimentGraphEdge("validation_readiness_gate", "validation_campaign_shards"),
+        ExperimentGraphEdge("validation_campaign_shards", "validation_campaign_consolidation"),
+        ExperimentGraphEdge("validation_campaign_consolidation", "factor_certification_queue"),
+    ]
+    jobs: list[dict[str, Any]] = []
+    if not blocked:
+        for shard_idx in range(shard_count):
+            jobs.append(
+                {
+                    "job_id": f"{experiment_id}_validation_shard_{shard_idx:04d}",
+                    "job_kind": "validation_campaign_shard_plan",
+                    "shard_id": shard_idx,
+                    "shard_count": shard_count,
+                    "max_candidates": max_per_shard,
+                    "status": "planned",
+                }
+            )
+    plan = ExperimentPlan(
+        experiment_id=experiment_id,
+        workflow=workflow,
+        created_at=_utc_now(),
+        output_dir=str(output_dir),
+        shards=[],
+        graph_nodes=nodes,
+        graph_edges=edges,
+        compute_jobs=jobs,
+        resource_plan=resource_plan,
+        metadata={k: v for k, v in config.items() if k not in {"jobs"}} | {"blocked": blocked, "readiness": readiness},
+    )
+    write_experiment_plan(plan, output_dir)
+    _write_validation_large_artifacts(plan, output_dir, resource_plan)
+    return plan
+
+
+def _write_validation_large_artifacts(plan: ExperimentPlan, output_dir: Path, resource_plan: dict[str, Any]) -> None:
+    payload = {
+        "experiment_id": plan.experiment_id,
+        "workflow": plan.workflow,
+        "status": resource_plan["status"],
+        "blocked": resource_plan["status"] == "blocked",
+        "blocked_reason": resource_plan.get("blocked_reason", ""),
+        "candidate_budget": resource_plan.get("candidate_budget", 0),
+        "shard_count": resource_plan.get("shard_count", 0),
+        "resource_plan": resource_plan,
+        "compute_jobs": plan.compute_jobs,
+    }
+    write_json_artifact(output_dir / "validation_large_campaign_plan.json", payload, "validation_large_campaign_plan", "experiment_orchestrator")
+    write_json_artifact(
+        output_dir / "validation_large_campaign_resource_plan.json",
+        resource_plan,
+        "validation_large_campaign_resource_plan",
+        "experiment_orchestrator",
+    )
+    runbook = "\n".join(
+        [
+            "# Validation Campaign Large Plan Runbook",
+            "",
+            f"Status: {payload['status']}",
+            f"Blocked reason: {payload['blocked_reason'] or 'none'}",
+            "",
+            "This plan is generated only; it does not start validation jobs.",
+        ]
+    )
+    (output_dir / "validation_large_campaign_runbook.md").write_text(runbook + "\n", encoding="utf-8")
+    commands = [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "# Generated dry-run template. Review readiness and paths before executing manually.",
+        f"# experiment_id={plan.experiment_id}",
+        f"# shard_count={resource_plan.get('shard_count')}",
+    ]
+    (output_dir / "validation_large_campaign_commands.sh").write_text("\n".join(commands) + "\n", encoding="utf-8")
+    (output_dir / "validation_large_campaign_plan.md").write_text(runbook + "\n", encoding="utf-8")
+
+
 def _read_readiness(path: str | None) -> dict[str, Any]:
     if not path:
         return {"ready": True, "status": "not_required", "path": None}
@@ -250,6 +356,20 @@ def _read_readiness(path: str | None) -> dict[str, Any]:
     ready = ready or _truthy(payload.get("alpha_ready"))
     status = str(payload.get("status", "") or "")
     ready = ready or status in {"alpha_factory_ready", "ready_for_alpha_factory", "ready", "pass"}
+    return {"ready": bool(ready), "status": status, "path": str(target), "summary": payload.get("summary", {})}
+
+
+def _read_validation_readiness(path: str | None) -> dict[str, Any]:
+    if not path:
+        return {"ready": True, "status": "not_required", "path": None}
+    target = Path(path)
+    if not target.exists():
+        return {"ready": False, "status": "missing", "path": str(target)}
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    ready = _truthy(payload.get("can_run_validation")) or _truthy(payload.get("can_run_validation_lab"))
+    ready = ready or _truthy(payload.get("validation_ready"))
+    status = str(payload.get("status", "") or "")
+    ready = ready or status in {"validation_ready", "ready_for_validation", "ready", "pass"}
     return {"ready": bool(ready), "status": status, "path": str(target), "summary": payload.get("summary", {})}
 
 

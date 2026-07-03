@@ -151,11 +151,33 @@ def _prepare_monitoring_artifacts(tmp_path):
         '{"release_name":"unit","build_artifacts":[{"path":"dist/auto_alpha.whl"}]}',
         encoding="utf-8",
     )
-    return data_dir, tmp_path / "store", tmp_path / "account", orders_dir, broker_dir, release_dir
+    validation_campaign_dir = tmp_path / "validation_campaign_store"
+    validation_campaign_dir.mkdir()
+    (validation_campaign_dir / "validation_campaign_store_report.json").write_text(
+        '{"status":"ready","validation_campaign_count":1,"candidate_count":2,"shard_count":2,"failed_shard_count":0,"result_count":2,"leaderboard_count":1,"certification_queue_count":1,"summary":{"validation_blocker_count":0}}',
+        encoding="utf-8",
+    )
+    (validation_campaign_dir / "validation_campaign_registry.json").write_text(
+        '{"status":"ready","validation_campaign_count":1,"candidate_count":2,"shard_count":2,"result_count":2}',
+        encoding="utf-8",
+    )
+    (validation_campaign_dir / "validation_leaderboard.jsonl").write_text(
+        '{"rank":1,"validation_candidate_id":"vc1","factor_id":"factor_monitor","validation_score":1.0,"certification_ready":true}\n',
+        encoding="utf-8",
+    )
+    (validation_campaign_dir / "factor_certification_queue.jsonl").write_text(
+        '{"queue_id":"q1","validation_candidate_id":"vc1","factor_id":"factor_monitor","priority":1}\n',
+        encoding="utf-8",
+    )
+    (validation_campaign_dir / "validation_large_campaign_plan.json").write_text(
+        '{"experiment_id":"e","workflow":"real_data_validation_campaign_large_plan","status":"blocked","blocked":true,"resource_plan":{},"compute_jobs":[]}',
+        encoding="utf-8",
+    )
+    return data_dir, tmp_path / "store", tmp_path / "account", orders_dir, broker_dir, release_dir, validation_campaign_dir
 
 
 def test_monitoring_report_cli_writes_alerts(tmp_path, capsys):
-    data_dir, store_dir, account_dir, orders_dir, broker_dir, release_dir = _prepare_monitoring_artifacts(tmp_path)
+    data_dir, store_dir, account_dir, orders_dir, broker_dir, release_dir, validation_campaign_dir = _prepare_monitoring_artifacts(tmp_path)
     registry_dir = tmp_path / "model_registry"
     registry = LocalModelRegistry(registry_dir)
     model = registry.register_factor_record(LocalFactorStore(store_dir).load_factors()[0])
@@ -198,6 +220,16 @@ def test_monitoring_report_cli_writes_alerts(tmp_path, capsys):
             str(release_dir / "release_gate_report.json"),
             "--release-manifest-path",
             str(release_dir / "release_manifest.json"),
+            "--validation-campaign-store-report-path",
+            str(validation_campaign_dir / "validation_campaign_store_report.json"),
+            "--validation-campaign-registry-path",
+            str(validation_campaign_dir / "validation_campaign_registry.json"),
+            "--validation-leaderboard-path",
+            str(validation_campaign_dir / "validation_leaderboard.jsonl"),
+            "--factor-certification-queue-path",
+            str(validation_campaign_dir / "factor_certification_queue.jsonl"),
+            "--validation-large-campaign-plan-path",
+            str(validation_campaign_dir / "validation_large_campaign_plan.json"),
             "--settlement-report-path",
             str(tmp_path / "settlement" / "settlement_report.json"),
             "--account-reconciliation-report-path",
@@ -218,10 +250,13 @@ def test_monitoring_report_cli_writes_alerts(tmp_path, capsys):
     payload = json.loads(capsys.readouterr().out)
 
     assert exit_code == 0
+    assert payload["checks"]["validation_campaign_store"]["validation_candidate_count"] == 2
+    assert payload["checks"]["factor_certification_queue"]["certification_queue_count"] == 1
+    assert payload["checks"]["validation_large_campaign_plan"]["validation_large_campaign_blocked"] is True
 
 
 def test_monitoring_reads_statement_reconciliation_adjustment_artifacts(tmp_path, capsys):
-    data_dir, store_dir, account_dir, orders_dir, broker_dir, release_dir = _prepare_monitoring_artifacts(tmp_path)
+    data_dir, store_dir, account_dir, orders_dir, broker_dir, release_dir, _validation_campaign_dir = _prepare_monitoring_artifacts(tmp_path)
     statement_dir = tmp_path / "statement"
     statement_dir.mkdir()
     (statement_dir / "broker_statement_manifest.json").write_text(
@@ -374,7 +409,7 @@ def test_monitoring_quality_error_produces_error_alert(tmp_path):
 
 
 def test_monitoring_reads_data_source_smoke_artifacts(tmp_path, capsys):
-    data_dir, store_dir, account_dir, orders_dir, broker_dir, _release_dir = _prepare_monitoring_artifacts(tmp_path)
+    data_dir, store_dir, account_dir, orders_dir, broker_dir, _release_dir, _validation_campaign_dir = _prepare_monitoring_artifacts(tmp_path)
     smoke_dir = tmp_path / "smoke"
     smoke_dir.mkdir()
     smoke_report = {

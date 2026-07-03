@@ -361,6 +361,42 @@ class AshareDashboardService:
     def load_alpha_large_campaign_plan(self) -> dict[str, Any]:
         return self._read_first_json(self._alpha_store_artifact_candidates("alpha_large_campaign_plan.json") + self._experiment_artifact_candidates("alpha_large_campaign_plan.json"))
 
+    def load_validation_campaign_registry(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_campaign_artifact_candidates("validation_campaign_registry.json"))
+
+    def load_validation_campaign_store_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_campaign_artifact_candidates("validation_campaign_store_report.json"))
+
+    def load_validation_campaigns(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._validation_campaign_artifact_candidates("validation_campaigns.jsonl"))
+
+    def load_validation_candidates(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._validation_campaign_artifact_candidates("validation_candidates.jsonl"))
+
+    def load_validation_shards_campaign(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._validation_campaign_artifact_candidates("validation_shards.jsonl"))
+
+    def load_validation_candidate_results(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._validation_campaign_artifact_candidates("validation_candidate_results.jsonl"))
+
+    def load_validation_leaderboard(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._validation_campaign_artifact_candidates("validation_leaderboard.jsonl"))
+
+    def load_factor_certification_queue(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._validation_campaign_artifact_candidates("factor_certification_queue.jsonl"))
+
+    def load_validation_candidate_dedup_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_campaign_artifact_candidates("validation_candidate_dedup_report.json"))
+
+    def load_validation_campaign_comparison_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_campaign_artifact_candidates("validation_campaign_comparison_report.json"))
+
+    def load_validation_large_campaign_plan(self) -> dict[str, Any]:
+        return self._read_first_json(
+            self._validation_campaign_artifact_candidates("validation_large_campaign_plan.json")
+            + self._experiment_artifact_candidates("validation_large_campaign_plan.json")
+        )
+
     def load_validation_lab_report(self) -> dict[str, Any]:
         return self._read_first_json(self._validation_artifact_candidates("validation_lab_report.json"))
 
@@ -2231,6 +2267,16 @@ class AshareDashboardService:
             root / "validation_lab" / filename,
             root / "suite" / "validation_lab" / filename,
             root / "validation" / filename,
+        ]
+
+    def _validation_campaign_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.validation_campaign_store_dir / filename,
+            root / "validation_campaign_store" / filename,
+            root / "validation_campaign" / filename,
+            root / "suite" / "validation_campaign_store" / filename,
+            root / "experiment" / filename,
         ]
 
     def _certification_artifact_candidates(self, filename: str) -> list[Path]:

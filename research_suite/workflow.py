@@ -27,6 +27,7 @@ from performance_benchmark.run_benchmark import main as run_benchmark_main
 from strategy_manager import runner as strategy_runner
 from universe import run_universe
 from validation_lab.run_validation import main as run_validation_main
+from validation_campaign_store.run_validation_store import main as run_validation_campaign_store_main
 from factor_certification.run_certify import main as run_certify_main
 from portfolio_lab.run_portfolio_lab import main as run_portfolio_lab_main
 from portfolio_certification.run_portfolio_certify import main as run_portfolio_certify_main
@@ -64,6 +65,7 @@ class ResearchSuiteRunner:
         self.compute_summary: dict[str, Any] = {}
         self.alpha_summary: dict[str, Any] = {}
         self.validation_summary: dict[str, Any] = {}
+        self.validation_campaign_summary: dict[str, Any] = {}
         self.certification_summary: dict[str, Any] = {}
         self.portfolio_lab_summary: dict[str, Any] = {}
         self.portfolio_certification_summary: dict[str, Any] = {}
@@ -123,6 +125,8 @@ class ResearchSuiteRunner:
             self._append_stage("walk_forward", self._stage_walk_forward)
             if self.config.run_validation_lab:
                 self._append_stage("validation_lab", self._stage_validation_lab)
+            if self.config.run_validation_campaign_store:
+                self._append_stage("validation_campaign_store", self._stage_validation_campaign_store)
             if self.config.run_factor_certification:
                 self._append_stage("factor_certification", self._stage_factor_certification)
             if self.config.run_portfolio_lab:
@@ -231,6 +235,15 @@ class ResearchSuiteRunner:
                 "regime_pass_ratio": self.validation_summary.get("regime_pass_ratio", 0.0),
                 "sensitivity_pass_ratio": self.validation_summary.get("sensitivity_pass_ratio", 0.0),
                 "stress_backtest_pass_ratio": self.validation_summary.get("stress_backtest_pass_ratio", 0.0),
+                "validation_campaign_id": self.validation_campaign_summary.get("validation_campaign_id"),
+                "validation_candidate_count": self.validation_campaign_summary.get("candidate_count", 0),
+                "validation_success_count": self.validation_campaign_summary.get("success_count", 0),
+                "validation_leaderboard_count": self.validation_campaign_summary.get("leaderboard_count", 0),
+                "certification_queue_count": self.validation_campaign_summary.get("certification_queue_count", 0),
+                "best_validation_score": self.validation_campaign_summary.get("best_validation_score", 0.0),
+                "validation_campaign_report_path": (self.validation_campaign_summary.get("paths") or {}).get(
+                    "validation_campaign_store_report_path"
+                ),
                 "certification_status": self.certification_summary.get("certification_status"),
                 "certification_policy_profile": self.certification_summary.get("certification_policy_profile"),
                 "certification_decision_path": (self.certification_summary.get("paths") or {}).get("factor_certification_decision_path"),
@@ -1454,6 +1467,84 @@ class ResearchSuiteRunner:
         for name, path in output_paths.items():
             self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "validation_lab")
         return payload, output_paths
+
+    def _stage_validation_campaign_store(self) -> tuple[dict[str, Any], dict[str, str]]:
+        candidate_pool = self.config.validation_candidate_pool_path
+        if not candidate_pool:
+            alpha_store_pool = self.output_dir / "alpha_experiment_store" / "alpha_validation_candidate_pool.jsonl"
+            alpha_factory_pool = (Path(self.config.alpha_factory_dir) if self.config.alpha_factory_dir else self.output_dir / "alpha_factory") / "alpha_validation_candidate_pool.jsonl"
+            if alpha_store_pool.exists():
+                candidate_pool = str(alpha_store_pool)
+            elif alpha_factory_pool.exists():
+                candidate_pool = str(alpha_factory_pool)
+        if not candidate_pool:
+            raise ValueError("--validation-candidate-pool-path is required when validation campaign store is enabled")
+        campaign_dir = (
+            Path(self.config.validation_campaign_store_dir)
+            if self.config.validation_campaign_store_dir
+            else self.output_dir / "validation_campaign_store"
+        )
+        argv = [
+            "run",
+            "--validation-campaign-store-dir",
+            str(campaign_dir),
+            "--source-candidate-pool-path",
+            str(candidate_pool),
+            "--data-dir",
+            self.config.data_dir,
+            "--factor-store-dir",
+            self.config.factor_store_dir,
+            "--output-dir",
+            str(campaign_dir),
+            "--shard-count",
+            str(self.config.validation_campaign_shard_count),
+            "--split-method",
+            self.config.validation_split_method,
+            "--placebo-trials",
+            str(self.config.placebo_trials),
+            "--top-k-certification-queue",
+            str(self.config.validation_campaign_top_k_certification),
+            "--certification-policy-profile",
+            self.config.certification_policy_profile,
+        ]
+        if self.config.validation_campaign_max_candidates:
+            argv.extend(["--max-candidates", str(self.config.validation_campaign_max_candidates)])
+        if self.config.run_multiple_testing:
+            argv.append("--run-multiple-testing")
+        if self.config.run_overfit_risk:
+            argv.append("--run-overfit-risk")
+        if self.config.run_placebo:
+            argv.append("--run-placebo")
+        if self.config.run_regime_validation:
+            argv.append("--run-regime")
+        if self.config.run_sensitivity_validation:
+            argv.append("--run-sensitivity")
+        if self.config.run_stress_backtest_validation:
+            argv.append("--run-stress-backtest")
+        payload = _run_json_main(run_validation_campaign_store_main, argv)
+        report_path = campaign_dir / "validation_campaign_store_report.json"
+        report_payload = _read_json(report_path)
+        summary = report_payload if report_payload else payload
+        self.validation_campaign_summary = {
+            **summary,
+            "validation_campaign_id": payload.get("validation_campaign_id") or summary.get("validation_campaign_id"),
+            "paths": payload.get("paths", {}) if isinstance(payload.get("paths"), dict) else summary.get("paths", {}),
+        }
+        output_paths = {
+            "validation_campaign_registry": str(campaign_dir / "validation_campaign_registry.json"),
+            "validation_campaigns": str(campaign_dir / "validation_campaigns.jsonl"),
+            "validation_candidates": str(campaign_dir / "validation_candidates.jsonl"),
+            "validation_shards": str(campaign_dir / "validation_shards.jsonl"),
+            "validation_candidate_results": str(campaign_dir / "validation_candidate_results.jsonl"),
+            "validation_leaderboard": str(campaign_dir / "validation_leaderboard.jsonl"),
+            "factor_certification_queue": str(campaign_dir / "factor_certification_queue.jsonl"),
+            "validation_campaign_store_report": str(campaign_dir / "validation_campaign_store_report.json"),
+            "validation_candidate_dedup_report": str(campaign_dir / "validation_candidate_dedup_report.json"),
+            "validation_campaign_artifact_catalog": str(campaign_dir / "validation_campaign_artifact_catalog.json"),
+        }
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "validation_campaign_store")
+        return self.validation_campaign_summary, output_paths
 
     def _stage_factor_certification(self) -> tuple[dict[str, Any], dict[str, str]]:
         if not self.selected_factor_id:

@@ -1771,6 +1771,62 @@ def check_alpha_large_campaign_plan(path: str | Path | None) -> tuple[dict[str, 
     }, alerts
 
 
+def check_validation_campaign_store(
+    report_path: str | Path | None,
+    registry_path: str | Path | None = None,
+) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    report = _read_json(Path(report_path)) if report_path else {}
+    registry = _read_json(Path(registry_path)) if registry_path else {}
+    payload = report or registry
+    status = str(payload.get("status", "missing") if payload else "missing")
+    failed_shards = int(payload.get("failed_shard_count", 0) or 0) if payload else 0
+    result_count = int(payload.get("result_count", 0) or 0) if payload else 0
+    blocker_count = int(((payload.get("summary") or {}).get("validation_blocker_count", 0)) if isinstance(payload.get("summary"), dict) else 0)
+    alerts: list[MonitoringAlert] = []
+    if failed_shards:
+        alerts.append(MonitoringAlert("warning", "validation_shard_failures", "validation campaign has failed shards", {"failed_shard_count": failed_shards}))
+    if status in {"blocked", "failed", "error"}:
+        alerts.append(MonitoringAlert("warning", "validation_campaign_status", "validation campaign is not ready", {"status": status}))
+    return {
+        "exists": bool(payload),
+        "validation_campaign_status": status,
+        "validation_campaign_count": int(payload.get("validation_campaign_count", 0) or 0) if payload else 0,
+        "validation_candidate_count": int(payload.get("candidate_count", 0) or 0) if payload else 0,
+        "validation_shard_count": int(payload.get("shard_count", 0) or 0) if payload else 0,
+        "validation_failed_shard_count": failed_shards,
+        "validation_result_count": result_count,
+        "validation_campaign_blocker_count": blocker_count,
+    }, alerts
+
+
+def check_validation_campaign_leaderboard(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(path)) if path else []
+    ready = sum(1 for row in rows if row.get("certification_ready") is True)
+    alerts = [] if rows else [MonitoringAlert("warning", "validation_leaderboard_empty", "validation campaign leaderboard is empty")]
+    return {"exists": bool(rows), "validation_leaderboard_count": len(rows), "certification_ready_count": ready}, alerts
+
+
+def check_factor_certification_queue(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(path)) if path else []
+    alerts = [] if rows else [MonitoringAlert("warning", "certification_queue_empty", "factor certification queue is empty")]
+    return {"exists": bool(rows), "certification_queue_count": len(rows), "queued_factor_count": len({row.get("factor_id") for row in rows})}, alerts
+
+
+def check_validation_large_campaign_plan(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    blocked = bool(payload.get("blocked", False)) if payload else False
+    alerts = []
+    if blocked:
+        alerts.append(MonitoringAlert("info", "validation_campaign_blocked_by_readiness", "large validation campaign plan is blocked by readiness"))
+    return {
+        "exists": bool(payload),
+        "validation_large_campaign_status": payload.get("status", "missing") if payload else "missing",
+        "validation_large_campaign_blocked": blocked,
+        "validation_large_campaign_shard_count": int(payload.get("shard_count", 0) or 0) if payload else 0,
+        "validation_large_campaign_compute_jobs": len(payload.get("compute_jobs", []) or []) if payload else 0,
+    }, alerts
+
+
 def check_feature_set_manifest(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     payload = _read_json(Path(path)) if path else {}
     return {

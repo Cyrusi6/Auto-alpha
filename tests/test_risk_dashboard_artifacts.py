@@ -155,6 +155,23 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
     (model_lifecycle_dir / "factor_health_checks.jsonl").write_text('{"name":"recent_coverage","passed":true}\n', encoding="utf-8")
     (model_lifecycle_dir / "lifecycle_decisions.jsonl").write_text('{"factor_id":"factor_x","recommended_action":"approve_for_activation"}\n', encoding="utf-8")
     (model_lifecycle_dir / "model_review_package.json").write_text('{"model_version_id":"model_1","factor_id":"factor_x"}', encoding="utf-8")
+    validation_campaign_dir = tmp_path / "validation_campaign_store"
+    validation_campaign_dir.mkdir()
+    (validation_campaign_dir / "validation_campaign_registry.json").write_text(
+        '{"status":"ready","validation_campaign_count":1,"candidate_count":2,"shard_count":2,"result_count":2,"leaderboard_count":1,"certification_queue_count":1}',
+        encoding="utf-8",
+    )
+    (validation_campaign_dir / "validation_campaign_store_report.json").write_text(
+        '{"status":"ready","candidate_count":2,"shard_count":2,"result_count":2,"leaderboard_count":1,"certification_queue_count":1}',
+        encoding="utf-8",
+    )
+    (validation_campaign_dir / "validation_candidates.jsonl").write_text('{"validation_candidate_id":"vc1","factor_id":"factor_x","formula_hash":"h"}\n', encoding="utf-8")
+    (validation_campaign_dir / "validation_shards.jsonl").write_text('{"shard_id":"s1","validation_campaign_id":"vcamp","shard_index":0,"status":"success"}\n', encoding="utf-8")
+    (validation_campaign_dir / "validation_candidate_results.jsonl").write_text('{"validation_candidate_id":"vc1","factor_id":"factor_x","validation_status":"passed","validation_score":1.0}\n', encoding="utf-8")
+    (validation_campaign_dir / "validation_leaderboard.jsonl").write_text('{"rank":1,"validation_candidate_id":"vc1","factor_id":"factor_x","validation_score":1.0}\n', encoding="utf-8")
+    (validation_campaign_dir / "factor_certification_queue.jsonl").write_text('{"queue_id":"q1","validation_candidate_id":"vc1","factor_id":"factor_x","priority":1}\n', encoding="utf-8")
+    (validation_campaign_dir / "validation_candidate_dedup_report.json").write_text('{"validation_campaign_id":"vcamp","candidate_count":2,"duplicate_count":0}', encoding="utf-8")
+    (validation_campaign_dir / "validation_large_campaign_plan.json").write_text('{"experiment_id":"e","workflow":"real_data_validation_campaign_large_plan","status":"blocked","blocked":true,"resource_plan":{},"compute_jobs":[]}', encoding="utf-8")
     statement_dir = tmp_path / "statement_import_mismatch"
     statement_dir.mkdir()
     (statement_dir / "broker_statement_manifest.json").write_text(
@@ -198,6 +215,7 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
             pretrain_dir=pretrain_dir,
             model_registry_dir=model_registry_dir,
             model_lifecycle_dir=model_lifecycle_dir,
+            validation_campaign_store_dir=validation_campaign_dir,
         )
     )
 
@@ -218,6 +236,15 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
     assert not service.load_broker_events().empty
     assert not service.load_broker_fills().empty
     assert service.load_broker_instruction_manifest()["orders"] == 1
+    assert service.load_validation_campaign_registry()["candidate_count"] == 2
+    assert service.load_validation_campaign_store_report()["result_count"] == 2
+    assert not service.load_validation_candidates().empty
+    assert not service.load_validation_shards_campaign().empty
+    assert not service.load_validation_candidate_results().empty
+    assert not service.load_validation_leaderboard().empty
+    assert not service.load_factor_certification_queue().empty
+    assert service.load_validation_candidate_dedup_report()["duplicate_count"] == 0
+    assert service.load_validation_large_campaign_plan()["status"] == "blocked"
     assert service.load_settlement_report()["settlement_aware"] is True
     assert not service.load_settlement_events().empty
     assert not service.load_cash_buckets().empty

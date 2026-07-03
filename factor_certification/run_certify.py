@@ -27,7 +27,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _add_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--factor-store-dir", required=True)
+    parser.add_argument("--factor-store-dir")
     parser.add_argument("--factor-id")
     parser.add_argument("--factor-type", choices=["single", "composite", "any"], default="any")
     parser.add_argument("--latest-approved", action="store_true")
@@ -37,6 +37,11 @@ def _add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--policy-path")
     parser.add_argument("--policy-profile", default="sample_lenient_certification")
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--certification-queue-path")
+    parser.add_argument("--queue-id")
+    parser.add_argument("--max-queue-items", type=int, default=0)
+    parser.add_argument("--output-root-dir")
+    parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--validation-lab-report-path")
     parser.add_argument("--multiple-testing-report-path")
     parser.add_argument("--overfit-risk-report-path")
@@ -75,6 +80,14 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run(args: argparse.Namespace) -> dict[str, Any]:
+    if args.certification_queue_path:
+        return _run_queue(args)
+    return _run_single(args)
+
+
+def _run_single(args: argparse.Namespace) -> dict[str, Any]:
+    if not args.factor_store_dir:
+        raise ValueError("--factor-store-dir is required")
     store = LocalFactorStore(args.factor_store_dir)
     factor_id = _select_factor(args, store)
     policy = load_certification_policy(args.policy_path, args.policy_profile)
@@ -116,6 +129,72 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _run_queue(args: argparse.Namespace) -> dict[str, Any]:
+    queue_path = Path(args.certification_queue_path)
+    if not queue_path.exists():
+        raise FileNotFoundError(f"certification queue not found: {queue_path}")
+    output_root = Path(args.output_root_dir or args.output_dir)
+    output_root.mkdir(parents=True, exist_ok=True)
+    rows = _read_jsonl(queue_path)
+    selected = [row for row in rows if not args.queue_id or str(row.get("queue_id")) == args.queue_id]
+    if args.max_queue_items and args.max_queue_items > 0:
+        selected = selected[: args.max_queue_items]
+    if args.dry_run:
+        path = output_root / "factor_certification_queue_dry_run.json"
+        payload = {
+            "status": "success",
+            "dry_run": True,
+            "queue_path": str(queue_path),
+            "queue_item_count": len(rows),
+            "selected_count": len(selected),
+            "queue_items": selected,
+            "paths": {"factor_certification_queue_dry_run_path": str(path)},
+        }
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        return payload
+    results: list[dict[str, Any]] = []
+    for row in selected:
+        item_args = argparse.Namespace(**vars(args))
+        item_args.certification_queue_path = None
+        item_args.queue_id = None
+        item_args.max_queue_items = 0
+        item_args.output_root_dir = None
+        item_args.dry_run = False
+        item_args.factor_id = str(row.get("factor_id") or args.factor_id or "")
+        item_args.factor_store_dir = str(row.get("factor_store_dir") or args.factor_store_dir or "")
+        item_args.output_dir = str(output_root / str(row.get("queue_id") or row.get("factor_id") or "queue_item"))
+        item_args.policy_profile = str(row.get("certification_policy_profile") or args.policy_profile)
+        artifacts = (row.get("metadata") or {}).get("validation_artifacts", {}) if isinstance(row.get("metadata"), dict) else {}
+        for attr in [
+            "validation_lab_report_path",
+            "multiple_testing_report_path",
+            "overfit_risk_report_path",
+            "placebo_test_report_path",
+            "regime_validation_report_path",
+            "sensitivity_report_path",
+            "stress_backtest_report_path",
+            "factor_validation_summary_path",
+        ]:
+            if artifacts.get(attr):
+                setattr(item_args, attr, artifacts.get(attr))
+        result = _run_single(item_args)
+        results.append({"queue_id": row.get("queue_id"), "factor_id": row.get("factor_id"), **result})
+    results_path = output_root / "factor_certification_queue_results.jsonl"
+    results_path.write_text(
+        "\n".join(json.dumps(item, ensure_ascii=False, sort_keys=True) for item in results) + ("\n" if results else ""),
+        encoding="utf-8",
+    )
+    return {
+        "status": "success",
+        "queue_path": str(queue_path),
+        "queue_item_count": len(rows),
+        "selected_count": len(selected),
+        "completed_count": len(results),
+        "paths": {"factor_certification_queue_results_path": str(results_path)},
+        "results": results,
+    }
+
+
 def _select_factor(args: argparse.Namespace, store: LocalFactorStore) -> str:
     if args.latest_production_candidate:
         record = store.load_latest_factor(status="production_candidate", factor_type=None if args.factor_type == "any" else args.factor_type)
@@ -151,6 +230,10 @@ def _artifact_paths(args: argparse.Namespace) -> dict[str, str | None]:
         "eod_reconciliation_report_path",
     ]
     return {name: getattr(args, name, None) for name in names}
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def _status_to_factor_status(status: str) -> str:

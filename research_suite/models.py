@@ -183,6 +183,13 @@ class ResearchSuiteConfig:
     run_regime_validation: bool = False
     run_sensitivity_validation: bool = False
     run_stress_backtest_validation: bool = False
+    run_validation_campaign_store: bool = False
+    validation_campaign_store_dir: str | None = None
+    validation_candidate_pool_path: str | None = None
+    validation_campaign_shard_count: int = 1
+    validation_campaign_max_candidates: int = 0
+    validation_campaign_top_k_certification: int = 20
+    write_factor_certification_queue: bool = False
     run_factor_certification: bool = False
     factor_certification_dir: str | None = None
     certification_policy_path: str | None = None

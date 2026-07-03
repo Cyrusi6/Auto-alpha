@@ -96,3 +96,28 @@ def test_real_data_alpha_factory_large_plan_blocks_when_readiness_not_ready(tmp_
     assert (tmp_path / "large_plan" / "alpha_large_campaign_plan.json").exists()
     payload = json.loads((tmp_path / "large_plan" / "alpha_large_campaign_plan.json").read_text(encoding="utf-8"))
     assert payload["status"] == "blocked"
+
+
+def test_real_data_validation_campaign_large_plan_blocks_when_readiness_not_ready(tmp_path):
+    readiness_path = tmp_path / "readiness.json"
+    readiness_path.write_text(json.dumps({"status": "blocked", "can_run_validation": False}), encoding="utf-8")
+    plan = create_experiment_plan(
+        {
+            "workflow": "real_data_validation_campaign_large_plan",
+            "output_dir": str(tmp_path / "validation_plan"),
+            "research_readiness_decision_path": str(readiness_path),
+            "require_validation_ready": True,
+            "shard_count": 4,
+            "candidate_budget": 1000,
+            "validation_campaign_store_dir": str(tmp_path / "validation_store"),
+            "source_candidate_pool_path": str(tmp_path / "alpha_validation_candidate_pool.jsonl"),
+        }
+    )
+
+    assert plan.metadata["blocked"] is True
+    assert plan.compute_jobs == []
+    assert plan.resource_plan["status"] == "blocked"
+    assert (tmp_path / "validation_plan" / "validation_large_campaign_plan.json").exists()
+    payload = json.loads((tmp_path / "validation_plan" / "validation_large_campaign_plan.json").read_text(encoding="utf-8"))
+    assert payload["status"] == "blocked"
+    assert payload["compute_jobs"] == []

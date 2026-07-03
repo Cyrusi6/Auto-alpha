@@ -78,6 +78,7 @@ PLATFORM_MODULES = [
     "leakage_audit",
     "strategy_manager",
     "universe",
+    "validation_campaign_store",
     "validation_lab",
     "live_readiness",
 ]

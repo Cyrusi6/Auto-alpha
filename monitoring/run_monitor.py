@@ -18,6 +18,7 @@ from .checks import (
     check_alpha_dedup_report,
     check_alpha_validation_pool,
     check_alpha_large_campaign_plan,
+    check_factor_certification_queue,
     check_alpha_static_errors,
     check_active_model_status,
     check_artifact_schema_validation,
@@ -140,6 +141,9 @@ from .checks import (
     check_stress_backtest_validation,
     check_uncertified_production_candidate,
     check_validation_lab,
+    check_validation_campaign_leaderboard,
+    check_validation_campaign_store,
+    check_validation_large_campaign_plan,
     check_settlement_fee_tax,
     check_settlement_report,
     check_shadow_drift,
@@ -339,6 +343,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--alpha-factor-dedup-report-path")
     parser.add_argument("--alpha-validation-candidate-pool-path")
     parser.add_argument("--alpha-large-campaign-plan-path")
+    parser.add_argument("--validation-campaign-store-report-path")
+    parser.add_argument("--validation-campaign-registry-path")
+    parser.add_argument("--validation-leaderboard-path")
+    parser.add_argument("--factor-certification-queue-path")
+    parser.add_argument("--validation-large-campaign-plan-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -450,6 +459,13 @@ def main(argv: list[str] | None = None) -> int:
         ("alpha_dedup_report", lambda: check_alpha_dedup_report(args.alpha_factor_dedup_report_path)),
         ("alpha_validation_pool", lambda: check_alpha_validation_pool(args.alpha_validation_candidate_pool_path)),
         ("alpha_large_campaign_plan", lambda: check_alpha_large_campaign_plan(args.alpha_large_campaign_plan_path)),
+        (
+            "validation_campaign_store",
+            lambda: check_validation_campaign_store(args.validation_campaign_store_report_path, args.validation_campaign_registry_path),
+        ),
+        ("validation_campaign_leaderboard", lambda: check_validation_campaign_leaderboard(args.validation_leaderboard_path)),
+        ("factor_certification_queue", lambda: check_factor_certification_queue(args.factor_certification_queue_path)),
+        ("validation_large_campaign_plan", lambda: check_validation_large_campaign_plan(args.validation_large_campaign_plan_path)),
         ("feature_set_manifest", lambda: check_feature_set_manifest(args.feature_set_manifest_path)),
         ("feature_coverage", lambda: check_feature_coverage(args.feature_coverage_report_path)),
         ("validation_lab", lambda: check_validation_lab(args.validation_lab_report_path, args.factor_validation_summary_path)),

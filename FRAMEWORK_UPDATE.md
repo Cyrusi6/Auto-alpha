@@ -2112,3 +2112,32 @@
 ### Follow-Ups
 - Do not run real Alpha Factory campaigns until the active Tushare backfill, repair, freeze, and matrix refresh are complete and research readiness explicitly allows Alpha Factory.
 - Use the warehouse consolidation path for large campaigns so shard-local factor stores remain isolated until merge and validation candidate selection.
+
+## Task 044-A - Validation Campaign Store And Certification Queue
+
+- Added `validation_campaign_store/`, a local campaign warehouse for Alpha validation candidate pools. It registers campaigns, ingests and deduplicates candidates, writes shard plans, runs `validation_lab` per shard, consolidates validation outputs, builds validation leaderboards, and exports `factor_certification_queue.jsonl`.
+- Enhanced `factor_certification.run_certify` with queue-based dry-run/execution support while keeping the existing single-factor certification path unchanged.
+- Added `experiment_orchestrator` validation campaign planning workflows, including `real_data_validation_campaign_large_plan`; readiness-blocked plans write runbooks/resource plans with empty `compute_jobs` and do not start validation work.
+- Extended `research_suite`, `monitoring`, `dashboard`, `artifact_schema`, `release_manager`, local CI, packaging metadata, README, and CATREADME for validation campaign artifacts.
+- Added offline sample/fake tests for campaign ingest, shard validation, consolidation, leaderboard, certification queue dry-run, readiness-blocked planning, monitoring, dashboard reads, and artifact schema validation.
+
+### New Artifacts
+- `validation_campaign_registry.json`
+- `validation_campaigns.jsonl`
+- `validation_candidates.jsonl`
+- `validation_shards.jsonl`
+- `validation_candidate_results.jsonl`
+- `validation_leaderboard.jsonl`
+- `factor_certification_queue.jsonl`
+- `validation_campaign_store_report.json/md`
+- `validation_candidate_dedup_report.json`
+- `validation_campaign_consolidation_report.json`
+- `validation_campaign_artifact_catalog.json`
+- `validation_large_campaign_plan.json/md`
+- `validation_large_campaign_runbook.md`
+- `validation_large_campaign_commands.sh`
+- `validation_large_campaign_resource_plan.json`
+
+### Follow-Ups
+- Do not run real validation campaigns until the active real Tushare backfill, repair, freeze, matrix refresh, and Alpha Factory campaign have finished and research readiness explicitly allows validation.
+- Use validation campaign store as the standard bridge from large Alpha candidate pools to factor certification and portfolio lab review.

@@ -25,6 +25,7 @@ The current implementation is local-first. It uses deterministic sample data and
 - `research/`: Batch candidate execution, factor ranking, composite factor construction, and batch research reports.
 - `alpha_factory/`: Campaign-level large candidate generation, template/random/mutation/crossover/corpus source budgets, static checks, proxy eval, full eval, novelty/diversity scoring, and shortlist reports.
 - `alpha_experiment_store/`: Local Alpha campaign warehouse, shard factor-store consolidation, cross-campaign dedupe reports, leaderboard, and validation candidate pool exports.
+- `validation_campaign_store/`: Batch validation campaign warehouse for Alpha candidate pools, shard plans, validation result consolidation, validation leaderboards, and factor certification queue export.
 - `validation_lab/`: Out-of-sample validation, walk-forward/purged/CSCV splits, multiple-testing diagnostics, overfit-risk estimates, placebo tests, regime robustness, sensitivity checks, and stress-validation reports.
 - `factor_certification/`: Factor production certification policies, scorecards, decisions, review packages, and optional factor-store status application.
 - `formula_search/`: Formula metadata, random generation, mutation, crossover, multi-generation search, and search reports.
@@ -361,6 +362,25 @@ Alpha Factory and formula search can generate many candidates, so production pro
 - `stress_backtest_report.json` and `stress_backtest_results.jsonl`
 
 The implementation is intentionally local and conservative. PBO, deflated IC-like scores, and multiple-testing penalties are approximate diagnostics for review, not proof of future profitability.
+
+`validation_campaign_store/` turns `alpha_validation_candidate_pool.jsonl` into a resumable campaign: ingest and dedupe candidates, create shard input files, call `validation_lab` per shard, consolidate shard reports, rank `validation_leaderboard.jsonl`, and write `factor_certification_queue.jsonl` for the small set of candidates worth certification.
+
+```bash
+uv run python -m validation_campaign_store.run_validation_store run \
+  --validation-campaign-store-dir <campaign>/validation_campaign_store \
+  --source-candidate-pool-path <campaign>/validation_pool/alpha_validation_candidate_pool.jsonl \
+  --data-dir <freeze>/data \
+  --factor-store-dir <campaign>/consolidated_factor_store \
+  --output-dir <campaign>/validation_campaign_store \
+  --shard-count 8 \
+  --max-candidates 200 \
+  --run-placebo \
+  --run-regime \
+  --run-sensitivity \
+  --run-stress-backtest \
+  --top-k-certification-queue 20 \
+  --pretty
+```
 
 `factor_certification/` turns validation, PIT/leakage, data-freeze, Alpha Factory, settlement, risk-control, and lifecycle artifacts into a scorecard and decision:
 
@@ -1252,6 +1272,36 @@ uv run python -m validation_lab.run_validation validate-candidates \
   --validation-candidate-pool-path <campaign>/validation_pool/alpha_validation_candidate_pool.jsonl \
   --max-candidates 20 \
   --output-dir <campaign>/validation_lab
+```
+
+For campaign-level validation, prefer the store wrapper so shard status, consolidation, leaderboard, and certification queue artifacts are all recorded:
+
+```bash
+uv run python -m validation_campaign_store.run_validation_store run \
+  --validation-campaign-store-dir <campaign>/validation_campaign_store \
+  --source-candidate-pool-path <campaign>/validation_pool/alpha_validation_candidate_pool.jsonl \
+  --data-dir <freeze>/data \
+  --factor-store-dir <campaign>/consolidated_factor_store \
+  --output-dir <campaign>/validation_campaign_store \
+  --shard-count 8 \
+  --top-k-certification-queue 20 \
+  --resume \
+  --pretty
+```
+
+Large real-data validation plans can be generated without launching work. If research readiness is not validation-ready, the plan is marked blocked and `compute_jobs` is empty:
+
+```bash
+uv run python -m experiment_orchestrator.run_experiment plan \
+  --workflow real_data_validation_campaign_large_plan \
+  --output-dir <campaign>/validation_large_plan \
+  --research-readiness-decision-path <readiness>/research_readiness_decision.json \
+  --require-validation-ready \
+  --validation-campaign-store-dir <campaign>/validation_campaign_store \
+  --source-candidate-pool-path <campaign>/validation_pool/alpha_validation_candidate_pool.jsonl \
+  --shard-count 32 \
+  --candidate-budget 2000 \
+  --pretty
 ```
 
 To prepare a real 4GPU runbook without starting compute jobs:

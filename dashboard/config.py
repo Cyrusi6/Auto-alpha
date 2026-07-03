@@ -51,6 +51,7 @@ class DashboardConfig:
     alpha_factory_dir: Path = Path("artifacts/alpha_factory")
     alpha_experiment_store_dir: Path = Path("artifacts/alpha_experiment_store")
     validation_lab_dir: Path = Path("artifacts/validation_lab")
+    validation_campaign_store_dir: Path = Path("artifacts/validation_campaign_store")
     factor_certification_dir: Path = Path("artifacts/factor_certification")
     portfolio_lab_dir: Path = Path("artifacts/portfolio_lab")
     portfolio_certification_dir: Path = Path("artifacts/portfolio_certification")
@@ -117,6 +118,9 @@ class DashboardConfig:
                 os.getenv("ASHARE_DASHBOARD_ALPHA_EXPERIMENT_STORE_DIR") or "artifacts/alpha_experiment_store"
             ),
             validation_lab_dir=Path(os.getenv("ASHARE_DASHBOARD_VALIDATION_LAB_DIR") or "artifacts/validation_lab"),
+            validation_campaign_store_dir=Path(
+                os.getenv("ASHARE_DASHBOARD_VALIDATION_CAMPAIGN_STORE_DIR") or "artifacts/validation_campaign_store"
+            ),
             factor_certification_dir=Path(os.getenv("ASHARE_DASHBOARD_FACTOR_CERTIFICATION_DIR") or "artifacts/factor_certification"),
             portfolio_lab_dir=Path(os.getenv("ASHARE_DASHBOARD_PORTFOLIO_LAB_DIR") or "artifacts/portfolio_lab"),
             portfolio_certification_dir=Path(os.getenv("ASHARE_DASHBOARD_PORTFOLIO_CERTIFICATION_DIR") or "artifacts/portfolio_certification"),

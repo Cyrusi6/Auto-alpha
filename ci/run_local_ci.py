@@ -85,6 +85,20 @@ def main(argv: list[str] | None = None) -> int:
             ],
         ),
         (
+            "validation_campaign_store_smoke",
+            [
+                sys.executable,
+                "-m",
+                "validation_campaign_store.run_validation_store",
+                "smoke",
+                "--validation-campaign-store-dir",
+                str(quick_dir / "validation_campaign_store"),
+                "--output-dir",
+                str(quick_dir / "validation_campaign_store"),
+                "--pretty",
+            ],
+        ),
+        (
             "real_data_ops_sample_smoke",
             [
                 sys.executable,
@@ -1108,6 +1122,8 @@ def main(argv: list[str] | None = None) -> int:
                 str(quick_dir / "leakage"),
                 "--artifact-dir",
                 str(quick_dir / "validation_lab"),
+                "--artifact-dir",
+                str(quick_dir / "validation_campaign_store"),
                 "--artifact-dir",
                 str(quick_dir / "factor_certification"),
                 "--artifact-dir",

@@ -105,6 +105,7 @@ packages = [
     "shadow_trading",
     "strategy_manager",
     "universe",
+    "validation_campaign_store",
     "live_readiness",
     "validation_lab",
 ]
@@ -182,6 +183,7 @@ include = [
     "shadow_trading",
     "strategy_manager",
     "universe",
+    "validation_campaign_store",
     "live_readiness",
     "validation_lab",
     "README.md",
