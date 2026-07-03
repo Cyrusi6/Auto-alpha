@@ -61,6 +61,13 @@ class MonitoringReport:
         baseline = self.checks.get("baseline_compare", {}) if isinstance(self.checks, dict) else {}
         backfill_run = self.checks.get("backfill_run", {}) if isinstance(self.checks, dict) else {}
         backfill_coverage = self.checks.get("backfill_coverage", {}) if isinstance(self.checks, dict) else {}
+        running_backfill = self.checks.get("running_backfill_progress", {}) if isinstance(self.checks, dict) else {}
+        backfill_eta = self.checks.get("backfill_eta", {}) if isinstance(self.checks, dict) else {}
+        backfill_failed = self.checks.get("backfill_failed_jobs", {}) if isinstance(self.checks, dict) else {}
+        backfill_quarantined = self.checks.get("backfill_quarantined_jobs", {}) if isinstance(self.checks, dict) else {}
+        raw_landing = self.checks.get("raw_data_landing", {}) if isinstance(self.checks, dict) else {}
+        raw_freeze = self.checks.get("raw_freeze_readiness", {}) if isinstance(self.checks, dict) else {}
+        postprocess_blockers = self.checks.get("postprocess_plan_blockers", {}) if isinstance(self.checks, dict) else {}
         data_lake_version = self.checks.get("data_lake_version", {}) if isinstance(self.checks, dict) else {}
         research_freeze = self.checks.get("research_freeze", {}) if isinstance(self.checks, dict) else {}
         artifact_schema = self.checks.get("artifact_schema_validation", {}) if isinstance(self.checks, dict) else {}
@@ -181,8 +188,17 @@ class MonitoringReport:
             "matrix_source_hash_drift_count": int(matrix_refresh.get("matrix_source_hash_drift_count", 0) or 0) if isinstance(matrix_refresh, dict) else 0,
             "baseline_diff_count": int(baseline.get("baseline_diff_count", 0) or 0) if isinstance(baseline, dict) else 0,
             "backfill_status": str(backfill_run.get("backfill_status", "")) if isinstance(backfill_run, dict) else "",
-            "backfill_failed_jobs": int(backfill_run.get("backfill_failed_jobs", 0) or 0) if isinstance(backfill_run, dict) else 0,
+            "active_backfill_dataset": str(running_backfill.get("active_backfill_dataset", "")) if isinstance(running_backfill, dict) else "",
+            "backfill_progress_ratio": float(running_backfill.get("backfill_progress_ratio", 0.0) or 0.0) if isinstance(running_backfill, dict) else 0.0,
+            "backfill_remaining_jobs": int(running_backfill.get("backfill_remaining_jobs", backfill_eta.get("backfill_remaining_jobs", 0)) or 0) if isinstance(running_backfill, dict) else 0,
+            "backfill_eta_minutes": backfill_eta.get("backfill_eta_minutes") if isinstance(backfill_eta, dict) else None,
+            "backfill_failed_jobs": int(backfill_failed.get("backfill_failed_jobs", backfill_run.get("backfill_failed_jobs", 0)) or 0) if isinstance(backfill_failed, dict) else 0,
+            "backfill_quarantined_jobs": int(backfill_quarantined.get("backfill_quarantined_jobs", running_backfill.get("backfill_quarantined_jobs", 0)) or 0) if isinstance(backfill_quarantined, dict) else 0,
             "backfill_coverage_gap_count": int(backfill_coverage.get("backfill_coverage_gap_count", 0) or 0) if isinstance(backfill_coverage, dict) else 0,
+            "raw_landing_status": str(raw_landing.get("raw_landing_status", "")) if isinstance(raw_landing, dict) else "",
+            "raw_freeze_readiness_status": str(raw_freeze.get("raw_freeze_readiness_status", "")) if isinstance(raw_freeze, dict) else "",
+            "raw_freeze_blocker_count": int(raw_freeze.get("raw_freeze_blocker_count", 0) or 0) if isinstance(raw_freeze, dict) else 0,
+            "postprocess_blocker_count": int(postprocess_blockers.get("postprocess_blocker_count", 0) or 0) if isinstance(postprocess_blockers, dict) else 0,
             "dataset_version_id": str(data_lake_version.get("dataset_version_id", "")) if isinstance(data_lake_version, dict) else "",
             "dataset_content_hash": str(data_lake_version.get("dataset_content_hash", "")) if isinstance(data_lake_version, dict) else "",
             "freeze_validation_status": str(research_freeze.get("freeze_validation_status", "")) if isinstance(research_freeze, dict) else "",

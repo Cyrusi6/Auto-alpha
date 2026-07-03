@@ -2009,3 +2009,29 @@
 - Continue the current core online backfill to completion before launching expanded real-data groups, so request budget and API throttling stay controlled.
 - Run financial statement and holder/event groups with ts-code splitting when the provider requires single-security requests.
 - After raw capture, compact, validate, snapshot/freeze, and refresh matrix caches from the governed data lake; never commit real data or `.env.local`.
+
+## Task 042-D - Running Backfill Observation, Landing QA, And Freeze Preparation
+
+- Added `backfill_observer/`, a read-only sidecar for active governed backfill directories. It reads existing state/job/log/data artifacts and writes progress, ETA, repair-plan, postprocess-plan, and issue artifacts without interrupting or restarting the downloader.
+- Added `raw_data_landing/`, a streaming raw JSONL landing QA layer for record counts, date/security coverage, duplicate primary-key estimates, parse errors, coverage matrix, and freeze-readiness decisions.
+- Extended `artifact_schema`, `monitoring`, `dashboard` data service, `release_manager` inventory, local CI, and package metadata for the new observer and landing artifacts.
+- Added focused offline tests for observer progress/repair/postprocess generation, missing-state resilience, landing freeze blockers, monitoring integration, dashboard data service reads, and artifact schema validation.
+
+### New Artifacts
+- `backfill_observer_report.json/md`
+- `backfill_dataset_progress.jsonl`
+- `backfill_eta_report.json`
+- `backfill_repair_plan.json/md`
+- `backfill_repair_commands.sh`
+- `backfill_postprocess_plan.json/md`
+- `backfill_postprocess_commands.sh`
+- `backfill_observer_issues.jsonl`
+- `raw_data_landing_report.json/md`
+- `raw_dataset_landing_checks.jsonl`
+- `raw_dataset_coverage_matrix.json`
+- `raw_freeze_readiness_decision.json`
+- `raw_freeze_readiness_checks.jsonl`
+
+### Follow-Ups
+- Use `backfill_observer.run_observer observe` against the real backfill root only as a read-only dashboard/reporting action while the live download continues.
+- Run `raw_data_landing.run_landing report` after each major raw capture group to decide whether repair/resume is needed before compact, freeze, matrix refresh, or Alpha Factory.

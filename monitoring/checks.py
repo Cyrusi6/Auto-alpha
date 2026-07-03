@@ -887,6 +887,104 @@ def check_data_source_audit(audit_summary_path: str | Path | None) -> tuple[dict
     }, alerts
 
 
+def check_running_backfill_progress(observer_report_path: str | Path | None, progress_path: str | Path | None = None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(observer_report_path)) if observer_report_path else {}
+    rows = _read_jsonl(Path(progress_path)) if progress_path else []
+    summary = payload.get("summary", {}) if isinstance(payload, dict) else {}
+    active = summary.get("active_backfill_dataset") or ((payload.get("observed_run") or {}).get("active_dataset") if payload else "")
+    failed = int(summary.get("failed_jobs", summary.get("backfill_failed_jobs", 0)) or 0) if summary else 0
+    remaining = int(summary.get("pending_jobs", summary.get("backfill_remaining_jobs", 0)) or 0) if summary else 0
+    alerts = []
+    if failed:
+        alerts.append(MonitoringAlert("error", "running_backfill_progress", "running backfill has failed jobs", {"failed_jobs": failed}))
+    return {
+        "exists": bool(payload or rows),
+        "active_backfill_dataset": active or "",
+        "backfill_progress_ratio": float(summary.get("progress_ratio", summary.get("backfill_progress_ratio", 0.0)) or 0.0) if summary else 0.0,
+        "backfill_remaining_jobs": remaining,
+        "backfill_failed_jobs": failed,
+        "backfill_quarantined_jobs": int(summary.get("quarantined_jobs", summary.get("backfill_quarantined_jobs", 0)) or 0) if summary else 0,
+        "dataset_count": len(rows) if rows else int(summary.get("dataset_count", 0) or 0) if summary else 0,
+    }, alerts
+
+
+def check_backfill_eta(eta_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(eta_path)) if eta_path else {}
+    minutes = payload.get("estimated_remaining_minutes")
+    remaining = int(payload.get("remaining_jobs", 0) or 0) if payload else 0
+    return {
+        "exists": bool(payload),
+        "backfill_eta_minutes": float(minutes) if minutes is not None else None,
+        "backfill_remaining_jobs": remaining,
+        "eta_confidence": payload.get("confidence", "") if payload else "",
+    }, []
+
+
+def check_backfill_failed_jobs(progress_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(progress_path)) if progress_path else []
+    failed = sum(int(row.get("failed_jobs", 0) or 0) for row in rows)
+    rate_limit = sum(int(row.get("rate_limit_error_count", 0) or 0) for row in rows)
+    permission = sum(int(row.get("permission_error_count", 0) or 0) for row in rows)
+    alerts = []
+    if failed:
+        alerts.append(MonitoringAlert("error", "backfill_failed_jobs", "backfill progress includes failed jobs", {"failed_jobs": failed}))
+    return {"exists": bool(rows), "backfill_failed_jobs": failed, "rate_limit_error_count": rate_limit, "permission_error_count": permission}, alerts
+
+
+def check_backfill_quarantined_jobs(progress_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(progress_path)) if progress_path else []
+    quarantined = sum(int(row.get("quarantined_jobs", 0) or 0) for row in rows)
+    alerts = [MonitoringAlert("warning", "backfill_quarantined_jobs", "backfill progress includes quarantined jobs", {"quarantined_jobs": quarantined})] if quarantined else []
+    return {"exists": bool(rows), "backfill_quarantined_jobs": quarantined}, alerts
+
+
+def check_backfill_stalled_dataset(observer_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(observer_report_path)) if observer_report_path else {}
+    summary = payload.get("summary", {}) if payload else {}
+    active = summary.get("active_backfill_dataset") or ((payload.get("observed_run") or {}).get("active_dataset") if payload else "")
+    remaining = int(summary.get("backfill_remaining_jobs", 0) or 0) if summary else 0
+    stalled = bool(active and remaining and (payload.get("eta") or {}).get("confidence") == "low")
+    alerts = [MonitoringAlert("warning", "backfill_stalled_dataset", "backfill ETA confidence is low for active dataset", {"active_dataset": active})] if stalled else []
+    return {"exists": bool(payload), "active_backfill_dataset": active or "", "backfill_stalled": stalled}, alerts
+
+
+def check_raw_data_landing(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    summary = payload.get("summary", {}) if payload else {}
+    status = str(summary.get("raw_landing_status") or "")
+    alerts = []
+    if status == "blocked":
+        alerts.append(MonitoringAlert("error", "raw_data_landing", "raw landing report is blocked", summary))
+    elif status == "warning":
+        alerts.append(MonitoringAlert("warning", "raw_data_landing", "raw landing report has warnings", summary))
+    return {
+        "exists": bool(payload),
+        "raw_landing_status": status,
+        "missing_dataset_count": int(summary.get("missing_dataset_count", 0) or 0) if summary else 0,
+        "duplicate_key_count": int(summary.get("duplicate_key_count", 0) or 0) if summary else 0,
+    }, alerts
+
+
+def check_raw_freeze_readiness(decision_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(decision_path)) if decision_path else {}
+    status = str(payload.get("status") or "")
+    blockers = int(payload.get("blocker_count", 0) or 0) if payload else 0
+    warnings = int(payload.get("warning_count", 0) or 0) if payload else 0
+    alerts = []
+    if blockers:
+        alerts.append(MonitoringAlert("error", "raw_freeze_readiness", "raw freeze readiness has blockers", {"blockers": blockers}))
+    elif warnings:
+        alerts.append(MonitoringAlert("warning", "raw_freeze_readiness", "raw freeze readiness has warnings", {"warnings": warnings}))
+    return {"exists": bool(payload), "raw_freeze_readiness_status": status, "raw_freeze_blocker_count": blockers, "raw_freeze_warning_count": warnings}, alerts
+
+
+def check_postprocess_plan_blockers(postprocess_plan_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(postprocess_plan_path)) if postprocess_plan_path else {}
+    blockers = len(payload.get("blockers", []) or []) if payload else 0
+    alerts = [MonitoringAlert("warning", "postprocess_plan_blockers", "backfill postprocess plan is blocked", {"blockers": blockers})] if blockers else []
+    return {"exists": bool(payload), "postprocess_blocker_count": blockers}, alerts
+
+
 def check_corporate_action_report(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     if not report_path:
         return {"exists": False, "corporate_action_event_count": 0}, []

@@ -12,6 +12,7 @@ from .models import CliInventory, DependencyInventory, ModuleInventory
 PLATFORM_MODULES = [
     "approval",
     "alpha_factory",
+    "backfill_observer",
     "backtest",
     "broker_adapter",
     "broker_connectivity",
@@ -61,6 +62,7 @@ PLATFORM_MODULES = [
     "production_orchestrator",
     "production_replay",
     "reconciliation_center",
+    "raw_data_landing",
     "real_data_ops",
     "research",
     "research_suite",

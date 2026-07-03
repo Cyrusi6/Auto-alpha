@@ -1261,6 +1261,76 @@ class AshareDashboardService:
                 return frame
         return pd.DataFrame()
 
+    def load_backfill_observer_report(self) -> dict[str, Any]:
+        for path in self._backfill_candidates("backfill_observer_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_backfill_dataset_progress(self) -> pd.DataFrame:
+        for path in self._backfill_candidates("backfill_dataset_progress.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_backfill_eta_report(self) -> dict[str, Any]:
+        for path in self._backfill_candidates("backfill_eta_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_backfill_repair_plan(self) -> dict[str, Any]:
+        for path in self._backfill_candidates("backfill_repair_plan.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_backfill_postprocess_plan(self) -> dict[str, Any]:
+        for path in self._backfill_candidates("backfill_postprocess_plan.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_raw_data_landing_report(self) -> dict[str, Any]:
+        for path in self._raw_landing_candidates("raw_data_landing_report.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_raw_dataset_landing_checks(self) -> pd.DataFrame:
+        for path in self._raw_landing_candidates("raw_dataset_landing_checks.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
+    def load_raw_dataset_coverage_matrix(self) -> dict[str, Any]:
+        for path in self._raw_landing_candidates("raw_dataset_coverage_matrix.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_raw_freeze_readiness_decision(self) -> dict[str, Any]:
+        for path in self._raw_landing_candidates("raw_freeze_readiness_decision.json"):
+            payload = self._read_json(path)
+            if payload:
+                return payload
+        return {}
+
+    def load_raw_freeze_readiness_checks(self) -> pd.DataFrame:
+        for path in self._raw_landing_candidates("raw_freeze_readiness_checks.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
     def load_data_lake_report(self) -> dict[str, Any]:
         for path in self._data_lake_candidates("data_lake_report.json"):
             payload = self._read_json(path)
@@ -1781,10 +1851,26 @@ class AshareDashboardService:
         root = self.config.report_dir.parent
         return [
             self.config.backfill_dir / filename,
+            self.config.backfill_dir / "observer" / filename,
+            self.config.backfill_dir / "landing" / filename,
             root / "backfill" / filename,
+            root / "backfill_observer" / filename,
+            root / "raw_landing" / filename,
+            root / "landing" / filename,
             root / "data_backfill" / filename,
             root / "sample_backfill" / filename,
             root / "fake_tushare_backfill" / filename,
+            self.config.data_dir / filename,
+        ]
+
+    def _raw_landing_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.backfill_dir / "landing" / filename,
+            self.config.backfill_dir / filename,
+            root / "raw_landing" / filename,
+            root / "landing" / filename,
+            root / "raw_data_landing" / filename,
             self.config.data_dir / filename,
         ]
 

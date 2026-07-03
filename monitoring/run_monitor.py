@@ -29,6 +29,10 @@ from .checks import (
     check_broker_mapping_certification,
     check_broker_uat_contract,
     check_baseline_compare,
+    check_backfill_eta,
+    check_backfill_failed_jobs,
+    check_backfill_quarantined_jobs,
+    check_backfill_stalled_dataset,
     check_backfill_coverage,
     check_backfill_run,
     check_compute_cluster_resources,
@@ -74,6 +78,7 @@ from .checks import (
     check_operator_handoff_report,
     check_paper_account,
     check_package_build_artifacts,
+    check_postprocess_plan_blockers,
     check_pre_trade_risk_controls,
     check_production_close_day_status,
     check_production_replay,
@@ -84,6 +89,8 @@ from .checks import (
     check_point_in_time_validation,
     check_provider_readiness,
     check_quality_report,
+    check_raw_data_landing,
+    check_raw_freeze_readiness,
     check_release_gate,
     check_replay_day_failures,
     check_readiness_remediation,
@@ -99,6 +106,7 @@ from .checks import (
     check_real_data_size,
     check_real_data_sla,
     check_real_data_token_redaction,
+    check_running_backfill_progress,
     check_account_reconciliation,
     check_pending_model_reviews,
     check_quarantined_or_paused_model_usage,
@@ -186,6 +194,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--baseline-compare-path")
     parser.add_argument("--backfill-run-report-path")
     parser.add_argument("--backfill-coverage-report-path")
+    parser.add_argument("--backfill-observer-report-path")
+    parser.add_argument("--backfill-dataset-progress-path")
+    parser.add_argument("--backfill-eta-report-path")
+    parser.add_argument("--backfill-repair-plan-path")
+    parser.add_argument("--backfill-postprocess-plan-path")
+    parser.add_argument("--raw-data-landing-report-path")
+    parser.add_argument("--raw-freeze-readiness-decision-path")
     parser.add_argument("--dataset-version-manifest-path")
     parser.add_argument("--freeze-validation-report-path")
     parser.add_argument("--artifact-validation-report-path")
@@ -379,6 +394,14 @@ def main(argv: list[str] | None = None) -> int:
         ("real_data_token_redaction", lambda: check_real_data_token_redaction(args.real_data_readiness_report_path or args.real_data_pipeline_report_path)),
         ("field_coverage", lambda: check_field_coverage(args.field_coverage_path)),
         ("data_source_audit", lambda: check_data_source_audit(args.audit_summary_path)),
+        ("running_backfill_progress", lambda: check_running_backfill_progress(args.backfill_observer_report_path, args.backfill_dataset_progress_path)),
+        ("backfill_eta", lambda: check_backfill_eta(args.backfill_eta_report_path)),
+        ("backfill_failed_jobs", lambda: check_backfill_failed_jobs(args.backfill_dataset_progress_path)),
+        ("backfill_quarantined_jobs", lambda: check_backfill_quarantined_jobs(args.backfill_dataset_progress_path)),
+        ("backfill_stalled_dataset", lambda: check_backfill_stalled_dataset(args.backfill_observer_report_path)),
+        ("raw_data_landing", lambda: check_raw_data_landing(args.raw_data_landing_report_path)),
+        ("raw_freeze_readiness", lambda: check_raw_freeze_readiness(args.raw_freeze_readiness_decision_path)),
+        ("postprocess_plan_blockers", lambda: check_postprocess_plan_blockers(args.backfill_postprocess_plan_path)),
         ("alpha_factory_campaign", lambda: check_alpha_factory_campaign(args.alpha_factory_report_path, args.alpha_campaign_manifest_path)),
         ("alpha_static_errors", lambda: check_alpha_static_errors(args.alpha_static_checks_path)),
         ("alpha_proxy_eval", lambda: check_alpha_proxy_eval(args.alpha_proxy_eval_report_path)),
