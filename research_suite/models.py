@@ -190,6 +190,11 @@ class ResearchSuiteConfig:
     validation_campaign_max_candidates: int = 0
     validation_campaign_top_k_certification: int = 20
     write_factor_certification_queue: bool = False
+    run_factor_certification_campaign_store: bool = False
+    factor_certification_campaign_dir: str | None = None
+    factor_certification_queue_path: str | None = None
+    factor_certification_campaign_max_items: int = 0
+    write_certified_factor_pool: bool = False
     run_factor_certification: bool = False
     factor_certification_dir: str | None = None
     certification_policy_path: str | None = None
@@ -215,6 +220,12 @@ class ResearchSuiteConfig:
     portfolio_certification_policy_profile: str = "sample_lenient_portfolio"
     require_portfolio_certification: bool = False
     fail_on_portfolio_certification_rejected: bool = False
+    run_portfolio_campaign_store: bool = False
+    portfolio_campaign_dir: str | None = None
+    certified_factor_pool_path: str | None = None
+    portfolio_campaign_max_items: int = 0
+    write_production_candidate_bundle: bool = False
+    write_optimizer_policy_activation_queue: bool = False
     create_portfolio_policy_approval: bool = False
     portfolio_policy_approval_store_dir: str | None = None
     register_optimizer_policy: bool = False

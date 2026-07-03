@@ -1827,6 +1827,77 @@ def check_validation_large_campaign_plan(path: str | Path | None) -> tuple[dict[
     }, alerts
 
 
+def check_factor_certification_campaign(
+    report_path: str | Path | None,
+    registry_path: str | Path | None = None,
+) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    report = _read_json(Path(report_path)) if report_path else {}
+    registry = _read_json(Path(registry_path)) if registry_path else {}
+    payload = report or registry
+    status = str(payload.get("status", "missing") if payload else "missing")
+    failed = int(payload.get("failed_item_count", 0) or 0) if payload else 0
+    pool_count = int(payload.get("certified_factor_pool_count", 0) or 0) if payload else 0
+    alerts: list[MonitoringAlert] = []
+    if failed:
+        alerts.append(MonitoringAlert("warning", "factor_certification_campaign_status", "factor certification campaign has failed items", {"failed_item_count": failed}))
+    if payload and pool_count == 0:
+        alerts.append(MonitoringAlert("warning", "certified_factor_pool_empty", "certified factor pool is empty"))
+    return {
+        "exists": bool(payload),
+        "factor_certification_campaign_status": status,
+        "factor_certification_campaign_item_count": int(payload.get("item_count", 0) or 0) if payload else 0,
+        "factor_certification_campaign_failed_item_count": failed,
+        "certified_factor_pool_count": pool_count,
+    }, alerts
+
+
+def check_certified_factor_pool(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(path)) if path else []
+    alerts = [] if rows else [MonitoringAlert("warning", "certified_factor_pool_empty", "certified factor pool is empty")]
+    return {"exists": bool(rows), "certified_factor_pool_count": len(rows), "certified_factor_count": len({row.get("factor_id") for row in rows})}, alerts
+
+
+def check_portfolio_campaign(
+    report_path: str | Path | None,
+    registry_path: str | Path | None = None,
+) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    report = _read_json(Path(report_path)) if report_path else {}
+    registry = _read_json(Path(registry_path)) if registry_path else {}
+    payload = report or registry
+    status = str(payload.get("status", "missing") if payload else "missing")
+    failed = int(payload.get("failed_item_count", 0) or 0) if payload else 0
+    bundle_count = int(payload.get("production_candidate_bundle_count", 0) or 0) if payload else 0
+    alerts: list[MonitoringAlert] = []
+    if failed:
+        alerts.append(MonitoringAlert("warning", "portfolio_campaign_status", "portfolio campaign has failed items", {"failed_item_count": failed}))
+    if payload and bundle_count == 0:
+        alerts.append(MonitoringAlert("warning", "production_candidate_bundle_empty", "production candidate bundle is empty"))
+    return {
+        "exists": bool(payload),
+        "portfolio_campaign_status": status,
+        "portfolio_campaign_item_count": int(payload.get("item_count", 0) or 0) if payload else 0,
+        "portfolio_campaign_failed_item_count": failed,
+        "production_candidate_bundle_count": bundle_count,
+        "optimizer_policy_activation_queue_count": int(payload.get("optimizer_policy_activation_queue_count", 0) or 0) if payload else 0,
+    }, alerts
+
+
+def check_production_candidate_bundle(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(path)) if path else []
+    alerts = [] if rows else [MonitoringAlert("warning", "production_candidate_bundle_empty", "production candidate bundle is empty")]
+    pending = sum(1 for row in rows if row.get("selected_for_activation_review") is True)
+    return {"exists": bool(rows), "production_candidate_bundle_count": len(rows), "activation_review_candidate_count": pending}, alerts
+
+
+def check_optimizer_policy_activation_queue(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(path)) if path else []
+    pending = sum(1 for row in rows if str(row.get("status")) in {"pending", "pending_review", "queued"})
+    alerts = []
+    if pending:
+        alerts.append(MonitoringAlert("info", "optimizer_policy_activation_queue_pending", "optimizer policy activation queue has pending review items", {"pending_count": pending}))
+    return {"exists": bool(rows), "optimizer_policy_activation_queue_count": len(rows), "optimizer_policy_activation_pending_count": pending}, alerts
+
+
 def check_feature_set_manifest(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     payload = _read_json(Path(path)) if path else {}
     return {

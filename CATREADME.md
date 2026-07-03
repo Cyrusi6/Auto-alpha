@@ -95,6 +95,10 @@ Planned sync splits large daily datasets by date windows and splits index consti
 
 `factor_certification/` converts validation, data-freeze, PIT/leakage, Alpha Factory, stress, settlement, risk-control, EOD reconciliation, and lifecycle artifacts into a policy scorecard and certification decision. Profiles include `sample_lenient_certification`, `research_standard`, and `production_strict`. Certification gates promotion and review; it is not a performance guarantee.
 
+`certification_campaign_store/` is the campaign warehouse for `factor_certification_queue.jsonl`. It ingests queue items, records item state, supports dry-run/execute/resume, calls `factor_certification` for actual decisions, consolidates decisions, and writes `certified_factor_pool.jsonl` plus `certified_factor_leaderboard.jsonl`.
+
+`portfolio_campaign_store/` starts from `certified_factor_pool.jsonl`, runs or plans portfolio lab/certification items, consolidates selected policy and certification artifacts, and writes `production_candidate_bundle.jsonl` plus `optimizer_policy_activation_queue.jsonl`. The bundle is not activation; model registry, factor lifecycle, approval, and production gates remain required.
+
 `research/` orchestrates batch factor experiments. It loads default or JSON-defined candidate formulas, executes StackVM, applies transforms and gates, skips duplicate formula hashes, writes per-factor reports, ranks candidates, and can register a composite factor. Composite methods include equal weight, score weight, and rank average.
 
 `formula_search/` adds local formula discovery. It uses StackVM metadata to generate legal RPN formulas, estimate arity/lookback/complexity, mutate formulas, cross over parent formulas, remove duplicate hashes, and run multi-generation search through the same batch research pipeline.

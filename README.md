@@ -28,6 +28,7 @@ The current implementation is local-first. It uses deterministic sample data and
 - `validation_campaign_store/`: Batch validation campaign warehouse for Alpha candidate pools, shard plans, validation result consolidation, validation leaderboards, and factor certification queue export.
 - `validation_lab/`: Out-of-sample validation, walk-forward/purged/CSCV splits, multiple-testing diagnostics, overfit-risk estimates, placebo tests, regime robustness, sensitivity checks, and stress-validation reports.
 - `factor_certification/`: Factor production certification policies, scorecards, decisions, review packages, and optional factor-store status application.
+- `certification_campaign_store/`: Batch factor certification campaign warehouse for `factor_certification_queue.jsonl`, certification result consolidation, certified factor pools, and certified factor leaderboards.
 - `formula_search/`: Formula metadata, random generation, mutation, crossover, multi-generation search, and search reports.
 - `neural_search/`: AlphaGPT warm-start training, action-mask constrained formula sampling, lightweight policy search, checkpointing, and neural search reports.
 - `compute_cluster/`: Local CPU/GPU probe, GPU leases, job queue, subprocess runner, heartbeat, retry/resume state, and compute resource reports.
@@ -40,6 +41,7 @@ The current implementation is local-first. It uses deterministic sample data and
 - `portfolio_optimizer/`: Deterministic long-only benchmark-aware portfolio optimizer and serializable portfolio policies.
 - `portfolio_lab/`: Portfolio policy grids, scenario trials, robustness ranking, and selected policy artifacts for certified factors.
 - `portfolio_certification/`: Portfolio policy scorecards, certification decisions, certified policy packages, and optimizer-policy activation requests.
+- `portfolio_campaign_store/`: Batch portfolio campaign warehouse for certified factor pools, portfolio lab/certification item state, production candidate bundles, and optimizer policy activation queues.
 - `capacity_model/`: Local capacity, participation, and impact-cost estimates from amount, volume, turnover, and volatility.
 - `backtest/`: Long-only A-share portfolio simulation, market constraints, and benchmark-aware risk mode.
 - `execution/`: Paper broker and order/fill export utilities.
@@ -379,6 +381,31 @@ uv run python -m validation_campaign_store.run_validation_store run \
   --run-sensitivity \
   --run-stress-backtest \
   --top-k-certification-queue 20 \
+  --pretty
+```
+
+`certification_campaign_store/` takes that queue into batch factor certification. It records every queue item, supports dry-run planning and resume, calls `factor_certification` for execution, consolidates decisions, and writes `certified_factor_pool.jsonl` plus `certified_factor_leaderboard.jsonl`.
+
+```bash
+uv run python -m certification_campaign_store.run_certification_campaign run \
+  --certification-campaign-store-dir <campaign>/factor_certification_campaign \
+  --factor-certification-queue-path <campaign>/validation_campaign_store/factor_certification_queue.jsonl \
+  --output-dir <campaign>/factor_certification_campaign/items \
+  --max-items 20 \
+  --pretty
+```
+
+`portfolio_campaign_store/` takes `certified_factor_pool.jsonl` into portfolio policy trials and portfolio certification, then writes `production_candidate_bundle.jsonl` and `optimizer_policy_activation_queue.jsonl`. These artifacts are review inputs only. They do not activate a model or deploy trading logic; activation still requires approval, model registry, factor lifecycle, and production gates.
+
+```bash
+uv run python -m portfolio_campaign_store.run_portfolio_campaign run \
+  --portfolio-campaign-store-dir <campaign>/portfolio_campaign \
+  --certified-factor-pool-path <campaign>/factor_certification_campaign/certified_factor_pool.jsonl \
+  --data-dir <freeze>/data \
+  --factor-store-dir <campaign>/consolidated_factor_store \
+  --output-dir <campaign>/portfolio_campaign/items \
+  --max-items 5 \
+  --max-trials 2 \
   --pretty
 ```
 
@@ -1301,6 +1328,20 @@ uv run python -m experiment_orchestrator.run_experiment plan \
   --source-candidate-pool-path <campaign>/validation_pool/alpha_validation_candidate_pool.jsonl \
   --shard-count 32 \
   --candidate-budget 2000 \
+  --pretty
+```
+
+The same planning boundary applies to production candidate bundle campaigns. When readiness is not portfolio-ready, this writes a blocked plan and no compute jobs:
+
+```bash
+uv run python -m experiment_orchestrator.run_experiment plan \
+  --workflow real_data_portfolio_campaign_large_plan \
+  --output-dir <campaign>/portfolio_large_plan \
+  --research-readiness-decision-path <readiness>/research_readiness_decision.json \
+  --require-portfolio-ready \
+  --factor-certification-queue-path <campaign>/validation_campaign_store/factor_certification_queue.jsonl \
+  --certified-factor-pool-path <campaign>/factor_certification_campaign/certified_factor_pool.jsonl \
+  --max-items 50 \
   --pretty
 ```
 

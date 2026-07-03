@@ -172,6 +172,62 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
     (validation_campaign_dir / "factor_certification_queue.jsonl").write_text('{"queue_id":"q1","validation_candidate_id":"vc1","factor_id":"factor_x","priority":1}\n', encoding="utf-8")
     (validation_campaign_dir / "validation_candidate_dedup_report.json").write_text('{"validation_campaign_id":"vcamp","candidate_count":2,"duplicate_count":0}', encoding="utf-8")
     (validation_campaign_dir / "validation_large_campaign_plan.json").write_text('{"experiment_id":"e","workflow":"real_data_validation_campaign_large_plan","status":"blocked","blocked":true,"resource_plan":{},"compute_jobs":[]}', encoding="utf-8")
+    factor_cert_campaign_dir = tmp_path / "factor_certification_campaign"
+    factor_cert_campaign_dir.mkdir()
+    (factor_cert_campaign_dir / "factor_certification_campaign_registry.json").write_text(
+        '{"status":"ready","campaign_count":1,"item_count":1,"certified_factor_pool_count":1}',
+        encoding="utf-8",
+    )
+    (factor_cert_campaign_dir / "factor_certification_campaign_report.json").write_text(
+        '{"status":"ready","item_count":1,"certified_factor_pool_count":1,"leaderboard_count":1}',
+        encoding="utf-8",
+    )
+    (factor_cert_campaign_dir / "factor_certification_campaigns.jsonl").write_text(
+        '{"certification_campaign_id":"fcc1","candidate_count":1}\n',
+        encoding="utf-8",
+    )
+    (factor_cert_campaign_dir / "factor_certification_items.jsonl").write_text(
+        '{"item_id":"i1","queue_id":"q1","factor_id":"factor_x","status":"success"}\n',
+        encoding="utf-8",
+    )
+    (factor_cert_campaign_dir / "certified_factor_pool.jsonl").write_text(
+        '{"certified_factor_pool_id":"cfp1","factor_id":"factor_x","certification_status":"conditional","certification_score":1.0}\n',
+        encoding="utf-8",
+    )
+    (factor_cert_campaign_dir / "certified_factor_leaderboard.jsonl").write_text(
+        '{"rank":1,"certified_factor_pool_id":"cfp1","factor_id":"factor_x","certification_score":1.0}\n',
+        encoding="utf-8",
+    )
+    portfolio_campaign_dir = tmp_path / "portfolio_campaign"
+    portfolio_campaign_dir.mkdir()
+    (portfolio_campaign_dir / "portfolio_certification_campaign_registry.json").write_text(
+        '{"status":"ready","campaign_count":1,"item_count":1,"production_candidate_bundle_count":1}',
+        encoding="utf-8",
+    )
+    (portfolio_campaign_dir / "portfolio_certification_campaign_report.json").write_text(
+        '{"status":"ready","item_count":1,"production_candidate_bundle_count":1,"optimizer_policy_activation_queue_count":1}',
+        encoding="utf-8",
+    )
+    (portfolio_campaign_dir / "portfolio_candidate_items.jsonl").write_text(
+        '{"item_id":"p1","factor_id":"factor_x","status":"success"}\n',
+        encoding="utf-8",
+    )
+    (portfolio_campaign_dir / "production_candidate_bundle.jsonl").write_text(
+        '{"production_candidate_bundle_id":"pcb1","factor_id":"factor_x","portfolio_certification_status":"conditional","portfolio_score":1.0}\n',
+        encoding="utf-8",
+    )
+    (portfolio_campaign_dir / "production_candidate_bundle_report.json").write_text(
+        '{"status":"success","production_candidate_bundle_count":1,"optimizer_policy_activation_queue_count":1}',
+        encoding="utf-8",
+    )
+    (portfolio_campaign_dir / "optimizer_policy_activation_queue.jsonl").write_text(
+        '{"activation_queue_id":"a1","factor_id":"factor_x","status":"pending_review"}\n',
+        encoding="utf-8",
+    )
+    (portfolio_campaign_dir / "production_candidate_bundle_plan.json").write_text(
+        '{"experiment_id":"e","workflow":"real_data_portfolio_campaign_large_plan","status":"blocked","blocked":true,"resource_plan":{},"compute_jobs":[]}',
+        encoding="utf-8",
+    )
     statement_dir = tmp_path / "statement_import_mismatch"
     statement_dir.mkdir()
     (statement_dir / "broker_statement_manifest.json").write_text(
@@ -216,6 +272,8 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
             model_registry_dir=model_registry_dir,
             model_lifecycle_dir=model_lifecycle_dir,
             validation_campaign_store_dir=validation_campaign_dir,
+            factor_certification_campaign_dir=factor_cert_campaign_dir,
+            portfolio_campaign_dir=portfolio_campaign_dir,
         )
     )
 
@@ -245,6 +303,19 @@ def test_dashboard_service_reads_risk_artifacts(tmp_path):
     assert not service.load_factor_certification_queue().empty
     assert service.load_validation_candidate_dedup_report()["duplicate_count"] == 0
     assert service.load_validation_large_campaign_plan()["status"] == "blocked"
+    assert service.load_factor_certification_campaign_registry()["item_count"] == 1
+    assert service.load_factor_certification_campaign_report()["certified_factor_pool_count"] == 1
+    assert not service.load_factor_certification_campaigns().empty
+    assert not service.load_factor_certification_items().empty
+    assert not service.load_certified_factor_pool().empty
+    assert not service.load_certified_factor_leaderboard().empty
+    assert service.load_portfolio_campaign_registry()["item_count"] == 1
+    assert service.load_portfolio_campaign_report()["production_candidate_bundle_count"] == 1
+    assert not service.load_portfolio_candidate_items().empty
+    assert not service.load_production_candidate_bundle().empty
+    assert service.load_production_candidate_bundle_report()["production_candidate_bundle_count"] == 1
+    assert not service.load_optimizer_policy_activation_queue().empty
+    assert service.load_production_candidate_bundle_plan()["status"] == "blocked"
     assert service.load_settlement_report()["settlement_aware"] is True
     assert not service.load_settlement_events().empty
     assert not service.load_cash_buckets().empty

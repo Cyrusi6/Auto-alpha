@@ -2141,3 +2141,38 @@
 ### Follow-Ups
 - Do not run real validation campaigns until the active real Tushare backfill, repair, freeze, matrix refresh, and Alpha Factory campaign have finished and research readiness explicitly allows validation.
 - Use validation campaign store as the standard bridge from large Alpha candidate pools to factor certification and portfolio lab review.
+
+## Task 045-A - Certification And Portfolio Campaign Stores
+
+- Added `certification_campaign_store/`, a local campaign warehouse for `factor_certification_queue.jsonl`. It registers factor certification campaigns, ingests queue items, supports dry-run/execute/resume, calls `factor_certification` per item, consolidates decisions, and writes `certified_factor_pool.jsonl` plus `certified_factor_leaderboard.jsonl`.
+- Added `portfolio_campaign_store/`, a local campaign warehouse for certified factors. It ingests `certified_factor_pool.jsonl`, supports dry-run/execute/resume, runs portfolio lab and portfolio certification for bounded candidate batches, and writes `production_candidate_bundle.jsonl` plus `optimizer_policy_activation_queue.jsonl`.
+- Added experiment-orchestrator planning workflows for factor certification campaigns, portfolio campaigns, production candidate bundle plans, and readiness-blocked real-data portfolio campaign plans. Blocked plans write runbooks/resource plans with empty `compute_jobs`.
+- Extended `research_suite`, `monitoring`, `dashboard`, `artifact_schema`, `release_manager`, local CI, packaging metadata, README, and CATREADME for factor certification campaign and portfolio campaign artifacts.
+- Added offline sample/fake tests for queue ingest, certification campaign execution, certified pool consolidation, portfolio campaign execution, production bundle creation, activation queue output, readiness-blocked planning, monitoring checks, dashboard reads, and artifact schema validation.
+
+### New Artifacts
+- `factor_certification_campaign_registry.json`
+- `factor_certification_campaigns.jsonl`
+- `factor_certification_items.jsonl`
+- `factor_certification_campaign_report.json/md`
+- `certified_factor_pool.jsonl`
+- `certified_factor_leaderboard.jsonl`
+- `factor_certification_campaign_artifact_catalog.json`
+- `portfolio_certification_campaign_registry.json`
+- `portfolio_certification_campaigns.jsonl`
+- `portfolio_candidate_items.jsonl`
+- `portfolio_certification_campaign_report.json/md`
+- `production_candidate_bundle.jsonl`
+- `production_candidate_bundle_report.json/md`
+- `optimizer_policy_activation_queue.jsonl`
+- `portfolio_campaign_artifact_catalog.json`
+- `certification_campaign_plan.json/md`
+- `portfolio_campaign_plan.json/md`
+- `production_candidate_bundle_plan.json/md`
+- `resource_plan.json`
+- `commands.sh`
+- `runbook.md`
+
+### Follow-Ups
+- Do not run real factor certification or portfolio campaigns until the active Tushare backfill, repair, freeze, matrix refresh, Alpha Factory, and validation campaigns have finished and readiness explicitly allows the next stage.
+- Treat `production_candidate_bundle.jsonl` and `optimizer_policy_activation_queue.jsonl` as review inputs only; they do not activate models or trading policies without approval, model registry, factor lifecycle, and production gates.

@@ -99,6 +99,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--validation-campaign-max-candidates", type=int, default=0)
     parser.add_argument("--validation-campaign-top-k-certification", type=int, default=20)
     parser.add_argument("--write-factor-certification-queue", action="store_true")
+    parser.add_argument("--run-factor-certification-campaign-store", action="store_true")
+    parser.add_argument("--factor-certification-campaign-dir")
+    parser.add_argument("--factor-certification-queue-path")
+    parser.add_argument("--factor-certification-campaign-max-items", type=int, default=0)
+    parser.add_argument("--write-certified-factor-pool", action="store_true")
     parser.add_argument("--run-factor-certification", action="store_true")
     parser.add_argument("--factor-certification-dir")
     parser.add_argument("--certification-policy-path")
@@ -132,6 +137,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--require-portfolio-certification", action="store_true")
     parser.add_argument("--fail-on-portfolio-certification-rejected", action="store_true")
+    parser.add_argument("--run-portfolio-campaign-store", action="store_true")
+    parser.add_argument("--portfolio-campaign-dir")
+    parser.add_argument("--certified-factor-pool-path")
+    parser.add_argument("--portfolio-campaign-max-items", type=int, default=0)
+    parser.add_argument("--write-production-candidate-bundle", action="store_true")
+    parser.add_argument("--write-optimizer-policy-activation-queue", action="store_true")
     parser.add_argument("--create-portfolio-policy-approval", action="store_true")
     parser.add_argument("--portfolio-policy-approval-store-dir")
     parser.add_argument("--register-optimizer-policy", action="store_true")
@@ -338,6 +349,11 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
         validation_campaign_max_candidates=args.validation_campaign_max_candidates,
         validation_campaign_top_k_certification=args.validation_campaign_top_k_certification,
         write_factor_certification_queue=args.write_factor_certification_queue,
+        run_factor_certification_campaign_store=args.run_factor_certification_campaign_store,
+        factor_certification_campaign_dir=args.factor_certification_campaign_dir,
+        factor_certification_queue_path=args.factor_certification_queue_path,
+        factor_certification_campaign_max_items=args.factor_certification_campaign_max_items,
+        write_certified_factor_pool=args.write_certified_factor_pool,
         run_factor_certification=args.run_factor_certification,
         factor_certification_dir=args.factor_certification_dir,
         certification_policy_path=args.certification_policy_path,
@@ -363,6 +379,12 @@ def _default_config(args: argparse.Namespace) -> ResearchSuiteConfig:
         portfolio_certification_policy_profile=args.portfolio_certification_policy_profile,
         require_portfolio_certification=args.require_portfolio_certification,
         fail_on_portfolio_certification_rejected=args.fail_on_portfolio_certification_rejected,
+        run_portfolio_campaign_store=args.run_portfolio_campaign_store,
+        portfolio_campaign_dir=args.portfolio_campaign_dir,
+        certified_factor_pool_path=args.certified_factor_pool_path,
+        portfolio_campaign_max_items=args.portfolio_campaign_max_items,
+        write_production_candidate_bundle=args.write_production_candidate_bundle,
+        write_optimizer_policy_activation_queue=args.write_optimizer_policy_activation_queue,
         create_portfolio_policy_approval=args.create_portfolio_policy_approval,
         portfolio_policy_approval_store_dir=args.portfolio_policy_approval_store_dir,
         register_optimizer_policy=args.register_optimizer_policy,

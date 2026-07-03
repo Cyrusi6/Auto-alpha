@@ -28,7 +28,9 @@ from strategy_manager import runner as strategy_runner
 from universe import run_universe
 from validation_lab.run_validation import main as run_validation_main
 from validation_campaign_store.run_validation_store import main as run_validation_campaign_store_main
+from certification_campaign_store.run_certification_campaign import main as run_certification_campaign_main
 from factor_certification.run_certify import main as run_certify_main
+from portfolio_campaign_store.run_portfolio_campaign import main as run_portfolio_campaign_main
 from portfolio_lab.run_portfolio_lab import main as run_portfolio_lab_main
 from portfolio_certification.run_portfolio_certify import main as run_portfolio_certify_main
 from leakage_audit.run_audit import main as run_leakage_audit_main
@@ -66,7 +68,9 @@ class ResearchSuiteRunner:
         self.alpha_summary: dict[str, Any] = {}
         self.validation_summary: dict[str, Any] = {}
         self.validation_campaign_summary: dict[str, Any] = {}
+        self.factor_certification_campaign_summary: dict[str, Any] = {}
         self.certification_summary: dict[str, Any] = {}
+        self.portfolio_campaign_summary: dict[str, Any] = {}
         self.portfolio_lab_summary: dict[str, Any] = {}
         self.portfolio_certification_summary: dict[str, Any] = {}
         self.dataset_version_id: str | None = None
@@ -127,8 +131,12 @@ class ResearchSuiteRunner:
                 self._append_stage("validation_lab", self._stage_validation_lab)
             if self.config.run_validation_campaign_store:
                 self._append_stage("validation_campaign_store", self._stage_validation_campaign_store)
+            if self.config.run_factor_certification_campaign_store:
+                self._append_stage("factor_certification_campaign_store", self._stage_factor_certification_campaign_store)
             if self.config.run_factor_certification:
                 self._append_stage("factor_certification", self._stage_factor_certification)
+            if self.config.run_portfolio_campaign_store:
+                self._append_stage("portfolio_campaign_store", self._stage_portfolio_campaign_store)
             if self.config.run_portfolio_lab:
                 self._append_stage("portfolio_lab", self._stage_portfolio_lab)
             if self.config.run_portfolio_certification:
@@ -244,6 +252,11 @@ class ResearchSuiteRunner:
                 "validation_campaign_report_path": (self.validation_campaign_summary.get("paths") or {}).get(
                     "validation_campaign_store_report_path"
                 ),
+                "factor_certification_campaign_id": self.factor_certification_campaign_summary.get("certification_campaign_id"),
+                "certified_factor_pool_count": self.factor_certification_campaign_summary.get("certified_factor_pool_count", 0),
+                "factor_certification_campaign_report_path": (self.factor_certification_campaign_summary.get("paths") or {}).get(
+                    "factor_certification_campaign_report_path"
+                ),
                 "certification_status": self.certification_summary.get("certification_status"),
                 "certification_policy_profile": self.certification_summary.get("certification_policy_profile"),
                 "certification_decision_path": (self.certification_summary.get("paths") or {}).get("factor_certification_decision_path"),
@@ -257,6 +270,10 @@ class ResearchSuiteRunner:
                 "portfolio_certification_policy_profile": self.portfolio_certification_summary.get("portfolio_certification_policy_profile"),
                 "portfolio_certification_decision_path": (self.portfolio_certification_summary.get("paths") or {}).get("portfolio_certification_decision_path"),
                 "portfolio_policy_model_version_id": self.portfolio_certification_summary.get("model_version_id"),
+                "portfolio_campaign_id": self.portfolio_campaign_summary.get("portfolio_campaign_id"),
+                "production_candidate_bundle_count": self.portfolio_campaign_summary.get("production_candidate_bundle_count", 0),
+                "optimizer_policy_activation_queue_count": self.portfolio_campaign_summary.get("optimizer_policy_activation_queue_count", 0),
+                "best_production_candidate_score": self.portfolio_campaign_summary.get("best_production_candidate_score", 0.0),
             },
         )
         suite_json, suite_md = write_suite_report(result, self.output_dir)
@@ -1546,6 +1563,56 @@ class ResearchSuiteRunner:
             self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "validation_campaign_store")
         return self.validation_campaign_summary, output_paths
 
+    def _stage_factor_certification_campaign_store(self) -> tuple[dict[str, Any], dict[str, str]]:
+        queue_path = self.config.factor_certification_queue_path
+        if not queue_path:
+            queue_path = (self.validation_campaign_summary.get("paths") or {}).get("factor_certification_queue_path")
+        if not queue_path:
+            queue_path = str((Path(self.config.validation_campaign_store_dir) if self.config.validation_campaign_store_dir else self.output_dir / "validation_campaign_store") / "factor_certification_queue.jsonl")
+        if not Path(queue_path).exists():
+            raise ValueError("--factor-certification-queue-path is required when factor certification campaign store is enabled")
+        campaign_dir = (
+            Path(self.config.factor_certification_campaign_dir)
+            if self.config.factor_certification_campaign_dir
+            else self.output_dir / "factor_certification_campaign"
+        )
+        command = "run" if self.config.write_certified_factor_pool else "plan"
+        argv = [
+            command,
+            "--certification-campaign-store-dir",
+            str(campaign_dir),
+            "--factor-certification-queue-path",
+            str(queue_path),
+            "--output-dir",
+            str(campaign_dir / "items"),
+            "--certification-policy-profile",
+            self.config.certification_policy_profile,
+        ]
+        if self.config.factor_certification_campaign_max_items:
+            argv.extend(["--max-items", str(self.config.factor_certification_campaign_max_items)])
+        if not self.config.write_certified_factor_pool:
+            argv.append("--dry-run")
+        payload = _run_json_main(run_certification_campaign_main, argv)
+        report_path = campaign_dir / "factor_certification_campaign_report.json"
+        summary = _read_json(report_path) or payload
+        self.factor_certification_campaign_summary = {
+            **summary,
+            "certification_campaign_id": payload.get("certification_campaign_id") or summary.get("certification_campaign_id"),
+            "paths": payload.get("paths", {}) if isinstance(payload.get("paths"), dict) else summary.get("paths", {}),
+        }
+        output_paths = {
+            "factor_certification_campaign_registry": str(campaign_dir / "factor_certification_campaign_registry.json"),
+            "factor_certification_campaigns": str(campaign_dir / "factor_certification_campaigns.jsonl"),
+            "factor_certification_items": str(campaign_dir / "factor_certification_items.jsonl"),
+            "factor_certification_campaign_report": str(campaign_dir / "factor_certification_campaign_report.json"),
+            "certified_factor_pool": str(campaign_dir / "certified_factor_pool.jsonl"),
+            "certified_factor_leaderboard": str(campaign_dir / "certified_factor_leaderboard.jsonl"),
+            "factor_certification_campaign_artifact_catalog": str(campaign_dir / "factor_certification_campaign_artifact_catalog.json"),
+        }
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "factor_certification_campaign")
+        return self.factor_certification_campaign_summary, output_paths
+
     def _stage_factor_certification(self) -> tuple[dict[str, Any], dict[str, str]]:
         if not self.selected_factor_id:
             raise ValueError("no selected factor for certification")
@@ -1648,6 +1715,67 @@ class ResearchSuiteRunner:
         for name, path in output_paths.items():
             self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "portfolio_lab")
         return payload, output_paths
+
+    def _stage_portfolio_campaign_store(self) -> tuple[dict[str, Any], dict[str, str]]:
+        pool_path = self.config.certified_factor_pool_path
+        if not pool_path:
+            pool_path = (self.factor_certification_campaign_summary.get("paths") or {}).get("certified_factor_pool_path")
+        if not pool_path:
+            pool_path = str((Path(self.config.factor_certification_campaign_dir) if self.config.factor_certification_campaign_dir else self.output_dir / "factor_certification_campaign") / "certified_factor_pool.jsonl")
+        if not Path(pool_path).exists():
+            raise ValueError("--certified-factor-pool-path is required when portfolio campaign store is enabled")
+        campaign_dir = (
+            Path(self.config.portfolio_campaign_dir)
+            if self.config.portfolio_campaign_dir
+            else self.output_dir / "portfolio_campaign"
+        )
+        command = "run" if self.config.write_production_candidate_bundle or self.config.write_optimizer_policy_activation_queue else "plan"
+        argv = [
+            command,
+            "--portfolio-campaign-store-dir",
+            str(campaign_dir),
+            "--certified-factor-pool-path",
+            str(pool_path),
+            "--data-dir",
+            self.config.data_dir,
+            "--factor-store-dir",
+            self.config.factor_store_dir,
+            "--output-dir",
+            str(campaign_dir / "items"),
+            "--portfolio-policy-profile",
+            self.config.portfolio_certification_policy_profile,
+            "--scenario-profile",
+            self.config.portfolio_lab_scenario_profile,
+            "--index-code",
+            self.config.index_code,
+            "--max-trials",
+            "1",
+        ]
+        if self.config.portfolio_campaign_max_items:
+            argv.extend(["--max-items", str(self.config.portfolio_campaign_max_items)])
+        if not (self.config.write_production_candidate_bundle or self.config.write_optimizer_policy_activation_queue):
+            argv.append("--dry-run")
+        payload = _run_json_main(run_portfolio_campaign_main, argv)
+        report_path = campaign_dir / "portfolio_certification_campaign_report.json"
+        summary = _read_json(report_path) or payload
+        self.portfolio_campaign_summary = {
+            **summary,
+            "portfolio_campaign_id": payload.get("portfolio_campaign_id") or summary.get("portfolio_campaign_id"),
+            "paths": payload.get("paths", {}) if isinstance(payload.get("paths"), dict) else summary.get("paths", {}),
+        }
+        output_paths = {
+            "portfolio_certification_campaign_registry": str(campaign_dir / "portfolio_certification_campaign_registry.json"),
+            "portfolio_certification_campaigns": str(campaign_dir / "portfolio_certification_campaigns.jsonl"),
+            "portfolio_candidate_items": str(campaign_dir / "portfolio_candidate_items.jsonl"),
+            "portfolio_certification_campaign_report": str(campaign_dir / "portfolio_certification_campaign_report.json"),
+            "production_candidate_bundle": str(campaign_dir / "production_candidate_bundle.jsonl"),
+            "production_candidate_bundle_report": str(campaign_dir / "production_candidate_bundle_report.json"),
+            "optimizer_policy_activation_queue": str(campaign_dir / "optimizer_policy_activation_queue.jsonl"),
+            "portfolio_campaign_artifact_catalog": str(campaign_dir / "portfolio_campaign_artifact_catalog.json"),
+        }
+        for name, path in output_paths.items():
+            self.catalog = register_artifact(self.catalog, name, path, _artifact_kind(path), "portfolio_campaign")
+        return self.portfolio_campaign_summary, output_paths
 
     def _stage_portfolio_certification(self) -> tuple[dict[str, Any], dict[str, str]]:
         if not self.selected_factor_id:

@@ -67,8 +67,10 @@ from .checks import (
     check_formula_batch_eval,
     check_formula_corpus,
     check_factor_certification,
+    check_factor_certification_campaign,
     check_portfolio_certification,
     check_portfolio_lab,
+    check_certified_factor_pool,
     check_experiment_merge_status,
     check_experiment_shard_failures,
     check_alphagpt_pretrain,
@@ -144,6 +146,9 @@ from .checks import (
     check_validation_campaign_leaderboard,
     check_validation_campaign_store,
     check_validation_large_campaign_plan,
+    check_portfolio_campaign,
+    check_production_candidate_bundle,
+    check_optimizer_policy_activation_queue,
     check_settlement_fee_tax,
     check_settlement_report,
     check_shadow_drift,
@@ -348,6 +353,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--validation-leaderboard-path")
     parser.add_argument("--factor-certification-queue-path")
     parser.add_argument("--validation-large-campaign-plan-path")
+    parser.add_argument("--factor-certification-campaign-report-path")
+    parser.add_argument("--factor-certification-campaign-registry-path")
+    parser.add_argument("--certified-factor-pool-path")
+    parser.add_argument("--certified-factor-leaderboard-path")
+    parser.add_argument("--portfolio-campaign-report-path")
+    parser.add_argument("--portfolio-campaign-registry-path")
+    parser.add_argument("--production-candidate-bundle-path")
+    parser.add_argument("--optimizer-policy-activation-queue-path")
+    parser.add_argument("--production-candidate-bundle-plan-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -466,6 +480,20 @@ def main(argv: list[str] | None = None) -> int:
         ("validation_campaign_leaderboard", lambda: check_validation_campaign_leaderboard(args.validation_leaderboard_path)),
         ("factor_certification_queue", lambda: check_factor_certification_queue(args.factor_certification_queue_path)),
         ("validation_large_campaign_plan", lambda: check_validation_large_campaign_plan(args.validation_large_campaign_plan_path)),
+        (
+            "factor_certification_campaign",
+            lambda: check_factor_certification_campaign(
+                args.factor_certification_campaign_report_path,
+                args.factor_certification_campaign_registry_path,
+            ),
+        ),
+        ("certified_factor_pool", lambda: check_certified_factor_pool(args.certified_factor_pool_path)),
+        (
+            "portfolio_campaign",
+            lambda: check_portfolio_campaign(args.portfolio_campaign_report_path, args.portfolio_campaign_registry_path),
+        ),
+        ("production_candidate_bundle", lambda: check_production_candidate_bundle(args.production_candidate_bundle_path)),
+        ("optimizer_policy_activation_queue", lambda: check_optimizer_policy_activation_queue(args.optimizer_policy_activation_queue_path)),
         ("feature_set_manifest", lambda: check_feature_set_manifest(args.feature_set_manifest_path)),
         ("feature_coverage", lambda: check_feature_coverage(args.feature_coverage_report_path)),
         ("validation_lab", lambda: check_validation_lab(args.validation_lab_report_path, args.factor_validation_summary_path)),

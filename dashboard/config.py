@@ -53,8 +53,10 @@ class DashboardConfig:
     validation_lab_dir: Path = Path("artifacts/validation_lab")
     validation_campaign_store_dir: Path = Path("artifacts/validation_campaign_store")
     factor_certification_dir: Path = Path("artifacts/factor_certification")
+    factor_certification_campaign_dir: Path = Path("artifacts/factor_certification_campaign")
     portfolio_lab_dir: Path = Path("artifacts/portfolio_lab")
     portfolio_certification_dir: Path = Path("artifacts/portfolio_certification")
+    portfolio_campaign_dir: Path = Path("artifacts/portfolio_campaign")
     pretrain_dir: Path = Path("artifacts/alphagpt_pretrain")
     model_registry_dir: Path = Path("artifacts/model_registry")
     model_lifecycle_dir: Path = Path("artifacts/model_lifecycle")
@@ -122,8 +124,12 @@ class DashboardConfig:
                 os.getenv("ASHARE_DASHBOARD_VALIDATION_CAMPAIGN_STORE_DIR") or "artifacts/validation_campaign_store"
             ),
             factor_certification_dir=Path(os.getenv("ASHARE_DASHBOARD_FACTOR_CERTIFICATION_DIR") or "artifacts/factor_certification"),
+            factor_certification_campaign_dir=Path(
+                os.getenv("ASHARE_DASHBOARD_FACTOR_CERTIFICATION_CAMPAIGN_DIR") or "artifacts/factor_certification_campaign"
+            ),
             portfolio_lab_dir=Path(os.getenv("ASHARE_DASHBOARD_PORTFOLIO_LAB_DIR") or "artifacts/portfolio_lab"),
             portfolio_certification_dir=Path(os.getenv("ASHARE_DASHBOARD_PORTFOLIO_CERTIFICATION_DIR") or "artifacts/portfolio_certification"),
+            portfolio_campaign_dir=Path(os.getenv("ASHARE_DASHBOARD_PORTFOLIO_CAMPAIGN_DIR") or "artifacts/portfolio_campaign"),
             pretrain_dir=Path(os.getenv("ASHARE_DASHBOARD_PRETRAIN_DIR") or "artifacts/alphagpt_pretrain"),
             model_registry_dir=Path(os.getenv("ASHARE_DASHBOARD_MODEL_REGISTRY_DIR") or "artifacts/model_registry"),
             model_lifecycle_dir=Path(os.getenv("ASHARE_DASHBOARD_MODEL_LIFECYCLE_DIR") or "artifacts/model_lifecycle"),

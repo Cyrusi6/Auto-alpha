@@ -20,7 +20,22 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--factor-store-dir")
     parser.add_argument("--pretty", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ["register-factor", "list-models", "show-model", "show-active", "activate", "pause", "resume", "quarantine", "retire", "rollback", "lineage", "report"]:
+    for name in [
+        "register-factor",
+        "register-production-candidate-bundle",
+        "show-production-candidates",
+        "list-models",
+        "show-model",
+        "show-active",
+        "activate",
+        "pause",
+        "resume",
+        "quarantine",
+        "retire",
+        "rollback",
+        "lineage",
+        "report",
+    ]:
         cmd = sub.add_parser(name)
         cmd.add_argument("--factor-id")
         cmd.add_argument("--model-version-id")
@@ -31,6 +46,8 @@ def _build_parser() -> argparse.ArgumentParser:
         cmd.add_argument("--environment", default="paper")
         cmd.add_argument("--artifact-dir", action="append", default=[])
         cmd.add_argument("--artifact-catalog-path", action="append", default=[])
+        cmd.add_argument("--production-candidate-bundle-path")
+        cmd.add_argument("--dry-run", action="store_true")
         cmd.add_argument("--explicit-override", action="store_true")
         cmd.add_argument("--pretty", action="store_true", default=argparse.SUPPRESS)
     return parser
@@ -59,6 +76,22 @@ def _run(args: argparse.Namespace, registry: LocalModelRegistry) -> dict:
         record = registry.register_factor_record(factor, model_kind=args.model_kind)
         write_model_registry_report(registry)
         return {"model_version": record.to_dict(), "model_version_id": record.model_version_id}
+    if args.command in {"register-production-candidate-bundle", "show-production-candidates"}:
+        if not args.production_candidate_bundle_path:
+            raise ValueError(f"{args.command} requires --production-candidate-bundle-path")
+        candidates = _read_jsonl(Path(args.production_candidate_bundle_path))
+        payload = {
+            "status": "dry_run" if args.dry_run or args.command == "show-production-candidates" else "recorded",
+            "candidate_count": len(candidates),
+            "candidates": candidates,
+            "note": "production candidate bundles are not activated by this command",
+        }
+        if args.command == "register-production-candidate-bundle" and not args.dry_run:
+            path = Path(args.registry_dir) / "production_candidate_bundle_registry.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+            payload["production_candidate_bundle_registry_path"] = str(path)
+        return payload
     if args.command == "list-models":
         return {"models": [record.to_dict() for record in registry.load_model_versions()]}
     if args.command == "show-model":
@@ -134,6 +167,10 @@ def _run(args: argparse.Namespace, registry: LocalModelRegistry) -> dict:
 def _sync_if_possible(args: argparse.Namespace, registry: LocalModelRegistry, model_version_id: str) -> None:
     if args.factor_store_dir:
         registry.sync_factor_store_status(LocalFactorStore(args.factor_store_dir), model_version_id)
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 if __name__ == "__main__":

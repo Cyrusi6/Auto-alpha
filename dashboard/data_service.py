@@ -385,6 +385,48 @@ class AshareDashboardService:
     def load_factor_certification_queue(self) -> pd.DataFrame:
         return self._read_first_jsonl(self._validation_campaign_artifact_candidates("factor_certification_queue.jsonl"))
 
+    def load_factor_certification_campaign_registry(self) -> dict[str, Any]:
+        return self._read_first_json(self._factor_certification_campaign_artifact_candidates("factor_certification_campaign_registry.json"))
+
+    def load_factor_certification_campaign_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._factor_certification_campaign_artifact_candidates("factor_certification_campaign_report.json"))
+
+    def load_factor_certification_campaigns(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._factor_certification_campaign_artifact_candidates("factor_certification_campaigns.jsonl"))
+
+    def load_factor_certification_items(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._factor_certification_campaign_artifact_candidates("factor_certification_items.jsonl"))
+
+    def load_certified_factor_pool(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._factor_certification_campaign_artifact_candidates("certified_factor_pool.jsonl"))
+
+    def load_certified_factor_leaderboard(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._factor_certification_campaign_artifact_candidates("certified_factor_leaderboard.jsonl"))
+
+    def load_portfolio_campaign_registry(self) -> dict[str, Any]:
+        return self._read_first_json(self._portfolio_campaign_artifact_candidates("portfolio_certification_campaign_registry.json"))
+
+    def load_portfolio_campaign_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._portfolio_campaign_artifact_candidates("portfolio_certification_campaign_report.json"))
+
+    def load_portfolio_candidate_items(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._portfolio_campaign_artifact_candidates("portfolio_candidate_items.jsonl"))
+
+    def load_production_candidate_bundle(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._portfolio_campaign_artifact_candidates("production_candidate_bundle.jsonl"))
+
+    def load_production_candidate_bundle_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._portfolio_campaign_artifact_candidates("production_candidate_bundle_report.json"))
+
+    def load_optimizer_policy_activation_queue(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._portfolio_campaign_artifact_candidates("optimizer_policy_activation_queue.jsonl"))
+
+    def load_production_candidate_bundle_plan(self) -> dict[str, Any]:
+        return self._read_first_json(
+            self._portfolio_campaign_artifact_candidates("production_candidate_bundle_plan.json")
+            + self._experiment_artifact_candidates("production_candidate_bundle_plan.json")
+        )
+
     def load_validation_candidate_dedup_report(self) -> dict[str, Any]:
         return self._read_first_json(self._validation_campaign_artifact_candidates("validation_candidate_dedup_report.json"))
 
@@ -2287,6 +2329,15 @@ class AshareDashboardService:
             root / "suite" / "factor_certification" / filename,
         ]
 
+    def _factor_certification_campaign_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.factor_certification_campaign_dir / filename,
+            root / "factor_certification_campaign" / filename,
+            root / "certification_campaign_store" / filename,
+            root / "suite" / "factor_certification_campaign" / filename,
+        ]
+
     def _portfolio_lab_artifact_candidates(self, filename: str) -> list[Path]:
         root = self.config.report_dir.parent
         return [
@@ -2301,6 +2352,16 @@ class AshareDashboardService:
             self.config.portfolio_certification_dir / filename,
             root / "portfolio_certification" / filename,
             root / "suite" / "portfolio_certification" / filename,
+        ]
+
+    def _portfolio_campaign_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.portfolio_campaign_dir / filename,
+            root / "portfolio_campaign" / filename,
+            root / "portfolio_campaign_store" / filename,
+            root / "suite" / "portfolio_campaign" / filename,
+            root / "experiment" / filename,
         ]
 
     def _real_data_artifact_candidates(self, filename: str) -> list[Path]:

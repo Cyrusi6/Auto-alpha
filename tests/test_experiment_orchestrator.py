@@ -121,3 +121,29 @@ def test_real_data_validation_campaign_large_plan_blocks_when_readiness_not_read
     payload = json.loads((tmp_path / "validation_plan" / "validation_large_campaign_plan.json").read_text(encoding="utf-8"))
     assert payload["status"] == "blocked"
     assert payload["compute_jobs"] == []
+
+
+def test_real_data_portfolio_campaign_large_plan_blocks_when_readiness_not_ready(tmp_path):
+    readiness_path = tmp_path / "readiness.json"
+    readiness_path.write_text(json.dumps({"status": "blocked", "portfolio_ready": False, "validation_ready": False}), encoding="utf-8")
+    plan = create_experiment_plan(
+        {
+            "workflow": "real_data_portfolio_campaign_large_plan",
+            "output_dir": str(tmp_path / "portfolio_plan"),
+            "research_readiness_decision_path": str(readiness_path),
+            "require_portfolio_ready": True,
+            "factor_certification_queue_path": str(tmp_path / "factor_certification_queue.jsonl"),
+            "certified_factor_pool_path": str(tmp_path / "certified_factor_pool.jsonl"),
+            "factor_certification_campaign_dir": str(tmp_path / "factor_certification_campaign"),
+            "portfolio_campaign_dir": str(tmp_path / "portfolio_campaign"),
+            "max_items": 10,
+        }
+    )
+
+    assert plan.metadata["blocked"] is True
+    assert plan.compute_jobs == []
+    assert plan.resource_plan["status"] == "blocked"
+    assert (tmp_path / "portfolio_plan" / "production_candidate_bundle_plan.json").exists()
+    payload = json.loads((tmp_path / "portfolio_plan" / "production_candidate_bundle_plan.json").read_text(encoding="utf-8"))
+    assert payload["status"] == "blocked"
+    assert payload["compute_jobs"] == []
