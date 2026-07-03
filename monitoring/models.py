@@ -67,11 +67,15 @@ class MonitoringReport:
         backfill_quarantined = self.checks.get("backfill_quarantined_jobs", {}) if isinstance(self.checks, dict) else {}
         raw_landing = self.checks.get("raw_data_landing", {}) if isinstance(self.checks, dict) else {}
         raw_freeze = self.checks.get("raw_freeze_readiness", {}) if isinstance(self.checks, dict) else {}
+        backfill_repair = self.checks.get("backfill_repair", {}) if isinstance(self.checks, dict) else {}
         postprocess_blockers = self.checks.get("postprocess_plan_blockers", {}) if isinstance(self.checks, dict) else {}
         research_readiness = self.checks.get("research_data_readiness", {}) if isinstance(self.checks, dict) else {}
+        final_readiness = self.checks.get("research_readiness_final", {}) if isinstance(self.checks, dict) else {}
         feature_readiness = self.checks.get("feature_readiness", {}) if isinstance(self.checks, dict) else {}
         post_download_plan = self.checks.get("post_download_plan", {}) if isinstance(self.checks, dict) else {}
         post_download_blockers = self.checks.get("post_download_blockers", {}) if isinstance(self.checks, dict) else {}
+        post_download_step_runs = self.checks.get("post_download_step_runs", {}) if isinstance(self.checks, dict) else {}
+        freeze_candidate = self.checks.get("freeze_candidate_package", {}) if isinstance(self.checks, dict) else {}
         expanded_pit = self.checks.get("expanded_dataset_pit_safety", {}) if isinstance(self.checks, dict) else {}
         data_lake_version = self.checks.get("data_lake_version", {}) if isinstance(self.checks, dict) else {}
         research_freeze = self.checks.get("research_freeze", {}) if isinstance(self.checks, dict) else {}
@@ -203,9 +207,15 @@ class MonitoringReport:
             "raw_landing_status": str(raw_landing.get("raw_landing_status", "")) if isinstance(raw_landing, dict) else "",
             "raw_freeze_readiness_status": str(raw_freeze.get("raw_freeze_readiness_status", "")) if isinstance(raw_freeze, dict) else "",
             "raw_freeze_blocker_count": int(raw_freeze.get("raw_freeze_blocker_count", 0) or 0) if isinstance(raw_freeze, dict) else 0,
+            "repair_job_count": int(backfill_repair.get("repair_job_count", 0) or 0) if isinstance(backfill_repair, dict) else 0,
+            "repair_failed_jobs": int(backfill_repair.get("repair_failed_jobs", 0) or 0) if isinstance(backfill_repair, dict) else 0,
+            "repair_blocked_jobs": int(backfill_repair.get("repair_blocked_jobs", 0) or 0) if isinstance(backfill_repair, dict) else 0,
             "postprocess_blocker_count": int(postprocess_blockers.get("postprocess_blocker_count", 0) or 0) if isinstance(postprocess_blockers, dict) else 0,
             "research_data_readiness_status": str(research_readiness.get("research_data_readiness_status", "")) if isinstance(research_readiness, dict) else "",
             "research_readiness_blocker_count": int(research_readiness.get("research_readiness_blocker_count", 0) or 0) if isinstance(research_readiness, dict) else 0,
+            "final_readiness_status": str(final_readiness.get("final_readiness_status", "")) if isinstance(final_readiness, dict) else "",
+            "can_run_core_alpha_factory": bool(final_readiness.get("can_run_core_alpha_factory", False)) if isinstance(final_readiness, dict) else False,
+            "can_build_matrix": bool(final_readiness.get("can_build_matrix", False)) if isinstance(final_readiness, dict) else False,
             "feature_ready_family_count": int(feature_readiness.get("feature_ready_family_count", 0) or 0) if isinstance(feature_readiness, dict) else 0,
             "feature_blocked_family_count": int(feature_readiness.get("feature_blocked_family_count", 0) or 0) if isinstance(feature_readiness, dict) else 0,
             "weak_pit_dataset_count": int(expanded_pit.get("weak_pit_dataset_count", 0) or 0) if isinstance(expanded_pit, dict) else 0,
@@ -215,6 +225,10 @@ class MonitoringReport:
                 int(post_download_plan.get("post_download_blocker_count", 0) or 0) if isinstance(post_download_plan, dict) else 0,
                 int(post_download_blockers.get("post_download_blocker_count", 0) or 0) if isinstance(post_download_blockers, dict) else 0,
             ),
+            "post_download_failed_step_count": int(post_download_step_runs.get("post_download_failed_step_count", 0) or 0) if isinstance(post_download_step_runs, dict) else 0,
+            "post_download_blocked_step_count": int(post_download_step_runs.get("post_download_blocked_step_count", 0) or 0) if isinstance(post_download_step_runs, dict) else 0,
+            "freeze_candidate_status": str(freeze_candidate.get("freeze_candidate_status", "")) if isinstance(freeze_candidate, dict) else "",
+            "freeze_candidate_blocker_count": int(freeze_candidate.get("freeze_candidate_blocker_count", 0) or 0) if isinstance(freeze_candidate, dict) else 0,
             "dataset_version_id": str(data_lake_version.get("dataset_version_id", "")) if isinstance(data_lake_version, dict) else "",
             "dataset_content_hash": str(data_lake_version.get("dataset_content_hash", "")) if isinstance(data_lake_version, dict) else "",
             "freeze_validation_status": str(research_freeze.get("freeze_validation_status", "")) if isinstance(research_freeze, dict) else "",

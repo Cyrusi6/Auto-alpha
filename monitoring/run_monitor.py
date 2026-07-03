@@ -29,6 +29,7 @@ from .checks import (
     check_broker_mapping_certification,
     check_broker_uat_contract,
     check_baseline_compare,
+    check_backfill_repair,
     check_backfill_eta,
     check_backfill_failed_jobs,
     check_backfill_quarantined_jobs,
@@ -81,6 +82,7 @@ from .checks import (
     check_postprocess_plan_blockers,
     check_post_download_blockers,
     check_post_download_plan,
+    check_post_download_step_runs,
     check_pre_trade_risk_controls,
     check_production_close_day_status,
     check_production_replay,
@@ -94,8 +96,10 @@ from .checks import (
     check_raw_data_landing,
     check_raw_freeze_readiness,
     check_research_data_readiness,
+    check_research_readiness_final,
     check_release_gate,
     check_expanded_dataset_pit_safety,
+    check_freeze_candidate_package,
     check_feature_readiness,
     check_replay_day_failures,
     check_readiness_remediation,
@@ -203,6 +207,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--backfill-dataset-progress-path")
     parser.add_argument("--backfill-eta-report-path")
     parser.add_argument("--backfill-repair-plan-path")
+    parser.add_argument("--backfill-repair-run-report-path")
+    parser.add_argument("--backfill-repair-batch-plan-path")
     parser.add_argument("--backfill-postprocess-plan-path")
     parser.add_argument("--raw-data-landing-report-path")
     parser.add_argument("--raw-freeze-readiness-decision-path")
@@ -211,6 +217,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--feature-readiness-catalog-path")
     parser.add_argument("--post-download-plan-path")
     parser.add_argument("--post-download-run-report-path")
+    parser.add_argument("--post-download-step-runs-path")
+    parser.add_argument("--freeze-candidate-package-path")
     parser.add_argument("--dataset-version-manifest-path")
     parser.add_argument("--freeze-validation-report-path")
     parser.add_argument("--artifact-validation-report-path")
@@ -409,6 +417,7 @@ def main(argv: list[str] | None = None) -> int:
         ("backfill_failed_jobs", lambda: check_backfill_failed_jobs(args.backfill_dataset_progress_path)),
         ("backfill_quarantined_jobs", lambda: check_backfill_quarantined_jobs(args.backfill_dataset_progress_path)),
         ("backfill_stalled_dataset", lambda: check_backfill_stalled_dataset(args.backfill_observer_report_path)),
+        ("backfill_repair", lambda: check_backfill_repair(args.backfill_repair_run_report_path, args.backfill_repair_batch_plan_path or args.backfill_repair_plan_path)),
         ("raw_data_landing", lambda: check_raw_data_landing(args.raw_data_landing_report_path)),
         ("raw_freeze_readiness", lambda: check_raw_freeze_readiness(args.raw_freeze_readiness_decision_path)),
         ("postprocess_plan_blockers", lambda: check_postprocess_plan_blockers(args.backfill_postprocess_plan_path)),
@@ -416,6 +425,9 @@ def main(argv: list[str] | None = None) -> int:
         ("feature_readiness", lambda: check_feature_readiness(args.feature_readiness_catalog_path)),
         ("post_download_plan", lambda: check_post_download_plan(args.post_download_plan_path)),
         ("post_download_blockers", lambda: check_post_download_blockers(args.post_download_run_report_path)),
+        ("post_download_step_runs", lambda: check_post_download_step_runs(args.post_download_step_runs_path)),
+        ("freeze_candidate_package", lambda: check_freeze_candidate_package(args.freeze_candidate_package_path)),
+        ("research_readiness_final", lambda: check_research_readiness_final(args.research_readiness_decision_path)),
         ("expanded_dataset_pit_safety", lambda: check_expanded_dataset_pit_safety(args.research_data_readiness_report_path)),
         ("alpha_factory_campaign", lambda: check_alpha_factory_campaign(args.alpha_factory_report_path, args.alpha_campaign_manifest_path)),
         ("alpha_static_errors", lambda: check_alpha_static_errors(args.alpha_static_checks_path)),

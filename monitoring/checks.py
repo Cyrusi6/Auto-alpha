@@ -1047,6 +1047,63 @@ def check_post_download_blockers(run_report_path: str | Path | None) -> tuple[di
     return {"exists": bool(payload), "post_download_run_status": status, "post_download_blocker_count": blockers}, alerts
 
 
+def check_backfill_repair(repair_report_path: str | Path | None, repair_plan_path: str | Path | None = None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    report = _read_json(Path(repair_report_path)) if repair_report_path else {}
+    plan = _read_json(Path(repair_plan_path)) if repair_plan_path else {}
+    summary = report.get("summary", {}) if report else {}
+    plan_summary = plan.get("summary", {}) if plan else {}
+    repair_jobs = int(summary.get("repair_job_count", plan_summary.get("repair_job_count", 0)) or 0) if isinstance(summary, dict) else 0
+    failed = int(summary.get("failed_jobs", 0) or 0) if isinstance(summary, dict) else 0
+    blocked = int(summary.get("blocked_jobs", 0) or 0) if isinstance(summary, dict) else 0
+    alerts: list[MonitoringAlert] = []
+    if failed:
+        alerts.append(MonitoringAlert("error", "repair_failed", "backfill repair has failed jobs", {"failed_jobs": failed}))
+    elif blocked:
+        alerts.append(MonitoringAlert("warning", "repair_blocked", "backfill repair is blocked", {"blocked_jobs": blocked}))
+    elif repair_jobs and not report:
+        alerts.append(MonitoringAlert("warning", "repair_required", "backfill repair jobs are planned but not executed", {"repair_job_count": repair_jobs}))
+    return {
+        "exists": bool(report or plan),
+        "repair_job_count": repair_jobs,
+        "repair_failed_jobs": failed,
+        "repair_blocked_jobs": blocked,
+        "repair_run_status": str(report.get("status") or ""),
+    }, alerts
+
+
+def check_post_download_step_runs(step_runs_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(step_runs_path)) if step_runs_path else []
+    failed = sum(1 for row in rows if row.get("status") == "failed")
+    blocked = sum(1 for row in rows if row.get("status") == "blocked")
+    alerts: list[MonitoringAlert] = []
+    if failed:
+        alerts.append(MonitoringAlert("error", "post_download_step_failed", "post-download step failed", {"failed_steps": failed}))
+    if blocked:
+        alerts.append(MonitoringAlert("warning", "post_download_blocked", "post-download step blocked", {"blocked_steps": blocked}))
+    return {"exists": bool(rows), "post_download_failed_step_count": failed, "post_download_blocked_step_count": blocked}, alerts
+
+
+def check_freeze_candidate_package(package_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(package_path)) if package_path else {}
+    status = str(payload.get("status") or "")
+    blockers = payload.get("blockers") if isinstance(payload.get("blockers"), list) else []
+    alerts = [MonitoringAlert("warning", "freeze_candidate_blocked", "freeze candidate package is blocked", {"blockers": len(blockers)})] if status == "blocked_candidate" or blockers else []
+    return {"exists": bool(payload), "freeze_candidate_status": status, "freeze_candidate_blocker_count": len(blockers)}, alerts
+
+
+def check_research_readiness_final(decision_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(decision_path)) if decision_path else {}
+    status = str(payload.get("status") or (payload.get("decision") or {}).get("status") or "")
+    can_alpha = bool(payload.get("can_run_core_alpha_factory", (payload.get("decision") or {}).get("can_run_core_alpha_factory", False)))
+    can_matrix = bool(payload.get("can_build_matrix", (payload.get("decision") or {}).get("can_build_matrix", False)))
+    alerts: list[MonitoringAlert] = []
+    if status and not can_alpha:
+        alerts.append(MonitoringAlert("warning", "alpha_factory_not_ready", "Alpha Factory is not ready", {"status": status}))
+    if status and not can_matrix:
+        alerts.append(MonitoringAlert("warning", "matrix_not_ready", "matrix build is not ready", {"status": status}))
+    return {"exists": bool(payload), "final_readiness_status": status, "can_run_core_alpha_factory": can_alpha, "can_build_matrix": can_matrix}, alerts
+
+
 def check_expanded_dataset_pit_safety(readiness_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     payload = _read_json(Path(readiness_report_path)) if readiness_report_path else {}
     rows = payload.get("dataset_checks", []) if payload else []

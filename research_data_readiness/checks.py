@@ -110,6 +110,8 @@ def summarize_checks(
         "incomplete_core_dataset_count": sum(1 for item in checks if item.tier == DatasetResearchTier.core_required and item.status != "ready"),
         "failed_job_count": int((observer.get("summary") or {}).get("backfill_failed_jobs", 0) or 0),
         "quarantined_job_count": int((observer.get("summary") or {}).get("backfill_quarantined_jobs", 0) or 0),
+        "pending_job_count": int((observer.get("summary") or {}).get("pending_jobs", (observer.get("summary") or {}).get("backfill_remaining_jobs", 0)) or 0),
+        "backfill_progress_ratio": float((observer.get("summary") or {}).get("backfill_progress_ratio", (observer.get("summary") or {}).get("progress_ratio", 0.0)) or 0.0),
         "empty_but_expected_count": sum(1 for item in checks if item.record_count <= 0 and item.tier != DatasetResearchTier.broker_irrelevant),
         "pit_unsafe_required_dataset_count": sum(
             1
@@ -121,6 +123,10 @@ def summarize_checks(
         "unsafe_pit_dataset_count": sum(1 for item in checks if item.pit_safety == DatasetPitSafety.unsafe_missing_availability),
         "matrix_freshness_status": matrix.get("status", "missing") if matrix else "missing",
         "raw_freeze_readiness_status": freeze.get("status", "missing") if freeze else "missing",
+        "freeze_validation_status": freeze.get("freeze_validation_status", freeze.get("status", "missing")) if freeze else "missing",
+        "observer_report_exists": bool(observer),
+        "freeze_readiness_exists": bool(freeze),
+        "matrix_freshness_exists": bool(matrix),
         "repair_failed_jobs": int(repair.get("failed_jobs", 0) or 0) if repair else 0,
         "postprocess_blocker_count": len(postprocess.get("blockers", [])) if postprocess else 0,
         "data_size_gb": total_size / (1024**3),

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 
 from .planner import build_post_download_plan
+from .executor import build_freeze_candidate_package, execute_post_download_plan
 from .report import build_run_report, dumps, stdout_payload, write_post_download_artifacts
 
 
@@ -32,7 +33,10 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--allow-incomplete", action="store_true")
+    parser.add_argument("--allow-real-data-path", action="store_true")
     parser.add_argument("--stop-after-step")
+    parser.add_argument("--start-at-step")
+    parser.add_argument("--refresh-step")
     parser.add_argument("--pretty", action="store_true")
 
 
@@ -53,14 +57,42 @@ def main(argv: list[str] | None = None) -> int:
         allow_incomplete=args.allow_incomplete,
     )
     mode = "execute" if args.execute else "plan_only"
-    if args.execute and plan.blockers:
-        status = "blocked"
+    step_runs = []
+    state = None
+    package = None
+    if args.command == "report":
+        package = build_freeze_candidate_package(
+            data_dir=args.data_dir,
+            run_dir=args.run_dir,
+            output_dir=args.output_dir,
+            matrix_cache_dir=args.matrix_cache_dir,
+            readiness_report_path=args.readiness_report_path,
+            proposed_freeze_name=args.profile_name or "research_data_freeze",
+        )
+        status = "blocked" if package.status == "blocked_candidate" else "planned"
+    elif args.execute:
+        step_runs, state, package, _events = execute_post_download_plan(
+            plan,
+            data_dir=args.data_dir,
+            run_dir=args.run_dir,
+            output_dir=args.output_dir,
+            matrix_cache_dir=args.matrix_cache_dir,
+            readiness_report_path=args.readiness_report_path,
+            execute=True,
+            resume=args.resume,
+            allow_incomplete=args.allow_incomplete,
+            allow_real_data_path=args.allow_real_data_path,
+            start_at_step=args.start_at_step,
+            stop_after_step=args.stop_after_step,
+            refresh_step=args.refresh_step,
+        )
+        status = "failed" if any(step.status == "failed" for step in step_runs) else ("blocked" if any(step.status == "blocked" for step in step_runs) else "success")
     else:
         status = "planned"
-    report = build_run_report(plan, mode, status)
-    paths = write_post_download_artifacts(plan, report, args.output_dir)
+    report = build_run_report(plan, mode, status, step_runs, run_id=state.run_id if state is not None else None)
+    paths = write_post_download_artifacts(plan, report, args.output_dir, step_runs=step_runs, state=state, freeze_candidate=package)
     print(dumps(stdout_payload(plan, report, paths), args.pretty))
-    return 1 if args.execute and plan.blockers else 0
+    return 1 if args.execute and status in {"failed", "blocked"} else 0
 
 
 if __name__ == "__main__":

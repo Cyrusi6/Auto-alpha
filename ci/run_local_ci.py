@@ -43,6 +43,8 @@ def main(argv: list[str] | None = None) -> int:
     quick_dir = output_dir / "quick_artifacts"
     smoke_dir = quick_dir / "sample_smoke"
     sample_data_dir = quick_dir / "sample_data"
+    post_download_ready_path = quick_dir / "post_download_ready_readiness.json"
+    _write_post_download_ready_fixture(post_download_ready_path)
     _prepare_shadow_smoke_orders(quick_dir / "shadow_orders" / "plan")
     commands = [
         (
@@ -149,6 +151,24 @@ def main(argv: list[str] | None = None) -> int:
             ],
         ),
         (
+            "backfill_repair_dry_run_smoke",
+            [
+                sys.executable,
+                "-m",
+                "backfill_repair.run_repair",
+                "dry-run",
+                "--data-dir",
+                str(sample_data_dir),
+                "--run-dir",
+                str(quick_dir / "observer_empty_run"),
+                "--output-dir",
+                str(quick_dir / "backfill_repair"),
+                "--repair-plan-path",
+                str(quick_dir / "backfill_observer" / "backfill_repair_plan.json"),
+                "--pretty",
+            ],
+        ),
+        (
             "research_data_readiness_smoke",
             [
                 sys.executable,
@@ -171,6 +191,39 @@ def main(argv: list[str] | None = None) -> int:
                 "20240104",
                 "--expected-trade-days",
                 "3",
+                "--pretty",
+            ],
+        ),
+        (
+            "post_download_execute_smoke",
+            [
+                sys.executable,
+                "-m",
+                "post_download_orchestrator.run_post_download",
+                "run",
+                "--data-dir",
+                str(sample_data_dir),
+                "--run-dir",
+                str(quick_dir / "observer_empty_run"),
+                "--staging-dir",
+                str(quick_dir / "staging"),
+                "--output-dir",
+                str(quick_dir / "post_download_execute"),
+                "--registry-dir",
+                str(quick_dir / "registry"),
+                "--freeze-dir",
+                str(quick_dir / "freeze"),
+                "--matrix-cache-dir",
+                str(quick_dir / "matrix_cache"),
+                "--readiness-report-path",
+                str(post_download_ready_path),
+                "--profile-name",
+                "ci_quick",
+                "--start-date",
+                "20240102",
+                "--end-date",
+                "20240104",
+                "--execute",
                 "--pretty",
             ],
         ),
@@ -1199,6 +1252,40 @@ def _prepare_shadow_smoke_orders(plan_dir: Path) -> None:
         }
     ]
     write_jsonl_artifact(plan_dir / "child_orders.jsonl", records, artifact_type="child_orders", producer="ci")
+
+
+def _write_post_download_ready_fixture(path: Path) -> None:
+    payload = {
+        "status": "raw_ready_for_freeze",
+        "decision": {
+            "status": "raw_ready_for_freeze",
+            "core_ready": True,
+            "expanded_ready": True,
+            "alpha_ready": True,
+            "matrix_ready": False,
+            "validation_ready": False,
+            "can_create_freeze": True,
+            "can_build_matrix": True,
+            "can_run_core_alpha_factory": True,
+            "can_run_expanded_alpha_factory": True,
+            "can_run_validation": False,
+            "required_remediations": [],
+            "warnings": [],
+            "recommended_next_commands": [
+                "uv run python -m post_download_orchestrator.run_post_download run --execute"
+            ],
+        },
+        "summary": {
+            "failed_job_count": 0,
+            "quarantined_job_count": 0,
+            "pending_job_count": 0,
+            "weak_pit_dataset_count": 1,
+            "unsafe_pit_dataset_count": 0,
+            "data_size_gb": 0.0,
+        },
+        "dataset_checks": [],
+    }
+    write_json_artifact(path, payload, artifact_type="research_data_readiness_report", producer="ci")
 
 
 def _finish(args: argparse.Namespace, output_dir: Path, mode: str, results: list[CiCommandResult]) -> int:

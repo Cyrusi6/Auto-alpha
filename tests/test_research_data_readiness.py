@@ -55,6 +55,26 @@ def test_readiness_cli_and_pit_contract_policy(tmp_path: Path, capsys):
     assert dataset_policy("pledge_stat").pit_safety == "unsafe_missing_availability"
 
 
+def test_final_readiness_distinguishes_in_progress_and_repair_needed(tmp_path: Path):
+    data_dir = tmp_path / "data"
+    _write_core_datasets(data_dir)
+    observer = tmp_path / "observer.json"
+    progress = tmp_path / "progress.jsonl"
+    observer.write_text(json.dumps({"summary": {"pending_jobs": 2, "backfill_progress_ratio": 0.5}}), encoding="utf-8")
+    progress.write_text(json.dumps({"dataset": "daily_bars", "pending_jobs": 2}) + "\n", encoding="utf-8")
+
+    report = build_research_data_readiness_report(data_dir, observer_report_path=observer, dataset_progress_path=progress)
+    assert report.decision.status == "raw_download_in_progress"
+    assert report.decision.can_create_freeze is False
+    assert report.decision.next_required_action == "wait_for_download_completion_and_observe"
+
+    observer.write_text(json.dumps({"summary": {"pending_jobs": 0, "backfill_failed_jobs": 1, "backfill_quarantined_jobs": 1}}), encoding="utf-8")
+    progress.write_text(json.dumps({"dataset": "daily_bars", "failed_jobs": 1, "quarantined_jobs": 1}) + "\n", encoding="utf-8")
+    report = build_research_data_readiness_report(data_dir, observer_report_path=observer, dataset_progress_path=progress)
+    assert report.decision.status == "raw_download_complete_but_needs_repair"
+    assert report.decision.next_required_action == "run_backfill_repair_plan"
+
+
 def _write_core_datasets(data_dir: Path) -> None:
     _write_dataset(data_dir, "securities", [{"ts_code": "000001.SZ", "list_date": "20200101"}])
     _write_dataset(data_dir, "trade_calendar", [{"trade_date": "20240102", "is_open": True}])

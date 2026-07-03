@@ -2059,3 +2059,27 @@
 - Keep using readiness assessment against the live full backfill only as a read-only report action until the downloader finishes.
 - Run post-download `--execute` only after the real backfill has completed and repair/readiness blockers are cleared.
 - Promote weak-PIT expanded datasets into Feature Factory v3 only after manual availability review and leakage tests.
+
+## Task 042-F - Backfill Repair, Post-Download Execution State, And Freeze Candidate Gate
+
+- Added `backfill_repair/`, an explicit repair batch layer that reads observer/backfill artifacts, builds `repair_batch_plan`, writes repair state/events/job results, supports dry-run/execute/resume, and blocks real data paths or network-style repair commands unless explicitly allowed.
+- Upgraded `post_download_orchestrator/` from plan-only output to a local execute/resume state machine with step runs, events, state, final package, artifact catalog, and freeze candidate package artifacts. Mutation steps remain blocked when readiness is not green, and incomplete mode remains diagnostic-only.
+- Enhanced `research_data_readiness/` decision output to distinguish raw download in progress, download complete but needing repair, raw ready for freeze, freeze/matrix/Alpha Factory readiness, and validation readiness. Decisions now expose explicit `can_create_freeze`, `can_build_matrix`, `can_run_core_alpha_factory`, `can_run_expanded_alpha_factory`, next action, and Codex task recommendations.
+- Extended monitoring, dashboard artifact readers, artifact schema registry, release inventory, local CI, pyproject packaging, README, and CATREADME for repair, post-download step runs, freeze candidate packages, and final readiness decisions.
+
+### New Artifacts
+- `repair_batch_plan.json/md`
+- `repair_run_report.json/md`
+- `repair_job_results.jsonl`
+- `repair_events.jsonl`
+- `repair_run_state.json`
+- `post_download_step_runs.jsonl`
+- `post_download_state.json`
+- `post_download_events.jsonl`
+- `post_download_final_package.json`
+- `post_download_artifact_catalog.json`
+- `freeze_candidate_package.json/md`
+
+### Follow-Ups
+- Do not run repair `--execute` or post-download `--execute` against `/home/lijunsi/data/auto-alpha/ashare_lake` until the active downloader has finished and the repair/readiness reports are reviewed.
+- After the real run is complete, run repair dry-run first, then execute only the reviewed batch, then rerun research readiness before creating the freeze candidate.

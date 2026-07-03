@@ -44,6 +44,20 @@ def test_monitoring_dashboard_and_schema_read_new_readiness_artifacts(tmp_path: 
         post_dir / "post_download_run_report.json",
         {"artifact_type": "post_download_run_report", "schema_version": "1.0", "run_id": "r1", "mode": "plan_only", "status": "planned", "plan": {}, "summary": {}},
     )
+    _write_json(
+        post_dir / "freeze_candidate_package.json",
+        {"artifact_type": "freeze_candidate_package", "schema_version": "1.0", "package_id": "pkg1", "status": "approved_candidate", "data_dir": str(tmp_path / "data")},
+    )
+    (post_dir / "post_download_step_runs.jsonl").write_text(
+        json.dumps({"step_id": "final_package", "status": "success"}) + "\n",
+        encoding="utf-8",
+    )
+    repair_dir = tmp_path / "repair"
+    repair_dir.mkdir()
+    _write_json(
+        repair_dir / "repair_run_report.json",
+        {"artifact_type": "backfill_repair_run_report", "schema_version": "1.0", "repair_run_id": "rr1", "status": "success", "plan": {}, "job_results": [], "summary": {"repair_job_count": 0}},
+    )
 
     rc = monitor_main(
         [
@@ -69,6 +83,12 @@ def test_monitoring_dashboard_and_schema_read_new_readiness_artifacts(tmp_path: 
             str(post_dir / "post_download_plan.json"),
             "--post-download-run-report-path",
             str(post_dir / "post_download_run_report.json"),
+            "--post-download-step-runs-path",
+            str(post_dir / "post_download_step_runs.jsonl"),
+            "--freeze-candidate-package-path",
+            str(post_dir / "freeze_candidate_package.json"),
+            "--backfill-repair-run-report-path",
+            str(repair_dir / "repair_run_report.json"),
             "--pretty",
         ]
     )
@@ -86,8 +106,9 @@ def test_monitoring_dashboard_and_schema_read_new_readiness_artifacts(tmp_path: 
     )
     assert service.load_research_data_readiness_report()["decision"]["status"] == "ready_for_alpha_factory"
     assert service.load_post_download_plan()["plan_id"] == "p1"
+    assert service.load_freeze_candidate_package()["status"] == "approved_candidate"
 
-    assert validate_main(["--artifact-dir", str(readiness_dir), "--artifact-dir", str(post_dir), "--output-dir", str(tmp_path / "schema"), "--fail-on-error"]) == 0
+    assert validate_main(["--artifact-dir", str(readiness_dir), "--artifact-dir", str(post_dir), "--artifact-dir", str(repair_dir), "--output-dir", str(tmp_path / "schema"), "--fail-on-error"]) == 0
 
 
 def _write_json(path: Path, payload: dict) -> None:

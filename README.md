@@ -10,9 +10,10 @@ The current implementation is local-first. It uses deterministic sample data and
 - `data_source_validation/`: Offline and gated-online provider readiness, Tushare permission/rate/field diagnostics, incremental recovery smoke, field coverage, audit summary, and baseline comparison reports.
 - `data_backfill/`: Production-style full-history backfill planning, chunked job execution, staging/quarantine, resume state, coverage reports, and readiness/quota summaries.
 - `backfill_observer/`: Read-only running-backfill observer, progress/ETA reports, repair commands, and postprocess plans.
+- `backfill_repair/`: Explicit repair batch planner/runner for failed, quarantined, missing, empty, rate-limited, or timed-out backfill jobs; defaults to dry-run and blocks real data paths unless explicitly allowed.
 - `raw_data_landing/`: Read-only raw JSONL landing QA, coverage matrix, duplicate-key checks, and freeze readiness gate.
 - `research_data_readiness/`: Research-readiness gate that combines raw landing QA, running backfill progress, PIT safety, matrix freshness, and feature-family readiness.
-- `post_download_orchestrator/`: Plan-only post-download workflow generator for observer, landing QA, repair review, compact/validate/stats, data lake freeze, PIT/leakage, matrix refresh, schema validation, and research smoke.
+- `post_download_orchestrator/`: Plan-first post-download workflow generator and local state machine for observer, landing QA, repair review, compact/validate/stats, data lake freeze, PIT/leakage, matrix refresh, schema validation, freeze candidate packages, and research smoke.
 - `data_lake/`: Dataset fingerprints, dataset version registry, immutable research freezes, freeze validation, lineage graphs, and retention reports.
 - `artifact_schema/`: Artifact type registry, schema versioning, checksum manifests, JSON/JSONL validation, and legacy-compatible artifact scanning.
 - `universe/`: Local A-share universe construction from governed data artifacts.
@@ -283,9 +284,20 @@ uv run python -m research_data_readiness.run_readiness assess \
   --pretty
 ```
 
-`research_data_readiness` writes dataset readiness rows, a feature-readiness catalog, a gate decision, and remediation commands. Weak-PIT or unsafe availability datasets are visible in the report and are not automatically promoted into Alpha Factory features.
+`research_data_readiness` writes dataset readiness rows, a feature-readiness catalog, a gate decision, and remediation commands. It distinguishes active downloads, completed downloads that still need repair, raw data ready for freeze, freeze readiness, matrix readiness, Alpha Factory readiness, and validation readiness. Weak-PIT or unsafe availability datasets are visible in the report and are not automatically promoted into Alpha Factory features.
 
-After the download is complete, generate the post-download plan first. The planner does not call Tushare and defaults to plan-only behavior:
+When the download is complete and a repair plan has been reviewed, use `backfill_repair` first. Dry-run is the default; execute/resume writes its own state and refuses `/home/lijunsi/data` mutation unless an operator explicitly passes the real-data-path gate:
+
+```bash
+uv run python -m backfill_repair.run_repair dry-run \
+  --data-dir /path/to/ashare_lake/data \
+  --run-dir /path/to/ashare_lake/runs/full_20100101_20260630 \
+  --output-dir /path/to/ashare_lake/reports/repair_latest \
+  --repair-plan-path /path/to/ashare_lake/reports/backfill_observer_latest/backfill_repair_plan.json \
+  --pretty
+```
+
+After repair is complete, generate the post-download plan first. The planner does not call Tushare and defaults to plan-only behavior:
 
 ```bash
 uv run python -m post_download_orchestrator.run_post_download plan \
@@ -304,7 +316,7 @@ uv run python -m post_download_orchestrator.run_post_download plan \
   --pretty
 ```
 
-Do not run post-download `--execute` until the active backfill is finished and readiness blockers are cleared.
+Do not run post-download `--execute` until the active backfill is finished, repair reports are clean, and readiness blockers are cleared. `--allow-incomplete` is diagnostic-only; it does not create freeze or matrix artifacts. A successful post-download run writes step state, step runs, events, a freeze candidate package, a final package, and an artifact catalog before any downstream Alpha Factory work is considered.
 
 After governed sync or backfill, register a dataset version and freeze research input data. A freeze copies or hardlinks local JSONL records plus universe artifacts, writes hashes and manifests, and can be required by matrix build, research suite, backtest, and operations commands:
 
@@ -1418,7 +1430,7 @@ uv run python -m go_live_gate.run_go_live run \
 
 ## Current Gaps
 
-- Tushare HTTP provider, production sync scaffolding, governed backfill plans, read-only running-backfill observation, raw landing QA, research-readiness gates, post-download plan-only orchestration, offline fake smoke, gated online smoke/backfill, permission/rate diagnostics, audit summary, incremental recovery checks, baseline comparison, dataset versioning, research freezes, real-data runbooks, SLA checks, storage-size reports, and incremental matrix refresh are available; production use still requires real token/quota operation, real full-market performance runs, and more provider pairs.
+- Tushare HTTP provider, production sync scaffolding, governed backfill plans, read-only running-backfill observation, explicit repair batches, raw landing QA, research-readiness gates, post-download state-machine orchestration, freeze candidate packages, offline fake smoke, gated online smoke/backfill, permission/rate diagnostics, audit summary, incremental recovery checks, baseline comparison, dataset versioning, research freezes, real-data runbooks, SLA checks, storage-size reports, and incremental matrix refresh are available; production use still requires real token/quota operation, real full-market performance runs, and more provider pairs.
 - Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
 - Local daily simulation supports A-share constraints, pre-trade risk controls, local kill switch, override approvals, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, settlement-aware paper accounting, lot cost, realized PnL, NAV reconciliation, generic statement import, external account mirroring, EOD break management, and execution quality reports; future work should add finer real-world matching, minute-level volume modeling, verified real broker statement mappings, richer limit policies, and real broker connectivity.
 - Local formula search, batch formula evaluation, formula corpus construction, offline AlphaGPT supervised pretraining, a first neural-guided policy-search path, and a local CPU/GPU compute scheduler are available; future work should add stronger reinforcement learning, larger offline corpora, more operators, true full-market 4-GPU stress runs, richer DDP training, and broader stability validation.

@@ -7,6 +7,14 @@ from typing import Any
 
 
 class ResearchDataReadinessStatus:
+    raw_download_in_progress = "raw_download_in_progress"
+    raw_download_complete_but_needs_repair = "raw_download_complete_but_needs_repair"
+    raw_ready_for_freeze = "raw_ready_for_freeze"
+    freeze_ready = "freeze_ready"
+    matrix_ready = "matrix_ready"
+    alpha_factory_ready = "alpha_factory_ready"
+    ready_for_core_alpha = "ready_for_core_alpha"
+    validation_ready = "validation_ready"
     ready_for_freeze = "ready_for_freeze"
     ready_for_matrix = "ready_for_matrix"
     ready_for_alpha_factory = "ready_for_alpha_factory"
@@ -85,6 +93,14 @@ class ResearchDataReadinessDecision:
     warning_count: int
     required_remediations: list[str]
     recommended_next_commands: list[str]
+    can_create_freeze: bool = False
+    can_build_matrix: bool = False
+    can_run_core_alpha_factory: bool = False
+    can_run_expanded_alpha_factory: bool = False
+    can_run_validation: bool = False
+    blocked_reason: str | None = None
+    next_required_action: str | None = None
+    recommended_codex_task: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

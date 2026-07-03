@@ -1289,6 +1289,18 @@ class AshareDashboardService:
                 return payload
         return {}
 
+    def load_backfill_repair_batch_plan(self) -> dict[str, Any]:
+        return self._read_first_json(self._backfill_repair_candidates("repair_batch_plan.json"))
+
+    def load_backfill_repair_run_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._backfill_repair_candidates("repair_run_report.json"))
+
+    def load_backfill_repair_job_results(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._backfill_repair_candidates("repair_job_results.jsonl"))
+
+    def load_backfill_repair_events(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._backfill_repair_candidates("repair_events.jsonl"))
+
     def load_backfill_postprocess_plan(self) -> dict[str, Any]:
         for path in self._backfill_candidates("backfill_postprocess_plan.json"):
             payload = self._read_json(path)
@@ -1354,6 +1366,21 @@ class AshareDashboardService:
 
     def load_post_download_run_report(self) -> dict[str, Any]:
         return self._read_first_json(self._post_download_candidates("post_download_run_report.json"))
+
+    def load_post_download_step_runs(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._post_download_candidates("post_download_step_runs.jsonl"))
+
+    def load_post_download_state(self) -> dict[str, Any]:
+        return self._read_first_json(self._post_download_candidates("post_download_state.json"))
+
+    def load_post_download_final_package(self) -> dict[str, Any]:
+        return self._read_first_json(self._post_download_candidates("post_download_final_package.json"))
+
+    def load_post_download_artifact_catalog(self) -> dict[str, Any]:
+        return self._read_first_json(self._post_download_candidates("post_download_artifact_catalog.json"))
+
+    def load_freeze_candidate_package(self) -> dict[str, Any]:
+        return self._read_first_json(self._post_download_candidates("freeze_candidate_package.json"))
 
     def load_data_lake_report(self) -> dict[str, Any]:
         for path in self._data_lake_candidates("data_lake_report.json"):
@@ -1896,6 +1923,16 @@ class AshareDashboardService:
             root / "landing" / filename,
             root / "raw_data_landing" / filename,
             self.config.data_dir / filename,
+        ]
+
+    def _backfill_repair_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.backfill_dir / "repair" / filename,
+            self.config.backfill_dir / filename,
+            root / "backfill_repair" / filename,
+            root / "repair" / filename,
+            root / "post_download" / "repair" / filename,
         ]
 
     def _research_readiness_candidates(self, filename: str) -> list[Path]:

@@ -12,6 +12,7 @@ from .models import CliInventory, DependencyInventory, ModuleInventory
 PLATFORM_MODULES = [
     "approval",
     "alpha_factory",
+    "backfill_repair",
     "backfill_observer",
     "backtest",
     "broker_adapter",
