@@ -79,6 +79,8 @@ from .checks import (
     check_paper_account,
     check_package_build_artifacts,
     check_postprocess_plan_blockers,
+    check_post_download_blockers,
+    check_post_download_plan,
     check_pre_trade_risk_controls,
     check_production_close_day_status,
     check_production_replay,
@@ -91,7 +93,10 @@ from .checks import (
     check_quality_report,
     check_raw_data_landing,
     check_raw_freeze_readiness,
+    check_research_data_readiness,
     check_release_gate,
+    check_expanded_dataset_pit_safety,
+    check_feature_readiness,
     check_replay_day_failures,
     check_readiness_remediation,
     check_api_permission_matrix,
@@ -201,6 +206,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--backfill-postprocess-plan-path")
     parser.add_argument("--raw-data-landing-report-path")
     parser.add_argument("--raw-freeze-readiness-decision-path")
+    parser.add_argument("--research-data-readiness-report-path")
+    parser.add_argument("--research-readiness-decision-path")
+    parser.add_argument("--feature-readiness-catalog-path")
+    parser.add_argument("--post-download-plan-path")
+    parser.add_argument("--post-download-run-report-path")
     parser.add_argument("--dataset-version-manifest-path")
     parser.add_argument("--freeze-validation-report-path")
     parser.add_argument("--artifact-validation-report-path")
@@ -402,6 +412,11 @@ def main(argv: list[str] | None = None) -> int:
         ("raw_data_landing", lambda: check_raw_data_landing(args.raw_data_landing_report_path)),
         ("raw_freeze_readiness", lambda: check_raw_freeze_readiness(args.raw_freeze_readiness_decision_path)),
         ("postprocess_plan_blockers", lambda: check_postprocess_plan_blockers(args.backfill_postprocess_plan_path)),
+        ("research_data_readiness", lambda: check_research_data_readiness(args.research_data_readiness_report_path or args.research_readiness_decision_path)),
+        ("feature_readiness", lambda: check_feature_readiness(args.feature_readiness_catalog_path)),
+        ("post_download_plan", lambda: check_post_download_plan(args.post_download_plan_path)),
+        ("post_download_blockers", lambda: check_post_download_blockers(args.post_download_run_report_path)),
+        ("expanded_dataset_pit_safety", lambda: check_expanded_dataset_pit_safety(args.research_data_readiness_report_path)),
         ("alpha_factory_campaign", lambda: check_alpha_factory_campaign(args.alpha_factory_report_path, args.alpha_campaign_manifest_path)),
         ("alpha_static_errors", lambda: check_alpha_static_errors(args.alpha_static_checks_path)),
         ("alpha_proxy_eval", lambda: check_alpha_proxy_eval(args.alpha_proxy_eval_report_path)),

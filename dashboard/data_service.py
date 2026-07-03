@@ -1331,6 +1331,30 @@ class AshareDashboardService:
                 return frame
         return pd.DataFrame()
 
+    def load_research_data_readiness_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._research_readiness_candidates("research_data_readiness_report.json"))
+
+    def load_research_dataset_readiness(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._research_readiness_candidates("research_dataset_readiness.jsonl"))
+
+    def load_feature_readiness_catalog(self) -> dict[str, Any]:
+        return self._read_first_json(self._research_readiness_candidates("feature_readiness_catalog.json"))
+
+    def load_research_readiness_decision(self) -> dict[str, Any]:
+        return self._read_first_json(self._research_readiness_candidates("research_readiness_decision.json"))
+
+    def load_research_readiness_remediations(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._research_readiness_candidates("research_readiness_remediations.jsonl"))
+
+    def load_post_download_plan(self) -> dict[str, Any]:
+        return self._read_first_json(self._post_download_candidates("post_download_plan.json"))
+
+    def load_post_download_steps(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._post_download_candidates("post_download_steps.jsonl"))
+
+    def load_post_download_run_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._post_download_candidates("post_download_run_report.json"))
+
     def load_data_lake_report(self) -> dict[str, Any]:
         for path in self._data_lake_candidates("data_lake_report.json"):
             payload = self._read_json(path)
@@ -1872,6 +1896,28 @@ class AshareDashboardService:
             root / "landing" / filename,
             root / "raw_data_landing" / filename,
             self.config.data_dir / filename,
+        ]
+
+    def _research_readiness_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.backfill_dir / "research_readiness" / filename,
+            self.config.backfill_dir / filename,
+            root / "research_readiness" / filename,
+            root / "research_data_readiness" / filename,
+            root / "readiness" / filename,
+            root / "data_backfill" / "readiness" / filename,
+            self.config.data_dir / filename,
+        ]
+
+    def _post_download_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.backfill_dir / "post_download" / filename,
+            self.config.backfill_dir / filename,
+            root / "post_download" / filename,
+            root / "post_download_orchestrator" / filename,
+            root / "data_backfill" / "post_download" / filename,
         ]
 
     def _data_lake_candidates(self, filename: str) -> list[Path]:

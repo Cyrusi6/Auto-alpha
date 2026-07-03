@@ -190,6 +190,73 @@ for _dataset, _definition in DATASET_DEFINITIONS.items():
     )
 
 
+_EXTENDED_PIT_OVERRIDES: dict[str, dict] = {
+    "index_basic": {"availability": "list_date", "effective": "list_date", "timing": DatasetAvailabilityTiming.effective_date, "safe": False, "notes": "weak_pit: index master metadata can be revised and needs review."},
+    "index_daily_bars": {"availability": "trade_date", "effective": "trade_date", "timing": DatasetAvailabilityTiming.after_market_close, "safe": False, "notes": "event_date_only: index daily data must be shifted for next-session use."},
+    "index_daily_basic": {"availability": "trade_date", "effective": "trade_date", "timing": DatasetAvailabilityTiming.after_market_close, "safe": False, "notes": "event_date_only: index daily valuation data must be shifted for next-session use."},
+    "industry_classification": {"availability": None, "effective": None, "timing": DatasetAvailabilityTiming.unknown, "safe": False, "notes": "weak_pit: no reliable announcement timestamp in normalized fields."},
+    "industry_members": {"availability": "in_date", "effective": "in_date", "timing": DatasetAvailabilityTiming.effective_date, "safe": False, "notes": "weak_pit: membership uses effective dates; publication timing needs review."},
+    "suspensions": {"availability": "ann_date", "effective": "suspend_date", "timing": DatasetAvailabilityTiming.announced_date, "safe": False, "notes": "weak_pit: suspension announcements require announcement-date validation."},
+    "name_changes": {"availability": "ann_date", "effective": "start_date", "timing": DatasetAvailabilityTiming.announced_date, "safe": False, "notes": "weak_pit: name/status changes require announcement-date validation."},
+    "new_shares": {"availability": "issue_date", "effective": "ipo_date", "timing": DatasetAvailabilityTiming.effective_date, "safe": False, "notes": "weak_pit: issue date is only a proxy for availability."},
+    "income_statements": {"availability": "ann_date", "effective": "end_date", "timing": DatasetAvailabilityTiming.announced_date, "safe": True, "notes": "pit_safe: use ann_date/f_ann_date availability before forward-fill."},
+    "balance_sheets": {"availability": "ann_date", "effective": "end_date", "timing": DatasetAvailabilityTiming.announced_date, "safe": True, "notes": "pit_safe: use ann_date/f_ann_date availability before forward-fill."},
+    "cashflow_statements": {"availability": "ann_date", "effective": "end_date", "timing": DatasetAvailabilityTiming.announced_date, "safe": True, "notes": "pit_safe: use ann_date/f_ann_date availability before forward-fill."},
+    "earnings_forecasts": {"availability": "ann_date", "effective": "end_date", "timing": DatasetAvailabilityTiming.announced_date, "safe": True, "notes": "pit_safe: use ann_date availability."},
+    "earnings_express": {"availability": "ann_date", "effective": "end_date", "timing": DatasetAvailabilityTiming.announced_date, "safe": True, "notes": "pit_safe: use ann_date availability."},
+    "disclosure_calendar": {"availability": "ann_date", "effective": "end_date", "timing": DatasetAvailabilityTiming.announced_date, "safe": True, "notes": "pit_safe: use ann_date availability."},
+    "financial_audit": {"availability": "ann_date", "effective": "end_date", "timing": DatasetAvailabilityTiming.announced_date, "safe": True, "notes": "pit_safe: use ann_date availability."},
+    "main_business": {"availability": None, "effective": "end_date", "timing": DatasetAvailabilityTiming.unknown, "safe": False, "notes": "unsafe_missing_availability: normalized main business data lacks an announcement date."},
+    "moneyflow": {"availability": "trade_date", "effective": "trade_date", "timing": DatasetAvailabilityTiming.after_market_close, "safe": False, "notes": "event_date_only: after-close data must be shifted before signal use."},
+    "margin_summary": {"availability": "trade_date", "effective": "trade_date", "timing": DatasetAvailabilityTiming.after_market_close, "safe": False, "notes": "event_date_only: margin data must be shifted before signal use."},
+    "margin_detail": {"availability": "trade_date", "effective": "trade_date", "timing": DatasetAvailabilityTiming.after_market_close, "safe": False, "notes": "event_date_only: margin data must be shifted before signal use."},
+    "top_list": {"availability": "trade_date", "effective": "trade_date", "timing": DatasetAvailabilityTiming.after_market_close, "safe": False, "notes": "event_date_only: top-list data must be shifted before signal use."},
+    "top_inst": {"availability": "trade_date", "effective": "trade_date", "timing": DatasetAvailabilityTiming.after_market_close, "safe": False, "notes": "event_date_only: top-institution data must be shifted before signal use."},
+    "block_trades": {"availability": "trade_date", "effective": "trade_date", "timing": DatasetAvailabilityTiming.after_market_close, "safe": False, "notes": "event_date_only: block trade data must be shifted before signal use."},
+    "hk_holdings": {"availability": "trade_date", "effective": "trade_date", "timing": DatasetAvailabilityTiming.after_market_close, "safe": False, "notes": "event_date_only: northbound holdings must be shifted before signal use."},
+    "holder_number": {"availability": "ann_date", "effective": "end_date", "timing": DatasetAvailabilityTiming.announced_date, "safe": True, "notes": "pit_safe: use ann_date availability."},
+    "holder_trades": {"availability": "ann_date", "effective": "close_date", "timing": DatasetAvailabilityTiming.announced_date, "safe": True, "notes": "pit_safe: use ann_date availability."},
+    "top10_holders": {"availability": "ann_date", "effective": "end_date", "timing": DatasetAvailabilityTiming.announced_date, "safe": True, "notes": "pit_safe: use ann_date availability."},
+    "top10_float_holders": {"availability": "ann_date", "effective": "end_date", "timing": DatasetAvailabilityTiming.announced_date, "safe": True, "notes": "pit_safe: use ann_date availability."},
+    "pledge_detail": {"availability": "ann_date", "effective": "start_date", "timing": DatasetAvailabilityTiming.announced_date, "safe": True, "notes": "pit_safe: use ann_date availability."},
+    "pledge_stat": {"availability": None, "effective": "end_date", "timing": DatasetAvailabilityTiming.unknown, "safe": False, "notes": "unsafe_missing_availability: normalized pledge statistics lack announcement timing."},
+    "repurchases": {"availability": "ann_date", "effective": "end_date", "timing": DatasetAvailabilityTiming.announced_date, "safe": True, "notes": "pit_safe: use ann_date availability."},
+    "share_unlocks": {"availability": "ann_date", "effective": "float_date", "timing": DatasetAvailabilityTiming.announced_date, "safe": True, "notes": "pit_safe: use ann_date availability."},
+}
+
+for _dataset, _override in _EXTENDED_PIT_OVERRIDES.items():
+    _definition = DATASET_DEFINITIONS.get(_dataset)
+    if _definition is None:
+        continue
+    _required = sorted(
+        {
+            *list(_definition.primary_key),
+            *[
+                field
+                for field in (
+                    _definition.date_field,
+                    _override.get("availability"),
+                    _override.get("effective"),
+                )
+                if field
+            ],
+        }
+    )
+    PIT_DATASET_CONTRACTS[_dataset] = PITDatasetContract(
+        dataset=_dataset,
+        date_field=_definition.date_field,
+        entity_field="ts_code" if "ts_code" in _definition.fields else ("index_code" if "index_code" in _definition.fields else None),
+        availability_date_field=_override.get("availability"),
+        effective_date_field=_override.get("effective"),
+        required_fields=_required,
+        max_allowed_lag_days=None,
+        timing=_override["timing"],
+        allow_forward_fill=_definition.date_field != "trade_date",
+        point_in_time_safe_by_default=bool(_override["safe"]),
+        notes=str(_override.get("notes") or ""),
+    )
+
+
 def contracts_for_datasets(datasets: list[str] | None = None) -> dict[str, PITDatasetContract]:
     if datasets is None:
         return dict(PIT_DATASET_CONTRACTS)

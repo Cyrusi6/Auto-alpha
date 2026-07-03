@@ -11,6 +11,8 @@ The current implementation is local-first. It uses deterministic sample data and
 - `data_backfill/`: Production-style full-history backfill planning, chunked job execution, staging/quarantine, resume state, coverage reports, and readiness/quota summaries.
 - `backfill_observer/`: Read-only running-backfill observer, progress/ETA reports, repair commands, and postprocess plans.
 - `raw_data_landing/`: Read-only raw JSONL landing QA, coverage matrix, duplicate-key checks, and freeze readiness gate.
+- `research_data_readiness/`: Research-readiness gate that combines raw landing QA, running backfill progress, PIT safety, matrix freshness, and feature-family readiness.
+- `post_download_orchestrator/`: Plan-only post-download workflow generator for observer, landing QA, repair review, compact/validate/stats, data lake freeze, PIT/leakage, matrix refresh, schema validation, and research smoke.
 - `data_lake/`: Dataset fingerprints, dataset version registry, immutable research freezes, freeze validation, lineage graphs, and retention reports.
 - `artifact_schema/`: Artifact type registry, schema versioning, checksum manifests, JSON/JSONL validation, and legacy-compatible artifact scanning.
 - `universe/`: Local A-share universe construction from governed data artifacts.
@@ -261,6 +263,48 @@ uv run python -m raw_data_landing.run_landing report \
 ```
 
 `backfill_observer` writes progress, ETA, repair plan, postprocess plan, and issue artifacts. Repair commands are review-only until an operator chooses to run them. `raw_data_landing` streams landed `records.jsonl` files, estimates duplicate primary keys, summarizes date/security coverage, and writes a freeze-readiness decision that can block compact/freeze/matrix/Alpha Factory preparation when core data is incomplete.
+
+You can also assess research readiness while a download is still running. This is read-only and writes only report artifacts:
+
+```bash
+uv run python -m research_data_readiness.run_readiness assess \
+  --data-dir /path/to/ashare_lake/data \
+  --run-dir /path/to/ashare_lake/runs/full_20100101_20260630 \
+  --observer-report-path /path/to/ashare_lake/reports/backfill_observer_latest/backfill_observer_report.json \
+  --dataset-progress-path /path/to/ashare_lake/reports/backfill_observer_latest/backfill_dataset_progress.jsonl \
+  --raw-landing-report-path /path/to/ashare_lake/reports/raw_landing_latest/raw_data_landing_report.json \
+  --freeze-readiness-path /path/to/ashare_lake/reports/raw_landing_latest/raw_freeze_readiness_decision.json \
+  --output-dir /path/to/ashare_lake/reports/research_readiness_latest \
+  --profile-name full_research_data \
+  --expected-start-date 20100101 \
+  --expected-end-date 20260630 \
+  --expected-trade-days 4002 \
+  --expected-security-count 5858 \
+  --pretty
+```
+
+`research_data_readiness` writes dataset readiness rows, a feature-readiness catalog, a gate decision, and remediation commands. Weak-PIT or unsafe availability datasets are visible in the report and are not automatically promoted into Alpha Factory features.
+
+After the download is complete, generate the post-download plan first. The planner does not call Tushare and defaults to plan-only behavior:
+
+```bash
+uv run python -m post_download_orchestrator.run_post_download plan \
+  --data-dir /path/to/ashare_lake/data \
+  --run-dir /path/to/ashare_lake/runs/full_20100101_20260630 \
+  --staging-dir /path/to/ashare_lake/staging/full_20100101_20260630 \
+  --output-dir /path/to/ashare_lake/reports/post_download_latest \
+  --registry-dir /path/to/ashare_lake/registry \
+  --freeze-dir /path/to/ashare_lake/freeze \
+  --matrix-cache-dir /path/to/ashare_lake/matrix_cache \
+  --readiness-report-path /path/to/ashare_lake/reports/research_readiness_latest/research_data_readiness_report.json \
+  --profile-name full_research_data \
+  --start-date 20100101 \
+  --end-date 20260630 \
+  --plan-only \
+  --pretty
+```
+
+Do not run post-download `--execute` until the active backfill is finished and readiness blockers are cleared.
 
 After governed sync or backfill, register a dataset version and freeze research input data. A freeze copies or hardlinks local JSONL records plus universe artifacts, writes hashes and manifests, and can be required by matrix build, research suite, backtest, and operations commands:
 
@@ -1374,11 +1418,11 @@ uv run python -m go_live_gate.run_go_live run \
 
 ## Current Gaps
 
-- Tushare HTTP provider, production sync scaffolding, governed backfill plans, read-only running-backfill observation, raw landing QA, freeze-readiness gates, offline fake smoke, gated online smoke/backfill, permission/rate diagnostics, audit summary, incremental recovery checks, baseline comparison, dataset versioning, research freezes, real-data runbooks, SLA checks, storage-size reports, and incremental matrix refresh are available; production use still requires real token/quota operation, real full-market performance runs, and more provider pairs.
+- Tushare HTTP provider, production sync scaffolding, governed backfill plans, read-only running-backfill observation, raw landing QA, research-readiness gates, post-download plan-only orchestration, offline fake smoke, gated online smoke/backfill, permission/rate diagnostics, audit summary, incremental recovery checks, baseline comparison, dataset versioning, research freezes, real-data runbooks, SLA checks, storage-size reports, and incremental matrix refresh are available; production use still requires real token/quota operation, real full-market performance runs, and more provider pairs.
 - Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
 - Local daily simulation supports A-share constraints, pre-trade risk controls, local kill switch, override approvals, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, settlement-aware paper accounting, lot cost, realized PnL, NAV reconciliation, generic statement import, external account mirroring, EOD break management, and execution quality reports; future work should add finer real-world matching, minute-level volume modeling, verified real broker statement mappings, richer limit policies, and real broker connectivity.
 - Local formula search, batch formula evaluation, formula corpus construction, offline AlphaGPT supervised pretraining, a first neural-guided policy-search path, and a local CPU/GPU compute scheduler are available; future work should add stronger reinforcement learning, larger offline corpora, more operators, true full-market 4-GPU stress runs, richer DDP training, and broader stability validation.
-- Feature Factory v2 and Alpha Factory campaign funnels are available locally; future work should expand the feature catalog against full-market data, calibrate proxy scores with longer histories, and run large GPU-backed campaigns outside default CI.
+- Feature Factory v2, feature-readiness cataloging, and Alpha Factory campaign funnels are available locally; future work should expand safe v3 features only after PIT availability review, calibrate proxy scores with longer histories, and run large GPU-backed campaigns outside default CI.
 - Matrix cache, incremental matrix refresh, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs and more provider pairs.
 - One-click research suites now provide local walk-forward, promotion gates, model registry records, lifecycle review packages, active deployment state, and rollback artifacts; daily operations can require an active governed model. Future work should add richer lifecycle policies and external review workflow integrations.
 - Portfolio Lab and Portfolio Certification provide local policy-grid robustness checks, certified portfolio policy packages, optimizer-policy registration, and activation approval gates. Sample certification is only a smoke path; real certification should be tied to a governed data freeze and longer production review windows.

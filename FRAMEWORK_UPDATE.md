@@ -2035,3 +2035,27 @@
 ### Follow-Ups
 - Use `backfill_observer.run_observer observe` against the real backfill root only as a read-only dashboard/reporting action while the live download continues.
 - Run `raw_data_landing.run_landing report` after each major raw capture group to decide whether repair/resume is needed before compact, freeze, matrix refresh, or Alpha Factory.
+
+## Task 042-E - Research Readiness Gates And Post-Download Planning
+
+- Added `research_data_readiness/`, a read-only gate that combines raw landing QA, running backfill observer artifacts, repair/postprocess plans, PIT safety contracts, matrix freshness hints, and feature-family readiness into freeze/matrix/Alpha Factory/validation decisions.
+- Expanded point-in-time contracts for the current extended raw dataset universe, including index, industry/status, financial statements, moneyflow/margin/trading, northbound holdings, shareholder, pledge, repurchase, and unlock datasets. Weak-PIT and unsafe missing-availability datasets are explicit in reports.
+- Added feature-readiness cataloging for price/volume, liquidity, volatility, valuation, quality/growth, industry neutralization, index membership, moneyflow, margin, event-driven, shareholder, and corporate-action families without prematurely turning all expanded raw datasets into features.
+- Added `post_download_orchestrator/`, a plan-only post-download sequence generator for observer refresh, landing QA, repair review, compact/validate/stats, data lake version/freeze, PIT/leakage/corporate checks, matrix refresh, schema validation, and real-data dry smoke. Execution is refused when readiness is blocked unless an operator explicitly allows incomplete diagnostics.
+- Extended artifact schema, release inventory, local CI, monitoring checks, dashboard data service, README, and CATREADME for research readiness and post-download artifacts.
+
+### New Artifacts
+- `research_data_readiness_report.json/md`
+- `research_dataset_readiness.jsonl`
+- `feature_readiness_catalog.json/md`
+- `research_readiness_decision.json`
+- `research_readiness_remediations.jsonl`
+- `post_download_plan.json/md`
+- `post_download_steps.jsonl`
+- `post_download_run_report.json/md`
+- `post_download_commands.sh`
+
+### Follow-Ups
+- Keep using readiness assessment against the live full backfill only as a read-only report action until the downloader finishes.
+- Run post-download `--execute` only after the real backfill has completed and repair/readiness blockers are cleared.
+- Promote weak-PIT expanded datasets into Feature Factory v3 only after manual availability review and leakage tests.
