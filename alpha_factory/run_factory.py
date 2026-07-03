@@ -39,6 +39,10 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--matrix-cache-dir")
     parser.add_argument("--feature-set-name", default="ashare_features_v1")
     parser.add_argument("--feature-set-manifest-path")
+    parser.add_argument("--require-feature-family-ready")
+    parser.add_argument("--exclude-weak-pit-features", action="store_true", default=True)
+    parser.add_argument("--include-weak-pit-features", action="store_true")
+    parser.add_argument("--feature-family-budget")
     parser.add_argument("--build-feature-set", action="store_true")
     parser.add_argument("--feature-output-dir")
     parser.add_argument("--provider", default="sample")
@@ -124,6 +128,9 @@ def main(argv: list[str] | None = None) -> int:
         universe_file=args.universe_file,
         feature_set_name=args.feature_set_name,
         feature_set_manifest_path=args.feature_set_manifest_path,
+        require_feature_family_ready=args.require_feature_family_ready,
+        exclude_weak_pit_features=not bool(args.include_weak_pit_features),
+        feature_family_budget=args.feature_family_budget,
         build_feature_set=args.build_feature_set,
         feature_output_dir=args.feature_output_dir,
         factor_transform=args.factor_transform,

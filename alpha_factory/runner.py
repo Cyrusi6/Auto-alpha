@@ -17,7 +17,7 @@ from factor_store import LocalFactorStore
 from formula_batch_eval import FormulaBatchEvalConfig, FormulaBatchEvaluator, FormulaEvalRequest, merge_shard_outputs
 from model_core.data_loader import AShareDataLoader
 
-from feature_factory import build_feature_set_manifest, build_feature_tensor_artifacts, load_feature_manifest
+from feature_factory import build_feature_set_manifest, build_feature_tensor_artifacts, load_feature_manifest, make_formula_vocab_from_manifest
 
 from .diversity import select_shortlist, write_diversity_outputs
 from .generators import generate_alpha_candidates
@@ -37,6 +37,7 @@ class AlphaFactoryRunner:
         self.store = LocalFactorStore(config.factor_store_dir)
         self.paths: dict[str, str] = {}
         self.warnings: list[str] = []
+        self.current_feature_manifest = None
 
     def run(self) -> AlphaFactoryReport:
         created_at = _utc_now()
@@ -52,6 +53,7 @@ class AlphaFactoryRunner:
             raise RuntimeError(f"data freeze validation failed: {freeze.status}")
         data_dir = str(Path(self.config.data_freeze_dir) / "data") if self.config.data_freeze_dir else self.config.data_dir
         manifest = self._feature_manifest(freeze)
+        self.current_feature_manifest = manifest
         campaign = self._campaign_manifest(created_at, freeze, manifest)
         self.paths["alpha_campaign_manifest_path"] = str(
             write_json_artifact(
@@ -66,6 +68,7 @@ class AlphaFactoryRunner:
             candidates,
             max_complexity=self.config.max_complexity,
             max_lookback=self.config.max_lookback,
+            vocab=make_formula_vocab_from_manifest(manifest),
         )
         self.paths["alpha_static_checks_path"] = str(
             write_jsonl_artifact(self.output_dir / "alpha_static_checks.jsonl", static_rows, "alpha_static_checks", "alpha_factory")
@@ -305,6 +308,7 @@ class AlphaFactoryRunner:
             loader,
             max_candidates=max(self.config.proxy_max_candidates, 0),
             max_dates=max(self.config.proxy_max_dates, 1),
+            vocab=make_formula_vocab_from_manifest(self.current_feature_manifest) if self.current_feature_manifest is not None else None,
         )
         self.paths["alpha_proxy_eval_path"] = str(write_jsonl_artifact(proxy_path, rows, "alpha_proxy_eval", "alpha_factory"))
         self.paths["alpha_proxy_eval_report_path"] = str(
@@ -652,6 +656,7 @@ def _alpha_factory_readiness(path: str | None) -> dict[str, Any]:
         return {"ready": False, "status": "missing", "path": str(target)}
     payload = json.loads(target.read_text(encoding="utf-8"))
     ready = _truthy(payload.get("can_run_core_alpha_factory")) or _truthy(payload.get("can_run_expanded_alpha_factory"))
+    ready = ready or _truthy(payload.get("can_run_v3_expanded_alpha_factory"))
     ready = ready or _truthy(payload.get("alpha_ready"))
     status = str(payload.get("status", "") or "")
     ready = ready or status in {"alpha_factory_ready", "ready_for_alpha_factory", "ready", "pass"}
@@ -661,6 +666,7 @@ def _alpha_factory_readiness(path: str | None) -> dict[str, Any]:
         "path": str(target),
         "can_run_core_alpha_factory": bool(_truthy(payload.get("can_run_core_alpha_factory"))),
         "can_run_expanded_alpha_factory": bool(_truthy(payload.get("can_run_expanded_alpha_factory"))),
+        "can_run_v3_expanded_alpha_factory": bool(_truthy(payload.get("can_run_v3_expanded_alpha_factory"))),
     }
 
 

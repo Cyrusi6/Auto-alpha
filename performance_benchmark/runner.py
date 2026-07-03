@@ -68,6 +68,9 @@ def run_benchmark(
         _run_item("formula_search_small", lambda: _bench_formula_search(data_path, output_path)),
         _run_item("formula_batch_eval_small", lambda: _bench_formula_batch_eval(data_path, output_path, cache_path)),
         _run_item("feature_set_v2_build", lambda: _bench_feature_set_v2(data_path)),
+        _run_item("feature_v3_manifest_build", lambda: _bench_feature_v3_manifest()),
+        _run_item("feature_v3_tensor_build_small", lambda: _bench_feature_set_v3(data_path)),
+        _run_item("feature_family_readiness_speed", lambda: _bench_feature_family_readiness(data_path)),
         _run_item("alpha_factory_full_small", lambda: _bench_alpha_factory(data_path, output_path, cache_path)),
         _run_item("validation_lab_small", lambda: _bench_validation_lab(data_path, output_path)),
         _run_item("factor_certification_small", lambda: _bench_factor_certification(data_path, output_path)),
@@ -110,6 +113,8 @@ def run_benchmark(
         "skipped_gpu_reason": "" if snapshot.cuda_available else "cuda_unavailable",
         "feature_build_seconds": item_map.get("feature_set_v2_build").wall_time_seconds if item_map.get("feature_set_v2_build") else 0.0,
         "feature_count": item_map.get("feature_set_v2_build").n_features if item_map.get("feature_set_v2_build") else 0,
+        "feature_v3_build_seconds": item_map.get("feature_v3_tensor_build_small").wall_time_seconds if item_map.get("feature_v3_tensor_build_small") else 0.0,
+        "feature_v3_count": item_map.get("feature_v3_tensor_build_small").n_features if item_map.get("feature_v3_tensor_build_small") else 0,
         "alpha_factory_total_seconds": item_map.get("alpha_factory_full_small").wall_time_seconds if item_map.get("alpha_factory_full_small") else 0.0,
         "alpha_candidates_per_second": item_map.get("alpha_factory_full_small").throughput_estimate if item_map.get("alpha_factory_full_small") else 0.0,
         "portfolio_trial_count": item_map.get("portfolio_lab_small").formulas_evaluated if item_map.get("portfolio_lab_small") else 0,
@@ -295,6 +300,33 @@ def _bench_feature_set_v2(data_dir: Path) -> dict[str, int]:
         "n_dates": int(tensor.shape[2]),
         "n_features": int(tensor.shape[1]),
     }
+
+
+def _bench_feature_v3_manifest() -> dict[str, int]:
+    manifest = build_feature_set_manifest("ashare_features_v3")
+    return {"records_read": manifest.feature_count, "n_features": manifest.feature_count}
+
+
+def _bench_feature_set_v3(data_dir: Path) -> dict[str, int]:
+    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+    manifest = build_feature_set_manifest("ashare_features_v3")
+    tensor, _warnings = build_feature_tensor(loader, manifest)
+    return {
+        "records_read": int(tensor.shape[0] * tensor.shape[2]),
+        "n_stocks": int(tensor.shape[0]),
+        "n_dates": int(tensor.shape[2]),
+        "n_features": int(tensor.shape[1]),
+    }
+
+
+def _bench_feature_family_readiness(data_dir: Path) -> dict[str, int]:
+    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+    manifest = build_feature_set_manifest("ashare_features_v3")
+    from feature_factory.extended_builder import attach_extended_feature_matrices
+
+    summary = attach_extended_feature_matrices(loader, manifest)
+    families = summary.get("feature_family_readiness", [])
+    return {"records_read": len(families), "n_features": int(summary.get("feature_count", 0) or 0)}
 
 
 def _bench_alpha_factory(data_dir: Path, output_dir: Path, cache_dir: Path | None) -> dict[str, int]:

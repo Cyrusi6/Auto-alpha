@@ -74,6 +74,9 @@ class AlphaCampaignConfig:
     universe_file: str | None = None
     feature_set_name: str = "ashare_features_v1"
     feature_set_manifest_path: str | None = None
+    require_feature_family_ready: str | None = None
+    exclude_weak_pit_features: bool = True
+    feature_family_budget: str | None = None
     build_feature_set: bool = False
     feature_output_dir: str | None = None
     factor_transform: str = "raw"

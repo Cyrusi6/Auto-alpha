@@ -63,9 +63,9 @@ def from_formula_search_candidates(candidates: Iterable[object]) -> list[FactorC
                 parent_hashes=getattr(candidate, "parent_hashes", None),
                 generation=getattr(candidate, "generation", None),
                 validation_reason=getattr(candidate, "validation_reason", None),
+                validate_with_global_vocab=False,
             )
         )
-    _validate_candidates(converted)
     return converted
 
 
@@ -145,13 +145,22 @@ def _make_candidate(
     parent_hashes: list[str] | None = None,
     generation: int | None = None,
     validation_reason: str | None = None,
+    validate_with_global_vocab: bool = True,
 ) -> FactorCandidate:
     vm = StackVM()
     tokens = formula_tokens or [FORMULA_VOCAB.encode_name(name) for name in formula_names]
-    names = FORMULA_VOCAB.decode_tokens(tokens)
-    valid, reason = vm.validate_with_reason(tokens)
-    if not valid:
-        validation_reason = validation_reason or reason
+    if validate_with_global_vocab:
+        names = FORMULA_VOCAB.decode_tokens(tokens)
+        valid, reason = vm.validate_with_reason(tokens)
+        complexity_value = vm.formula_complexity(tokens)
+        lookback_value = vm.formula_lookback(tokens)
+        if not valid:
+            validation_reason = validation_reason or reason
+    else:
+        names = list(formula_names)
+        reason = validation_reason or "dynamic feature vocab validation deferred"
+        complexity_value = int(complexity) if complexity is not None else len(tokens)
+        lookback_value = int(lookback) if lookback is not None else 0
     return FactorCandidate(
         name=name,
         formula_tokens=[int(token) for token in tokens],
@@ -159,8 +168,8 @@ def _make_candidate(
         description=description,
         formula_hash=formula_hash
         or stable_formula_hash([int(token) for token in tokens], names, FEATURE_VERSION, OPERATOR_VERSION),
-        complexity=int(complexity) if complexity is not None else vm.formula_complexity(tokens),
-        lookback=int(lookback) if lookback is not None else vm.formula_lookback(tokens),
+        complexity=int(complexity) if complexity is not None else int(complexity_value),
+        lookback=int(lookback) if lookback is not None else int(lookback_value),
         source=source,
         parent_hashes=parent_hashes,
         generation=generation,

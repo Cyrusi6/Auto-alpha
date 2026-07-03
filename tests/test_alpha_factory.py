@@ -6,7 +6,8 @@ from alpha_factory.run_factory import main as run_factory_main
 from dashboard.config import DashboardConfig
 from dashboard.data_service import AshareDashboardService
 from data_pipeline.ashare import AShareDataConfig, AShareDataManager
-from feature_factory import FEATURE_SET_V2
+from feature_factory import FEATURE_SET_V2, FEATURE_SET_V3, build_feature_set_manifest
+from alpha_factory.templates import template_formulas
 from formula_search.run_search import main as run_search_main
 
 
@@ -74,6 +75,54 @@ def test_alpha_factory_campaign_generates_multistage_shortlist_and_schema_valida
     schema_payload = json.loads(capsys.readouterr().out)
     assert exit_code == 0
     assert schema_payload["error_count"] == 0
+
+
+def test_alpha_factory_v3_templates_and_batch_eval_smoke(tmp_path, capsys):
+    data_dir = _prepare_sample_data(tmp_path)
+    manifest = build_feature_set_manifest(FEATURE_SET_V3, created_at="2026-01-01T00:00:00Z")
+    manifest_path = tmp_path / "feature_set_manifest.json"
+    manifest_path.write_text(json.dumps(manifest.to_dict(), ensure_ascii=False), encoding="utf-8")
+    template_names = {item["name"] for item in template_formulas(FEATURE_SET_V3, manifest)}
+
+    assert "moneyflow_reversal_template" in template_names
+    assert "margin_crowding_template" in template_names
+    assert "financial_quality_template" in template_names
+    assert "holder_concentration_template" not in template_names
+
+    result = AlphaFactoryRunner(
+        AlphaCampaignConfig(
+            campaign_name="unit_alpha_v3",
+            data_dir=str(data_dir),
+            output_dir=str(tmp_path / "alpha_v3"),
+            factor_store_dir=str(tmp_path / "store_v3"),
+            report_dir=str(tmp_path / "reports_v3"),
+            feature_set_name=FEATURE_SET_V3,
+            feature_set_manifest_path=str(manifest_path),
+            candidate_budget=12,
+            template_budget=8,
+            random_budget=0,
+            mutation_budget=0,
+            crossover_budget=0,
+            corpus_budget=0,
+            proxy_max_candidates=12,
+            top_k=4,
+            use_batch_eval=True,
+            batch_eval_dir=str(tmp_path / "batch_eval_v3"),
+            batch_eval_device="cpu",
+            batch_eval_chunk_size=2,
+            factor_transform="winsorize_zscore",
+            min_coverage=0.5,
+            seed=17,
+        )
+    ).run()
+
+    assert result.status == "success"
+    assert result.summary["feature_set_name"] == FEATURE_SET_V3
+    assert result.summary["full_eval_count"] >= 0
+    families = result.summary["family_distribution"]
+    assert "moneyflow" in families
+    assert "financial_statement" in families
+    assert (tmp_path / "batch_eval_v3" / "formula_batch_eval_result.json").exists()
 
 
 def test_alpha_factory_cli_with_full_eval_writes_batch_eval_lineage(tmp_path, capsys):

@@ -6,6 +6,14 @@ from .models import DatasetReadinessCheck, DatasetResearchTier, FeatureFamilyRea
 
 
 CORE_ALPHA_FAMILIES = {"price_volume", "liquidity", "valuation"}
+V3_EXPANDED_FAMILIES = {
+    "v3_financial_statement",
+    "v3_moneyflow",
+    "v3_margin",
+    "v3_event",
+    "v3_holder",
+    "v3_northbound",
+}
 
 
 def decide_research_readiness(
@@ -42,6 +50,24 @@ def decide_research_readiness(
     )
     core_ready = not core_blockers
     expanded_ready = not noncore_blockers
+    readiness_by_family = {item.feature_family: item for item in feature_readiness}
+    v3_core_price_volume_ready = _family_ready(readiness_by_family, "v3_core_price_volume")
+    v3_financial_statement_ready = _family_ready(readiness_by_family, "v3_financial_statement")
+    v3_moneyflow_ready = _family_ready(readiness_by_family, "v3_moneyflow")
+    v3_margin_ready = _family_ready(readiness_by_family, "v3_margin")
+    v3_event_ready = _family_ready(readiness_by_family, "v3_event")
+    v3_holder_ready = _family_ready(readiness_by_family, "v3_holder")
+    v3_northbound_ready = _family_ready(readiness_by_family, "v3_northbound")
+    v3_expanded_ready = v3_core_price_volume_ready and any(
+        [
+            v3_financial_statement_ready,
+            v3_moneyflow_ready,
+            v3_margin_ready,
+            v3_event_ready,
+            v3_holder_ready,
+            v3_northbound_ready,
+        ]
+    )
     matrix_ready = core_ready and not required_feature_blockers
     alpha_ready = matrix_ready and not required_feature_blockers
     validation_ready = alpha_ready and str(summary.get("matrix_freshness_status")) == "fresh"
@@ -92,11 +118,19 @@ def decide_research_readiness(
         can_build_matrix=core_ready and not required_feature_blockers and str(summary.get("raw_freeze_readiness_status")) in {"ready", "ok", "missing"},
         can_run_core_alpha_factory=alpha_ready,
         can_run_expanded_alpha_factory=alpha_ready and expanded_ready,
+        can_run_v3_expanded_alpha_factory=alpha_ready and expanded_ready and v3_expanded_ready,
+        can_run_financial_alpha_factory=alpha_ready and v3_financial_statement_ready,
+        can_run_event_alpha_factory=alpha_ready and v3_event_ready,
         can_run_validation=validation_ready,
         blocked_reason=blocked_reason,
         next_required_action=next_action,
         recommended_codex_task=_recommended_codex_task(status),
     )
+
+
+def _family_ready(readiness_by_family: dict[str, FeatureFamilyReadiness], family: str) -> bool:
+    item = readiness_by_family.get(family)
+    return bool(item and item.readiness_status in {FeatureReadinessStatus.ready, FeatureReadinessStatus.warning} and not item.blockers)
 
 
 def _recommended_commands(status: str, has_core_blockers: bool, has_noncore_blockers: bool, summary: dict) -> list[str]:

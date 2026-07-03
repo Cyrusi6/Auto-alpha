@@ -35,6 +35,8 @@ def _build_parser() -> argparse.ArgumentParser:
         default="adjusted_close",
     )
     parser.add_argument("--corporate-action-dir")
+    parser.add_argument("--feature-set-name", default="ashare_features_v1")
+    parser.add_argument("--feature-set-manifest-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -60,6 +62,8 @@ def main(argv: list[str] | None = None) -> int:
         data_freeze_id=args.data_freeze_id,
         data_version_manifest_path=args.data_version_manifest_path,
         require_data_freeze=args.require_data_freeze,
+        feature_set_name=args.feature_set_name,
+        feature_set_manifest_path=args.feature_set_manifest_path,
     )
     if args.validate:
         report = validate_matrix_cache(result.cache_dir)

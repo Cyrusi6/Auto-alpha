@@ -97,6 +97,9 @@ class ResearchDataReadinessDecision:
     can_build_matrix: bool = False
     can_run_core_alpha_factory: bool = False
     can_run_expanded_alpha_factory: bool = False
+    can_run_v3_expanded_alpha_factory: bool = False
+    can_run_financial_alpha_factory: bool = False
+    can_run_event_alpha_factory: bool = False
     can_run_validation: bool = False
     blocked_reason: str | None = None
     next_required_action: str | None = None

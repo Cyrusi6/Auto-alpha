@@ -10,8 +10,8 @@ import torch
 from model_core.vm import StackVM
 
 
-def run_proxy_eval(candidates, loader, *, max_candidates: int, max_dates: int) -> tuple[list, list[dict], dict]:
-    vm = StackVM()
+def run_proxy_eval(candidates, loader, *, max_candidates: int, max_dates: int, vocab=None) -> tuple[list, list[dict], dict]:
+    vm = StackVM(vocab)
     updated = []
     rows: list[dict] = []
     passed = 0

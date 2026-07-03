@@ -8,6 +8,8 @@ from typing import Any
 
 class FeatureFamily:
     price_return = "price_return"
+    price_volume_core = "price_volume_core"
+    index_market = "index_market"
     liquidity = "liquidity"
     volatility = "volatility"
     valuation = "valuation"
@@ -19,6 +21,15 @@ class FeatureFamily:
     corporate_action = "corporate_action"
     limit_suspension = "limit_suspension"
     industry = "industry"
+    suspension_status = "suspension_status"
+    financial_statement = "financial_statement"
+    earnings_event = "earnings_event"
+    moneyflow = "moneyflow"
+    margin = "margin"
+    abnormal_trading = "abnormal_trading"
+    holder_structure = "holder_structure"
+    pledge_repurchase_unlock = "pledge_repurchase_unlock"
+    northbound = "northbound"
 
 
 @dataclass(frozen=True)
@@ -28,11 +39,20 @@ class FeatureDefinition:
     family: str
     source_fields: list[str]
     tensor_key: str
+    feature_set_name: str = ""
+    required_datasets: list[str] = field(default_factory=list)
+    optional_datasets: list[str] = field(default_factory=list)
+    date_field: str = "trade_date"
+    availability_field: str | None = None
+    pit_safety: str = "pit_safe"
     transform: str = "robust_zscore"
     lookback: int = 1
     point_in_time_safe: bool = True
     availability_contract: dict[str, Any] = field(default_factory=dict)
     default_enabled: bool = True
+    used_for_alpha: bool = True
+    used_for_filter: bool = False
+    used_for_risk: bool = False
     description: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 

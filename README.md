@@ -1233,7 +1233,7 @@ The package build uses hatchling and includes only A-share platform modules. It 
 
 ## Formula Corpus, Batch Evaluation, And AlphaGPT Pretraining
 
-`feature_factory/` keeps the existing 11-feature v1 loader behavior as the default and adds an opt-in `ashare_features_v2` feature space. v2 extends the base feature set with additional return horizons, liquidity z-scores, volatility/downside-volatility, valuation, limit/suspension, index membership, and optional point-in-time/corporate-action flags. Missing optional raw fields are reported as warnings and encoded as zero matrices instead of breaking local sample runs.
+`feature_factory/` keeps the existing 11-feature v1 loader behavior as the default and adds opt-in `ashare_features_v2` and `ashare_features_v3` feature spaces. v2 extends the base feature set with additional return horizons, liquidity z-scores, volatility/downside-volatility, valuation, limit/suspension, index membership, and optional point-in-time/corporate-action flags. v3 adds a PIT-aware expanded-data catalog for index/industry/status, complete financial statements, earnings events, moneyflow, margin, abnormal trading, holder structure, pledge/repurchase/unlock, and northbound holding families. Missing optional raw fields are reported as warnings and encoded as zero matrices instead of breaking local sample runs. Weak-PIT or disabled features are visible in the manifest/readiness reports and are excluded from Alpha Factory sampling by default.
 
 ```bash
 uv run python -m feature_factory.run_features build \
@@ -1242,6 +1242,18 @@ uv run python -m feature_factory.run_features build \
   --feature-set-name ashare_features_v2 \
   --pretty
 ```
+
+The expanded v3 feature set must be explicitly requested:
+
+```bash
+uv run python -m feature_factory.run_features build \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --output-dir /tmp/auto-alpha-demo/features_v3 \
+  --feature-set-name ashare_features_v3 \
+  --pretty
+```
+
+v3 builds write `feature_family_readiness.json`, `feature_pit_alignment_report.json`, and `feature_build_warnings.jsonl` in addition to the usual manifest, coverage, values summary, tensor, and build-result artifacts. `matrix_store` and `matrix_refresh` record the feature-set hash and recommend a full rebuild when the v3 catalog or PIT/corporate/target-return flags drift.
 
 `alpha_factory/` is the campaign-level candidate funnel. It records campaign lineage, feature-set metadata, generator source budgets, random seed, compute configuration, static DSL checks, cheap proxy evaluation, optional `formula_batch_eval` full evaluation, novelty/diversity scoring, and shortlist artifacts:
 
@@ -1265,6 +1277,24 @@ uv run python -m alpha_factory.run_factory run \
   --use-batch-eval \
   --batch-eval-dir /tmp/auto-alpha-demo/alpha_batch_eval \
   --batch-eval-device cpu \
+  --pretty
+```
+
+To use v3 templates, pass the v3 manifest explicitly. The generator skips weak-PIT and disabled features unless `--include-weak-pit-features` is set, and family-level budgets or readiness requirements can narrow the expanded search space:
+
+```bash
+uv run python -m alpha_factory.run_factory run \
+  --campaign-name sample_alpha_factory_v3 \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store_v3 \
+  --output-dir /tmp/auto-alpha-demo/alpha_factory_v3 \
+  --feature-set-name ashare_features_v3 \
+  --feature-set-manifest-path /tmp/auto-alpha-demo/features_v3/feature_set_manifest.json \
+  --require-feature-family-ready moneyflow,margin,financial_statement \
+  --exclude-weak-pit-features \
+  --feature-family-budget moneyflow=4,margin=4,financial_statement=4 \
+  --template-budget 20 \
+  --candidate-budget 40 \
   --pretty
 ```
 
@@ -1575,7 +1605,7 @@ uv run python -m go_live_gate.run_go_live run \
 - Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
 - Local daily simulation supports A-share constraints, pre-trade risk controls, local kill switch, override approvals, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, settlement-aware paper accounting, lot cost, realized PnL, NAV reconciliation, generic statement import, external account mirroring, EOD break management, and execution quality reports; future work should add finer real-world matching, minute-level volume modeling, verified real broker statement mappings, richer limit policies, and real broker connectivity.
 - Local formula search, batch formula evaluation, formula corpus construction, offline AlphaGPT supervised pretraining, a first neural-guided policy-search path, and a local CPU/GPU compute scheduler are available; future work should add stronger reinforcement learning, larger offline corpora, more operators, true full-market 4-GPU stress runs, richer DDP training, and broader stability validation.
-- Feature Factory v2, feature-readiness cataloging, and Alpha Factory campaign funnels are available locally; future work should expand safe v3 features only after PIT availability review, calibrate proxy scores with longer histories, and run large GPU-backed campaigns outside default CI.
+- Feature Factory v2/v3, feature-readiness cataloging, PIT-alignment reporting, and Alpha Factory campaign funnels are available locally; future work should calibrate expanded v3 feature definitions on real freezes, refine weak-PIT promotion rules, calibrate proxy scores with longer histories, and run large GPU-backed campaigns outside default CI.
 - Matrix cache, incremental matrix refresh, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs and more provider pairs.
 - One-click research suites now provide local walk-forward, promotion gates, model registry records, lifecycle review packages, active deployment state, and rollback artifacts; daily operations can require an active governed model. Future work should add richer lifecycle policies and external review workflow integrations.
 - Portfolio Lab and Portfolio Certification provide local policy-grid robustness checks, certified portfolio policy packages, optimizer-policy registration, and activation approval gates. Sample certification is only a smoke path; real certification should be tied to a governed data freeze and longer production review windows.

@@ -135,7 +135,12 @@ from .checks import (
     check_active_universe_coverage,
     check_feature_coverage,
     check_feature_cutoff_policy,
+    check_alpha_factory_v3_readiness,
+    check_feature_pit_alignment,
     check_feature_set_manifest,
+    check_feature_set_v3,
+    check_v3_feature_family_readiness,
+    check_weak_pit_features,
     check_overfit_risk,
     check_placebo_tests,
     check_regime_validation,
@@ -293,6 +298,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--alpha-shortlist-path")
     parser.add_argument("--feature-set-manifest-path")
     parser.add_argument("--feature-coverage-report-path")
+    parser.add_argument("--feature-family-readiness-path")
+    parser.add_argument("--feature-pit-alignment-report-path")
+    parser.add_argument("--feature-build-warnings-path")
     parser.add_argument("--validation-lab-report-path")
     parser.add_argument("--factor-validation-summary-path")
     parser.add_argument("--multiple-testing-report-path")
@@ -496,6 +504,11 @@ def main(argv: list[str] | None = None) -> int:
         ("optimizer_policy_activation_queue", lambda: check_optimizer_policy_activation_queue(args.optimizer_policy_activation_queue_path)),
         ("feature_set_manifest", lambda: check_feature_set_manifest(args.feature_set_manifest_path)),
         ("feature_coverage", lambda: check_feature_coverage(args.feature_coverage_report_path)),
+        ("feature_set_v3", lambda: check_feature_set_v3(args.feature_set_manifest_path)),
+        ("v3_feature_family_readiness", lambda: check_v3_feature_family_readiness(args.feature_family_readiness_path)),
+        ("weak_pit_features", lambda: check_weak_pit_features(args.feature_pit_alignment_report_path)),
+        ("feature_pit_alignment", lambda: check_feature_pit_alignment(args.feature_pit_alignment_report_path)),
+        ("alpha_factory_v3_readiness", lambda: check_alpha_factory_v3_readiness(args.feature_family_readiness_path)),
         ("validation_lab", lambda: check_validation_lab(args.validation_lab_report_path, args.factor_validation_summary_path)),
         ("multiple_testing", lambda: check_multiple_testing(args.multiple_testing_report_path)),
         ("overfit_risk", lambda: check_overfit_risk(args.overfit_risk_report_path)),

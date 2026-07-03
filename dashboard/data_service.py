@@ -295,6 +295,19 @@ class AshareDashboardService:
     def load_feature_values_summary(self) -> dict[str, Any]:
         return self._read_first_json(self._feature_artifact_candidates("feature_values_summary.json"))
 
+    def load_feature_family_readiness(self) -> dict[str, Any]:
+        return self._read_first_json(self._feature_artifact_candidates("feature_family_readiness.json"))
+
+    def load_feature_pit_alignment_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._feature_artifact_candidates("feature_pit_alignment_report.json"))
+
+    def load_feature_build_warnings(self) -> pd.DataFrame:
+        for path in self._feature_artifact_candidates("feature_build_warnings.jsonl"):
+            frame = self._read_jsonl(path)
+            if not frame.empty:
+                return frame
+        return pd.DataFrame()
+
     def load_alpha_campaign_manifest(self) -> dict[str, Any]:
         return self._read_first_json(self._alpha_artifact_candidates("alpha_campaign_manifest.json"))
 
@@ -2277,7 +2290,9 @@ class AshareDashboardService:
             self.config.feature_factory_dir / filename,
             root / "features" / filename,
             root / "features_v2" / filename,
+            root / "features_v3" / filename,
             root / "suite_features_v2" / filename,
+            root / "suite_features_v3" / filename,
             root / "alpha_factory" / "features" / filename,
             root / "suite_alpha_factory" / "features" / filename,
         ]

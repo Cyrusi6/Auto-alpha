@@ -23,6 +23,8 @@ def _build_parser() -> argparse.ArgumentParser:
         cmd.add_argument("--point-in-time", action="store_true")
         cmd.add_argument("--feature-cutoff-mode", default="same_day_after_close")
         cmd.add_argument("--corporate-action-aware", action="store_true")
+        cmd.add_argument("--feature-set-name", default="ashare_features_v1")
+        cmd.add_argument("--feature-set-manifest-path")
         cmd.add_argument(
             "--target-return-mode",
             choices=("adjusted_close", "raw_close", "corporate_action_total_return"),
@@ -49,6 +51,8 @@ def main(argv: list[str] | None = None) -> int:
         feature_cutoff_mode=args.feature_cutoff_mode,
         corporate_action_aware=args.corporate_action_aware,
         target_return_mode=args.target_return_mode,
+        feature_set_name=args.feature_set_name,
+        feature_set_manifest_path=args.feature_set_manifest_path,
         refresh_mode=refresh_mode,
         require_data_freeze=args.require_data_freeze,
         pretty_config={"command": args.command},

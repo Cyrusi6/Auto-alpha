@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import time
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
@@ -23,6 +24,8 @@ from factor_store import (
     make_factor_id,
     stable_formula_hash,
 )
+from feature_factory import make_formula_vocab_from_manifest
+from feature_factory.builder import load_feature_manifest
 from model_core.backtest import AShareFactorEvaluator
 from model_core.data_loader import AShareDataLoader
 from model_core.vm import StackVM
@@ -49,7 +52,9 @@ class FormulaBatchEvaluator:
         self.output_dir = Path(config.output_dir)
         self.store = LocalFactorStore(config.factor_store_dir)
         self.device = _resolve_device(config.device, config.strict_device)
-        self.vm = StackVM()
+        self.feature_manifest = load_feature_manifest(config.feature_set_manifest_path) if config.feature_set_manifest_path else None
+        self.vocab = make_formula_vocab_from_manifest(self.feature_manifest) if self.feature_manifest is not None else FORMULA_VOCAB
+        self.vm = StackVM(self.vocab)
         self.evaluator = AShareFactorEvaluator()
         self.loader = AShareDataLoader(
             data_dir=config.data_dir,
@@ -61,7 +66,7 @@ class FormulaBatchEvaluator:
             feature_set_name=config.feature_set_name,
             feature_set_manifest_path=config.feature_set_manifest_path,
         )
-        self.feature_version = config.feature_set_name or FEATURE_VERSION
+        self.feature_version = (self.feature_manifest.feature_version if self.feature_manifest is not None else config.feature_set_name) or FEATURE_VERSION
         self.cache_dir = Path(config.eval_cache_dir) if config.eval_cache_dir else self.output_dir / "eval_cache"
         self._cache: dict[str, dict[str, Any]] = {}
         self.cache_hits = 0
@@ -138,6 +143,7 @@ class FormulaBatchEvaluator:
 
     def _run_request(self, request: FormulaEvalRequest, batch_id: str, created_at: str) -> FormulaEvalResult:
         started = time.perf_counter()
+        request = self._normalize_request_tokens(request)
         valid, reason = self.vm.validate_with_reason(request.formula_tokens)
         if not valid:
             return FormulaEvalResult(
@@ -311,6 +317,17 @@ class FormulaBatchEvaluator:
             self.cache_writes += 1
             self._write_cache_record(cache_key, result)
         return result
+
+    def _normalize_request_tokens(self, request: FormulaEvalRequest) -> FormulaEvalRequest:
+        if not request.formula_names:
+            return request
+        try:
+            tokens = [self.vocab.encode_name(name) for name in request.formula_names]
+        except ValueError:
+            return request
+        if tokens == request.formula_tokens:
+            return request
+        return replace(request, formula_tokens=tokens, formula_hash="")
 
     def _cache_key(self, request: FormulaEvalRequest) -> str:
         payload = {

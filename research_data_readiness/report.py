@@ -52,6 +52,17 @@ def build_research_data_readiness_report(
             "research_readiness_blocker_count": decision.blocker_count,
             "feature_ready_family_count": sum(1 for item in feature_readiness if item.readiness_status == "ready"),
             "feature_blocked_family_count": sum(1 for item in feature_readiness if item.readiness_status == "blocked"),
+            "v3_core_price_volume_ready": _family_status(feature_readiness, "v3_core_price_volume"),
+            "v3_financial_statement_ready": _family_status(feature_readiness, "v3_financial_statement"),
+            "v3_moneyflow_ready": _family_status(feature_readiness, "v3_moneyflow"),
+            "v3_margin_ready": _family_status(feature_readiness, "v3_margin"),
+            "v3_event_ready": _family_status(feature_readiness, "v3_event"),
+            "v3_holder_ready": _family_status(feature_readiness, "v3_holder"),
+            "v3_northbound_ready": _family_status(feature_readiness, "v3_northbound"),
+            "can_run_core_alpha_factory": decision.can_run_core_alpha_factory,
+            "can_run_v3_expanded_alpha_factory": decision.can_run_v3_expanded_alpha_factory,
+            "can_run_financial_alpha_factory": decision.can_run_financial_alpha_factory,
+            "can_run_event_alpha_factory": decision.can_run_event_alpha_factory,
         }
     )
     now = utc_now()
@@ -158,3 +169,10 @@ def _feature_markdown(report: ResearchDataReadinessReport) -> str:
             f"| {item.feature_family} | {item.readiness_status} | {', '.join(item.required_datasets)} | {'; '.join(item.blockers)} | {'; '.join(item.weak_pit_warnings)} |"
         )
     return "\n".join(lines) + "\n"
+
+
+def _family_status(feature_readiness, family: str) -> bool:
+    for item in feature_readiness:
+        if item.feature_family == family:
+            return item.readiness_status in {"ready", "warning"} and not item.blockers
+    return False

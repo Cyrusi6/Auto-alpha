@@ -2176,3 +2176,18 @@
 ### Follow-Ups
 - Do not run real factor certification or portfolio campaigns until the active Tushare backfill, repair, freeze, matrix refresh, Alpha Factory, and validation campaigns have finished and readiness explicitly allows the next stage.
 - Treat `production_candidate_bundle.jsonl` and `optimizer_policy_activation_queue.jsonl` as review inputs only; they do not activate models or trading policies without approval, model registry, factor lifecycle, and production gates.
+
+## Task 046-A - Feature Factory V3 And Expanded PIT-Safe Feature Matrix
+
+- Added opt-in `ashare_features_v3` catalog coverage for expanded A-share raw datasets: index/industry/status, complete financial statements, earnings events, moneyflow, margin, abnormal trading, holder structure, pledge/repurchase/unlock, and northbound holdings. v1/v2 defaults remain unchanged.
+- Added `feature_factory.extended_builder` to attach v3 feature matrices to `AShareDataLoader` using PIT-style availability dates where present. Missing expanded datasets produce warnings and zero coverage instead of breaking sample/fake runs.
+- Added v3 artifacts: `feature_family_readiness.json/md`, `feature_pit_alignment_report.json`, and `feature_build_warnings.jsonl`, plus feature-set metadata fields in matrix cache metadata.
+- Enhanced dynamic formula vocab support across `StackVM`, Alpha Factory, Formula Batch Eval, and research batch runner so v2/v3 feature manifests can supply feature tokens without breaking legacy formulas.
+- Extended Alpha Factory templates and CLI options for v3 feature families, family readiness filters, family budgets, and default weak-PIT exclusion.
+- Enhanced `matrix_refresh` to detect feature-set hash drift and recommend full rebuilds when v3 feature definitions change.
+- Enhanced research-data readiness, validation metadata, monitoring checks, dashboard artifact reads, artifact schema, performance benchmark, and local CI quick smoke for v3 feature readiness and PIT alignment.
+- Added offline tests for v3 catalog contracts, missing/available expanded datasets, v3 Alpha Factory templates with batch eval, and matrix refresh feature hash drift.
+
+### Follow-Ups
+- Do not build production v3 feature matrices until the active real Tushare backfill, repair, freeze, and matrix refresh gates are complete.
+- Treat weak-PIT expanded datasets as report/readiness inputs until manual availability review and leakage tests promote them into alpha sampling.

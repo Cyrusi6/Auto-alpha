@@ -13,6 +13,7 @@ import torch
 
 from model_core.data_loader import AShareDataLoader
 from data_lake import validate_research_input
+from feature_factory import build_feature_set_manifest, load_feature_manifest
 
 from .models import MatrixCacheBuildResult, MatrixFieldInfo
 
@@ -72,6 +73,8 @@ def build_matrix_cache(
     data_freeze_id: str | None = None,
     data_version_manifest_path: str | Path | None = None,
     require_data_freeze: bool = False,
+    feature_set_name: str = "ashare_features_v1",
+    feature_set_manifest_path: str | Path | None = None,
 ) -> MatrixCacheBuildResult:
     """Build a deterministic local matrix cache from JSONL datasets."""
 
@@ -103,6 +106,8 @@ def build_matrix_cache(
         corporate_action_aware=corporate_action_aware,
         target_return_mode=target_return_mode,
         corporate_action_dir=corporate_action_dir,
+        feature_set_name=feature_set_name,
+        feature_set_manifest_path=feature_set_manifest_path,
     ).load_data()
 
     raw = dict(loader.raw_data_cache)
@@ -141,6 +146,15 @@ def build_matrix_cache(
 
     source_manifest_hash = _file_hash(data_path / "manifest.json")
     quality_report_hash = _file_hash(data_path / "quality_report.json")
+    feature_manifest = (
+        load_feature_manifest(feature_set_manifest_path)
+        if feature_set_manifest_path is not None and Path(feature_set_manifest_path).exists()
+        else build_feature_set_manifest(feature_set_name, point_in_time=point_in_time, corporate_action_aware=corporate_action_aware, target_return_mode=target_return_mode)
+    )
+    feature_defs = list(feature_manifest.feature_definitions)
+    family_names = {str(item.get("family")) for item in feature_defs if isinstance(item, dict)}
+    weak_pit_count = sum(1 for item in feature_defs if isinstance(item, dict) and item.get("pit_safety") != "pit_safe")
+    disabled_count = sum(1 for item in feature_defs if isinstance(item, dict) and not item.get("default_enabled", True))
     cache_hash = _stable_cache_hash(
         loader.ts_codes,
         loader.trade_dates,
@@ -175,6 +189,14 @@ def build_matrix_cache(
         "corporate_action_event_count": int(raw.get("corporate_action_flag", torch.zeros_like(raw["close"])).sum().item())
         if corporate_action_aware
         else 0,
+        "feature_set_name": feature_manifest.feature_set_name,
+        "feature_set_version": feature_manifest.feature_set_version,
+        "feature_set_hash": feature_manifest.content_hash,
+        "feature_family_count": len(family_names),
+        "feature_count_enabled": sum(1 for item in feature_defs if isinstance(item, dict) and item.get("default_enabled", True)),
+        "weak_pit_feature_count": weak_pit_count,
+        "disabled_feature_count": disabled_count,
+        "feature_pit_alignment_status": "warning" if weak_pit_count else "ok",
         "dataset_version_id": _dataset_version_id(data_version_manifest_path),
         "data_freeze_id": data_freeze_id or freeze_report.freeze_id,
         "data_freeze_hash": freeze_report.content_hash,

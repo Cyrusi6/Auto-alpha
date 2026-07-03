@@ -63,6 +63,7 @@ class AShareDataLoader:
         self.security_metadata: dict[str, dict[str, object]] = {}
         self.industry_codes: torch.Tensor | None = None
         self.raw_data_cache: dict[str, torch.Tensor] = {}
+        self.feature_v3_extended_summary: dict[str, object] | None = None
         self.raw_corporate_actions: list[dict[str, object]] = []
         self.corporate_action_events: list[dict[str, object]] = []
         self.feat_tensor: torch.Tensor | None = None
@@ -215,23 +216,34 @@ class AShareDataLoader:
         if self.feature_set_manifest_path is not None:
             from feature_factory.builder import load_feature_manifest
 
+            manifest = load_feature_manifest(self.feature_set_manifest_path)
+            self._attach_extended_feature_matrices_if_needed(manifest)
             return AShareFeatureEngineer.compute_features(
                 self.raw_data_cache,
-                feature_set_manifest=load_feature_manifest(self.feature_set_manifest_path),
+                feature_set_manifest=manifest,
             )
         if self.feature_set_name != "ashare_features_v1":
             from feature_factory.catalog import build_feature_set_manifest
 
+            manifest = build_feature_set_manifest(
+                self.feature_set_name,
+                point_in_time=self.point_in_time,
+                corporate_action_aware=self.corporate_action_aware,
+                target_return_mode=self.target_return_mode,
+            )
+            self._attach_extended_feature_matrices_if_needed(manifest)
             return AShareFeatureEngineer.compute_features(
                 self.raw_data_cache,
-                feature_set_manifest=build_feature_set_manifest(
-                    self.feature_set_name,
-                    point_in_time=self.point_in_time,
-                    corporate_action_aware=self.corporate_action_aware,
-                    target_return_mode=self.target_return_mode,
-                ),
+                feature_set_manifest=manifest,
             )
         return AShareFeatureEngineer.compute_features(self.raw_data_cache)
+
+    def _attach_extended_feature_matrices_if_needed(self, manifest) -> None:
+        if getattr(manifest, "feature_set_name", "") != "ashare_features_v3":
+            return
+        from feature_factory.extended_builder import attach_extended_feature_matrices
+
+        self.feature_v3_extended_summary = attach_extended_feature_matrices(self, manifest)
 
     def _read_jsonl(self, dataset: str) -> list[dict[str, object]]:
         path = self.data_dir / dataset / "records.jsonl"

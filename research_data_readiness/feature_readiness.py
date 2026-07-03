@@ -66,6 +66,41 @@ FEATURE_FAMILY_POLICIES: dict[str, dict[str, list[str] | str]] = {
         "optional": ["new_shares"],
         "plan": "Corporate action features are limited to event flags and total-return/accounting support.",
     },
+    "v3_core_price_volume": {
+        "required": ["daily_bars", "daily_basic", "adjustment_factors", "daily_limits"],
+        "optional": ["index_members"],
+        "plan": "Feature v3 core price/volume remains usable when governed daily datasets and market constraints are ready.",
+    },
+    "v3_financial_statement": {
+        "required": ["income_statements", "balance_sheets", "cashflow_statements"],
+        "optional": ["financial_features"],
+        "plan": "Statement-derived v3 features require announcement-date PIT alignment.",
+    },
+    "v3_moneyflow": {
+        "required": ["moneyflow"],
+        "optional": [],
+        "plan": "Moneyflow v3 features require daily moneyflow coverage and after-close cutoff handling.",
+    },
+    "v3_margin": {
+        "required": ["margin_detail"],
+        "optional": ["margin_summary"],
+        "plan": "Margin crowding v3 features require margin detail or summary coverage.",
+    },
+    "v3_event": {
+        "required": ["top_list", "top_inst", "block_trades"],
+        "optional": ["earnings_forecasts", "earnings_express", "disclosure_calendar"],
+        "plan": "Event and abnormal trading v3 features require event-date cutoff review.",
+    },
+    "v3_holder": {
+        "required": ["holder_number", "top10_holders", "top10_float_holders"],
+        "optional": ["pledge_stat", "repurchases", "share_unlocks"],
+        "plan": "Holder and pledge v3 features are weak-PIT unless announcement-date coverage is verified.",
+    },
+    "v3_northbound": {
+        "required": ["hk_holdings"],
+        "optional": [],
+        "plan": "Northbound v3 features require non-empty HK holding coverage; empty provider responses keep the family blocked.",
+    },
 }
 
 

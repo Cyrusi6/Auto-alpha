@@ -10,8 +10,8 @@ from model_core.vm import StackVM
 FORBIDDEN_NAMES = {"TARGET_RET", "target_ret", "FUTURE_RETURN", "NEXT_RET"}
 
 
-def run_static_checks(candidates, *, max_complexity: int, max_lookback: int) -> tuple[list, list[dict]]:
-    vm = StackVM()
+def run_static_checks(candidates, *, max_complexity: int, max_lookback: int, vocab=None) -> tuple[list, list[dict]]:
+    vm = StackVM(vocab)
     seen: set[str] = set()
     updated = []
     rows: list[dict] = []

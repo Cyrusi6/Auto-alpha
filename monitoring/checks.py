@@ -1915,6 +1915,71 @@ def check_feature_coverage(path: str | Path | None) -> tuple[dict[str, Any], lis
     return {"exists": bool(payload), "feature_coverage_warning_count": warnings}, alerts
 
 
+def check_feature_set_v3(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    name = str(payload.get("feature_set_name") or "")
+    definitions = payload.get("feature_definitions", []) if isinstance(payload.get("feature_definitions"), list) else []
+    weak = sum(1 for item in definitions if isinstance(item, dict) and item.get("pit_safety") != "pit_safe")
+    disabled = sum(1 for item in definitions if isinstance(item, dict) and not item.get("default_enabled", True))
+    alerts = []
+    if payload and name != "ashare_features_v3":
+        alerts.append(MonitoringAlert("info", "feature_set_v3", "feature set manifest is not v3", {"feature_set_name": name}))
+    return {
+        "exists": bool(payload),
+        "feature_set_name": name,
+        "v3_feature_count": len(definitions),
+        "v3_weak_pit_feature_count": weak,
+        "v3_disabled_feature_count": disabled,
+    }, alerts
+
+
+def check_v3_feature_family_readiness(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    families = payload.get("families", []) if isinstance(payload.get("families"), list) else []
+    insufficient = [row for row in families if row.get("readiness") == "insufficient_data"]
+    warning = [row for row in families if row.get("readiness") == "warning"]
+    alerts: list[MonitoringAlert] = []
+    if insufficient:
+        alerts.append(MonitoringAlert("warning", "v3_feature_family_readiness", "some v3 feature families have insufficient data", {"families": [row.get("family") for row in insufficient]}))
+    elif warning:
+        alerts.append(MonitoringAlert("info", "v3_feature_family_readiness", "some v3 feature families have warnings", {"families": [row.get("family") for row in warning]}))
+    return {
+        "exists": bool(payload),
+        "v3_feature_family_count": len(families),
+        "v3_feature_family_ready_count": sum(1 for row in families if row.get("readiness") == "ready"),
+        "v3_feature_family_warning_count": len(warning),
+        "v3_feature_family_insufficient_count": len(insufficient),
+    }, alerts
+
+
+def check_weak_pit_features(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    weak = int(payload.get("weak_pit_feature_count", 0) or 0) if payload else 0
+    disabled = int(payload.get("disabled_feature_count", 0) or 0) if payload else 0
+    alerts = []
+    if weak:
+        alerts.append(MonitoringAlert("info", "weak_pit_features", "weak PIT features are present and should stay excluded from default alpha sampling", {"weak_pit_feature_count": weak}))
+    return {"exists": bool(payload), "weak_pit_feature_count": weak, "disabled_feature_count": disabled}, alerts
+
+
+def check_feature_pit_alignment(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    status = str(payload.get("status") or "")
+    features = payload.get("features", []) if isinstance(payload.get("features"), list) else []
+    warning_count = sum(1 for row in features if str(row.get("status", "")).endswith("warning"))
+    alerts = [MonitoringAlert("warning", "feature_pit_alignment", "feature PIT alignment has warnings", {"warning_count": warning_count})] if warning_count else []
+    return {"exists": bool(payload), "feature_pit_alignment_status": status, "feature_pit_alignment_warning_count": warning_count}, alerts
+
+
+def check_alpha_factory_v3_readiness(feature_family_readiness_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(feature_family_readiness_path)) if feature_family_readiness_path else {}
+    families = payload.get("families", []) if isinstance(payload.get("families"), list) else []
+    ready = {row.get("family") for row in families if row.get("readiness") == "ready"}
+    can_run = bool(ready & {"moneyflow", "margin", "financial_statement", "industry", "index_market"})
+    alerts = [] if can_run or not payload else [MonitoringAlert("warning", "alpha_factory_v3_readiness", "v3 expanded alpha factory is blocked by feature family readiness")]
+    return {"exists": bool(payload), "can_run_v3_expanded_alpha_factory": can_run, "ready_v3_families": sorted(str(item) for item in ready)}, alerts
+
+
 def check_validation_lab(
     path: str | Path | None,
     factor_validation_summary_path: str | Path | None = None,

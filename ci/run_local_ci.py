@@ -839,6 +839,22 @@ def main(argv: list[str] | None = None) -> int:
             ],
         ),
         (
+            "feature_factory_v3_smoke",
+            [
+                sys.executable,
+                "-m",
+                "feature_factory.run_features",
+                "build",
+                "--data-dir",
+                str(sample_data_dir),
+                "--output-dir",
+                str(quick_dir / "features_v3"),
+                "--feature-set-name",
+                "ashare_features_v3",
+                "--pretty",
+            ],
+        ),
+        (
             "alpha_factory_smoke",
             [
                 sys.executable,
@@ -1168,6 +1184,8 @@ def main(argv: list[str] | None = None) -> int:
                 str(quick_dir / "model_lifecycle"),
                 "--artifact-dir",
                 str(quick_dir / "features_v2"),
+                "--artifact-dir",
+                str(quick_dir / "features_v3"),
                 "--artifact-dir",
                 str(quick_dir / "alpha_factory"),
                 "--artifact-dir",

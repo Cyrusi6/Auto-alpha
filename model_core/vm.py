@@ -5,17 +5,18 @@ from __future__ import annotations
 import torch
 
 from .ops import OPS_CONFIG, operator_complexity, operator_lookback
-from .vocab import FORMULA_VOCAB
+from .vocab import FORMULA_VOCAB, FormulaVocab
 
 
 class StackVM:
-    def __init__(self):
-        self.feat_offset = FORMULA_VOCAB.operator_offset
+    def __init__(self, vocab: FormulaVocab | None = None):
+        self.vocab = vocab or FORMULA_VOCAB
+        self.feat_offset = self.vocab.operator_offset
         self.op_map = {idx + self.feat_offset: cfg[1] for idx, cfg in enumerate(OPS_CONFIG)}
         self.arity_map = {idx + self.feat_offset: cfg[2] for idx, cfg in enumerate(OPS_CONFIG)}
 
     def describe(self, formula_tokens: list[int]) -> list[str]:
-        return FORMULA_VOCAB.decode_tokens([int(token) for token in formula_tokens])
+        return self.vocab.decode_tokens([int(token) for token in formula_tokens])
 
     def validate(self, formula_tokens: list[int]) -> bool:
         return self.validate_with_reason(formula_tokens)[0]
@@ -31,7 +32,7 @@ class StackVM:
             elif token in self.arity_map:
                 arity = self.arity_map[token]
                 if depth < arity:
-                    return False, f"stack underflow at token {index}: {FORMULA_VOCAB.token_name(token)} requires {arity}"
+                    return False, f"stack underflow at token {index}: {self.vocab.token_name(token)} requires {arity}"
                 depth = depth - arity + 1
             else:
                 return False, f"unknown token at position {index}: {token}"
@@ -59,8 +60,8 @@ class StackVM:
         names: list[str] = []
         for token in formula_tokens:
             token = int(token)
-            if 0 <= token < FORMULA_VOCAB.size:
-                names.append(FORMULA_VOCAB.token_name(token))
+            if 0 <= token < self.vocab.size:
+                names.append(self.vocab.token_name(token))
             else:
                 names.append(f"<unknown:{token}>")
         return names

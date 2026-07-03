@@ -278,7 +278,12 @@ def _run_single(
         feature_set_name=_feature_name(args.feature_set_manifest_path),
         alpha_campaign_id=_alpha_campaign_id(args.alpha_factory_report_path),
         source_artifacts=_source_artifacts(args),
-        metadata={"factor_meta": factor_meta, "freeze_status": freeze_report.status, "candidate_pool_row": candidate_pool_row or {}},
+        metadata={
+            "factor_meta": factor_meta,
+            "freeze_status": freeze_report.status,
+            "candidate_pool_row": candidate_pool_row or {},
+            **_feature_pit_metadata(args.feature_set_manifest_path, list(_factor_field(store, factor_id, "formula") or [])),
+        },
     )
     status = "passed" if validation_summary.blocker_count == 0 else "blocked"
     report = ValidationLabReport(
@@ -377,6 +382,28 @@ def _factor_field(store: LocalFactorStore, factor_id: str, field: str) -> Any:
 def _feature_name(path: str | None) -> str | None:
     payload = _read_json(path)
     return payload.get("feature_set_name") if payload else None
+
+
+def _feature_pit_metadata(path: str | None, formula_names: list[str]) -> dict[str, Any]:
+    payload = _read_json(path)
+    if not payload:
+        return {}
+    features = {
+        str(item.get("feature_name")): dict(item)
+        for item in payload.get("feature_definitions", [])
+        if isinstance(item, dict) and item.get("feature_name")
+    }
+    used = [features[name] for name in formula_names if name in features]
+    weak = [item.get("feature_name") for item in used if item.get("pit_safety") != "pit_safe"]
+    families = sorted({str(item.get("family")) for item in used if item.get("family")})
+    return {
+        "feature_set_name": payload.get("feature_set_name"),
+        "feature_set_hash": payload.get("content_hash"),
+        "feature_family_tags": families,
+        "weak_pit_feature_used": bool(weak),
+        "weak_pit_features": weak,
+        "feature_pit_alignment_status": "warning" if weak else "ok",
+    }
 
 
 def _alpha_campaign_id(path: str | None) -> str | None:

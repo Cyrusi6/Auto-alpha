@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import contextlib
+import json
 import io
 import hashlib
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,9 @@ from model_core.backtest import AShareFactorEvaluator
 from model_core.data_loader import AShareDataLoader
 from model_core.vm import StackVM
 from data_lake import validate_research_input
+from feature_factory import make_formula_vocab_from_manifest
+from feature_factory.builder import load_feature_manifest
+from feature_factory.catalog import build_feature_set_manifest
 
 from .candidates import default_candidates
 from .composite import build_composite_factor_matrix, register_composite_factor, select_approved_factors
@@ -70,7 +74,13 @@ class BatchFactorResearchRunner:
             feature_set_name=config.feature_set_name,
             feature_set_manifest_path=config.feature_set_manifest_path,
         )
-        self.vm = StackVM()
+        self.feature_manifest = (
+            load_feature_manifest(config.feature_set_manifest_path)
+            if config.feature_set_manifest_path
+            else build_feature_set_manifest(config.feature_set_name)
+        )
+        self.vocab = make_formula_vocab_from_manifest(self.feature_manifest)
+        self.vm = StackVM(self.vocab)
         self.evaluator = AShareFactorEvaluator()
 
     def run(self) -> BatchResearchResult:
@@ -253,6 +263,7 @@ class BatchFactorResearchRunner:
         batch_id: str,
         created_at: str,
     ) -> CandidateRunResult:
+        candidate = self._normalize_candidate_tokens(candidate)
         if not self.vm.validate(candidate.formula_tokens):
             raise ValueError(f"candidate {candidate.name} has invalid formula arity")
         formula_hash = stable_formula_hash(
@@ -425,6 +436,17 @@ class BatchFactorResearchRunner:
             report_json_path=str(report_json),
             report_md_path=str(report_md),
         )
+
+    def _normalize_candidate_tokens(self, candidate: FactorCandidate) -> FactorCandidate:
+        if not candidate.formula_names:
+            return candidate
+        try:
+            tokens = [self.vocab.encode_name(name) for name in candidate.formula_names]
+        except ValueError:
+            return candidate
+        if tokens == candidate.formula_tokens:
+            return candidate
+        return replace(candidate, formula_tokens=tokens, formula_hash=None)
 
     def _build_composite(self, batch_id: str, created_at: str) -> dict[str, Any] | None:
         factor_ids = select_approved_factors(
