@@ -13,6 +13,7 @@ class AlphaCampaignStatus:
     failed = "failed"
     partial = "partial"
     cancelled = "cancelled"
+    blocked = "blocked"
 
 
 class AlphaCandidateSource:
@@ -120,6 +121,19 @@ class AlphaCampaignConfig:
     refresh_eval: bool = False
     resume: bool = False
     seed: int = 42
+    research_readiness_decision_path: str | None = None
+    require_alpha_factory_ready: bool = False
+    alpha_experiment_store_dir: str | None = None
+    experiment_id: str | None = None
+    register_experiment: bool = False
+    consolidate_shards: bool = False
+    consolidated_factor_store_dir: str | None = None
+    write_leaderboard: bool = False
+    validation_candidate_pool_dir: str | None = None
+    max_validation_candidates: int = 50
+    leaderboard_top_k: int = 100
+    dedupe_across_campaigns: bool = False
+    previous_experiment_dirs: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

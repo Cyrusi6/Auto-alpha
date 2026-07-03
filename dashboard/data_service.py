@@ -334,6 +334,33 @@ class AshareDashboardService:
     def load_alpha_campaign_artifact_catalog(self) -> dict[str, Any]:
         return self._read_first_json(self._alpha_artifact_candidates("alpha_campaign_artifact_catalog.json"))
 
+    def load_alpha_experiment_registry(self) -> dict[str, Any]:
+        return self._read_first_json(self._alpha_store_artifact_candidates("alpha_experiment_registry.json"))
+
+    def load_alpha_experiment_store_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._alpha_store_artifact_candidates("alpha_experiment_store_report.json"))
+
+    def load_alpha_shards(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._alpha_store_artifact_candidates("alpha_shards.jsonl"))
+
+    def load_alpha_consolidated_factors(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._alpha_store_artifact_candidates("alpha_consolidated_factors.jsonl"))
+
+    def load_alpha_leaderboard(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._alpha_store_artifact_candidates("alpha_leaderboard.jsonl"))
+
+    def load_alpha_factor_dedup_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._alpha_store_artifact_candidates("alpha_factor_dedup_report.json"))
+
+    def load_alpha_campaign_comparison_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._alpha_store_artifact_candidates("alpha_campaign_comparison_report.json"))
+
+    def load_alpha_validation_candidate_pool(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._alpha_store_artifact_candidates("alpha_validation_candidate_pool.jsonl"))
+
+    def load_alpha_large_campaign_plan(self) -> dict[str, Any]:
+        return self._read_first_json(self._alpha_store_artifact_candidates("alpha_large_campaign_plan.json") + self._experiment_artifact_candidates("alpha_large_campaign_plan.json"))
+
     def load_validation_lab_report(self) -> dict[str, Any]:
         return self._read_first_json(self._validation_artifact_candidates("validation_lab_report.json"))
 
@@ -2184,6 +2211,16 @@ class AshareDashboardService:
             root / "alpha_factory" / filename,
             root / "suite_alpha_factory" / filename,
             root / "suite" / "alpha_factory" / filename,
+        ]
+
+    def _alpha_store_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.alpha_experiment_store_dir / filename,
+            self.config.alpha_factory_dir / "alpha_experiment_store" / filename,
+            root / "alpha_experiment_store" / filename,
+            root / "alpha_factory" / "alpha_experiment_store" / filename,
+            root / "suite" / "alpha_experiment_store" / filename,
         ]
 
     def _validation_artifact_candidates(self, filename: str) -> list[Path]:

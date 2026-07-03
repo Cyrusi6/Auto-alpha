@@ -40,6 +40,9 @@ class AlphaFactoryRunner:
 
     def run(self) -> AlphaFactoryReport:
         created_at = _utc_now()
+        readiness = _alpha_factory_readiness(self.config.research_readiness_decision_path)
+        if self.config.require_alpha_factory_ready and not readiness["ready"]:
+            return self._blocked_report(created_at, readiness)
         freeze = validate_research_input(
             data_dir=self.config.data_dir,
             data_freeze_dir=self.config.data_freeze_dir,
@@ -123,9 +126,88 @@ class AlphaFactoryRunner:
         self.paths["alpha_factory_report_md_path"] = str(report_md)
         catalog_path = write_artifact_catalog(self.paths, self.output_dir, campaign.campaign_id)
         self.paths["alpha_campaign_artifact_catalog_path"] = str(catalog_path)
+        self._register_experiment_store(campaign, report_json)
         report = AlphaFactoryReport(campaign.campaign_id, "success", summary, self.paths, self.warnings)
         write_campaign_report(report, self.output_dir)
         return report
+
+    def _blocked_report(self, created_at: str, readiness: dict[str, Any]) -> AlphaFactoryReport:
+        campaign_id = _campaign_id(self.config.campaign_name, created_at, self.config.seed)
+        summary = {
+            "alpha_factory_enabled": True,
+            "alpha_campaign_id": campaign_id,
+            "blocked_reason": "research readiness does not allow alpha factory",
+            "research_readiness": readiness,
+            "total_trials": 0,
+            "evaluated_trials": 0,
+            "selected_trials": 0,
+        }
+        self.paths["research_readiness_decision_path"] = str(self.config.research_readiness_decision_path or "")
+        report = AlphaFactoryReport(
+            campaign_id=campaign_id,
+            status="blocked",
+            summary=summary,
+            paths=self.paths,
+            warnings=["alpha factory blocked by research readiness gate"],
+        )
+        report_json, report_md = write_campaign_report(report, self.output_dir)
+        self.paths["alpha_factory_report_path"] = str(report_json)
+        self.paths["alpha_factory_report_md_path"] = str(report_md)
+        report = AlphaFactoryReport(campaign_id, "blocked", summary, self.paths, report.warnings)
+        write_campaign_report(report, self.output_dir)
+        return report
+
+    def _register_experiment_store(self, campaign, report_json: Path) -> None:
+        if not self.config.alpha_experiment_store_dir:
+            return
+        if not (
+            self.config.register_experiment
+            or self.config.consolidate_shards
+            or self.config.write_leaderboard
+            or self.config.validation_candidate_pool_dir
+        ):
+            return
+        from alpha_experiment_store import ingest_alpha_factory_run
+        from alpha_experiment_store.comparison import compare_experiment_stores
+
+        shard_dirs = [str(path) for path in self._shard_factor_store_dirs()]
+        if not shard_dirs and Path(self.config.factor_store_dir, "factors.jsonl").exists():
+            shard_dirs = [self.config.factor_store_dir]
+        result = ingest_alpha_factory_run(
+            self.config.alpha_experiment_store_dir,
+            campaign_report_path=report_json,
+            campaign_manifest_path=self.paths.get("alpha_campaign_manifest_path"),
+            paths=self.paths | {"factor_store_dir": self.config.factor_store_dir},
+            shard_factor_store_dirs=shard_dirs,
+            experiment_id=self.config.experiment_id or campaign.campaign_id,
+            consolidate_shards=self.config.consolidate_shards,
+            consolidated_factor_store_dir=self.config.consolidated_factor_store_dir,
+            write_leaderboard_flag=self.config.write_leaderboard,
+            validation_candidate_pool_dir=self.config.validation_candidate_pool_dir,
+            leaderboard_top_k=self.config.leaderboard_top_k,
+            max_validation_candidates=self.config.max_validation_candidates,
+            previous_experiment_dirs=self.config.previous_experiment_dirs,
+        )
+        self.paths.update(result.get("paths", {}))
+        if self.config.dedupe_across_campaigns and self.config.previous_experiment_dirs:
+            comparison = compare_experiment_stores(
+                self.config.alpha_experiment_store_dir,
+                self.config.previous_experiment_dirs,
+                self.config.alpha_experiment_store_dir,
+            )
+            self.paths["alpha_campaign_comparison_report_path"] = str(
+                Path(self.config.alpha_experiment_store_dir) / "alpha_campaign_comparison_report.json"
+            )
+            if comparison.get("overlap_count", 0):
+                self.warnings.append(f"cross-campaign duplicate formulas: {comparison.get('overlap_count')}")
+
+    def _shard_factor_store_dirs(self) -> list[Path]:
+        dirs: list[Path] = []
+        eval_dir = Path(self.config.batch_eval_dir) if self.config.batch_eval_dir else self.output_dir / "batch_eval"
+        for path in sorted((eval_dir / "shards").glob("shard_*/factor_store")):
+            if (path / "factors.jsonl").exists():
+                dirs.append(path)
+        return dirs
 
     def _feature_manifest(self, freeze) -> Any:
         if self.config.feature_set_manifest_path:
@@ -560,6 +642,36 @@ def _file_hash(path: str | None) -> str | None:
 
 def _utc_now() -> str:
     return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+
+def _alpha_factory_readiness(path: str | None) -> dict[str, Any]:
+    if not path:
+        return {"ready": True, "status": "not_required", "path": None}
+    target = Path(path)
+    if not target.exists():
+        return {"ready": False, "status": "missing", "path": str(target)}
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    ready = _truthy(payload.get("can_run_core_alpha_factory")) or _truthy(payload.get("can_run_expanded_alpha_factory"))
+    ready = ready or _truthy(payload.get("alpha_ready"))
+    status = str(payload.get("status", "") or "")
+    ready = ready or status in {"alpha_factory_ready", "ready_for_alpha_factory", "ready", "pass"}
+    return {
+        "ready": bool(ready),
+        "status": status,
+        "path": str(target),
+        "can_run_core_alpha_factory": bool(_truthy(payload.get("can_run_core_alpha_factory"))),
+        "can_run_expanded_alpha_factory": bool(_truthy(payload.get("can_run_expanded_alpha_factory"))),
+    }
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.lower() in {"1", "true", "yes", "ready", "pass", "ok"}
+    return False
 
 
 def _distribution(values: list[float]) -> dict[str, float]:

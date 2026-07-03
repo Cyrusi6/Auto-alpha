@@ -24,6 +24,7 @@ The current implementation is local-first. It uses deterministic sample data and
 - `evaluation/`: Time-series sample split, split-level metrics, and factor reports.
 - `research/`: Batch candidate execution, factor ranking, composite factor construction, and batch research reports.
 - `alpha_factory/`: Campaign-level large candidate generation, template/random/mutation/crossover/corpus source budgets, static checks, proxy eval, full eval, novelty/diversity scoring, and shortlist reports.
+- `alpha_experiment_store/`: Local Alpha campaign warehouse, shard factor-store consolidation, cross-campaign dedupe reports, leaderboard, and validation candidate pool exports.
 - `validation_lab/`: Out-of-sample validation, walk-forward/purged/CSCV splits, multiple-testing diagnostics, overfit-risk estimates, placebo tests, regime robustness, sensitivity checks, and stress-validation reports.
 - `factor_certification/`: Factor production certification policies, scorecards, decisions, review packages, and optional factor-store status application.
 - `formula_search/`: Formula metadata, random generation, mutation, crossover, multi-generation search, and search reports.
@@ -1219,6 +1220,55 @@ uv run python -m alpha_factory.run_factory run \
   --batch-eval-device cpu \
   --pretty
 ```
+
+For large campaigns, keep shard-local factor stores isolated and register outputs into the Alpha experiment warehouse:
+
+```bash
+uv run python -m alpha_factory.run_factory run \
+  --campaign-name real_data_alpha_factory_plan_ready \
+  --data-dir <freeze>/data \
+  --matrix-cache-dir <freeze>/matrix_cache \
+  --factor-store-dir <campaign>/factor_store \
+  --output-dir <campaign>/alpha_factory \
+  --use-batch-eval \
+  --use-compute-scheduler \
+  --shard-count 8 \
+  --alpha-experiment-store-dir <campaign>/alpha_experiment_store \
+  --register-experiment \
+  --consolidate-shards \
+  --consolidated-factor-store-dir <campaign>/consolidated_factor_store \
+  --write-leaderboard \
+  --validation-candidate-pool-dir <campaign>/validation_pool \
+  --research-readiness-decision-path <readiness>/research_readiness_decision.json \
+  --require-alpha-factory-ready
+```
+
+`alpha_experiment_store/` writes `alpha_experiment_registry.json`, `alpha_shards.jsonl`, `alpha_consolidated_factors.jsonl`, `alpha_factor_dedup_report.json`, `alpha_leaderboard.jsonl`, and `alpha_validation_candidate_pool.jsonl`. The candidate pool can be passed directly to validation:
+
+```bash
+uv run python -m validation_lab.run_validation validate-candidates \
+  --data-dir <freeze>/data \
+  --factor-store-dir <campaign>/consolidated_factor_store \
+  --validation-candidate-pool-path <campaign>/validation_pool/alpha_validation_candidate_pool.jsonl \
+  --max-candidates 20 \
+  --output-dir <campaign>/validation_lab
+```
+
+To prepare a real 4GPU runbook without starting compute jobs:
+
+```bash
+uv run python -m experiment_orchestrator.run_experiment plan \
+  --workflow real_data_alpha_factory_large_plan \
+  --output-dir <campaign>/large_plan \
+  --gpu-count 4 \
+  --shard-count 32 \
+  --candidate-budget 50000 \
+  --research-readiness-decision-path <readiness>/research_readiness_decision.json \
+  --require-alpha-factory-ready \
+  --pretty
+```
+
+If readiness does not expose `can_run_core_alpha_factory` or `can_run_expanded_alpha_factory`, the plan is marked `blocked` and contains no compute jobs.
 
 `formula_search.run_search` can continue from an Alpha Factory shortlist by passing `--alpha-candidates-path`, `--alpha-campaign-manifest-path`, `--use-alpha-shortlist-as-seed`, and the matching feature-set manifest. `research_suite.run_suite` can run the same stage before search with `--run-alpha-factory --use-alpha-shortlist-for-search`.
 

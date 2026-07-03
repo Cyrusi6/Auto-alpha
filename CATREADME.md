@@ -87,6 +87,8 @@ Planned sync splits large daily datasets by date windows and splits index consti
 
 `alpha_factory/` is the large-candidate campaign layer. It records campaign ids, data-freeze/feature-set lineage, generator budgets, random seed, compute config, and PIT/corporate/risk snapshots. It builds candidates from default formulas, templates, formula corpus, random generation, mutation, crossover, imported JSON, and optional neural sources; then applies static DSL checks, cheap proxy evaluation, optional `formula_batch_eval`, novelty/diversity scoring, and family caps before writing a shortlist.
 
+`alpha_experiment_store/` is the campaign warehouse for large Alpha Factory runs. It registers experiments and shards, ingests shard-local factor stores, consolidates factors by formula hash and feature/operator version, preserves source references, writes dedupe reports, ranks a leaderboard, and exports `alpha_validation_candidate_pool.jsonl` for `validation_lab`. It is designed so real 4GPU campaigns can write isolated shard stores first and merge only after shard completion.
+
 `validation_lab/` is the out-of-sample and anti-overfit governance layer. It builds deterministic walk-forward, purged/embargo, and CSCV-style splits; evaluates train/test decay, OOS score, IC stability, turnover, and robustness; summarizes multiple-testing exposure from Alpha Factory/search/batch artifacts; estimates PBO and deflated IC-like scores; and runs placebo, regime, sensitivity, and stress-backtest checks. Sample data is only a smoke path; real promotion-grade validation should be tied to a data-lake freeze.
 
 `factor_certification/` converts validation, data-freeze, PIT/leakage, Alpha Factory, stress, settlement, risk-control, EOD reconciliation, and lifecycle artifacts into a policy scorecard and certification decision. Profiles include `sample_lenient_certification`, `research_standard`, and `production_strict`. Certification gates promotion and review; it is not a performance guarantee.
@@ -101,7 +103,7 @@ Planned sync splits large daily datasets by date windows and splits index consti
 
 `compute_cluster/` is the local research compute plane. It probes CPU/CUDA resources with torch plus best-effort `nvidia-smi`, manages file-based GPU leases, stores compute jobs/runs/heartbeats/events as JSON/JSONL, launches subprocess jobs, supports retry/resume, and writes `compute_run_report.json/md` plus resource snapshots. No GPU is required for tests or CI.
 
-`experiment_orchestrator/` builds compute-aware experiment plans. It shards formula corpora, emits formula batch evaluation job specs, runs them through `compute_cluster`, merges shard outputs, and writes experiment plan/graph/resource/shard/merge reports.
+`experiment_orchestrator/` builds compute-aware experiment plans. It shards formula corpora, emits formula batch evaluation job specs, runs them through `compute_cluster`, merges shard outputs, and writes experiment plan/graph/resource/shard/merge reports. The `real_data_alpha_factory_large_plan` workflow emits a 4GPU Alpha Factory runbook and resource plan without starting jobs; when the research-readiness gate is not alpha-ready it is marked blocked and contains no compute jobs.
 
 `research_suite/` orchestrates the complete local workflow. It can run data sync, universe construction, formula search, backtest, paper orders, walk-forward robustness, promotion, suite report writing, and artifact catalog generation in one command.
 

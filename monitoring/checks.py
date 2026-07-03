@@ -1713,6 +1713,64 @@ def check_alpha_shortlist(path: str | Path | None) -> tuple[dict[str, Any], list
     return {"exists": bool(rows), "alpha_shortlist_count": len(rows), "alpha_best_score": best}, []
 
 
+def check_alpha_experiment_store(report_path: str | Path | None, registry_path: str | Path | None = None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    report = _read_json(Path(report_path)) if report_path else {}
+    registry = _read_json(Path(registry_path)) if registry_path else {}
+    payload = report or registry
+    failed = int(payload.get("failed_shard_count", 0) or 0)
+    leaderboard = int(payload.get("leaderboard_count", 0) or 0)
+    validation_count = int(payload.get("validation_candidate_count", 0) or 0)
+    alerts: list[MonitoringAlert] = []
+    if failed:
+        alerts.append(MonitoringAlert("warning", "alpha_shard_failures", "alpha experiment store has failed shards", {"failed_shard_count": failed}))
+    if payload and leaderboard == 0:
+        alerts.append(MonitoringAlert("warning", "alpha_leaderboard_empty", "alpha leaderboard is empty"))
+    return {
+        "exists": bool(payload),
+        "alpha_experiment_store_status": payload.get("status", "missing") if payload else "missing",
+        "alpha_experiment_count": int(payload.get("experiment_count", 0) or 0),
+        "alpha_shard_count": int(payload.get("shard_count", 0) or 0),
+        "alpha_failed_shard_count": failed,
+        "alpha_consolidated_factor_count": int(payload.get("consolidated_factor_count", 0) or 0),
+        "alpha_leaderboard_count": leaderboard,
+        "alpha_validation_candidate_count": validation_count,
+    }, alerts
+
+
+def check_alpha_dedup_report(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    conflicts = int(payload.get("conflict_count", 0) or 0) if payload else 0
+    duplicates = int(payload.get("duplicate_count", 0) or 0) if payload else 0
+    alerts = [MonitoringAlert("warning", "alpha_dedup_conflicts", "alpha factor dedup had conflicts", {"conflict_count": conflicts})] if conflicts else []
+    return {
+        "exists": bool(payload),
+        "alpha_dedup_conflict_count": conflicts,
+        "alpha_duplicate_count": duplicates,
+        "alpha_merged_factor_count": int(payload.get("merged_factor_count", 0) or 0) if payload else 0,
+    }, alerts
+
+
+def check_alpha_validation_pool(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(path)) if path else []
+    alerts = [] if rows else [MonitoringAlert("warning", "alpha_validation_pool_ready", "alpha validation candidate pool is empty")]
+    return {"exists": bool(rows), "alpha_validation_candidate_count": len(rows), "alpha_validation_pool_ready": bool(rows)}, alerts
+
+
+def check_alpha_large_campaign_plan(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    blocked = bool(payload.get("blocked", False)) if payload else False
+    alerts = []
+    if blocked:
+        alerts.append(MonitoringAlert("info", "alpha_large_campaign_blocked_by_readiness", "large alpha campaign plan is blocked by readiness"))
+    return {
+        "exists": bool(payload),
+        "alpha_large_campaign_status": payload.get("status", "missing") if payload else "missing",
+        "alpha_large_campaign_blocked": blocked,
+        "alpha_large_campaign_shard_count": int(payload.get("shard_count", 0) or 0) if payload else 0,
+        "alpha_large_campaign_gpu_count": int(payload.get("gpu_count_requested", 0) or 0) if payload else 0,
+    }, alerts
+
+
 def check_feature_set_manifest(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     payload = _read_json(Path(path)) if path else {}
     return {

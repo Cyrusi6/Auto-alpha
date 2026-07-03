@@ -14,6 +14,10 @@ from .checks import (
     check_alpha_factory_campaign,
     check_alpha_proxy_eval,
     check_alpha_shortlist,
+    check_alpha_experiment_store,
+    check_alpha_dedup_report,
+    check_alpha_validation_pool,
+    check_alpha_large_campaign_plan,
     check_alpha_static_errors,
     check_active_model_status,
     check_artifact_schema_validation,
@@ -330,6 +334,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--required-dataset-status-path")
     parser.add_argument("--matrix-refresh-result-path")
     parser.add_argument("--matrix-freshness-report-path")
+    parser.add_argument("--alpha-experiment-store-report-path")
+    parser.add_argument("--alpha-experiment-registry-path")
+    parser.add_argument("--alpha-factor-dedup-report-path")
+    parser.add_argument("--alpha-validation-candidate-pool-path")
+    parser.add_argument("--alpha-large-campaign-plan-path")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -434,6 +443,13 @@ def main(argv: list[str] | None = None) -> int:
         ("alpha_proxy_eval", lambda: check_alpha_proxy_eval(args.alpha_proxy_eval_report_path)),
         ("alpha_diversity", lambda: check_alpha_diversity(args.alpha_diversity_report_path)),
         ("alpha_shortlist", lambda: check_alpha_shortlist(args.alpha_shortlist_path)),
+        (
+            "alpha_experiment_store",
+            lambda: check_alpha_experiment_store(args.alpha_experiment_store_report_path, args.alpha_experiment_registry_path),
+        ),
+        ("alpha_dedup_report", lambda: check_alpha_dedup_report(args.alpha_factor_dedup_report_path)),
+        ("alpha_validation_pool", lambda: check_alpha_validation_pool(args.alpha_validation_candidate_pool_path)),
+        ("alpha_large_campaign_plan", lambda: check_alpha_large_campaign_plan(args.alpha_large_campaign_plan_path)),
         ("feature_set_manifest", lambda: check_feature_set_manifest(args.feature_set_manifest_path)),
         ("feature_coverage", lambda: check_feature_coverage(args.feature_coverage_report_path)),
         ("validation_lab", lambda: check_validation_lab(args.validation_lab_report_path, args.factor_validation_summary_path)),

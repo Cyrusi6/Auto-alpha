@@ -35,6 +35,7 @@ package = true
 [tool.hatch.build.targets.wheel]
 packages = [
     "approval",
+    "alpha_experiment_store",
     "alpha_factory",
     "artifact_schema",
     "backfill_repair",
@@ -111,6 +112,7 @@ packages = [
 [tool.hatch.build.targets.sdist]
 include = [
     "approval",
+    "alpha_experiment_store",
     "alpha_factory",
     "artifact_schema",
     "backfill_repair",

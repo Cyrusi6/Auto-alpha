@@ -49,6 +49,7 @@ class DashboardConfig:
     formula_batch_eval_dir: Path = Path("artifacts/formula_batch_eval")
     feature_factory_dir: Path = Path("artifacts/features")
     alpha_factory_dir: Path = Path("artifacts/alpha_factory")
+    alpha_experiment_store_dir: Path = Path("artifacts/alpha_experiment_store")
     validation_lab_dir: Path = Path("artifacts/validation_lab")
     factor_certification_dir: Path = Path("artifacts/factor_certification")
     portfolio_lab_dir: Path = Path("artifacts/portfolio_lab")
@@ -112,6 +113,9 @@ class DashboardConfig:
             formula_batch_eval_dir=Path(os.getenv("ASHARE_DASHBOARD_FORMULA_BATCH_EVAL_DIR") or "artifacts/formula_batch_eval"),
             feature_factory_dir=Path(os.getenv("ASHARE_DASHBOARD_FEATURE_FACTORY_DIR") or "artifacts/features"),
             alpha_factory_dir=Path(os.getenv("ASHARE_DASHBOARD_ALPHA_FACTORY_DIR") or "artifacts/alpha_factory"),
+            alpha_experiment_store_dir=Path(
+                os.getenv("ASHARE_DASHBOARD_ALPHA_EXPERIMENT_STORE_DIR") or "artifacts/alpha_experiment_store"
+            ),
             validation_lab_dir=Path(os.getenv("ASHARE_DASHBOARD_VALIDATION_LAB_DIR") or "artifacts/validation_lab"),
             factor_certification_dir=Path(os.getenv("ASHARE_DASHBOARD_FACTOR_CERTIFICATION_DIR") or "artifacts/factor_certification"),
             portfolio_lab_dir=Path(os.getenv("ASHARE_DASHBOARD_PORTFOLIO_LAB_DIR") or "artifacts/portfolio_lab"),

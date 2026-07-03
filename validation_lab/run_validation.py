@@ -8,9 +8,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from artifact_schema.writer import write_json_artifact, write_jsonl_artifact
 from backtest.io import describe_factor, select_factor_id
 from data_lake import validate_research_input
 from factor_store import LocalFactorStore
+from alpha_experiment_store.leaderboard import load_candidate_pool
 from model_core.data_loader import AShareDataLoader
 
 from .metrics import evaluate_factor_splits
@@ -68,6 +70,10 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--factor-type", choices=["single", "composite", "any"], default="any")
     parser.add_argument("--latest-approved", action="store_true")
     parser.add_argument("--latest-production-candidate", action="store_true")
+    parser.add_argument("--validation-candidate-pool-path")
+    parser.add_argument("--max-candidates", type=int, default=0)
+    parser.add_argument("--candidate-rank-range")
+    parser.add_argument("--family-filter")
     parser.add_argument("--alpha-factory-report-path")
     parser.add_argument("--alpha-candidates-path")
     parser.add_argument("--alpha-shortlist-path")
@@ -117,6 +123,72 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run(args: argparse.Namespace) -> dict[str, Any]:
+    if args.validation_candidate_pool_path:
+        return _run_candidate_pool(args)
+    return _run_single(args)
+
+
+def _run_candidate_pool(args: argparse.Namespace) -> dict[str, Any]:
+    rows = _filter_candidate_pool(load_candidate_pool(args.validation_candidate_pool_path), args)
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    results: list[dict[str, Any]] = []
+    for idx, row in enumerate(rows):
+        candidate_dir = output_dir / "candidates" / f"rank_{int(row.get('rank', idx + 1)):04d}_{row.get('factor_id', 'factor')}"
+        result = _run_single(
+            args,
+            factor_id_override=str(row.get("factor_id")),
+            output_dir_override=str(candidate_dir),
+            factor_store_dir_override=str(row.get("factor_store_dir") or args.factor_store_dir),
+            candidate_pool_row=row,
+        )
+        results.append(
+            {
+                "factor_id": result.get("factor_id"),
+                "rank": row.get("rank"),
+                "status": result.get("status"),
+                "validation_blocker_count": result.get("validation_blocker_count", 0),
+                "out_of_sample_score": (result.get("validation_summary") or {}).get("out_of_sample_score", 0.0),
+                "source_candidate": row,
+                "paths": result.get("paths", {}),
+            }
+        )
+    results_path = write_jsonl_artifact(
+        output_dir / "validation_candidate_pool_results.jsonl",
+        results,
+        "validation_candidate_pool_results",
+        "validation_lab",
+    )
+    passed = sum(1 for item in results if item.get("status") == "passed")
+    blocked = sum(1 for item in results if item.get("status") == "blocked")
+    report = {
+        "status": "passed" if blocked == 0 else "blocked",
+        "validation_candidate_pool_path": args.validation_candidate_pool_path,
+        "candidate_count": len(rows),
+        "validated_candidate_count": len(results),
+        "passed_count": passed,
+        "blocked_count": blocked,
+        "results_path": str(results_path),
+        "top_results": results[:10],
+    }
+    report_path = write_json_artifact(output_dir / "validation_candidate_pool_report.json", report, "validation_candidate_pool_report", "validation_lab")
+    return report | {
+        "paths": {
+            "validation_candidate_pool_report_path": str(report_path),
+            "validation_candidate_pool_results_path": str(results_path),
+        },
+        "validation_blocker_count": blocked,
+    }
+
+
+def _run_single(
+    args: argparse.Namespace,
+    *,
+    factor_id_override: str | None = None,
+    output_dir_override: str | None = None,
+    factor_store_dir_override: str | None = None,
+    candidate_pool_row: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     freeze_report = validate_research_input(args.data_dir, args.data_freeze_dir, args.require_data_freeze or args.require_real_data_freeze)
     if freeze_report.error_count > 0 and (args.require_data_freeze or args.require_real_data_freeze):
         raise RuntimeError("data freeze validation failed")
@@ -131,8 +203,8 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
         universe_name=args.universe_name,
         universe_file=args.universe_file,
     ).load_data()
-    store = LocalFactorStore(args.factor_store_dir)
-    factor_id = _select_factor(args, store)
+    store = LocalFactorStore(factor_store_dir_override or args.factor_store_dir)
+    factor_id = factor_id_override or _select_factor(args, store)
     factor_meta = describe_factor(store, factor_id)
     factors = store.load_factor_values_matrix(factor_id, loader.ts_codes, loader.trade_dates, device="cpu")
     splits = build_splits(
@@ -206,7 +278,7 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
         feature_set_name=_feature_name(args.feature_set_manifest_path),
         alpha_campaign_id=_alpha_campaign_id(args.alpha_factory_report_path),
         source_artifacts=_source_artifacts(args),
-        metadata={"factor_meta": factor_meta, "freeze_status": freeze_report.status},
+        metadata={"factor_meta": factor_meta, "freeze_status": freeze_report.status, "candidate_pool_row": candidate_pool_row or {}},
     )
     status = "passed" if validation_summary.blocker_count == 0 else "blocked"
     report = ValidationLabReport(
@@ -225,7 +297,7 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
         status=status,
     )
     paths = write_validation_lab_artifacts(
-        args.output_dir,
+        output_dir_override or args.output_dir,
         report,
         splits,
         window_results,
@@ -259,6 +331,27 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
         "overfit_risk_summary": overfit.to_dict(),
         "paths": paths,
     }
+
+
+def _filter_candidate_pool(rows: list[dict[str, Any]], args: argparse.Namespace) -> list[dict[str, Any]]:
+    selected = sorted(rows, key=lambda row: int(row.get("rank", 10**9) or 10**9))
+    if args.candidate_rank_range:
+        start, end = _parse_rank_range(args.candidate_rank_range)
+        selected = [row for row in selected if start <= int(row.get("rank", 10**9) or 10**9) <= end]
+    if args.family_filter:
+        allowed = {item.strip() for item in args.family_filter.split(",") if item.strip()}
+        selected = [row for row in selected if str(row.get("family", "")) in allowed]
+    if args.max_candidates and args.max_candidates > 0:
+        selected = selected[: args.max_candidates]
+    return selected
+
+
+def _parse_rank_range(value: str) -> tuple[int, int]:
+    if "-" in value:
+        left, right = value.split("-", 1)
+        return int(left), int(right)
+    rank = int(value)
+    return rank, rank
 
 
 def _select_factor(args: argparse.Namespace, store: LocalFactorStore) -> str:

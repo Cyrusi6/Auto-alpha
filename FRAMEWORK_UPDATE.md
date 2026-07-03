@@ -2083,3 +2083,32 @@
 ### Follow-Ups
 - Do not run repair `--execute` or post-download `--execute` against `/home/lijunsi/data/auto-alpha/ashare_lake` until the active downloader has finished and the repair/readiness reports are reviewed.
 - After the real run is complete, run repair dry-run first, then execute only the reviewed batch, then rerun research readiness before creating the freeze candidate.
+
+## Task 043-A - Alpha Factory Experiment Store And Shard Consolidation
+
+- Added `alpha_experiment_store/`, a local Alpha campaign warehouse for experiment/shard registration, shard factor-store consolidation, formula-hash dedupe, leaderboard construction, validation candidate pool export, campaign comparison, and store reports.
+- Enhanced `alpha_factory.run_factory` with readiness gating and optional experiment-store registration, shard consolidation, leaderboard writing, validation-pool export, cross-campaign dedupe hooks, and consolidated factor-store paths while keeping default behavior unchanged.
+- Added `validation_lab` candidate-pool mode so `alpha_validation_candidate_pool.jsonl` can be validated in bounded batches and summarized into aggregate candidate-pool reports.
+- Added `experiment_orchestrator` large Alpha Factory planning workflows that generate 4GPU runbooks/resource plans and block compute-job creation when research readiness is not alpha-ready.
+- Extended artifact schema, release inventory, pyproject packaging, local CI smoke, monitoring checks, dashboard readers, README, and CATREADME for Alpha experiment store artifacts.
+
+### New Artifacts
+- `alpha_experiment_registry.json`
+- `alpha_experiments.jsonl`
+- `alpha_shards.jsonl`
+- `alpha_consolidated_factors.jsonl`
+- `alpha_leaderboard.jsonl`
+- `alpha_experiment_store_report.json/md`
+- `alpha_factor_dedup_report.json`
+- `alpha_campaign_comparison_report.json`
+- `alpha_validation_candidate_pool.jsonl`
+- `validation_candidate_pool_report.json`
+- `validation_candidate_pool_results.jsonl`
+- `alpha_large_campaign_plan.json/md`
+- `alpha_large_campaign_runbook.md`
+- `alpha_large_campaign_commands.sh`
+- `alpha_large_campaign_resource_plan.json`
+
+### Follow-Ups
+- Do not run real Alpha Factory campaigns until the active Tushare backfill, repair, freeze, and matrix refresh are complete and research readiness explicitly allows Alpha Factory.
+- Use the warehouse consolidation path for large campaigns so shard-local factor stores remain isolated until merge and validation candidate selection.

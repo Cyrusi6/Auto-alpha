@@ -73,3 +73,26 @@ def test_experiment_cli_smoke(tmp_path, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 0
     assert payload["status"] == "success"
+
+
+def test_real_data_alpha_factory_large_plan_blocks_when_readiness_not_ready(tmp_path):
+    readiness_path = tmp_path / "readiness.json"
+    readiness_path.write_text(json.dumps({"status": "blocked", "can_run_core_alpha_factory": False}), encoding="utf-8")
+    plan = create_experiment_plan(
+        {
+            "workflow": "real_data_alpha_factory_large_plan",
+            "output_dir": str(tmp_path / "large_plan"),
+            "research_readiness_decision_path": str(readiness_path),
+            "require_alpha_factory_ready": True,
+            "gpu_count": 4,
+            "shard_count": 8,
+            "candidate_budget": 50000,
+        }
+    )
+
+    assert plan.metadata["blocked"] is True
+    assert plan.compute_jobs == []
+    assert plan.resource_plan["gpu_count_requested"] == 4
+    assert (tmp_path / "large_plan" / "alpha_large_campaign_plan.json").exists()
+    payload = json.loads((tmp_path / "large_plan" / "alpha_large_campaign_plan.json").read_text(encoding="utf-8"))
+    assert payload["status"] == "blocked"

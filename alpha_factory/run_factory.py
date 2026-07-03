@@ -90,6 +90,19 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--refresh-eval", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--research-readiness-decision-path")
+    parser.add_argument("--require-alpha-factory-ready", action="store_true")
+    parser.add_argument("--alpha-experiment-store-dir")
+    parser.add_argument("--experiment-id")
+    parser.add_argument("--register-experiment", action="store_true")
+    parser.add_argument("--consolidate-shards", action="store_true")
+    parser.add_argument("--consolidated-factor-store-dir")
+    parser.add_argument("--write-leaderboard", action="store_true")
+    parser.add_argument("--validation-candidate-pool-dir")
+    parser.add_argument("--max-validation-candidates", type=int, default=50)
+    parser.add_argument("--leaderboard-top-k", type=int, default=100)
+    parser.add_argument("--dedupe-across-campaigns", action="store_true")
+    parser.add_argument("--previous-experiment-dir", action="append", default=[])
     parser.add_argument("--pretty", action="store_true")
 
 
@@ -158,6 +171,19 @@ def main(argv: list[str] | None = None) -> int:
         refresh_eval=args.refresh_eval,
         resume=args.resume or args.command == "resume",
         seed=args.seed,
+        research_readiness_decision_path=args.research_readiness_decision_path,
+        require_alpha_factory_ready=args.require_alpha_factory_ready,
+        alpha_experiment_store_dir=args.alpha_experiment_store_dir,
+        experiment_id=args.experiment_id,
+        register_experiment=args.register_experiment,
+        consolidate_shards=args.consolidate_shards,
+        consolidated_factor_store_dir=args.consolidated_factor_store_dir,
+        write_leaderboard=args.write_leaderboard,
+        validation_candidate_pool_dir=args.validation_candidate_pool_dir,
+        max_validation_candidates=args.max_validation_candidates,
+        leaderboard_top_k=args.leaderboard_top_k,
+        dedupe_across_campaigns=args.dedupe_across_campaigns,
+        previous_experiment_dirs=list(args.previous_experiment_dir or []),
     )
     result = AlphaFactoryRunner(config).run()
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))

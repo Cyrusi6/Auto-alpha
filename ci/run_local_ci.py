@@ -73,6 +73,18 @@ def main(argv: list[str] | None = None) -> int:
             ],
         ),
         (
+            "alpha_experiment_store_smoke",
+            [
+                sys.executable,
+                "-m",
+                "alpha_experiment_store.run_store",
+                "smoke",
+                "--output-dir",
+                str(quick_dir / "alpha_experiment_store"),
+                "--pretty",
+            ],
+        ),
+        (
             "real_data_ops_sample_smoke",
             [
                 sys.executable,

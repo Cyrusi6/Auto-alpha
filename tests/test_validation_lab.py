@@ -162,6 +162,60 @@ def test_validation_lab_cli_writes_report_artifacts(tmp_path, capsys):
     assert (tmp_path / "validation" / "placebo_trials.jsonl.schema.json").exists()
 
 
+def test_validation_lab_reads_alpha_validation_candidate_pool(tmp_path, capsys):
+    data_dir, _store, _loader, factor_id = _prepare_factor(tmp_path)
+    pool_path = tmp_path / "candidate_pool.jsonl"
+    pool_path.write_text(
+        json.dumps(
+            {
+                "factor_id": factor_id,
+                "formula_hash": "hash",
+                "formula_names": ["RET_1D"],
+                "feature_version": "ashare_features_v1",
+                "source_campaign": "camp",
+                "rank": 1,
+                "score_components": {"base_score": 1.0},
+                "factor_store_dir": str(tmp_path / "store"),
+                "factor_values_path": str(tmp_path / "store" / "factor_values" / f"{factor_id}.jsonl"),
+                "recommended_validation_split": "walk_forward_long_history",
+                "family": "return",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = validation_main(
+        [
+            "validate-candidates",
+            "--data-dir",
+            str(data_dir),
+            "--factor-store-dir",
+            str(tmp_path / "store"),
+            "--validation-candidate-pool-path",
+            str(pool_path),
+            "--max-candidates",
+            "1",
+            "--output-dir",
+            str(tmp_path / "validation_pool"),
+            "--split-method",
+            "simple_walk_forward",
+            "--train-size",
+            "1",
+            "--test-size",
+            "1",
+            "--pretty",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["validated_candidate_count"] == 1
+    assert (tmp_path / "validation_pool" / "validation_candidate_pool_report.json").exists()
+    assert (tmp_path / "validation_pool" / "validation_candidate_pool_results.jsonl").exists()
+
+
 def test_validation_metrics_handle_nan_and_small_sample():
     factors = torch.tensor([[1.0], [float("nan")], [2.0]])
     target = torch.tensor([[0.1], [0.2], [float("nan")]])

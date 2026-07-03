@@ -118,6 +118,17 @@ def test_alpha_factory_cli_with_full_eval_writes_batch_eval_lineage(tmp_path, ca
             "--batch-eval-chunk-size",
             "2",
             "--register-shortlist",
+            "--alpha-experiment-store-dir",
+            str(tmp_path / "alpha_store"),
+            "--register-experiment",
+            "--consolidate-shards",
+            "--consolidated-factor-store-dir",
+            str(tmp_path / "consolidated_store"),
+            "--write-leaderboard",
+            "--validation-candidate-pool-dir",
+            str(tmp_path / "validation_pool"),
+            "--max-validation-candidates",
+            "3",
             "--pretty",
         ]
     )
@@ -130,6 +141,36 @@ def test_alpha_factory_cli_with_full_eval_writes_batch_eval_lineage(tmp_path, ca
     eval_payload = json.loads((tmp_path / "batch_eval" / "formula_batch_eval_result.json").read_text(encoding="utf-8"))
     assert eval_payload["summary"]["total"] == payload["summary"]["full_eval_count"]
     assert (tmp_path / "alpha_eval" / "alpha_full_eval_summary.json").exists()
+    assert (tmp_path / "alpha_store" / "alpha_experiment_registry.json").exists()
+    assert (tmp_path / "alpha_store" / "alpha_experiment_store_report.json").exists()
+    assert "alpha_experiment_store_report_path" in payload["paths"]
+
+
+def test_alpha_factory_readiness_gate_blocks_without_loading_data(tmp_path, capsys):
+    readiness_path = tmp_path / "readiness.json"
+    readiness_path.write_text(json.dumps({"status": "blocked", "can_run_core_alpha_factory": False}), encoding="utf-8")
+    exit_code = run_factory_main(
+        [
+            "run",
+            "--campaign-name",
+            "blocked_alpha",
+            "--data-dir",
+            str(tmp_path / "missing_data"),
+            "--factor-store-dir",
+            str(tmp_path / "store"),
+            "--output-dir",
+            str(tmp_path / "blocked"),
+            "--research-readiness-decision-path",
+            str(readiness_path),
+            "--require-alpha-factory-ready",
+            "--pretty",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert payload["status"] == "blocked"
+    assert payload["summary"]["research_readiness"]["ready"] is False
+    assert (tmp_path / "blocked" / "alpha_factory_report.json").exists()
 
 
 def test_formula_search_can_use_alpha_shortlist_as_seed(tmp_path, capsys):
