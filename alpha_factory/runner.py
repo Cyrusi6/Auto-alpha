@@ -18,6 +18,7 @@ from formula_batch_eval import FormulaBatchEvalConfig, FormulaBatchEvaluator, Fo
 from model_core.data_loader import AShareDataLoader
 
 from feature_factory import build_feature_set_manifest, build_feature_tensor_artifacts, load_feature_manifest, make_formula_vocab_from_manifest
+from feature_promotion import load_promotion_gate
 
 from .diversity import select_shortlist, write_diversity_outputs
 from .generators import generate_alpha_candidates
@@ -54,6 +55,13 @@ class AlphaFactoryRunner:
         data_dir = str(Path(self.config.data_freeze_dir) / "data") if self.config.data_freeze_dir else self.config.data_dir
         manifest = self._feature_manifest(freeze)
         self.current_feature_manifest = manifest
+        promotion_gate = load_promotion_gate(
+            policy_path=self.config.feature_promotion_policy_path,
+            allowlist_path=self.config.feature_promotion_allowlist_path,
+            denylist_path=self.config.feature_promotion_denylist_path,
+            require_promotion=self.config.require_feature_promotion,
+            allow_risk_filter_features=self.config.allow_risk_filter_features,
+        )
         campaign = self._campaign_manifest(created_at, freeze, manifest)
         self.paths["alpha_campaign_manifest_path"] = str(
             write_json_artifact(
@@ -69,6 +77,8 @@ class AlphaFactoryRunner:
             max_complexity=self.config.max_complexity,
             max_lookback=self.config.max_lookback,
             vocab=make_formula_vocab_from_manifest(manifest),
+            promotion_gate=promotion_gate,
+            feature_meta=_feature_meta(manifest),
         )
         self.paths["alpha_static_checks_path"] = str(
             write_jsonl_artifact(self.output_dir / "alpha_static_checks.jsonl", static_rows, "alpha_static_checks", "alpha_factory")
@@ -372,6 +382,10 @@ class AlphaFactoryRunner:
                 feature_set_name=self.config.feature_set_name,
                 feature_set_manifest_path=self.config.feature_set_manifest_path or self.paths.get("feature_set_manifest_path"),
                 alpha_campaign_id=campaign.campaign_id,
+                feature_promotion_policy_hash=_promotion_policy_hash(
+                    self.config.feature_promotion_allowlist_path,
+                    self.config.feature_promotion_policy_path,
+                ),
             )
         ).run(requests)
         rows = [item.to_dict() for item in result.results]
@@ -489,6 +503,9 @@ class AlphaFactoryRunner:
             manifest_path = self.config.feature_set_manifest_path or self.paths.get("feature_set_manifest_path")
             if manifest_path:
                 args.extend(["--feature-set-manifest-path", manifest_path])
+            promotion_hash = _promotion_policy_hash(self.config.feature_promotion_allowlist_path, self.config.feature_promotion_policy_path)
+            if promotion_hash:
+                args.extend(["--feature-promotion-policy-hash", promotion_hash])
             if self.config.matrix_cache_dir and (Path(self.config.matrix_cache_dir) / "metadata.json").exists():
                 args.extend(["--matrix-cache-dir", self.config.matrix_cache_dir, "--use-matrix-cache"])
             if self.config.use_eval_cache:
@@ -618,6 +635,18 @@ class AlphaFactoryRunner:
             },
             "feature_set_name": manifest.feature_set_name,
             "feature_count": manifest.feature_count,
+            "promotion_policy_hash": _promotion_policy_hash(
+                self.config.feature_promotion_allowlist_path,
+                self.config.feature_promotion_policy_path,
+            ),
+            "require_feature_promotion": bool(self.config.require_feature_promotion),
+            "alpha_eligible_feature_count": _allowlist_count(self.config.feature_promotion_allowlist_path, "alpha_eligible_features"),
+            "blocked_feature_count": _allowlist_count(self.config.feature_promotion_denylist_path, "blocked_features"),
+            "risk_filter_feature_count": _allowlist_count(self.config.feature_promotion_allowlist_path, "risk_filter_only_features"),
+            "rejected_by_promotion_count": sum(
+                any("feature_used" in str(error) or "feature_promotion" in str(error) for error in row.get("errors", []))
+                for row in static_rows
+            ),
             "family_distribution": family_counts,
             "source_distribution": source_counts,
             "diversity": diversity_report,
@@ -642,6 +671,39 @@ def _file_hash(path: str | None) -> str | None:
     if not path or not Path(path).exists():
         return None
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _allowlist_count(path: str | None, key: str) -> int:
+    if not path or not Path(path).exists():
+        return 0
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return 0
+    return len(payload.get(key, []) or [])
+
+
+def _promotion_policy_hash(allowlist_path: str | None, policy_path: str | None) -> str | None:
+    for path in (allowlist_path, policy_path):
+        if not path or not Path(path).exists():
+            continue
+        try:
+            payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        value = payload.get("policy_hash")
+        if value:
+            return str(value)
+    return _file_hash(policy_path)
+
+
+def _feature_meta(manifest) -> dict[str, dict[str, Any]]:
+    payload = manifest.to_dict() if hasattr(manifest, "to_dict") else dict(manifest)
+    return {
+        str(item.get("feature_name")): dict(item)
+        for item in payload.get("feature_definitions", [])
+        if isinstance(item, dict) and item.get("feature_name")
+    }
 
 
 def _utc_now() -> str:

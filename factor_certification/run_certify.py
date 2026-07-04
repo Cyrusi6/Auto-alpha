@@ -52,6 +52,9 @@ def _add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--factor-validation-summary-path")
     parser.add_argument("--alpha-factory-report-path")
     parser.add_argument("--feature-set-manifest-path")
+    parser.add_argument("--feature-promotion-policy-path")
+    parser.add_argument("--feature-promotion-allowlist-path")
+    parser.add_argument("--feature-promotion-decisions-path")
     parser.add_argument("--data-version-manifest-path")
     parser.add_argument("--research-data-freeze-path")
     parser.add_argument("--pit-validation-report-path")
@@ -220,6 +223,9 @@ def _artifact_paths(args: argparse.Namespace) -> dict[str, str | None]:
         "factor_validation_summary_path",
         "alpha_factory_report_path",
         "feature_set_manifest_path",
+        "feature_promotion_policy_path",
+        "feature_promotion_allowlist_path",
+        "feature_promotion_decisions_path",
         "data_version_manifest_path",
         "research_data_freeze_path",
         "pit_validation_report_path",

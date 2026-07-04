@@ -155,6 +155,9 @@ def build_matrix_cache(
     family_names = {str(item.get("family")) for item in feature_defs if isinstance(item, dict)}
     weak_pit_count = sum(1 for item in feature_defs if isinstance(item, dict) and item.get("pit_safety") != "pit_safe")
     disabled_count = sum(1 for item in feature_defs if isinstance(item, dict) and not item.get("default_enabled", True))
+    manifest_payload = _feature_manifest_payload(feature_set_manifest_path)
+    promotion_summary = dict(manifest_payload.get("feature_promotion_summary", {}))
+    promotion_hash = manifest_payload.get("feature_promotion_policy_hash")
     cache_hash = _stable_cache_hash(
         loader.ts_codes,
         loader.trade_dates,
@@ -197,6 +200,10 @@ def build_matrix_cache(
         "weak_pit_feature_count": weak_pit_count,
         "disabled_feature_count": disabled_count,
         "feature_pit_alignment_status": "warning" if weak_pit_count else "ok",
+        "feature_promotion_policy_hash": promotion_hash,
+        "alpha_eligible_feature_count": int(promotion_summary.get("alpha_eligible_feature_count", 0) or 0),
+        "blocked_feature_count": int(promotion_summary.get("blocked_feature_count", 0) or 0),
+        "weak_pit_promoted_count": int(promotion_summary.get("weak_pit_promoted_count", 0) or 0),
         "dataset_version_id": _dataset_version_id(data_version_manifest_path),
         "data_freeze_id": data_freeze_id or freeze_report.freeze_id,
         "data_freeze_hash": freeze_report.content_hash,
@@ -266,6 +273,18 @@ def _source_hashes(path: str | Path | None) -> dict[str, str]:
         for item in payload.get("dataset_fingerprints", [])
         if isinstance(item, dict)
     }
+
+
+def _feature_manifest_payload(path: str | Path | None) -> dict:
+    if path is None:
+        return {}
+    target = Path(path)
+    if not target.exists():
+        return {}
+    try:
+        return json.loads(target.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
 
 
 def _source_content_hash(path: str | Path | None) -> str | None:

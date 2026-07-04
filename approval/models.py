@@ -25,6 +25,7 @@ class ApprovalType:
     broker_uat_review = "broker_uat_review"
     go_live_review = "go_live_review"
     broker_connectivity_review = "broker_connectivity_review"
+    feature_promotion_review = "feature_promotion_review"
 
 
 @dataclass(frozen=True)

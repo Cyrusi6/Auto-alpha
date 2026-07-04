@@ -1980,6 +1980,77 @@ def check_alpha_factory_v3_readiness(feature_family_readiness_path: str | Path |
     return {"exists": bool(payload), "can_run_v3_expanded_alpha_factory": can_run, "ready_v3_families": sorted(str(item) for item in ready)}, alerts
 
 
+def check_feature_promotion_policy(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(path)) if path else {}
+    policy_hash = str(payload.get("policy_hash") or (payload.get("metadata") or {}).get("policy_hash") or "")
+    status = "configured" if payload else "missing"
+    alerts = []
+    if not payload:
+        alerts.append(MonitoringAlert("info", "feature_promotion_policy", "feature promotion policy artifact is missing"))
+    return {
+        "exists": bool(payload),
+        "feature_promotion_status": status,
+        "feature_promotion_policy_hash": policy_hash,
+        "feature_promotion_feature_set": str(payload.get("feature_set_name", "")),
+    }, alerts
+
+
+def check_unreviewed_weak_pit_features(evidence_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(evidence_report_path)) if evidence_report_path else {}
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else payload
+    weak = int(summary.get("weak_pit_feature_count", 0) or 0) if summary else 0
+    needs_review = int(summary.get("needs_review_count", summary.get("review_required_count", 0)) or 0) if summary else 0
+    alerts = []
+    if needs_review:
+        alerts.append(MonitoringAlert("warning", "unreviewed_weak_pit_features", "weak PIT features still need promotion review", {"needs_review_count": needs_review}))
+    return {
+        "exists": bool(payload),
+        "weak_pit_unreviewed_count": needs_review,
+        "weak_pit_feature_count": weak,
+    }, alerts
+
+
+def check_blocked_features_used(application_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(application_report_path)) if application_report_path else {}
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else payload
+    blocked = int(summary.get("blocked_feature_count", 0) or summary.get("denylist_count", 0) or 0) if summary else 0
+    unapproved = int(summary.get("unapproved_feature_usage_count", 0) or 0) if summary else 0
+    alerts = []
+    if unapproved:
+        alerts.append(MonitoringAlert("error", "blocked_features_used", "unapproved feature usage was detected", {"count": unapproved}))
+    return {
+        "exists": bool(payload),
+        "blocked_feature_count": blocked,
+        "unapproved_feature_usage_count": unapproved,
+    }, alerts
+
+
+def check_feature_promotion_expiry(decisions_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    rows = _read_jsonl(Path(decisions_path)) if decisions_path else []
+    expired = [row for row in rows if str(row.get("status", "")).lower() == "expired"]
+    alerts = []
+    if expired:
+        alerts.append(MonitoringAlert("warning", "feature_promotion_expiry", "feature promotion decisions expired", {"count": len(expired)}))
+    return {"exists": bool(rows), "expired_promotion_count": len(expired)}, alerts
+
+
+def check_feature_promotion_approval(review_package_path: str | Path | None, allowlist_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    review = _read_json(Path(review_package_path)) if review_package_path else {}
+    allowlist = _read_json(Path(allowlist_path)) if allowlist_path else {}
+    alpha = len(allowlist.get("alpha_eligible_features", []) or []) if allowlist else 0
+    risk = len(allowlist.get("risk_filter_only_features", []) or []) if allowlist else 0
+    promoted_weak = len(allowlist.get("promoted_weak_pit_features", []) or []) if allowlist else 0
+    alerts = []
+    if review and not allowlist:
+        alerts.append(MonitoringAlert("warning", "feature_promotion_approval", "feature promotion review exists but allowlist is missing"))
+    return {
+        "exists": bool(review or allowlist),
+        "alpha_eligible_feature_count": alpha,
+        "risk_filter_feature_count": risk,
+        "promoted_weak_pit_count": promoted_weak,
+    }, alerts
+
+
 def check_validation_lab(
     path: str | Path | None,
     factor_validation_summary_path: str | Path | None = None,

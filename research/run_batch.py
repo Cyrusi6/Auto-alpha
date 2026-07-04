@@ -51,6 +51,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--corporate-action-dir")
     parser.add_argument("--corporate-action-cash-field", choices=("cash_div", "cash_div_tax"), default="cash_div")
+    parser.add_argument("--feature-promotion-policy-path")
+    parser.add_argument("--feature-promotion-allowlist-path")
+    parser.add_argument("--feature-promotion-denylist-path")
+    parser.add_argument("--require-feature-promotion", action="store_true")
+    parser.add_argument("--allow-risk-filter-features", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -91,6 +96,11 @@ def main(argv: list[str] | None = None) -> int:
         target_return_mode=args.target_return_mode,
         corporate_action_dir=args.corporate_action_dir,
         corporate_action_cash_field=args.corporate_action_cash_field,
+        feature_promotion_policy_path=args.feature_promotion_policy_path,
+        feature_promotion_allowlist_path=args.feature_promotion_allowlist_path,
+        feature_promotion_denylist_path=args.feature_promotion_denylist_path,
+        require_feature_promotion=args.require_feature_promotion,
+        allow_risk_filter_features=args.allow_risk_filter_features,
     )
     result = BatchFactorResearchRunner(config=config, candidates=candidates).run()
     payload = result.to_dict()

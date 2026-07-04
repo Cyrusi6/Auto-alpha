@@ -1599,13 +1599,42 @@ uv run python -m go_live_gate.run_go_live run \
 
 `approval/` supports `compliance_review`, `broker_uat_review`, `broker_connectivity_review`, and `go_live_review` approval batches with empty order lists. These approvals are local review records only and never trigger execution.
 
+## Feature Promotion Gate
+
+`feature_promotion/` is the local review layer for `ashare_features_v3` weak-PIT, disabled, or unsafe expanded features. It builds a policy, per-feature evidence, a review package, local approval-compatible decisions, and allowlist/denylist artifacts. The workflow is offline by default and reads only supplied feature artifacts.
+
+```bash
+uv run python -m feature_promotion.run_promotion smoke \
+  --output-dir /tmp/auto-alpha-demo/feature_promotion \
+  --pretty
+```
+
+Alpha Factory, formula search, formula batch evaluation, validation, and factor certification can record or enforce the promotion policy. With `--require-feature-promotion`, only allowlisted `alpha_eligible` features enter alpha sampling; `risk_filter_only`, blocked, expired, or unreviewed weak-PIT features are rejected or warned according to the policy.
+
+```bash
+uv run python -m alpha_factory.run_factory run \
+  --campaign-name v3_promotion_gate \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --factor-store-dir /tmp/auto-alpha-demo/store \
+  --output-dir /tmp/auto-alpha-demo/alpha_factory \
+  --feature-set-name ashare_features_v3 \
+  --feature-set-manifest-path /tmp/auto-alpha-demo/features_v3/feature_set_manifest.json \
+  --feature-promotion-policy-path /tmp/auto-alpha-demo/feature_promotion/feature_promotion_policy.json \
+  --feature-promotion-allowlist-path /tmp/auto-alpha-demo/feature_promotion/feature_promotion_allowlist.json \
+  --feature-promotion-denylist-path /tmp/auto-alpha-demo/feature_promotion/feature_promotion_denylist.json \
+  --require-feature-promotion \
+  --pretty
+```
+
+Promotion does not prove alpha quality. It only creates a traceable availability, PIT, leakage, and human-review evidence chain before expanded features are allowed into candidate generation.
+
 ## Current Gaps
 
 - Tushare HTTP provider, production sync scaffolding, governed backfill plans, read-only running-backfill observation, explicit repair batches, raw landing QA, research-readiness gates, post-download state-machine orchestration, freeze candidate packages, offline fake smoke, gated online smoke/backfill, permission/rate diagnostics, audit summary, incremental recovery checks, baseline comparison, dataset versioning, research freezes, real-data runbooks, SLA checks, storage-size reports, and incremental matrix refresh are available; production use still requires real token/quota operation, real full-market performance runs, and more provider pairs.
 - Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
 - Local daily simulation supports A-share constraints, pre-trade risk controls, local kill switch, override approvals, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, settlement-aware paper accounting, lot cost, realized PnL, NAV reconciliation, generic statement import, external account mirroring, EOD break management, and execution quality reports; future work should add finer real-world matching, minute-level volume modeling, verified real broker statement mappings, richer limit policies, and real broker connectivity.
 - Local formula search, batch formula evaluation, formula corpus construction, offline AlphaGPT supervised pretraining, a first neural-guided policy-search path, and a local CPU/GPU compute scheduler are available; future work should add stronger reinforcement learning, larger offline corpora, more operators, true full-market 4-GPU stress runs, richer DDP training, and broader stability validation.
-- Feature Factory v2/v3, feature-readiness cataloging, PIT-alignment reporting, and Alpha Factory campaign funnels are available locally; future work should calibrate expanded v3 feature definitions on real freezes, refine weak-PIT promotion rules, calibrate proxy scores with longer histories, and run large GPU-backed campaigns outside default CI.
+- Feature Factory v2/v3, feature-readiness cataloging, PIT-alignment reporting, feature promotion policy/evidence/allowlist gates, and Alpha Factory campaign funnels are available locally; future work should calibrate expanded v3 feature definitions and promotion rules on real freezes, calibrate proxy scores with longer histories, and run large GPU-backed campaigns outside default CI.
 - Matrix cache, incremental matrix refresh, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs and more provider pairs.
 - One-click research suites now provide local walk-forward, promotion gates, model registry records, lifecycle review packages, active deployment state, and rollback artifacts; daily operations can require an active governed model. Future work should add richer lifecycle policies and external review workflow integrations.
 - Portfolio Lab and Portfolio Certification provide local policy-grid robustness checks, certified portfolio policy packages, optimizer-policy registration, and activation approval gates. Sample certification is only a smoke path; real certification should be tied to a governed data freeze and longer production review windows.

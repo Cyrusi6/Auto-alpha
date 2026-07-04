@@ -136,9 +136,14 @@ from .checks import (
     check_feature_coverage,
     check_feature_cutoff_policy,
     check_alpha_factory_v3_readiness,
+    check_blocked_features_used,
     check_feature_pit_alignment,
+    check_feature_promotion_approval,
+    check_feature_promotion_expiry,
+    check_feature_promotion_policy,
     check_feature_set_manifest,
     check_feature_set_v3,
+    check_unreviewed_weak_pit_features,
     check_v3_feature_family_readiness,
     check_weak_pit_features,
     check_overfit_risk,
@@ -301,6 +306,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--feature-family-readiness-path")
     parser.add_argument("--feature-pit-alignment-report-path")
     parser.add_argument("--feature-build-warnings-path")
+    parser.add_argument("--feature-promotion-policy-path")
+    parser.add_argument("--feature-promotion-evidence-report-path")
+    parser.add_argument("--feature-promotion-review-package-path")
+    parser.add_argument("--feature-promotion-decisions-path")
+    parser.add_argument("--feature-promotion-allowlist-path")
+    parser.add_argument("--feature-promotion-application-report-path")
     parser.add_argument("--validation-lab-report-path")
     parser.add_argument("--factor-validation-summary-path")
     parser.add_argument("--multiple-testing-report-path")
@@ -509,6 +520,14 @@ def main(argv: list[str] | None = None) -> int:
         ("weak_pit_features", lambda: check_weak_pit_features(args.feature_pit_alignment_report_path)),
         ("feature_pit_alignment", lambda: check_feature_pit_alignment(args.feature_pit_alignment_report_path)),
         ("alpha_factory_v3_readiness", lambda: check_alpha_factory_v3_readiness(args.feature_family_readiness_path)),
+        ("feature_promotion_policy", lambda: check_feature_promotion_policy(args.feature_promotion_policy_path)),
+        ("unreviewed_weak_pit_features", lambda: check_unreviewed_weak_pit_features(args.feature_promotion_evidence_report_path)),
+        ("blocked_features_used", lambda: check_blocked_features_used(args.feature_promotion_application_report_path)),
+        ("feature_promotion_expiry", lambda: check_feature_promotion_expiry(args.feature_promotion_decisions_path)),
+        (
+            "feature_promotion_approval",
+            lambda: check_feature_promotion_approval(args.feature_promotion_review_package_path, args.feature_promotion_allowlist_path),
+        ),
         ("validation_lab", lambda: check_validation_lab(args.validation_lab_report_path, args.factor_validation_summary_path)),
         ("multiple_testing", lambda: check_multiple_testing(args.multiple_testing_report_path)),
         ("overfit_risk", lambda: check_overfit_risk(args.overfit_risk_report_path)),

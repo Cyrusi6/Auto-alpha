@@ -42,6 +42,7 @@ PLATFORM_MODULES = [
     "factor_lifecycle",
     "factor_certification",
     "feature_factory",
+    "feature_promotion",
     "formula_batch_eval",
     "formula_corpus",
     "formula_search",

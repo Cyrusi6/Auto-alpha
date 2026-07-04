@@ -77,6 +77,11 @@ class AlphaCampaignConfig:
     require_feature_family_ready: str | None = None
     exclude_weak_pit_features: bool = True
     feature_family_budget: str | None = None
+    feature_promotion_policy_path: str | None = None
+    feature_promotion_allowlist_path: str | None = None
+    feature_promotion_denylist_path: str | None = None
+    require_feature_promotion: bool = False
+    allow_risk_filter_features: bool = False
     build_feature_set: bool = False
     feature_output_dir: str | None = None
     factor_transform: str = "raw"

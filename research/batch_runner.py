@@ -28,6 +28,7 @@ from data_lake import validate_research_input
 from feature_factory import make_formula_vocab_from_manifest
 from feature_factory.builder import load_feature_manifest
 from feature_factory.catalog import build_feature_set_manifest
+from feature_promotion.policy import load_promotion_gate
 
 from .candidates import default_candidates
 from .composite import build_composite_factor_matrix, register_composite_factor, select_approved_factors
@@ -78,6 +79,14 @@ class BatchFactorResearchRunner:
             load_feature_manifest(config.feature_set_manifest_path)
             if config.feature_set_manifest_path
             else build_feature_set_manifest(config.feature_set_name)
+        )
+        self.feature_meta = _feature_meta(self.feature_manifest.to_dict())
+        self.promotion_gate = load_promotion_gate(
+            policy_path=config.feature_promotion_policy_path,
+            allowlist_path=config.feature_promotion_allowlist_path,
+            denylist_path=config.feature_promotion_denylist_path,
+            require_promotion=config.require_feature_promotion,
+            allow_risk_filter_features=config.allow_risk_filter_features,
         )
         self.vocab = make_formula_vocab_from_manifest(self.feature_manifest)
         self.vm = StackVM(self.vocab)
@@ -184,6 +193,9 @@ class BatchFactorResearchRunner:
                 feature_set_name=self.config.feature_set_name,
                 feature_set_manifest_path=self.config.feature_set_manifest_path,
                 alpha_campaign_id=self.config.alpha_campaign_id,
+                feature_promotion_policy_hash=(
+                    self.promotion_gate.policy_hash if self.promotion_gate is not None else None
+                ),
             )
         ).run(requests_from_candidates(self.candidates))
         results = [
@@ -264,6 +276,23 @@ class BatchFactorResearchRunner:
         created_at: str,
     ) -> CandidateRunResult:
         candidate = self._normalize_candidate_tokens(candidate)
+        promotion_errors, promotion_warnings, promotion_metadata = ([], [], {})
+        if self.promotion_gate is not None:
+            promotion_errors, promotion_warnings, promotion_metadata = self.promotion_gate.check_formula_names(
+                candidate.formula_names,
+                feature_meta=self.feature_meta,
+            )
+        if promotion_errors:
+            return CandidateRunResult(
+                candidate=candidate,
+                factor_id=None,
+                status="rejected",
+                metrics_by_split={},
+                score=0.0,
+                gate_reasons=promotion_errors,
+                max_abs_correlation=0.0,
+                error="feature_promotion_gate",
+            )
         if not self.vm.validate(candidate.formula_tokens):
             raise ValueError(f"candidate {candidate.name} has invalid formula arity")
         formula_hash = stable_formula_hash(
@@ -379,6 +408,9 @@ class BatchFactorResearchRunner:
                 "alpha_campaign_id": self.config.alpha_campaign_id,
                 "alpha_candidates_path": self.config.alpha_candidates_path,
                 "alpha_factory_report_path": self.config.alpha_factory_report_path,
+                "feature_promotion_policy_hash": promotion_metadata.get("feature_promotion_policy_hash"),
+                "feature_promotion_gate": promotion_metadata,
+                "feature_promotion_warnings": promotion_warnings,
             },
             factor_type="single",
             batch_id=batch_id,
@@ -605,3 +637,12 @@ def _dataset_version_id(path: str | None) -> str | None:
     except json.JSONDecodeError:
         return None
     return payload.get("dataset_version_id")
+
+
+def _feature_meta(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    definitions = manifest.get("feature_definitions", []) if isinstance(manifest, dict) else []
+    return {
+        str(item.get("feature_name")): dict(item)
+        for item in definitions
+        if isinstance(item, dict) and item.get("feature_name")
+    }

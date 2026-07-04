@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -19,11 +20,12 @@ def build_matrix_refresh_plan(
     refresh_mode: str = "skip_if_fresh",
     feature_set_name: str = "ashare_features_v1",
     feature_set_manifest_path: str | Path | None = None,
+    feature_promotion_policy_path: str | Path | None = None,
     config: dict[str, Any] | None = None,
 ) -> MatrixRefreshPlan:
     diff = diff_matrix_source(data_dir, matrix_cache_dir, data_version_manifest_path)
     metadata_exists = (Path(matrix_cache_dir) / "metadata.json").exists()
-    feature_drift = _feature_set_drift(matrix_cache_dir, feature_set_name, feature_set_manifest_path)
+    feature_drift = _feature_set_drift(matrix_cache_dir, feature_set_name, feature_set_manifest_path, feature_promotion_policy_path)
     reasons: list[str] = []
     if refresh_mode == "validate_only":
         recommendation = "validate_only"
@@ -36,6 +38,9 @@ def build_matrix_refresh_plan(
     elif feature_drift.get("drift"):
         recommendation = "full_rebuild"
         reasons.append("feature_set_hash_drift")
+    elif feature_drift.get("promotion_policy_drift"):
+        recommendation = "full_rebuild"
+        reasons.append("feature_promotion_policy_hash_drift")
     elif diff.status == "fresh":
         recommendation = "skip"
         reasons.append("matrix_cache_fresh")
@@ -59,6 +64,7 @@ def _feature_set_drift(
     matrix_cache_dir: str | Path,
     feature_set_name: str,
     feature_set_manifest_path: str | Path | None,
+    feature_promotion_policy_path: str | Path | None = None,
 ) -> dict[str, Any]:
     metadata_path = Path(matrix_cache_dir) / "metadata.json"
     if not metadata_path.exists():
@@ -78,12 +84,33 @@ def _feature_set_drift(
             return {"drift": True, "status": "malformed_feature_manifest", "expected_feature_set_name": feature_set_name}
     stored_name = metadata.get("feature_set_name", "ashare_features_v1")
     stored_hash = metadata.get("feature_set_hash")
+    stored_promotion_hash = metadata.get("feature_promotion_policy_hash")
+    expected_promotion_hash = _policy_hash(feature_promotion_policy_path)
+    promotion_policy_drift = bool(expected_promotion_hash and stored_promotion_hash and expected_promotion_hash != stored_promotion_hash)
     drift = bool(stored_name != expected_name or (expected_hash and stored_hash and stored_hash != expected_hash))
     return {
         "drift": drift,
+        "promotion_policy_drift": promotion_policy_drift,
         "status": "drift" if drift else "fresh",
         "stored_feature_set_name": stored_name,
         "expected_feature_set_name": expected_name,
         "stored_feature_set_hash": stored_hash,
         "expected_feature_set_hash": expected_hash,
+        "stored_feature_promotion_policy_hash": stored_promotion_hash,
+        "expected_feature_promotion_policy_hash": expected_promotion_hash,
     }
+
+
+def _policy_hash(path: str | Path | None) -> str | None:
+    if not path or not Path(path).exists():
+        return None
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    value = payload.get("policy_hash")
+    if value:
+        return str(value)
+    digest_payload = {key: value for key, value in payload.items() if key not in {"artifact_metadata"}}
+    text = json.dumps(digest_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()

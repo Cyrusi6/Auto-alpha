@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from backtest.io import describe_factor, select_factor_id
 from data_lake import validate_research_input
 from factor_store import LocalFactorStore
 from alpha_experiment_store.leaderboard import load_candidate_pool
+from feature_promotion import load_promotion_gate
 from model_core.data_loader import AShareDataLoader
 
 from .metrics import evaluate_factor_splits
@@ -81,6 +83,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--formula-search-result-path")
     parser.add_argument("--batch-eval-result-path")
     parser.add_argument("--feature-set-manifest-path")
+    parser.add_argument("--feature-promotion-policy-path")
+    parser.add_argument("--feature-promotion-allowlist-path")
+    parser.add_argument("--feature-promotion-denylist-path")
+    parser.add_argument("--require-feature-promotion", action="store_true")
+    parser.add_argument("--allow-risk-filter-features", action="store_true")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--as-of-date", default="20240104")
     parser.add_argument("--universe-name")
@@ -225,6 +232,19 @@ def _run_single(
         splits,
         factor_id,
     )
+    promotion_metadata, promotion_issues = _feature_promotion_metadata(
+        args.feature_set_manifest_path,
+        list(_factor_field(store, factor_id, "formula") or []),
+        args,
+    )
+    issues.extend(promotion_issues)
+    if promotion_issues:
+        validation_summary = replace(
+            validation_summary,
+            blocker_count=validation_summary.blocker_count + sum(item.severity == "blocker" for item in promotion_issues),
+            warning_count=validation_summary.warning_count + sum(item.severity == "warning" for item in promotion_issues),
+            status="blocked",
+        )
     multiple_testing, mt_rows = analyze_multiple_testing(
         factor_store=store,
         alpha_factory_report_path=args.alpha_factory_report_path,
@@ -283,6 +303,7 @@ def _run_single(
             "freeze_status": freeze_report.status,
             "candidate_pool_row": candidate_pool_row or {},
             **_feature_pit_metadata(args.feature_set_manifest_path, list(_factor_field(store, factor_id, "formula") or [])),
+            **promotion_metadata,
         },
     )
     status = "passed" if validation_summary.blocker_count == 0 else "blocked"
@@ -404,6 +425,54 @@ def _feature_pit_metadata(path: str | None, formula_names: list[str]) -> dict[st
         "weak_pit_features": weak,
         "feature_pit_alignment_status": "warning" if weak else "ok",
     }
+
+
+def _feature_promotion_metadata(path: str | None, formula_names: list[str], args: argparse.Namespace) -> tuple[dict[str, Any], list[ValidationIssue]]:
+    payload = _read_json(path)
+    if not payload:
+        return {}, []
+    feature_meta = {
+        str(item.get("feature_name")): dict(item)
+        for item in payload.get("feature_definitions", [])
+        if isinstance(item, dict) and item.get("feature_name")
+    }
+    gate = load_promotion_gate(
+        policy_path=args.feature_promotion_policy_path,
+        allowlist_path=args.feature_promotion_allowlist_path,
+        denylist_path=args.feature_promotion_denylist_path,
+        require_promotion=args.require_feature_promotion,
+        allow_risk_filter_features=args.allow_risk_filter_features,
+    )
+    metadata = {
+        "feature_promotion_policy_hash": gate.policy_hash if gate else None,
+        "unapproved_feature_used": False,
+        "weak_pit_promoted_feature_used": False,
+        "risk_filter_feature_used_as_alpha": False,
+    }
+    issues: list[ValidationIssue] = []
+    if gate is None:
+        return metadata, issues
+    errors, warnings, gate_metadata = gate.check_formula_names(formula_names, feature_meta)
+    metadata.update(gate_metadata)
+    for error in errors:
+        issues.append(
+            ValidationIssue(
+                severity=ValidationSeverity.blocker,
+                code="feature_promotion_blocker",
+                message=error,
+                metadata={"feature_promotion_policy_hash": gate.policy_hash},
+            )
+        )
+    for warning in warnings:
+        issues.append(
+            ValidationIssue(
+                severity=ValidationSeverity.warning,
+                code="feature_promotion_warning",
+                message=warning,
+                metadata={"feature_promotion_policy_hash": gate.policy_hash},
+            )
+        )
+    return metadata, issues
 
 
 def _alpha_campaign_id(path: str | None) -> str | None:

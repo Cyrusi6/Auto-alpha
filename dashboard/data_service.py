@@ -308,6 +308,27 @@ class AshareDashboardService:
                 return frame
         return pd.DataFrame()
 
+    def load_feature_promotion_policy(self) -> dict[str, Any]:
+        return self._read_first_json(self._feature_promotion_artifact_candidates("feature_promotion_policy.json"))
+
+    def load_feature_promotion_evidence_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._feature_promotion_artifact_candidates("feature_promotion_evidence_report.json"))
+
+    def load_feature_promotion_review_package(self) -> dict[str, Any]:
+        return self._read_first_json(self._feature_promotion_artifact_candidates("feature_promotion_review_package.json"))
+
+    def load_feature_promotion_decisions(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._feature_promotion_artifact_candidates("feature_promotion_decisions.jsonl"))
+
+    def load_feature_promotion_allowlist(self) -> dict[str, Any]:
+        return self._read_first_json(self._feature_promotion_artifact_candidates("feature_promotion_allowlist.json"))
+
+    def load_feature_promotion_denylist(self) -> dict[str, Any]:
+        return self._read_first_json(self._feature_promotion_artifact_candidates("feature_promotion_denylist.json"))
+
+    def load_feature_promotion_application_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._feature_promotion_artifact_candidates("feature_promotion_application_report.json"))
+
     def load_alpha_campaign_manifest(self) -> dict[str, Any]:
         return self._read_first_json(self._alpha_artifact_candidates("alpha_campaign_manifest.json"))
 
@@ -2295,6 +2316,17 @@ class AshareDashboardService:
             root / "suite_features_v3" / filename,
             root / "alpha_factory" / "features" / filename,
             root / "suite_alpha_factory" / "features" / filename,
+        ]
+
+    def _feature_promotion_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            root / "feature_promotion" / filename,
+            root / "features_v3" / filename,
+            root / "suite_feature_promotion" / filename,
+            root / "suite_features_v3" / filename,
+            self.config.feature_factory_dir / "feature_promotion" / filename,
+            self.config.feature_factory_dir / filename,
         ]
 
     def _alpha_artifact_candidates(self, filename: str) -> list[Path]:

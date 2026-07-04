@@ -79,6 +79,11 @@ class BatchResearchConfig:
     alpha_campaign_id: str | None = None
     alpha_candidates_path: str | None = None
     alpha_factory_report_path: str | None = None
+    feature_promotion_policy_path: str | None = None
+    feature_promotion_allowlist_path: str | None = None
+    feature_promotion_denylist_path: str | None = None
+    require_feature_promotion: bool = False
+    allow_risk_filter_features: bool = False
 
 
 @dataclass(frozen=True)

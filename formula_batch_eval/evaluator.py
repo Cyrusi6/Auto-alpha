@@ -132,7 +132,7 @@ class FormulaBatchEvaluator:
             created_at=created_at,
             status="success",
             results=results,
-            summary=_summary(results),
+            summary=_summary(results) | {"feature_promotion_policy_hash": self.config.feature_promotion_policy_hash},
             paths=paths,
             cache_manifest=cache_manifest.to_dict(),
             benchmark=benchmark.to_dict(),

@@ -40,6 +40,11 @@ class FormulaSearchConfig:
     neural_policy_steps: int = 1
     neural_checkpoint: str | None = None
     hybrid_neural_ratio: float = 0.5
+    feature_promotion_policy_path: str | None = None
+    feature_promotion_allowlist_path: str | None = None
+    feature_promotion_denylist_path: str | None = None
+    require_feature_promotion: bool = False
+    allow_risk_filter_features: bool = False
 
 
 @dataclass(frozen=True)

@@ -79,6 +79,7 @@ class FormulaBatchEvalConfig:
     feature_set_name: str = "ashare_features_v1"
     feature_set_manifest_path: str | None = None
     alpha_campaign_id: str | None = None
+    feature_promotion_policy_hash: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

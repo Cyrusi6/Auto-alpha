@@ -10,6 +10,7 @@ import numpy as np
 import torch
 
 from artifact_schema.writer import write_json_artifact
+from feature_promotion import apply_promotion_to_manifest
 from model_core.factors import robust_cross_section_zscore
 
 from .catalog import FEATURE_SET_V3, build_feature_set_manifest, manifest_from_payload
@@ -66,6 +67,9 @@ def build_feature_tensor_artifacts(
     point_in_time: bool = False,
     corporate_action_aware: bool = False,
     target_return_mode: str = "adjusted_close",
+    feature_promotion_policy_path: str | Path | None = None,
+    feature_promotion_allowlist_path: str | Path | None = None,
+    apply_feature_promotion: bool = False,
 ) -> FeatureTensorBuildResult:
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
@@ -78,6 +82,14 @@ def build_feature_tensor_artifacts(
         corporate_action_aware=corporate_action_aware,
         target_return_mode=target_return_mode,
     )
+    promotion_summary = None
+    if apply_feature_promotion or feature_promotion_policy_path or feature_promotion_allowlist_path:
+        promoted_manifest, promotion_summary = apply_promotion_to_manifest(
+            manifest.to_dict(),
+            policy_path=feature_promotion_policy_path,
+            allowlist_path=feature_promotion_allowlist_path,
+        )
+        manifest = _coerce_manifest(promoted_manifest)
     extended_summary = attach_extended_feature_matrices(loader, manifest) if manifest.feature_set_name == FEATURE_SET_V3 else None
     tensor, warnings = build_feature_tensor(loader, manifest)
     if extended_summary:
@@ -129,6 +141,8 @@ def build_feature_tensor_artifacts(
             }
         )
         result_payload["extended_feature_paths"] = write_extended_feature_reports(target, extended_summary)
+    if promotion_summary:
+        result_payload["feature_promotion_summary"] = promotion_summary
     write_json_artifact(target / "feature_tensor_build_result.json", result_payload, "feature_tensor_build_result", "feature_factory")
     return result
 

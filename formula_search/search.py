@@ -75,6 +75,11 @@ class FormulaSearchRunner:
         alpha_campaign_manifest_path: str | None = None,
         feature_set_name: str = "ashare_features_v1",
         feature_set_manifest_path: str | None = None,
+        feature_promotion_policy_path: str | None = None,
+        feature_promotion_allowlist_path: str | None = None,
+        feature_promotion_denylist_path: str | None = None,
+        require_feature_promotion: bool = False,
+        allow_risk_filter_features: bool = False,
     ):
         self.search_config = search_config
         self.data_dir = data_dir
@@ -127,6 +132,11 @@ class FormulaSearchRunner:
         self.alpha_campaign_manifest_path = alpha_campaign_manifest_path
         self.feature_set_name = feature_set_name
         self.feature_set_manifest_path = feature_set_manifest_path
+        self.feature_promotion_policy_path = feature_promotion_policy_path
+        self.feature_promotion_allowlist_path = feature_promotion_allowlist_path
+        self.feature_promotion_denylist_path = feature_promotion_denylist_path
+        self.require_feature_promotion = bool(require_feature_promotion)
+        self.allow_risk_filter_features = bool(allow_risk_filter_features)
         self.rng = random.Random(search_config.seed)
 
     def run(self) -> FormulaSearchResult:
@@ -224,6 +234,11 @@ class FormulaSearchRunner:
                 "alpha_campaign_manifest_path": self.alpha_campaign_manifest_path,
                 "feature_set_name": self.feature_set_name,
                 "feature_set_manifest_path": self.feature_set_manifest_path,
+                "feature_promotion_policy_path": self.feature_promotion_policy_path,
+                "feature_promotion_allowlist_path": self.feature_promotion_allowlist_path,
+                "feature_promotion_denylist_path": self.feature_promotion_denylist_path,
+                "require_feature_promotion": self.require_feature_promotion,
+                "allow_risk_filter_features": self.allow_risk_filter_features,
             },
         )
         self._write_outputs(result, generated)
@@ -290,6 +305,11 @@ class FormulaSearchRunner:
             resource_report_path=self.resource_report_path,
             feature_set_name=self.feature_set_name,
             feature_set_manifest_path=self.feature_set_manifest_path,
+            feature_promotion_policy_path=self.feature_promotion_policy_path,
+            feature_promotion_allowlist_path=self.feature_promotion_allowlist_path,
+            feature_promotion_denylist_path=self.feature_promotion_denylist_path,
+            require_feature_promotion=self.require_feature_promotion,
+            allow_risk_filter_features=self.allow_risk_filter_features,
             alpha_campaign_id=_alpha_campaign_id(self.alpha_campaign_manifest_path),
             alpha_candidates_path=self.alpha_candidates_path,
             alpha_factory_report_path=None,

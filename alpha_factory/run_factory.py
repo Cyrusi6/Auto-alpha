@@ -43,6 +43,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--exclude-weak-pit-features", action="store_true", default=True)
     parser.add_argument("--include-weak-pit-features", action="store_true")
     parser.add_argument("--feature-family-budget")
+    parser.add_argument("--feature-promotion-policy-path")
+    parser.add_argument("--feature-promotion-allowlist-path")
+    parser.add_argument("--feature-promotion-denylist-path")
+    parser.add_argument("--require-feature-promotion", action="store_true")
+    parser.add_argument("--allow-risk-filter-features", action="store_true")
     parser.add_argument("--build-feature-set", action="store_true")
     parser.add_argument("--feature-output-dir")
     parser.add_argument("--provider", default="sample")
@@ -131,6 +136,11 @@ def main(argv: list[str] | None = None) -> int:
         require_feature_family_ready=args.require_feature_family_ready,
         exclude_weak_pit_features=not bool(args.include_weak_pit_features),
         feature_family_budget=args.feature_family_budget,
+        feature_promotion_policy_path=args.feature_promotion_policy_path,
+        feature_promotion_allowlist_path=args.feature_promotion_allowlist_path,
+        feature_promotion_denylist_path=args.feature_promotion_denylist_path,
+        require_feature_promotion=args.require_feature_promotion,
+        allow_risk_filter_features=args.allow_risk_filter_features,
         build_feature_set=args.build_feature_set,
         feature_output_dir=args.feature_output_dir,
         factor_transform=args.factor_transform,

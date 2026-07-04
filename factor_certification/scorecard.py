@@ -75,6 +75,7 @@ def build_factor_certification_scorecard(
         _report_required_check("stress_backtest_check", policy.require_stress_backtest, artifact_paths.get("stress_backtest_report_path")),
         _pit_check(policy, artifact_paths),
         _leakage_check(policy, artifact_paths),
+        _feature_promotion_check(artifact_paths),
         _alpha_lineage_check(policy, artifact_paths),
         _optional_report_check("cost_capacity_check", artifact_paths.get("capacity_report_path")),
         _optional_report_check("risk_control_check", artifact_paths.get("risk_control_report_path")),
@@ -164,6 +165,46 @@ def _leakage_check(policy: CertificationPolicy, paths: dict[str, str | None]) ->
         return _report_required_check("leakage_check", policy.require_leakage_passed, paths.get("leakage_audit_report_path"))
     blockers = int(payload.get("blocker_count", 0) or 0)
     return FactorCertificationCheck("leakage_check", "passed" if blockers == 0 else "failed", "blocker", blockers, 0, "leakage_blockers" if blockers else "")
+
+
+def _feature_promotion_check(paths: dict[str, str | None]) -> FactorCertificationCheck:
+    validation_payload = _payload(paths.get("validation_lab_report_path"))
+    target = validation_payload.get("target", {}) if validation_payload else {}
+    metadata = target.get("metadata", {}) if isinstance(target, dict) else {}
+    if metadata.get("unapproved_feature_used") or metadata.get("blocked_feature_used"):
+        return FactorCertificationCheck(
+            "feature_promotion_check",
+            "failed",
+            "blocker",
+            True,
+            False,
+            "unapproved_or_blocked_feature_used",
+            artifact_refs={"validation_lab_report": paths.get("validation_lab_report_path")},
+        )
+    if metadata.get("risk_filter_feature_used_as_alpha"):
+        return FactorCertificationCheck(
+            "feature_promotion_check",
+            "failed",
+            "error",
+            True,
+            False,
+            "risk_filter_feature_used_as_alpha",
+            artifact_refs={"validation_lab_report": paths.get("validation_lab_report_path")},
+        )
+    if paths.get("feature_promotion_allowlist_path") or metadata.get("feature_promotion_policy_hash"):
+        return FactorCertificationCheck(
+            "feature_promotion_check",
+            "passed",
+            "info",
+            True,
+            True,
+            "",
+            artifact_refs={
+                "feature_promotion_allowlist": paths.get("feature_promotion_allowlist_path"),
+                "validation_lab_report": paths.get("validation_lab_report_path"),
+            },
+        )
+    return FactorCertificationCheck("feature_promotion_check", "skipped", "info", False, True, "promotion_artifact_not_provided")
 
 
 def _alpha_lineage_check(policy: CertificationPolicy, paths: dict[str, str | None]) -> FactorCertificationCheck:

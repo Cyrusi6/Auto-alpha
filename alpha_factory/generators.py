@@ -10,6 +10,7 @@ from typing import Iterable
 
 from factor_store import stable_formula_hash
 from feature_factory import make_formula_vocab_from_manifest
+from feature_promotion import load_promotion_gate
 from formula_search.generator import generate_initial_population
 from formula_search.models import FormulaSearchConfig
 from formula_search.mutation import crossover_formula, mutate_formula
@@ -33,6 +34,13 @@ def generate_alpha_candidates(config, manifest) -> tuple[list[AlphaCandidateReco
     feature_meta = _feature_meta(manifest)
     required_families = _parse_csv_set(config.require_feature_family_ready)
     family_budget = _parse_family_budget(config.feature_family_budget)
+    promotion_gate = load_promotion_gate(
+        policy_path=config.feature_promotion_policy_path,
+        allowlist_path=config.feature_promotion_allowlist_path,
+        denylist_path=config.feature_promotion_denylist_path,
+        require_promotion=config.require_feature_promotion,
+        allow_risk_filter_features=config.allow_risk_filter_features,
+    )
 
     def add(name: str, formula_tokens: list[int], formula_names: list[str], source: str, tags: list[str], refs: list[str] | None = None, metadata=None):
         nonlocal candidates
@@ -40,6 +48,13 @@ def generate_alpha_candidates(config, manifest) -> tuple[list[AlphaCandidateReco
         if _uses_disallowed_feature(formula_names, feature_meta, config.exclude_weak_pit_features):
             warnings.append(f"candidate skipped because feature is disabled or weak PIT: {name}")
             return
+        if promotion_gate is not None:
+            errors, gate_warnings, metadata = promotion_gate.check_formula_names(formula_names, feature_meta)
+            if errors:
+                warnings.append(f"candidate skipped by feature promotion gate: {name}: {'; '.join(errors)}")
+                return
+            if gate_warnings:
+                warnings.append(f"candidate feature promotion warning: {name}: {'; '.join(gate_warnings)}")
         try:
             formula_tokens = [vocab.encode_name(item) for item in formula_names]
         except ValueError as exc:

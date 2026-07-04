@@ -27,6 +27,9 @@ def _build_parser() -> argparse.ArgumentParser:
         cmd.add_argument("--feature-set-name", default="ashare_features_v1")
         cmd.add_argument("--feature-set-version", default="1.0")
         cmd.add_argument("--feature-set-manifest-path")
+        cmd.add_argument("--feature-promotion-policy-path")
+        cmd.add_argument("--feature-promotion-allowlist-path")
+        cmd.add_argument("--apply-feature-promotion", action="store_true")
         cmd.add_argument("--point-in-time", action="store_true")
         cmd.add_argument("--corporate-action-aware", action="store_true")
         cmd.add_argument(
@@ -89,6 +92,9 @@ def main(argv: list[str] | None = None) -> int:
         point_in_time=args.point_in_time,
         corporate_action_aware=args.corporate_action_aware,
         target_return_mode=args.target_return_mode,
+        feature_promotion_policy_path=args.feature_promotion_policy_path,
+        feature_promotion_allowlist_path=args.feature_promotion_allowlist_path,
+        apply_feature_promotion=args.apply_feature_promotion,
     )
     write_feature_factory_report(result.to_dict(), output_dir)
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))

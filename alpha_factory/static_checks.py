@@ -10,7 +10,15 @@ from model_core.vm import StackVM
 FORBIDDEN_NAMES = {"TARGET_RET", "target_ret", "FUTURE_RETURN", "NEXT_RET"}
 
 
-def run_static_checks(candidates, *, max_complexity: int, max_lookback: int, vocab=None) -> tuple[list, list[dict]]:
+def run_static_checks(
+    candidates,
+    *,
+    max_complexity: int,
+    max_lookback: int,
+    vocab=None,
+    promotion_gate=None,
+    feature_meta: dict[str, dict] | None = None,
+) -> tuple[list, list[dict]]:
     vm = StackVM(vocab)
     seen: set[str] = set()
     updated = []
@@ -31,6 +39,11 @@ def run_static_checks(candidates, *, max_complexity: int, max_lookback: int, voc
         forbidden = sorted(set(candidate.formula_names) & FORBIDDEN_NAMES)
         if forbidden:
             errors.append(f"forbidden_token:{','.join(forbidden)}")
+        promotion_metadata = {}
+        if promotion_gate is not None:
+            gate_errors, gate_warnings, promotion_metadata = promotion_gate.check_formula_names(candidate.formula_names, feature_meta or {})
+            errors.extend(gate_errors)
+            warnings.extend(gate_warnings)
         status = "passed" if not errors else "failed"
         updated_candidate = replace(
             candidate,
@@ -48,6 +61,7 @@ def run_static_checks(candidates, *, max_complexity: int, max_lookback: int, voc
                 "warnings": warnings,
                 "complexity": candidate.complexity,
                 "lookback": candidate.lookback,
+                "feature_promotion": promotion_metadata,
             }
         )
     return updated, rows

@@ -99,6 +99,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--alpha-campaign-manifest-path")
     parser.add_argument("--feature-set-name", default="ashare_features_v1")
     parser.add_argument("--feature-set-manifest-path")
+    parser.add_argument("--feature-promotion-policy-path")
+    parser.add_argument("--feature-promotion-allowlist-path")
+    parser.add_argument("--feature-promotion-denylist-path")
+    parser.add_argument("--require-feature-promotion", action="store_true")
+    parser.add_argument("--allow-risk-filter-features", action="store_true")
     parser.add_argument("--use-alpha-shortlist-as-seed", action="store_true")
     parser.add_argument("--alpha-seed-top-k", type=int)
     parser.add_argument("--run-validation-lab", action="store_true")
@@ -138,6 +143,11 @@ def main(argv: list[str] | None = None) -> int:
         neural_policy_steps=args.neural_policy_steps,
         neural_checkpoint=args.neural_checkpoint,
         hybrid_neural_ratio=args.hybrid_neural_ratio,
+        feature_promotion_policy_path=args.feature_promotion_policy_path,
+        feature_promotion_allowlist_path=args.feature_promotion_allowlist_path,
+        feature_promotion_denylist_path=args.feature_promotion_denylist_path,
+        require_feature_promotion=args.require_feature_promotion,
+        allow_risk_filter_features=args.allow_risk_filter_features,
     )
     if args.search_mode == "neural":
         result = _run_neural(args)
@@ -207,6 +217,11 @@ def main(argv: list[str] | None = None) -> int:
         alpha_campaign_manifest_path=args.alpha_campaign_manifest_path,
         feature_set_name=args.feature_set_name,
         feature_set_manifest_path=args.feature_set_manifest_path,
+        feature_promotion_policy_path=args.feature_promotion_policy_path,
+        feature_promotion_allowlist_path=args.feature_promotion_allowlist_path,
+        feature_promotion_denylist_path=args.feature_promotion_denylist_path,
+        require_feature_promotion=args.require_feature_promotion,
+        allow_risk_filter_features=args.allow_risk_filter_features,
     ).run()
     payload = result.to_dict()
     payload.update(freeze_payload)
@@ -293,6 +308,11 @@ def _run_hybrid(args: argparse.Namespace, search_config: FormulaSearchConfig) ->
         alpha_campaign_manifest_path=args.alpha_campaign_manifest_path,
         feature_set_name=args.feature_set_name,
         feature_set_manifest_path=args.feature_set_manifest_path,
+        feature_promotion_policy_path=args.feature_promotion_policy_path,
+        feature_promotion_allowlist_path=args.feature_promotion_allowlist_path,
+        feature_promotion_denylist_path=args.feature_promotion_denylist_path,
+        require_feature_promotion=args.require_feature_promotion,
+        allow_risk_filter_features=args.allow_risk_filter_features,
     ).run()
     payload = random_result.to_dict()
     neural_payload = neural_result.to_dict()

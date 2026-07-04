@@ -2191,3 +2191,25 @@
 ### Follow-Ups
 - Do not build production v3 feature matrices until the active real Tushare backfill, repair, freeze, and matrix refresh gates are complete.
 - Treat weak-PIT expanded datasets as report/readiness inputs until manual availability review and leakage tests promote them into alpha sampling.
+
+## Task 047-A - Feature Promotion Gate And Weak-PIT Review
+
+- Added `feature_promotion/`, a local review layer for expanded v3 features. It builds stable promotion policies, per-feature evidence, review packages, approval-compatible decisions, allowlists, denylists, and application reports without reading real data or secrets.
+- Added feature promotion metadata to Feature Factory manifests and matrix metadata. `matrix_refresh` now detects feature-promotion policy hash drift and recommends a rebuild when eligibility policy changes.
+- Added Alpha Factory, formula search, research batch, formula batch eval metadata, validation metadata, and factor certification checks for feature promotion. With `--require-feature-promotion`, only allowlisted alpha-eligible features are sampled; blocked and unreviewed weak-PIT features are rejected.
+- Extended approval types, monitoring checks, dashboard artifact readers, artifact schema registry, release inventory, packaging metadata, and local CI quick smoke for feature promotion artifacts.
+- Added offline tests for policy/evidence generation, allowlist/denylist construction, Alpha Factory promotion-gated sampling, static blocked-feature rejection, factor certification blockers, and matrix refresh promotion drift.
+
+### New Artifacts
+- `feature_promotion_policy.json/md`
+- `feature_promotion_evidence.jsonl`
+- `feature_promotion_evidence_report.json/md`
+- `feature_promotion_review_package.json/md`
+- `feature_promotion_decisions.jsonl`
+- `feature_promotion_allowlist.json`
+- `feature_promotion_denylist.json`
+- `feature_promotion_application_report.json/md`
+
+### Follow-Ups
+- Do not promote real weak-PIT expanded features until the active Tushare backfill, repair, freeze, and v3 feature build artifacts exist and reviewers have inspected evidence.
+- Treat feature promotion as an availability/leakage control only; factor quality still requires validation, certification, portfolio certification, and production approval gates.

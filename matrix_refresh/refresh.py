@@ -31,6 +31,7 @@ def run_matrix_refresh(
     target_return_mode: str = "adjusted_close",
     feature_set_name: str = "ashare_features_v1",
     feature_set_manifest_path: str | Path | None = None,
+    feature_promotion_policy_path: str | Path | None = None,
     pretty_config: dict[str, Any] | None = None,
 ) -> MatrixRefreshResult:
     plan = build_matrix_refresh_plan(
@@ -41,6 +42,7 @@ def run_matrix_refresh(
         refresh_mode=refresh_mode,
         feature_set_name=feature_set_name,
         feature_set_manifest_path=feature_set_manifest_path,
+        feature_promotion_policy_path=feature_promotion_policy_path,
         config=pretty_config,
     )
     action = plan.recommendation

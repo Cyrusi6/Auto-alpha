@@ -75,6 +75,8 @@ class FeatureSetManifest:
     target_return_mode: str
     created_at: str
     content_hash: str
+    feature_promotion_policy_hash: str | None = None
+    feature_promotion_summary: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

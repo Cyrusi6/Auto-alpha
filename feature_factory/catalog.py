@@ -106,6 +106,8 @@ def manifest_from_payload(payload: dict) -> FeatureSetManifest:
         target_return_mode=str(payload.get("target_return_mode", "adjusted_close")),
         created_at=str(payload.get("created_at", utc_now())),
         content_hash=str(payload.get("content_hash", "")),
+        feature_promotion_policy_hash=payload.get("feature_promotion_policy_hash"),
+        feature_promotion_summary=dict(payload.get("feature_promotion_summary", {}) or {}),
     )
 
 

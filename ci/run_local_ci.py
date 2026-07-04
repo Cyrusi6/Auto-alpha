@@ -855,6 +855,20 @@ def main(argv: list[str] | None = None) -> int:
             ],
         ),
         (
+            "feature_promotion_smoke",
+            [
+                sys.executable,
+                "-m",
+                "feature_promotion.run_promotion",
+                "smoke",
+                "--data-dir",
+                str(sample_data_dir),
+                "--output-dir",
+                str(quick_dir / "feature_promotion"),
+                "--pretty",
+            ],
+        ),
+        (
             "alpha_factory_smoke",
             [
                 sys.executable,
@@ -1186,6 +1200,8 @@ def main(argv: list[str] | None = None) -> int:
                 str(quick_dir / "features_v2"),
                 "--artifact-dir",
                 str(quick_dir / "features_v3"),
+                "--artifact-dir",
+                str(quick_dir / "feature_promotion"),
                 "--artifact-dir",
                 str(quick_dir / "alpha_factory"),
                 "--artifact-dir",
