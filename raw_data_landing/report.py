@@ -13,7 +13,7 @@ from .coverage import build_coverage_matrix
 from .gate import evaluate_freeze_readiness
 from .models import RawDataLandingReport
 from .quality import summarize_landing_checks
-from .scanner import scan_datasets
+from .scanner import checks_from_raw_data_index, scan_datasets
 
 
 def build_landing_report(
@@ -25,9 +25,16 @@ def build_landing_report(
     index_codes: Sequence[str] | None = None,
     core_datasets: Sequence[str] | None = None,
     required_expanded_datasets: Sequence[str] | None = None,
+    raw_data_index_manifest_path: str | Path | None = None,
+    require_raw_data_index: bool = False,
 ) -> RawDataLandingReport:
     selected = list(datasets or ASHARE_DATASETS)
-    checks = scan_datasets(data_dir, selected)
+    checks, index_summary = _checks_with_optional_index(
+        data_dir=data_dir,
+        datasets=selected,
+        raw_data_index_manifest_path=raw_data_index_manifest_path,
+        require_raw_data_index=require_raw_data_index,
+    )
     coverage = build_coverage_matrix(
         checks,
         expected_trade_days=expected_trade_days,
@@ -42,6 +49,7 @@ def build_landing_report(
             "raw_freeze_readiness_status": decision.status,
             "raw_freeze_blocker_count": decision.blocker_count,
             "coverage_gap_count": sum(1 for row in coverage if row.status != "ok"),
+            **index_summary,
         }
     )
     now = utc_now()
@@ -55,6 +63,49 @@ def build_landing_report(
         freeze_readiness=decision,
         summary=summary,
     )
+
+
+def _checks_with_optional_index(
+    *,
+    data_dir: str | Path,
+    datasets: Sequence[str],
+    raw_data_index_manifest_path: str | Path | None,
+    require_raw_data_index: bool,
+) -> tuple[list, dict]:
+    summary = {
+        "index_used": False,
+        "index_status": "missing" if raw_data_index_manifest_path else "not_configured",
+        "index_manifest_path": str(raw_data_index_manifest_path) if raw_data_index_manifest_path else None,
+        "fallback_reason": "",
+    }
+    if raw_data_index_manifest_path:
+        path = Path(raw_data_index_manifest_path)
+        if path.exists():
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                payload = {}
+                summary["index_status"] = "malformed"
+                summary["fallback_reason"] = "malformed_raw_data_index_manifest"
+            if payload:
+                summary["index_status"] = str(payload.get("status") or "unknown")
+                indexed = checks_from_raw_data_index(payload, datasets)
+                indexed_names = {item.dataset for item in indexed}
+                missing = [dataset for dataset in datasets if dataset not in indexed_names]
+                if payload.get("status") == "fresh" and not missing:
+                    summary["index_used"] = True
+                    summary["fallback_reason"] = ""
+                    return indexed, summary
+                summary["fallback_reason"] = "index_missing_selected_datasets" if missing else f"index_status_{summary['index_status']}"
+        else:
+            summary["fallback_reason"] = "raw_data_index_manifest_missing"
+    if require_raw_data_index:
+        checks = scan_datasets(data_dir, datasets)
+        for check in checks:
+            check.warnings.append(f"raw data index required but not used: {summary['fallback_reason'] or summary['index_status']}")
+        summary["index_status"] = summary["index_status"] or "missing"
+        return checks, summary
+    return scan_datasets(data_dir, datasets), summary
 
 
 def write_landing_artifacts(report: RawDataLandingReport, output_dir: str | Path) -> dict[str, str]:

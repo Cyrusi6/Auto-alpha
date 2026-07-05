@@ -15,6 +15,45 @@ def scan_datasets(data_dir: str | Path, datasets: Sequence[str]) -> list[RawData
     return [scan_dataset(data_dir, dataset) for dataset in datasets]
 
 
+def checks_from_raw_data_index(index_payload: dict, datasets: Sequence[str] | None = None) -> list[RawDatasetLandingCheck]:
+    selected = set(datasets or [])
+    checks: list[RawDatasetLandingCheck] = []
+    for item in index_payload.get("datasets", []) if isinstance(index_payload.get("datasets"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        dataset = str(item.get("dataset") or "")
+        if selected and dataset not in selected:
+            continue
+        status = RawDatasetLandingStatus.complete
+        warnings = list(item.get("warnings") or [])
+        if item.get("status") == "missing":
+            status = RawDatasetLandingStatus.missing
+        elif item.get("status") == "partial":
+            status = RawDatasetLandingStatus.warning if item.get("parse_error_count") else RawDatasetLandingStatus.partial
+        elif int(item.get("parse_error_count", 0) or 0) or int(item.get("duplicate_key_count_estimate", 0) or 0):
+            status = RawDatasetLandingStatus.warning
+        checks.append(
+            RawDatasetLandingCheck(
+                dataset=dataset,
+                status=status,
+                records_path=str(item.get("records_path") or ""),
+                exists=bool(item.get("status") != "missing"),
+                size_bytes=int(item.get("file_size_bytes", 0) or 0),
+                line_count=int(item.get("record_count", 0) or 0),
+                parse_error_count=int(item.get("parse_error_count", 0) or 0),
+                first_date=item.get("first_date"),
+                last_date=item.get("last_date"),
+                ts_code_count=int(item.get("ts_code_count", 0) or 0),
+                duplicate_key_estimate=int(item.get("duplicate_key_count_estimate", 0) or 0),
+                null_or_empty_field_count=sum(int(value or 0) for value in (item.get("null_field_summary") or {}).values())
+                if isinstance(item.get("null_field_summary"), dict)
+                else 0,
+                warnings=warnings,
+            )
+        )
+    return checks
+
+
 def scan_dataset(data_dir: str | Path, dataset: str, duplicate_sample_limit: int = 1_000_000) -> RawDatasetLandingCheck:
     path = Path(data_dir) / dataset / "records.jsonl"
     date_field = _date_field(dataset)

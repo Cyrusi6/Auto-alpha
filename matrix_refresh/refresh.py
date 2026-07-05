@@ -32,6 +32,7 @@ def run_matrix_refresh(
     feature_set_name: str = "ashare_features_v1",
     feature_set_manifest_path: str | Path | None = None,
     feature_promotion_policy_path: str | Path | None = None,
+    raw_data_index_manifest_path: str | Path | None = None,
     pretty_config: dict[str, Any] | None = None,
 ) -> MatrixRefreshResult:
     plan = build_matrix_refresh_plan(
@@ -43,6 +44,7 @@ def run_matrix_refresh(
         feature_set_name=feature_set_name,
         feature_set_manifest_path=feature_set_manifest_path,
         feature_promotion_policy_path=feature_promotion_policy_path,
+        raw_data_index_manifest_path=raw_data_index_manifest_path,
         config=pretty_config,
     )
     action = plan.recommendation
@@ -62,14 +64,15 @@ def run_matrix_refresh(
             require_data_freeze=require_data_freeze,
             feature_set_name=feature_set_name,
             feature_set_manifest_path=feature_set_manifest_path,
+            raw_data_index_manifest_path=raw_data_index_manifest_path,
         )
         status = "refreshed"
     elif action == "skip":
         status = "fresh"
     else:
         status = "validated"
-    source_diff = diff_matrix_source(data_dir, matrix_cache_dir, data_version_manifest_path)
-    freshness = validate_matrix_freshness(data_dir, matrix_cache_dir, data_version_manifest_path)
+    source_diff = diff_matrix_source(data_dir, matrix_cache_dir, data_version_manifest_path, raw_data_index_manifest_path)
+    freshness = validate_matrix_freshness(data_dir, matrix_cache_dir, data_version_manifest_path, raw_data_index_manifest_path)
     if freshness.status == "error":
         status = "failed"
         warnings.append("matrix freshness validation failed")

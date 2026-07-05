@@ -66,6 +66,7 @@ class MonitoringReport:
         backfill_failed = self.checks.get("backfill_failed_jobs", {}) if isinstance(self.checks, dict) else {}
         backfill_quarantined = self.checks.get("backfill_quarantined_jobs", {}) if isinstance(self.checks, dict) else {}
         raw_landing = self.checks.get("raw_data_landing", {}) if isinstance(self.checks, dict) else {}
+        raw_index = self.checks.get("raw_data_index", {}) if isinstance(self.checks, dict) else {}
         raw_freeze = self.checks.get("raw_freeze_readiness", {}) if isinstance(self.checks, dict) else {}
         backfill_repair = self.checks.get("backfill_repair", {}) if isinstance(self.checks, dict) else {}
         postprocess_blockers = self.checks.get("postprocess_plan_blockers", {}) if isinstance(self.checks, dict) else {}
@@ -205,6 +206,13 @@ class MonitoringReport:
             "backfill_quarantined_jobs": int(backfill_quarantined.get("backfill_quarantined_jobs", running_backfill.get("backfill_quarantined_jobs", 0)) or 0) if isinstance(backfill_quarantined, dict) else 0,
             "backfill_coverage_gap_count": int(backfill_coverage.get("backfill_coverage_gap_count", 0) or 0) if isinstance(backfill_coverage, dict) else 0,
             "raw_landing_status": str(raw_landing.get("raw_landing_status", "")) if isinstance(raw_landing, dict) else "",
+            "raw_data_index_status": str(raw_index.get("raw_data_index_status", "")) if isinstance(raw_index, dict) else "",
+            "raw_data_index_dataset_count": int(raw_index.get("raw_data_index_dataset_count", 0) or 0) if isinstance(raw_index, dict) else 0,
+            "raw_data_index_record_count": int(raw_index.get("raw_data_index_record_count", 0) or 0) if isinstance(raw_index, dict) else 0,
+            "raw_data_index_size_gb": float(raw_index.get("raw_data_index_size_gb", 0.0) or 0.0) if isinstance(raw_index, dict) else 0.0,
+            "raw_data_index_parse_error_count": int(raw_index.get("raw_data_index_parse_error_count", 0) or 0) if isinstance(raw_index, dict) else 0,
+            "raw_data_index_stale_dataset_count": int(raw_index.get("raw_data_index_stale_dataset_count", 0) or 0) if isinstance(raw_index, dict) else 0,
+            "raw_data_index_missing_core_count": int(raw_index.get("raw_data_index_missing_core_count", 0) or 0) if isinstance(raw_index, dict) else 0,
             "raw_freeze_readiness_status": str(raw_freeze.get("raw_freeze_readiness_status", "")) if isinstance(raw_freeze, dict) else "",
             "raw_freeze_blocker_count": int(raw_freeze.get("raw_freeze_blocker_count", 0) or 0) if isinstance(raw_freeze, dict) else 0,
             "repair_job_count": int(backfill_repair.get("repair_job_count", 0) or 0) if isinstance(backfill_repair, dict) else 0,

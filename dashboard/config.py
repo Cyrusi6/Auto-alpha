@@ -37,6 +37,7 @@ class DashboardConfig:
     cross_source_dir: Path = Path("artifacts/cross_source")
     data_source_smoke_dir: Path = Path("artifacts/data_source_smoke")
     backfill_dir: Path = Path("artifacts/backfill")
+    raw_data_index_dir: Path = Path("artifacts/raw_data_index")
     data_lake_dir: Path = Path("artifacts/data_lake")
     real_data_dir: Path = Path("artifacts/real_data")
     matrix_refresh_dir: Path = Path("artifacts/matrix_refresh")
@@ -104,6 +105,7 @@ class DashboardConfig:
             cross_source_dir=Path(os.getenv("ASHARE_DASHBOARD_CROSS_SOURCE_DIR") or "artifacts/cross_source"),
             data_source_smoke_dir=Path(os.getenv("ASHARE_DASHBOARD_DATA_SOURCE_SMOKE_DIR") or "artifacts/data_source_smoke"),
             backfill_dir=Path(os.getenv("ASHARE_DASHBOARD_BACKFILL_DIR") or "artifacts/backfill"),
+            raw_data_index_dir=Path(os.getenv("ASHARE_DASHBOARD_RAW_DATA_INDEX_DIR") or "artifacts/raw_data_index"),
             data_lake_dir=Path(os.getenv("ASHARE_DASHBOARD_DATA_LAKE_DIR") or "artifacts/data_lake"),
             real_data_dir=Path(os.getenv("ASHARE_DASHBOARD_REAL_DATA_DIR") or os.getenv("ASHARE_REAL_DATA_OUTPUT_DIR") or "artifacts/real_data"),
             matrix_refresh_dir=Path(os.getenv("ASHARE_DASHBOARD_MATRIX_REFRESH_DIR") or "artifacts/matrix_refresh"),

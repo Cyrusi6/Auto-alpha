@@ -30,6 +30,8 @@ def _build_parser() -> argparse.ArgumentParser:
         cmd.add_argument("--feature-promotion-policy-path")
         cmd.add_argument("--feature-promotion-allowlist-path")
         cmd.add_argument("--apply-feature-promotion", action="store_true")
+        cmd.add_argument("--raw-data-index-manifest-path")
+        cmd.add_argument("--require-raw-data-index", action="store_true")
         cmd.add_argument("--point-in-time", action="store_true")
         cmd.add_argument("--corporate-action-aware", action="store_true")
         cmd.add_argument(
@@ -95,6 +97,8 @@ def main(argv: list[str] | None = None) -> int:
         feature_promotion_policy_path=args.feature_promotion_policy_path,
         feature_promotion_allowlist_path=args.feature_promotion_allowlist_path,
         apply_feature_promotion=args.apply_feature_promotion,
+        raw_data_index_manifest_path=args.raw_data_index_manifest_path,
+        require_raw_data_index=args.require_raw_data_index,
     )
     write_feature_factory_report(result.to_dict(), output_dir)
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))

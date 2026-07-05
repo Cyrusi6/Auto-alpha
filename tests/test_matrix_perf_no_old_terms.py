@@ -3,6 +3,7 @@ from pathlib import Path
 
 TARGETS = [
     Path("matrix_store"),
+    Path("raw_data_index"),
     Path("performance_benchmark"),
     Path("cross_source_checks"),
     Path("model_core/data_loader.py"),

@@ -70,6 +70,8 @@ def build_feature_tensor_artifacts(
     feature_promotion_policy_path: str | Path | None = None,
     feature_promotion_allowlist_path: str | Path | None = None,
     apply_feature_promotion: bool = False,
+    raw_data_index_manifest_path: str | Path | None = None,
+    require_raw_data_index: bool = False,
 ) -> FeatureTensorBuildResult:
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
@@ -90,6 +92,9 @@ def build_feature_tensor_artifacts(
             allowlist_path=feature_promotion_allowlist_path,
         )
         manifest = _coerce_manifest(promoted_manifest)
+    raw_index_summary = _raw_index_summary(raw_data_index_manifest_path, manifest)
+    if require_raw_data_index and not raw_index_summary.get("raw_data_index_used"):
+        raise RuntimeError(f"raw data index is required but unavailable: {raw_index_summary.get('fallback_reason')}")
     extended_summary = attach_extended_feature_matrices(loader, manifest) if manifest.feature_set_name == FEATURE_SET_V3 else None
     tensor, warnings = build_feature_tensor(loader, manifest)
     if extended_summary:
@@ -102,7 +107,7 @@ def build_feature_tensor_artifacts(
         "feature_set_manifest",
         "feature_factory",
     )
-    coverage = build_feature_coverage_report(manifest, tensor, warnings)
+    coverage = build_feature_coverage_report(manifest, tensor, warnings, raw_data_index_summary=raw_index_summary)
     coverage_path = write_json_artifact(
         target / "feature_coverage_report.json",
         coverage.to_dict(),
@@ -130,6 +135,8 @@ def build_feature_tensor_artifacts(
         warnings=warnings,
     )
     result_payload = result.to_dict()
+    result_payload["raw_data_index_used"] = bool(raw_index_summary.get("raw_data_index_used"))
+    result_payload["dataset_index_status"] = raw_index_summary
     if extended_summary:
         result_payload.update(
             {
@@ -311,6 +318,48 @@ def _values_summary(manifest: FeatureSetManifest, tensor: torch.Tensor) -> dict[
         "feature_set_version": manifest.feature_set_version,
         "feature_count": manifest.feature_count,
         "features": summaries,
+    }
+
+
+def _raw_index_summary(path: str | Path | None, manifest: FeatureSetManifest) -> dict[str, Any]:
+    if path is None:
+        return {"raw_data_index_used": False, "status": "not_configured", "fallback_reason": "not_configured"}
+    target = Path(path)
+    if not target.exists():
+        return {"raw_data_index_used": False, "status": "missing", "fallback_reason": "manifest_missing", "manifest_path": str(target)}
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {"raw_data_index_used": False, "status": "malformed", "fallback_reason": "manifest_malformed", "manifest_path": str(target)}
+    rows = payload.get("datasets", []) if isinstance(payload.get("datasets"), list) else []
+    by_dataset = {str(item.get("dataset")): item for item in rows if isinstance(item, dict)}
+    required = sorted(
+        {
+            str(dataset)
+            for definition in manifest.feature_definitions
+            if isinstance(definition, dict)
+            for dataset in definition.get("required_datasets", [])
+            if dataset
+        }
+    )
+    missing = [dataset for dataset in required if dataset not in by_dataset or by_dataset.get(dataset, {}).get("status") == "missing"]
+    zero = [
+        dataset
+        for dataset in required
+        if dataset in by_dataset and int((by_dataset.get(dataset) or {}).get("record_count", 0) or 0) == 0
+    ]
+    status = str(payload.get("status") or "unknown")
+    used = status == "fresh" and not missing
+    return {
+        "raw_data_index_used": used,
+        "status": status,
+        "manifest_path": str(target),
+        "index_hash": payload.get("index_hash"),
+        "required_dataset_count": len(required),
+        "indexed_dataset_count": len(by_dataset),
+        "missing_required_datasets": missing,
+        "zero_record_required_datasets": zero,
+        "fallback_reason": "" if used else ("missing_required_datasets" if missing else f"index_status_{status}"),
     }
 
 

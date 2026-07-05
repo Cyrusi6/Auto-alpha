@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 from pathlib import Path
 from typing import Callable
 
@@ -26,6 +27,10 @@ from neural_search import AlphaGPTPretrainConfig, AlphaGPTPretrainer
 from research import BatchFactorResearchRunner, BatchResearchConfig
 from research.candidates import default_candidates
 from feature_factory import build_feature_set_manifest, build_feature_tensor
+from raw_data_index.report import write_raw_data_index_artifacts
+from raw_data_index.scanner import build_raw_data_index
+from raw_data_index.validator import validate_raw_data_index
+from raw_data_landing.report import build_landing_report
 from validation_lab.run_validation import main as run_validation_main
 from factor_certification.run_certify import main as run_certify_main
 from portfolio_lab.run_portfolio_lab import main as run_portfolio_lab_main
@@ -68,6 +73,9 @@ def run_benchmark(
         _run_item("formula_search_small", lambda: _bench_formula_search(data_path, output_path)),
         _run_item("formula_batch_eval_small", lambda: _bench_formula_batch_eval(data_path, output_path, cache_path)),
         _run_item("feature_set_v2_build", lambda: _bench_feature_set_v2(data_path)),
+        _run_item("raw_data_index_streaming_speed", lambda: _bench_raw_data_index(data_path, output_path)),
+        _run_item("raw_data_index_validate_speed", lambda: _bench_raw_data_index_validate(data_path, output_path)),
+        _run_item("raw_landing_with_index_speed", lambda: _bench_raw_landing_with_index(data_path, output_path)),
         _run_item("feature_v3_manifest_build", lambda: _bench_feature_v3_manifest()),
         _run_item("feature_v3_tensor_build_small", lambda: _bench_feature_set_v3(data_path)),
         _run_item("feature_family_readiness_speed", lambda: _bench_feature_family_readiness(data_path)),
@@ -112,6 +120,8 @@ def run_benchmark(
         "speedup_vs_single_gpu": 0.0,
         "skipped_gpu_reason": "" if snapshot.cuda_available else "cuda_unavailable",
         "feature_build_seconds": item_map.get("feature_set_v2_build").wall_time_seconds if item_map.get("feature_set_v2_build") else 0.0,
+        "raw_data_index_seconds": item_map.get("raw_data_index_streaming_speed").wall_time_seconds if item_map.get("raw_data_index_streaming_speed") else 0.0,
+        "raw_landing_with_index_seconds": item_map.get("raw_landing_with_index_speed").wall_time_seconds if item_map.get("raw_landing_with_index_speed") else 0.0,
         "feature_count": item_map.get("feature_set_v2_build").n_features if item_map.get("feature_set_v2_build") else 0,
         "feature_v3_build_seconds": item_map.get("feature_v3_tensor_build_small").wall_time_seconds if item_map.get("feature_v3_tensor_build_small") else 0.0,
         "feature_v3_count": item_map.get("feature_v3_tensor_build_small").n_features if item_map.get("feature_v3_tensor_build_small") else 0,
@@ -299,6 +309,37 @@ def _bench_feature_set_v2(data_dir: Path) -> dict[str, int]:
         "n_stocks": int(tensor.shape[0]),
         "n_dates": int(tensor.shape[2]),
         "n_features": int(tensor.shape[1]),
+    }
+
+
+def _bench_raw_data_index(data_dir: Path, output_dir: Path) -> dict[str, int]:
+    paths = _ensure_raw_index(data_dir, output_dir)
+    payload = _read_json(Path(paths["raw_data_index_manifest_path"]))
+    return {
+        "records_read": int(payload.get("total_records", 0) or 0),
+        "n_features": int(payload.get("dataset_count", 0) or 0),
+    }
+
+
+def _bench_raw_data_index_validate(data_dir: Path, output_dir: Path) -> dict[str, int]:
+    paths = _ensure_raw_index(data_dir, output_dir)
+    validation = validate_raw_data_index(paths["raw_data_index_manifest_path"], data_dir=data_dir)
+    return {
+        "records_read": int(validation.dataset_count),
+        "n_features": int(validation.stale_dataset_count + validation.missing_dataset_count),
+    }
+
+
+def _bench_raw_landing_with_index(data_dir: Path, output_dir: Path) -> dict[str, int]:
+    paths = _ensure_raw_index(data_dir, output_dir)
+    report = build_landing_report(
+        data_dir=data_dir,
+        datasets=["securities", "trade_calendar", "daily_bars", "daily_basic"],
+        raw_data_index_manifest_path=paths["raw_data_index_manifest_path"],
+    )
+    return {
+        "records_read": int(report.summary.get("total_records", 0) or sum(getattr(item, "records", 0) for item in report.datasets)),
+        "n_features": len(report.datasets),
     }
 
 
@@ -563,6 +604,49 @@ def _bench_portfolio_certification(data_dir: Path, output_dir: Path) -> dict[str
     checks_path = cert_dir / "portfolio_certification_checks.jsonl"
     check_count = sum(1 for _ in checks_path.open(encoding="utf-8")) if checks_path.exists() else 1
     return _loader_payload(loader) | {"formulas_evaluated": int(check_count)}
+
+
+def _ensure_raw_index(data_dir: Path, output_dir: Path) -> dict[str, str]:
+    index_dir = output_dir / "raw_data_index_benchmark"
+    manifest_path = index_dir / "raw_data_index_manifest.json"
+    if manifest_path.exists():
+        return {"raw_data_index_manifest_path": str(manifest_path)}
+    manifest, indexes, partitions, issues, _safety = build_raw_data_index(
+        data_dir=data_dir,
+        datasets=["securities", "trade_calendar", "daily_bars", "daily_basic"],
+        output_dir=index_dir,
+        partition_granularity="monthly",
+        allow_active_run_index=True,
+    )
+    if manifest is None:
+        raise RuntimeError("raw data index build was blocked")
+    paths = write_raw_data_index_artifacts(
+        manifest=manifest,
+        dataset_indexes=indexes,
+        partitions=partitions,
+        validation=None,
+        issues=issues,
+        output_dir=index_dir,
+        data_dir=data_dir,
+        status=manifest.status,
+    )
+    validation = validate_raw_data_index(paths["raw_data_index_manifest_path"], data_dir=data_dir)
+    return write_raw_data_index_artifacts(
+        manifest=manifest,
+        dataset_indexes=indexes,
+        partitions=partitions,
+        validation=validation,
+        issues=[*issues, *validation.issues],
+        output_dir=index_dir,
+        data_dir=data_dir,
+        status=validation.status,
+    )
+
+
+def _read_json(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _ensure_benchmark_factor(store_dir: Path, loader: AShareDataLoader) -> str:

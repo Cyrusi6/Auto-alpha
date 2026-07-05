@@ -92,6 +92,8 @@ class FeatureCoverageReport:
     warnings: list[str]
     feature_summaries: list[dict[str, Any]]
     created_at: str
+    raw_data_index_used: bool = False
+    dataset_index_status: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -26,6 +26,7 @@ def _build_parser() -> argparse.ArgumentParser:
         cmd.add_argument("--feature-set-name", default="ashare_features_v1")
         cmd.add_argument("--feature-set-manifest-path")
         cmd.add_argument("--feature-promotion-policy-path")
+        cmd.add_argument("--raw-data-index-manifest-path")
         cmd.add_argument(
             "--target-return-mode",
             choices=("adjusted_close", "raw_close", "corporate_action_total_return"),
@@ -55,6 +56,7 @@ def main(argv: list[str] | None = None) -> int:
         feature_set_name=args.feature_set_name,
         feature_set_manifest_path=args.feature_set_manifest_path,
         feature_promotion_policy_path=args.feature_promotion_policy_path,
+        raw_data_index_manifest_path=args.raw_data_index_manifest_path,
         refresh_mode=refresh_mode,
         require_data_freeze=args.require_data_freeze,
         pretty_config={"command": args.command},

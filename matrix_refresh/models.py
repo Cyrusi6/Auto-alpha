@@ -17,6 +17,10 @@ class MatrixRefreshPlan:
     recommendation: str
     reasons: list[str]
     config: dict[str, Any] = field(default_factory=dict)
+    raw_data_index_status: str | None = None
+    raw_data_index_hash: str | None = None
+    source_dataset_index_count: int = 0
+    datasets_missing_index: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -29,6 +33,8 @@ class MatrixSourceDiff:
     matrix_hash: str | None
     drift_count: int
     issues: list[dict[str, Any]] = field(default_factory=list)
+    raw_data_index_status: str | None = None
+    raw_data_index_hash: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -43,6 +49,8 @@ class MatrixFreshnessReport:
     source_hash: str | None
     matrix_hash: str | None
     issues: list[dict[str, Any]]
+    raw_data_index_status: str | None = None
+    raw_data_index_hash: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

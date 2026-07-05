@@ -32,6 +32,8 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--expected-security-count", type=int)
     parser.add_argument("--profile-name")
     parser.add_argument("--index-codes", default="000300.SH")
+    parser.add_argument("--raw-data-index-manifest-path")
+    parser.add_argument("--require-raw-data-index", action="store_true")
     parser.add_argument("--fail-on-blocker", action="store_true")
     parser.add_argument("--pretty", action="store_true")
 
@@ -48,6 +50,8 @@ def main(argv: list[str] | None = None) -> int:
         index_codes=_split(args.index_codes),
         core_datasets=_split(args.core_datasets) or None,
         required_expanded_datasets=_split(args.required_expanded_datasets) or None,
+        raw_data_index_manifest_path=args.raw_data_index_manifest_path,
+        require_raw_data_index=args.require_raw_data_index,
     )
     paths = write_landing_artifacts(report, args.output_dir)
     payload = {"status": report.freeze_readiness.status, "summary": report.summary, "paths": paths}

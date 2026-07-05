@@ -1482,6 +1482,24 @@ class AshareDashboardService:
                 return frame
         return pd.DataFrame()
 
+    def load_raw_data_index_manifest(self) -> dict[str, Any]:
+        return self._read_first_json(self._raw_data_index_candidates("raw_data_index_manifest.json"))
+
+    def load_raw_dataset_indexes(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._raw_data_index_candidates("raw_dataset_indexes.jsonl"))
+
+    def load_raw_partitions(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._raw_data_index_candidates("raw_partitions.jsonl"))
+
+    def load_raw_data_index_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._raw_data_index_candidates("raw_data_index_report.json"))
+
+    def load_raw_data_index_validation_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._raw_data_index_candidates("raw_data_index_validation_report.json"))
+
+    def load_raw_data_index_issues(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._raw_data_index_candidates("raw_data_index_issues.jsonl"))
+
     def load_research_data_readiness_report(self) -> dict[str, Any]:
         return self._read_first_json(self._research_readiness_candidates("research_data_readiness_report.json"))
 
@@ -2062,6 +2080,22 @@ class AshareDashboardService:
             root / "landing" / filename,
             root / "raw_data_landing" / filename,
             self.config.data_dir / filename,
+        ]
+
+    def _raw_data_index_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.raw_data_index_dir / filename,
+            self.config.data_dir / "raw_data_index" / filename,
+            self.config.real_data_dir / "raw_index_latest" / filename,
+            self.config.real_data_dir / "raw_data_index" / filename,
+            root / "raw_data_index" / filename,
+            root / "raw_index_latest" / filename,
+            root / "post_download" / "raw_index_latest" / filename,
+            root / "real_data" / "raw_index_latest" / filename,
+            root / "real_data_sample" / "raw_index_latest" / filename,
+            root / "real_data_fake_tushare" / "raw_index_latest" / filename,
+            root / filename,
         ]
 
     def _backfill_repair_candidates(self, filename: str) -> list[Path]:

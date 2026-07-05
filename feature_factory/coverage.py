@@ -14,6 +14,7 @@ def build_feature_coverage_report(
     manifest: FeatureSetManifest,
     tensor: torch.Tensor,
     warnings: list[str] | None = None,
+    raw_data_index_summary: dict[str, Any] | None = None,
 ) -> FeatureCoverageReport:
     feature_warnings = warnings or []
     summaries: list[dict[str, Any]] = []
@@ -41,4 +42,6 @@ def build_feature_coverage_report(
         warnings=feature_warnings,
         feature_summaries=summaries,
         created_at=datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        raw_data_index_used=bool((raw_data_index_summary or {}).get("raw_data_index_used", False)),
+        dataset_index_status=dict(raw_data_index_summary or {}),
     )

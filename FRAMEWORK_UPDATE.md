@@ -2213,3 +2213,23 @@
 ### Follow-Ups
 - Do not promote real weak-PIT expanded features until the active Tushare backfill, repair, freeze, and v3 feature build artifacts exist and reviewers have inspected evidence.
 - Treat feature promotion as an availability/leakage control only; factor quality still requires validation, certification, portfolio certification, and production approval gates.
+
+## Task 048-A - Raw Data Index And Partition Manifests
+
+- Added `raw_data_index/`, a streaming sidecar index layer for governed raw JSONL datasets. It scans `dataset/records.jsonl` line-by-line, computes file hashes, record counts, date ranges, stock/index coverage, parse-error counts, duplicate-key estimates, null summaries, and monthly/daily/hash-bucket partition manifests without changing the underlying storage format.
+- Added active-download safety: recent running backfill state blocks full index build by default, `plan` stays read-only, and output can be kept outside the active `data_dir` unless an operator explicitly writes sidecars there.
+- Integrated raw index manifests with `raw_data_landing`, `matrix_refresh`, `matrix_store`, `feature_factory`, `data_lake`, and `post_download_orchestrator`. Fresh indexes can provide source hashes and fast dataset coverage summaries; missing or stale indexes warn and fall back to existing scan paths.
+- Extended `monitoring`, `dashboard`, `artifact_schema`, `release_manager`, local CI, packaging metadata, and `performance_benchmark` for raw data index artifacts and timing checks.
+- Added offline tests for build/validate/stale detection, active-run blocking, raw landing index use, matrix refresh index metadata, feature coverage metadata, monitoring/dashboard reads, post-download planning, schema validation, and old-term scanning.
+
+### New Artifacts
+- `raw_data_index_manifest.json`
+- `raw_dataset_indexes.jsonl`
+- `raw_partitions.jsonl`
+- `raw_data_index_report.json/md`
+- `raw_data_index_validation_report.json`
+- `raw_data_index_issues.jsonl`
+
+### Follow-Ups
+- Do not build a full raw index on the active real Tushare download directory until backfill, repair, and freeze readiness are stable.
+- Future optimization can add partition-aware random access and parallel index build after the sidecar manifests are proven on frozen full-market data.

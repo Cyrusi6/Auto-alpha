@@ -7,7 +7,7 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
-from .diff import diff_matrix_source
+from .diff import diff_matrix_source, raw_data_index_info
 from .models import MatrixRefreshPlan
 
 
@@ -21,9 +21,11 @@ def build_matrix_refresh_plan(
     feature_set_name: str = "ashare_features_v1",
     feature_set_manifest_path: str | Path | None = None,
     feature_promotion_policy_path: str | Path | None = None,
+    raw_data_index_manifest_path: str | Path | None = None,
     config: dict[str, Any] | None = None,
 ) -> MatrixRefreshPlan:
-    diff = diff_matrix_source(data_dir, matrix_cache_dir, data_version_manifest_path)
+    diff = diff_matrix_source(data_dir, matrix_cache_dir, data_version_manifest_path, raw_data_index_manifest_path)
+    index_info = raw_data_index_info(raw_data_index_manifest_path)
     metadata_exists = (Path(matrix_cache_dir) / "metadata.json").exists()
     feature_drift = _feature_set_drift(matrix_cache_dir, feature_set_name, feature_set_manifest_path, feature_promotion_policy_path)
     reasons: list[str] = []
@@ -41,6 +43,9 @@ def build_matrix_refresh_plan(
     elif feature_drift.get("promotion_policy_drift"):
         recommendation = "full_rebuild"
         reasons.append("feature_promotion_policy_hash_drift")
+    elif index_info.get("status") in {"stale", "failed"}:
+        recommendation = "full_rebuild"
+        reasons.append("raw_data_index_not_fresh")
     elif diff.status == "fresh":
         recommendation = "skip"
         reasons.append("matrix_cache_fresh")
@@ -56,7 +61,11 @@ def build_matrix_refresh_plan(
         matrix_hash=diff.matrix_hash,
         recommendation=recommendation,
         reasons=reasons,
-        config=dict(config or {}) | {"feature_set": feature_drift},
+        config=dict(config or {}) | {"feature_set": feature_drift, "raw_data_index": index_info},
+        raw_data_index_status=index_info.get("status"),
+        raw_data_index_hash=index_info.get("index_hash"),
+        source_dataset_index_count=int(index_info.get("dataset_count", 0) or 0),
+        datasets_missing_index=list(index_info.get("datasets_missing_index", []) or []),
     )
 
 

@@ -205,6 +205,24 @@ def main(argv: list[str] | None = None) -> int:
             ],
         ),
         (
+            "raw_data_index_smoke",
+            [
+                sys.executable,
+                "-m",
+                "raw_data_index.run_index",
+                "smoke",
+                "--data-dir",
+                str(sample_data_dir),
+                "--output-dir",
+                str(quick_dir / "raw_data_index"),
+                "--datasets",
+                "securities,trade_calendar,daily_bars,daily_basic",
+                "--partition-granularity",
+                "monthly",
+                "--pretty",
+            ],
+        ),
+        (
             "backfill_repair_dry_run_smoke",
             [
                 sys.executable,

@@ -13,8 +13,9 @@ def validate_matrix_freshness(
     data_dir: str | Path,
     matrix_cache_dir: str | Path,
     data_version_manifest_path: str | Path | None = None,
+    raw_data_index_manifest_path: str | Path | None = None,
 ) -> MatrixFreshnessReport:
-    diff = diff_matrix_source(data_dir, matrix_cache_dir, data_version_manifest_path)
+    diff = diff_matrix_source(data_dir, matrix_cache_dir, data_version_manifest_path, raw_data_index_manifest_path)
     metadata_path = Path(matrix_cache_dir) / "metadata.json"
     issues = list(diff.issues)
     n_stocks = 0
@@ -44,4 +45,6 @@ def validate_matrix_freshness(
         source_hash=diff.source_hash,
         matrix_hash=diff.matrix_hash,
         issues=issues,
+        raw_data_index_status=diff.raw_data_index_status,
+        raw_data_index_hash=diff.raw_data_index_hash,
     )

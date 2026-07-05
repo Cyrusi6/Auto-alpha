@@ -75,6 +75,7 @@ def build_matrix_cache(
     require_data_freeze: bool = False,
     feature_set_name: str = "ashare_features_v1",
     feature_set_manifest_path: str | Path | None = None,
+    raw_data_index_manifest_path: str | Path | None = None,
 ) -> MatrixCacheBuildResult:
     """Build a deterministic local matrix cache from JSONL datasets."""
 
@@ -158,11 +159,13 @@ def build_matrix_cache(
     manifest_payload = _feature_manifest_payload(feature_set_manifest_path)
     promotion_summary = dict(manifest_payload.get("feature_promotion_summary", {}))
     promotion_hash = manifest_payload.get("feature_promotion_policy_hash")
+    raw_index_payload = _raw_data_index_payload(raw_data_index_manifest_path)
+    raw_index_hash = _fresh_raw_index_hash(raw_index_payload)
     cache_hash = _stable_cache_hash(
         loader.ts_codes,
         loader.trade_dates,
         requested_fields,
-        source_manifest_hash,
+        raw_index_hash or source_manifest_hash,
         quality_report_hash,
     )
     metadata = {
@@ -172,6 +175,9 @@ def build_matrix_cache(
         "n_dates": len(loader.trade_dates),
         "fields": requested_fields,
         "source_manifest_hash": source_manifest_hash,
+        "raw_data_index_manifest_path": str(raw_data_index_manifest_path) if raw_data_index_manifest_path else None,
+        "raw_data_index_hash": raw_index_hash,
+        "source_dataset_indexes": _source_dataset_indexes(raw_index_payload),
         "quality_report_hash": quality_report_hash,
         "cache_hash": cache_hash,
         "universe_file": str(universe_file) if universe_file is not None else None,
@@ -207,7 +213,7 @@ def build_matrix_cache(
         "dataset_version_id": _dataset_version_id(data_version_manifest_path),
         "data_freeze_id": data_freeze_id or freeze_report.freeze_id,
         "data_freeze_hash": freeze_report.content_hash,
-        "source_content_hash": _source_content_hash(data_version_manifest_path) or freeze_report.content_hash,
+        "source_content_hash": raw_index_hash or _source_content_hash(data_version_manifest_path) or freeze_report.content_hash,
         "freeze_validation_status": freeze_report.status,
         "source_data_hashes": _source_hashes(data_version_manifest_path),
     }
@@ -299,6 +305,44 @@ def _source_content_hash(path: str | Path | None) -> str | None:
         return None
     content_hash = payload.get("content_hash")
     return str(content_hash) if content_hash else None
+
+
+def _raw_data_index_payload(path: str | Path | None) -> dict:
+    if path is None:
+        return {}
+    target = Path(path)
+    if not target.exists():
+        return {}
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _fresh_raw_index_hash(payload: dict) -> str | None:
+    if payload.get("status") != "fresh":
+        return None
+    value = payload.get("index_hash")
+    return str(value) if value else None
+
+
+def _source_dataset_indexes(payload: dict) -> list[dict[str, object]]:
+    rows = payload.get("datasets", []) if isinstance(payload, dict) else []
+    out: list[dict[str, object]] = []
+    for item in rows if isinstance(rows, list) else []:
+        if not isinstance(item, dict):
+            continue
+        out.append(
+            {
+                "dataset": item.get("dataset"),
+                "records_sha256": item.get("records_sha256"),
+                "record_count": item.get("record_count"),
+                "file_size_bytes": item.get("file_size_bytes"),
+                "status": item.get("status"),
+            }
+        )
+    return out
 
 
 def _stable_cache_hash(

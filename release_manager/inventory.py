@@ -69,6 +69,7 @@ PLATFORM_MODULES = [
     "production_replay",
     "reconciliation_center",
     "raw_data_landing",
+    "raw_data_index",
     "real_data_ops",
     "research",
     "research_data_readiness",

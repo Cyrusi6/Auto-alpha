@@ -52,6 +52,7 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--corporate-actions-report-path")
     parser.add_argument("--real-data-sla-report-path")
     parser.add_argument("--matrix-refresh-report-path")
+    parser.add_argument("--raw-data-index-manifest-path")
     parser.add_argument("--real-data-size-report-path")
     parser.add_argument("--matrix-cache-dir")
     parser.add_argument("--artifact-dir", action="append", default=[])
@@ -167,6 +168,9 @@ def _create_version(args: argparse.Namespace, registry: LocalDataLakeRegistry) -
         real_data_sla_status=_status_from_report(args.real_data_sla_report_path),
         matrix_cache_dir=args.matrix_cache_dir,
         matrix_refresh_report_path=args.matrix_refresh_report_path,
+        raw_data_index_manifest_path=args.raw_data_index_manifest_path,
+        raw_data_index_hash=_raw_index_field(args.raw_data_index_manifest_path, "index_hash"),
+        raw_data_index_status=_raw_index_field(args.raw_data_index_manifest_path, "status"),
         real_data_size_report_path=args.real_data_size_report_path,
         latest_trade_date=max((item.last_date or "" for item in fingerprints), default="") or None,
         data_version_status=args.status,
@@ -200,6 +204,7 @@ def _artifact_paths(args: argparse.Namespace) -> dict[str, str | None]:
         "corporate_actions_report_path": args.corporate_actions_report_path,
         "real_data_sla_report_path": args.real_data_sla_report_path,
         "matrix_refresh_report_path": args.matrix_refresh_report_path,
+        "raw_data_index_manifest_path": args.raw_data_index_manifest_path,
         "real_data_size_report_path": args.real_data_size_report_path,
     }
 
@@ -228,6 +233,20 @@ def _profile_id_from_report(path: str | None) -> str | None:
     except json.JSONDecodeError:
         return None
     return payload.get("profile", {}).get("profile_id") or payload.get("summary", {}).get("profile_id")
+
+
+def _raw_index_field(path: str | None, key: str) -> str | None:
+    if not path:
+        return None
+    target = Path(path)
+    if not target.exists():
+        return None
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    value = payload.get(key)
+    return str(value) if value is not None else None
 
 
 if __name__ == "__main__":

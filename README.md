@@ -12,6 +12,7 @@ The current implementation is local-first. It uses deterministic sample data and
 - `backfill_observer/`: Read-only running-backfill observer, progress/ETA reports, repair commands, and postprocess plans.
 - `backfill_repair/`: Explicit repair batch planner/runner for failed, quarantined, missing, empty, rate-limited, or timed-out backfill jobs; defaults to dry-run and blocks real data paths unless explicitly allowed.
 - `raw_data_landing/`: Read-only raw JSONL landing QA, coverage matrix, duplicate-key checks, and freeze readiness gate.
+- `raw_data_index/`: Streaming sidecar index for raw `records.jsonl` files; writes dataset summaries, hashes, date/security coverage, partition manifests, freshness validation, and active-download safety reports without changing the JSONL storage format.
 - `research_data_readiness/`: Research-readiness gate that combines raw landing QA, running backfill progress, PIT safety, matrix freshness, and feature-family readiness.
 - `post_download_orchestrator/`: Plan-first post-download workflow generator and local state machine for observer, landing QA, repair review, compact/validate/stats, data lake freeze, PIT/leakage, matrix refresh, schema validation, freeze candidate packages, and research smoke.
 - `data_lake/`: Dataset fingerprints, dataset version registry, immutable research freezes, freeze validation, lineage graphs, and retention reports.
@@ -269,6 +270,33 @@ uv run python -m raw_data_landing.run_landing report \
 
 `backfill_observer` writes progress, ETA, repair plan, postprocess plan, and issue artifacts. Repair commands are review-only until an operator chooses to run them. `raw_data_landing` streams landed `records.jsonl` files, estimates duplicate primary keys, summarizes date/security coverage, and writes a freeze-readiness decision that can block compact/freeze/matrix/Alpha Factory preparation when core data is incomplete.
 
+`raw_data_index/` builds a separate sidecar index for stable or frozen raw JSONL directories. It does not rewrite `records.jsonl`; it writes `raw_data_index_manifest.json`, `raw_dataset_indexes.jsonl`, `raw_partitions.jsonl`, validation reports, and issue JSONL. For active download directories, run only the plan command unless an operator explicitly allows active-run indexing:
+
+```bash
+uv run python -m raw_data_index.run_index plan \
+  --data-dir /path/to/ashare_lake/data \
+  --run-dir /path/to/ashare_lake/runs/full_20100101_20260630 \
+  --output-dir /path/to/ashare_lake/reports/raw_index_plan_latest \
+  --profile-name full_research_data \
+  --start-date 20100101 \
+  --end-date 20260630 \
+  --read-only \
+  --plan-only \
+  --pretty
+```
+
+After the download, repair, and freeze readiness gates are stable, build and validate the sidecar index against a frozen or otherwise stable data directory:
+
+```bash
+uv run python -m raw_data_index.run_index build \
+  --data-dir /path/to/freeze_or_stable_data \
+  --output-dir /path/to/reports/raw_index_latest \
+  --profile-name full_research_data \
+  --partition-granularity monthly \
+  --read-only \
+  --pretty
+```
+
 You can also assess research readiness while a download is still running. This is read-only and writes only report artifacts:
 
 ```bash
@@ -320,7 +348,7 @@ uv run python -m post_download_orchestrator.run_post_download plan \
   --pretty
 ```
 
-Do not run post-download `--execute` until the active backfill is finished, repair reports are clean, and readiness blockers are cleared. `--allow-incomplete` is diagnostic-only; it does not create freeze or matrix artifacts. A successful post-download run writes step state, step runs, events, a freeze candidate package, a final package, and an artifact catalog before any downstream Alpha Factory work is considered.
+Do not run post-download `--execute` until the active backfill is finished, repair reports are clean, and readiness blockers are cleared. `--allow-incomplete` is diagnostic-only; it does not create freeze or matrix artifacts. The generated plan now includes raw-data-index plan/build/validate steps; the plan step stays diagnostic while build/validate remain blocked until readiness is green. A successful post-download run writes step state, step runs, events, a freeze candidate package, a final package, and an artifact catalog before any downstream Alpha Factory work is considered.
 
 After governed sync or backfill, register a dataset version and freeze research input data. A freeze copies or hardlinks local JSONL records plus universe artifacts, writes hashes and manifests, and can be required by matrix build, research suite, backtest, and operations commands:
 
@@ -607,6 +635,17 @@ uv run python -m matrix_refresh.run_matrix_refresh refresh \
   --matrix-cache-dir /tmp/auto-alpha-demo/data/matrix_cache \
   --output-dir /tmp/auto-alpha-demo/matrix_refresh \
   --refresh-mode skip_if_fresh \
+  --pretty
+```
+
+Matrix cache and refresh commands can also record and compare a raw-data-index manifest. When the index is fresh, source hashing can use the sidecar index hash; when it is stale or missing, refresh reports surface a warning and fall back to the existing scan/hash path:
+
+```bash
+uv run python -m matrix_refresh.run_matrix_refresh plan \
+  --data-dir /tmp/auto-alpha-demo/data \
+  --matrix-cache-dir /tmp/auto-alpha-demo/data/matrix_cache \
+  --output-dir /tmp/auto-alpha-demo/matrix_refresh \
+  --raw-data-index-manifest-path /tmp/auto-alpha-demo/raw_index/raw_data_index_manifest.json \
   --pretty
 ```
 
@@ -1253,7 +1292,7 @@ uv run python -m feature_factory.run_features build \
   --pretty
 ```
 
-v3 builds write `feature_family_readiness.json`, `feature_pit_alignment_report.json`, and `feature_build_warnings.jsonl` in addition to the usual manifest, coverage, values summary, tensor, and build-result artifacts. `matrix_store` and `matrix_refresh` record the feature-set hash and recommend a full rebuild when the v3 catalog or PIT/corporate/target-return flags drift.
+v3 builds write `feature_family_readiness.json`, `feature_pit_alignment_report.json`, and `feature_build_warnings.jsonl` in addition to the usual manifest, coverage, values summary, tensor, and build-result artifacts. `feature_factory` can optionally read a raw-data-index manifest to quickly check required dataset existence and coverage before tensor work. `matrix_store` and `matrix_refresh` record the feature-set hash and recommend a full rebuild when the v3 catalog or PIT/corporate/target-return flags drift.
 
 `alpha_factory/` is the campaign-level candidate funnel. It records campaign lineage, feature-set metadata, generator source budgets, random seed, compute configuration, static DSL checks, cheap proxy evaluation, optional `formula_batch_eval` full evaluation, novelty/diversity scoring, and shortlist artifacts:
 
@@ -1630,12 +1669,12 @@ Promotion does not prove alpha quality. It only creates a traceable availability
 
 ## Current Gaps
 
-- Tushare HTTP provider, production sync scaffolding, governed backfill plans, read-only running-backfill observation, explicit repair batches, raw landing QA, research-readiness gates, post-download state-machine orchestration, freeze candidate packages, offline fake smoke, gated online smoke/backfill, permission/rate diagnostics, audit summary, incremental recovery checks, baseline comparison, dataset versioning, research freezes, real-data runbooks, SLA checks, storage-size reports, and incremental matrix refresh are available; production use still requires real token/quota operation, real full-market performance runs, and more provider pairs.
+- Tushare HTTP provider, production sync scaffolding, governed backfill plans, read-only running-backfill observation, explicit repair batches, raw landing QA, raw sidecar indexes, research-readiness gates, post-download state-machine orchestration, freeze candidate packages, offline fake smoke, gated online smoke/backfill, permission/rate diagnostics, audit summary, incremental recovery checks, baseline comparison, dataset versioning, research freezes, real-data runbooks, SLA checks, storage-size reports, and incremental matrix refresh are available; production use still requires real token/quota operation, real full-market performance runs, and more provider pairs.
 - Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
 - Local daily simulation supports A-share constraints, pre-trade risk controls, local kill switch, override approvals, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, settlement-aware paper accounting, lot cost, realized PnL, NAV reconciliation, generic statement import, external account mirroring, EOD break management, and execution quality reports; future work should add finer real-world matching, minute-level volume modeling, verified real broker statement mappings, richer limit policies, and real broker connectivity.
 - Local formula search, batch formula evaluation, formula corpus construction, offline AlphaGPT supervised pretraining, a first neural-guided policy-search path, and a local CPU/GPU compute scheduler are available; future work should add stronger reinforcement learning, larger offline corpora, more operators, true full-market 4-GPU stress runs, richer DDP training, and broader stability validation.
 - Feature Factory v2/v3, feature-readiness cataloging, PIT-alignment reporting, feature promotion policy/evidence/allowlist gates, and Alpha Factory campaign funnels are available locally; future work should calibrate expanded v3 feature definitions and promotion rules on real freezes, calibrate proxy scores with longer histories, and run large GPU-backed campaigns outside default CI.
-- Matrix cache, incremental matrix refresh, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs and more provider pairs.
+- Matrix cache, raw JSONL sidecar indexes, incremental matrix refresh, local performance benchmark, and data-source comparison skeletons are available; future work should add real full-market stress runs, finer partition-aware random access, and more provider pairs.
 - One-click research suites now provide local walk-forward, promotion gates, model registry records, lifecycle review packages, active deployment state, and rollback artifacts; daily operations can require an active governed model. Future work should add richer lifecycle policies and external review workflow integrations.
 - Portfolio Lab and Portfolio Certification provide local policy-grid robustness checks, certified portfolio policy packages, optimizer-policy registration, and activation approval gates. Sample certification is only a smoke path; real certification should be tied to a governed data freeze and longer production review windows.
 - Broker adapter, safe read-only UAT connectivity shell, read-only account mirror, dry-run file outbox gateway, mapping certification, operator handoff packages, local compliance evidence packs, BrokerAdapter UAT, Go/No-Go scorecards, broker statement import, settlement profiles, EOD reconciliation, account ledger, production-day orchestration, multi-day replay, shadow lab, live readiness, shadow-only simulation, and incident response are local/review infrastructure only. No real order submission, cancellation, replacement, automatic live trading, verified QMT/broker compatibility, regulatory filing automation, legal opinion, or tax reporting interface is implemented.

@@ -965,6 +965,45 @@ def check_raw_data_landing(report_path: str | Path | None) -> tuple[dict[str, An
     }, alerts
 
 
+def check_raw_data_index(
+    manifest_path: str | Path | None,
+    report_path: str | Path | None = None,
+    validation_report_path: str | Path | None = None,
+) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    manifest = _read_json(Path(manifest_path)) if manifest_path else {}
+    report = _read_json(Path(report_path)) if report_path else {}
+    validation = _read_json(Path(validation_report_path)) if validation_report_path else {}
+    source = manifest or report
+    summary = report.get("summary", {}) if isinstance(report.get("summary"), dict) else {}
+    status = str((validation or {}).get("status") or source.get("status") or summary.get("raw_data_index_status") or "")
+    dataset_count = int(source.get("dataset_count", summary.get("raw_data_index_dataset_count", 0)) or 0) if source else 0
+    record_count = int(source.get("total_records", summary.get("raw_data_index_record_count", 0)) or 0) if source else 0
+    size_bytes = int(source.get("total_size_bytes", 0) or 0) if source else int(float(summary.get("raw_data_index_size_gb", 0.0) or 0.0) * (1024**3))
+    parse_errors = int(source.get("total_parse_errors", summary.get("raw_data_index_parse_error_count", 0)) or 0) if source else 0
+    stale = int((validation or {}).get("stale_dataset_count", summary.get("raw_data_index_stale_dataset_count", 0)) or 0)
+    missing = int((validation or {}).get("missing_dataset_count", 0) or 0)
+    active_blocked = bool(report.get("active_run_blocked", False)) if report else False
+    alerts: list[MonitoringAlert] = []
+    if status in {"failed", "stale"}:
+        alerts.append(MonitoringAlert("warning", "raw_data_index", "raw data index is not fresh", {"status": status, "stale_dataset_count": stale}))
+    if parse_errors:
+        alerts.append(MonitoringAlert("warning", "raw_data_index", "raw data index captured parse errors", {"parse_error_count": parse_errors}))
+    if active_blocked:
+        alerts.append(MonitoringAlert("warning", "raw_data_index", "raw data index build was blocked by active run safety"))
+    return {
+        "exists": bool(source or validation),
+        "raw_data_index_status": status,
+        "raw_data_index_dataset_count": dataset_count,
+        "raw_data_index_record_count": record_count,
+        "raw_data_index_size_gb": size_bytes / (1024**3),
+        "raw_data_index_parse_error_count": parse_errors,
+        "raw_data_index_stale_dataset_count": stale,
+        "raw_data_index_missing_core_count": missing,
+        "raw_data_index_active_run_blocked": active_blocked,
+        "raw_data_index_hash": source.get("index_hash") if source else None,
+    }, alerts
+
+
 def check_raw_freeze_readiness(decision_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     payload = _read_json(Path(decision_path)) if decision_path else {}
     status = str(payload.get("status") or "")

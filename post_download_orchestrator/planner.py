@@ -23,7 +23,7 @@ READY_STATUSES = {
     "ready_for_core_alpha",
 }
 
-DIAGNOSTIC_STEPS = {"refresh_observer", "raw_landing_qa", "research_readiness", "repair_required_check"}
+DIAGNOSTIC_STEPS = {"refresh_observer", "raw_landing_qa", "research_readiness", "repair_required_check", "raw_data_index_plan"}
 
 
 def build_post_download_plan(
@@ -54,6 +54,7 @@ def build_post_download_plan(
     observer_out = root / "observer_latest"
     landing_out = root / "raw_landing_latest"
     readiness_out = root / "research_readiness_latest"
+    raw_index_out = root / "raw_index_latest"
     schema_out = root / "schema_validation"
     commands = [
         (
@@ -75,6 +76,11 @@ def build_post_download_plan(
             "repair_required_check",
             "Review repair plan before any mutation.",
             f"uv run python -m backfill_repair.run_repair plan --run-dir {run_dir or '<run_dir>'} --data-dir {data_dir} --output-dir {root / 'repair'} --repair-plan-path {observer_out / 'backfill_repair_plan.json'} --pretty",
+        ),
+        (
+            "raw_data_index_plan",
+            "Plan sidecar raw JSONL index build without scanning active data.",
+            f"uv run python -m raw_data_index.run_index plan --data-dir {data_dir} --run-dir {run_dir or '<run_dir>'} --output-dir {raw_index_out} --profile-name {profile_name or 'research_data'} --start-date {start_date or '<start_date>'} --end-date {end_date or '<end_date>'} --read-only --plan-only --pretty",
         ),
         (
             "compact",
@@ -99,7 +105,17 @@ def build_post_download_plan(
         (
             "data_lake_create_version",
             "Create a governed dataset version manifest.",
-            f"uv run python -m data_lake.run_lake create-version --data-dir {data_dir} --registry-dir {registry} --output-dir {root / 'data_lake'} --pretty",
+            f"uv run python -m data_lake.run_lake create-version --data-dir {data_dir} --registry-dir {registry} --output-dir {root / 'data_lake'} --raw-data-index-manifest-path {raw_index_out / 'raw_data_index_manifest.json'} --pretty",
+        ),
+        (
+            "raw_data_index_build",
+            "Build sidecar raw JSONL index after download and repair are stable.",
+            f"uv run python -m raw_data_index.run_index build --data-dir {data_dir} --run-dir {run_dir or '<run_dir>'} --output-dir {raw_index_out} --profile-name {profile_name or 'research_data'} --start-date {start_date or '<start_date>'} --end-date {end_date or '<end_date>'} --read-only --pretty",
+        ),
+        (
+            "raw_data_index_validate",
+            "Validate sidecar raw JSONL index freshness.",
+            f"uv run python -m raw_data_index.run_index validate --data-dir {data_dir} --output-dir {raw_index_out} --pretty",
         ),
         (
             "data_lake_promote_candidate",
@@ -134,22 +150,22 @@ def build_post_download_plan(
         (
             "matrix_refresh",
             "Legacy matrix refresh compatibility step.",
-            f"uv run python -m matrix_refresh.run_matrix_refresh refresh --data-dir {data_dir} --matrix-cache-dir {matrix} --output-dir {root / 'matrix_refresh'} --refresh-mode full_rebuild --pretty",
+            f"uv run python -m matrix_refresh.run_matrix_refresh refresh --data-dir {data_dir} --matrix-cache-dir {matrix} --output-dir {root / 'matrix_refresh'} --raw-data-index-manifest-path {raw_index_out / 'raw_data_index_manifest.json'} --refresh-mode full_rebuild --pretty",
         ),
         (
             "matrix_refresh_plan",
             "Plan matrix cache refresh.",
-            f"uv run python -m matrix_refresh.run_matrix_refresh plan --data-dir {data_dir} --matrix-cache-dir {matrix} --output-dir {root / 'matrix_refresh'} --pretty",
+            f"uv run python -m matrix_refresh.run_matrix_refresh plan --data-dir {data_dir} --matrix-cache-dir {matrix} --output-dir {root / 'matrix_refresh'} --raw-data-index-manifest-path {raw_index_out / 'raw_data_index_manifest.json'} --pretty",
         ),
         (
             "matrix_refresh_execute",
             "Refresh matrix cache after freeze validation.",
-            f"uv run python -m matrix_refresh.run_matrix_refresh refresh --data-dir {data_dir} --matrix-cache-dir {matrix} --output-dir {root / 'matrix_refresh'} --refresh-mode full_rebuild --pretty",
+            f"uv run python -m matrix_refresh.run_matrix_refresh refresh --data-dir {data_dir} --matrix-cache-dir {matrix} --output-dir {root / 'matrix_refresh'} --raw-data-index-manifest-path {raw_index_out / 'raw_data_index_manifest.json'} --refresh-mode full_rebuild --pretty",
         ),
         (
             "matrix_freshness_validate",
             "Validate matrix cache freshness.",
-            f"uv run python -m matrix_refresh.run_matrix_refresh validate --data-dir {data_dir} --matrix-cache-dir {matrix} --output-dir {root / 'matrix_refresh'} --pretty",
+            f"uv run python -m matrix_refresh.run_matrix_refresh validate --data-dir {data_dir} --matrix-cache-dir {matrix} --output-dir {root / 'matrix_refresh'} --raw-data-index-manifest-path {raw_index_out / 'raw_data_index_manifest.json'} --pretty",
         ),
         (
             "real_data_sla",

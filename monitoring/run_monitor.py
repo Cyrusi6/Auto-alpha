@@ -100,6 +100,7 @@ from .checks import (
     check_point_in_time_validation,
     check_provider_readiness,
     check_quality_report,
+    check_raw_data_index,
     check_raw_data_landing,
     check_raw_freeze_readiness,
     check_research_data_readiness,
@@ -235,6 +236,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--backfill-postprocess-plan-path")
     parser.add_argument("--raw-data-landing-report-path")
     parser.add_argument("--raw-freeze-readiness-decision-path")
+    parser.add_argument("--raw-data-index-manifest-path")
+    parser.add_argument("--raw-data-index-report-path")
+    parser.add_argument("--raw-data-index-validation-report-path")
     parser.add_argument("--research-data-readiness-report-path")
     parser.add_argument("--research-readiness-decision-path")
     parser.add_argument("--feature-readiness-catalog-path")
@@ -470,6 +474,14 @@ def main(argv: list[str] | None = None) -> int:
         ("backfill_stalled_dataset", lambda: check_backfill_stalled_dataset(args.backfill_observer_report_path)),
         ("backfill_repair", lambda: check_backfill_repair(args.backfill_repair_run_report_path, args.backfill_repair_batch_plan_path or args.backfill_repair_plan_path)),
         ("raw_data_landing", lambda: check_raw_data_landing(args.raw_data_landing_report_path)),
+        (
+            "raw_data_index",
+            lambda: check_raw_data_index(
+                args.raw_data_index_manifest_path,
+                args.raw_data_index_report_path,
+                args.raw_data_index_validation_report_path,
+            ),
+        ),
         ("raw_freeze_readiness", lambda: check_raw_freeze_readiness(args.raw_freeze_readiness_decision_path)),
         ("postprocess_plan_blockers", lambda: check_postprocess_plan_blockers(args.backfill_postprocess_plan_path)),
         ("research_data_readiness", lambda: check_research_data_readiness(args.research_data_readiness_report_path or args.research_readiness_decision_path)),

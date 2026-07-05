@@ -101,6 +101,30 @@ def render_app(config: DashboardConfig | None = None) -> None:
                 "dataset_stats": len(dataset_stats.get("datasets", [])),
             }
         )
+        raw_index_manifest = service.load_raw_data_index_manifest()
+        raw_index_report = service.load_raw_data_index_report()
+        raw_index_validation = service.load_raw_data_index_validation_report()
+        st.subheader("Raw Data Index")
+        if raw_index_manifest or raw_index_report:
+            summary = raw_index_report.get("summary", {}) if raw_index_report else {}
+            st.json(
+                {
+                    "status": raw_index_manifest.get("status") or raw_index_report.get("status"),
+                    "dataset_count": raw_index_manifest.get("dataset_count") or summary.get("raw_data_index_dataset_count", 0),
+                    "total_records": raw_index_manifest.get("total_records") or summary.get("raw_data_index_record_count", 0),
+                    "total_size_gb": summary.get("raw_data_index_size_gb", 0.0),
+                    "partition_count": raw_index_manifest.get("partition_count") or summary.get("raw_data_index_partition_count", 0),
+                    "parse_errors": raw_index_manifest.get("total_parse_errors") or summary.get("raw_data_index_parse_error_count", 0),
+                    "validation_status": raw_index_validation.get("status"),
+                    "stale_datasets": raw_index_validation.get("stale_dataset_count", 0) if raw_index_validation else 0,
+                    "index_hash": raw_index_manifest.get("index_hash"),
+                }
+            )
+        else:
+            st.info("No raw_data_index_manifest.json found.")
+        _show_dataframe_or_empty("Raw Dataset Indexes", service.load_raw_dataset_indexes())
+        _show_dataframe_or_empty("Raw Partition Summary", service.load_raw_partitions())
+        _show_dataframe_or_empty("Raw Data Index Issues", service.load_raw_data_index_issues())
         _show_dataframe_or_empty("API Request Audit", service.load_api_audit())
         _show_dataframe_or_empty("Snapshots", service.load_snapshot_summary())
         col1, col2 = st.columns(2)

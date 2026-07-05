@@ -58,6 +58,9 @@ class DatasetVersionRecord:
     real_data_sla_status: str | None = None
     matrix_cache_dir: str | None = None
     matrix_refresh_report_path: str | None = None
+    raw_data_index_manifest_path: str | None = None
+    raw_data_index_hash: str | None = None
+    raw_data_index_status: str | None = None
     real_data_size_report_path: str | None = None
     latest_trade_date: str | None = None
     data_staleness_days: int | None = None
