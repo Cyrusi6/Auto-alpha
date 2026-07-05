@@ -1500,6 +1500,30 @@ class AshareDashboardService:
     def load_raw_data_index_issues(self) -> pd.DataFrame:
         return self._read_first_jsonl(self._raw_data_index_candidates("raw_data_index_issues.jsonl"))
 
+    def load_data_quality_lab_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._data_quality_candidates("data_quality_lab_report.json"))
+
+    def load_data_quality_scorecard(self) -> dict[str, Any]:
+        return self._read_first_json(self._data_quality_candidates("data_quality_scorecard.json"))
+
+    def load_data_quality_rules(self) -> dict[str, Any]:
+        return self._read_first_json(self._data_quality_candidates("data_quality_rules.json"))
+
+    def load_data_quality_issues(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._data_quality_candidates("data_quality_issues.jsonl"))
+
+    def load_dataset_quality_summary(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._data_quality_candidates("dataset_quality_summary.jsonl"))
+
+    def load_cross_dataset_quality_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._data_quality_candidates("cross_dataset_quality_report.json"))
+
+    def load_data_quality_repair_suggestions(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._data_quality_candidates("data_quality_repair_suggestions.jsonl"))
+
+    def load_data_quality_freeze_gate(self) -> dict[str, Any]:
+        return self._read_first_json(self._data_quality_candidates("data_quality_freeze_gate.json"))
+
     def load_research_data_readiness_report(self) -> dict[str, Any]:
         return self._read_first_json(self._research_readiness_candidates("research_data_readiness_report.json"))
 
@@ -2095,6 +2119,22 @@ class AshareDashboardService:
             root / "real_data" / "raw_index_latest" / filename,
             root / "real_data_sample" / "raw_index_latest" / filename,
             root / "real_data_fake_tushare" / "raw_index_latest" / filename,
+            root / filename,
+        ]
+
+    def _data_quality_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.data_quality_lab_dir / filename,
+            self.config.real_data_dir / "data_quality_latest" / filename,
+            self.config.backfill_dir / "data_quality_latest" / filename,
+            root / "data_quality_lab" / filename,
+            root / "data_quality" / filename,
+            root / "data_quality_latest" / filename,
+            root / "post_download" / "data_quality_latest" / filename,
+            root / "real_data" / "data_quality_latest" / filename,
+            root / "real_data_sample" / "data_quality_latest" / filename,
+            root / "real_data_fake_tushare" / "data_quality_latest" / filename,
             root / filename,
         ]
 

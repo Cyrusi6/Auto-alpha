@@ -67,6 +67,7 @@ class MonitoringReport:
         backfill_quarantined = self.checks.get("backfill_quarantined_jobs", {}) if isinstance(self.checks, dict) else {}
         raw_landing = self.checks.get("raw_data_landing", {}) if isinstance(self.checks, dict) else {}
         raw_index = self.checks.get("raw_data_index", {}) if isinstance(self.checks, dict) else {}
+        data_quality = self.checks.get("data_quality_lab", {}) if isinstance(self.checks, dict) else {}
         raw_freeze = self.checks.get("raw_freeze_readiness", {}) if isinstance(self.checks, dict) else {}
         backfill_repair = self.checks.get("backfill_repair", {}) if isinstance(self.checks, dict) else {}
         postprocess_blockers = self.checks.get("postprocess_plan_blockers", {}) if isinstance(self.checks, dict) else {}
@@ -213,6 +214,14 @@ class MonitoringReport:
             "raw_data_index_parse_error_count": int(raw_index.get("raw_data_index_parse_error_count", 0) or 0) if isinstance(raw_index, dict) else 0,
             "raw_data_index_stale_dataset_count": int(raw_index.get("raw_data_index_stale_dataset_count", 0) or 0) if isinstance(raw_index, dict) else 0,
             "raw_data_index_missing_core_count": int(raw_index.get("raw_data_index_missing_core_count", 0) or 0) if isinstance(raw_index, dict) else 0,
+            "data_quality_status": str(data_quality.get("data_quality_status", "")) if isinstance(data_quality, dict) else "",
+            "data_quality_blocker_count": int(data_quality.get("data_quality_blocker_count", 0) or 0) if isinstance(data_quality, dict) else 0,
+            "data_quality_error_count": int(data_quality.get("data_quality_error_count", 0) or 0) if isinstance(data_quality, dict) else 0,
+            "data_quality_warning_count": int(data_quality.get("data_quality_warning_count", 0) or 0) if isinstance(data_quality, dict) else 0,
+            "core_quality_blocker_count": int(data_quality.get("core_quality_blocker_count", 0) or 0) if isinstance(data_quality, dict) else 0,
+            "expanded_quality_blocker_count": int(data_quality.get("expanded_quality_blocker_count", 0) or 0) if isinstance(data_quality, dict) else 0,
+            "data_quality_can_create_freeze": bool(data_quality.get("data_quality_can_create_freeze", False)) if isinstance(data_quality, dict) else False,
+            "data_quality_can_run_expanded_alpha": bool(data_quality.get("data_quality_can_run_expanded_alpha", False)) if isinstance(data_quality, dict) else False,
             "raw_freeze_readiness_status": str(raw_freeze.get("raw_freeze_readiness_status", "")) if isinstance(raw_freeze, dict) else "",
             "raw_freeze_blocker_count": int(raw_freeze.get("raw_freeze_blocker_count", 0) or 0) if isinstance(raw_freeze, dict) else 0,
             "repair_job_count": int(backfill_repair.get("repair_job_count", 0) or 0) if isinstance(backfill_repair, dict) else 0,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from artifact_schema.writer import utc_now, write_json_artifact, write_jsonl_artifact
@@ -26,6 +27,7 @@ def build_research_data_readiness_report(
     postprocess_plan_path: str | Path | None = None,
     real_data_sla_report_path: str | Path | None = None,
     matrix_freshness_report_path: str | Path | None = None,
+    data_quality_freeze_gate_path: str | Path | None = None,
     profile_name: str | None = None,
     strict: bool = False,
 ) -> ResearchDataReadinessReport:
@@ -46,6 +48,9 @@ def build_research_data_readiness_report(
         matrix_freshness_report_path=matrix_freshness_report_path,
     )
     decision = decide_research_readiness(dataset_checks, feature_readiness, summary, strict=strict)
+    data_quality_gate = _read_json(data_quality_freeze_gate_path)
+    if data_quality_gate:
+        decision = _apply_data_quality_gate(decision, data_quality_gate)
     summary.update(
         {
             "research_data_readiness_status": decision.status,
@@ -63,6 +68,12 @@ def build_research_data_readiness_report(
             "can_run_v3_expanded_alpha_factory": decision.can_run_v3_expanded_alpha_factory,
             "can_run_financial_alpha_factory": decision.can_run_financial_alpha_factory,
             "can_run_event_alpha_factory": decision.can_run_event_alpha_factory,
+            "data_quality_status": data_quality_gate.get("status", "") if data_quality_gate else "",
+            "data_quality_blocker_count": int(data_quality_gate.get("blocker_count", 0) or 0) if data_quality_gate else 0,
+            "data_quality_core_blocker_count": int(data_quality_gate.get("core_blocker_count", 0) or 0) if data_quality_gate else 0,
+            "data_quality_expanded_blocker_count": int(data_quality_gate.get("expanded_blocker_count", 0) or 0) if data_quality_gate else 0,
+            "data_quality_can_create_freeze": data_quality_gate.get("can_create_freeze") if data_quality_gate else None,
+            "data_quality_can_run_expanded_alpha": data_quality_gate.get("can_run_expanded_alpha") if data_quality_gate else None,
         }
     )
     now = utc_now()
@@ -176,3 +187,48 @@ def _family_status(feature_readiness, family: str) -> bool:
         if item.feature_family == family:
             return item.readiness_status in {"ready", "warning"} and not item.blockers
     return False
+
+
+def _read_json(path: str | Path | None) -> dict:
+    if not path or not Path(path).exists():
+        return {}
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _apply_data_quality_gate(decision, gate: dict):
+    can_freeze = bool(gate.get("can_create_freeze", True))
+    can_matrix = bool(gate.get("can_build_matrix", True))
+    can_core = bool(gate.get("can_run_core_alpha", True))
+    can_expanded = bool(gate.get("can_run_expanded_alpha", True))
+    core_blockers = int(gate.get("core_blocker_count", 0) or 0)
+    blockers = int(gate.get("blocker_count", 0) or 0)
+    reason = str(gate.get("recommended_next_action") or "semantic data quality gate is not ready")
+    remediations = list(decision.required_remediations)
+    if not can_freeze and reason not in remediations:
+        remediations.append(reason)
+    status = decision.status
+    blocked_reason = decision.blocked_reason
+    next_action = decision.next_required_action
+    if core_blockers or not can_freeze:
+        status = "not_ready"
+        blocked_reason = reason
+        next_action = reason
+    return replace(
+        decision,
+        status=status,
+        can_create_freeze=decision.can_create_freeze and can_freeze,
+        can_build_matrix=decision.can_build_matrix and can_matrix,
+        can_run_core_alpha_factory=decision.can_run_core_alpha_factory and can_core,
+        can_run_expanded_alpha_factory=decision.can_run_expanded_alpha_factory and can_expanded,
+        can_run_v3_expanded_alpha_factory=decision.can_run_v3_expanded_alpha_factory and can_expanded,
+        can_run_financial_alpha_factory=decision.can_run_financial_alpha_factory and can_expanded,
+        can_run_event_alpha_factory=decision.can_run_event_alpha_factory and can_expanded,
+        blocker_count=decision.blocker_count + blockers,
+        required_remediations=remediations,
+        blocked_reason=blocked_reason,
+        next_required_action=next_action,
+    )

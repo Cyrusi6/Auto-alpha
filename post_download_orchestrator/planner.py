@@ -23,7 +23,14 @@ READY_STATUSES = {
     "ready_for_core_alpha",
 }
 
-DIAGNOSTIC_STEPS = {"refresh_observer", "raw_landing_qa", "research_readiness", "repair_required_check", "raw_data_index_plan"}
+DIAGNOSTIC_STEPS = {
+    "refresh_observer",
+    "raw_landing_qa",
+    "research_readiness",
+    "repair_required_check",
+    "raw_data_index_plan",
+    "data_quality_plan",
+}
 
 
 def build_post_download_plan(
@@ -55,6 +62,7 @@ def build_post_download_plan(
     landing_out = root / "raw_landing_latest"
     readiness_out = root / "research_readiness_latest"
     raw_index_out = root / "raw_index_latest"
+    data_quality_out = root / "data_quality_latest"
     schema_out = root / "schema_validation"
     commands = [
         (
@@ -70,7 +78,7 @@ def build_post_download_plan(
         (
             "research_readiness",
             "Refresh the research data readiness gate.",
-            f"uv run python -m research_data_readiness.run_readiness assess --data-dir {data_dir} --run-dir {run_dir or '<run_dir>'} --raw-landing-report-path {landing_out / 'raw_data_landing_report.json'} --freeze-readiness-path {landing_out / 'raw_freeze_readiness_decision.json'} --output-dir {readiness_out} --profile-name {profile_name or 'research_data'} --expected-start-date {start_date or '<start_date>'} --expected-end-date {end_date or '<end_date>'} --pretty",
+            f"uv run python -m research_data_readiness.run_readiness assess --data-dir {data_dir} --run-dir {run_dir or '<run_dir>'} --raw-landing-report-path {landing_out / 'raw_data_landing_report.json'} --freeze-readiness-path {landing_out / 'raw_freeze_readiness_decision.json'} --data-quality-freeze-gate-path {data_quality_out / 'data_quality_freeze_gate.json'} --output-dir {readiness_out} --profile-name {profile_name or 'research_data'} --expected-start-date {start_date or '<start_date>'} --expected-end-date {end_date or '<end_date>'} --pretty",
         ),
         (
             "repair_required_check",
@@ -81,6 +89,11 @@ def build_post_download_plan(
             "raw_data_index_plan",
             "Plan sidecar raw JSONL index build without scanning active data.",
             f"uv run python -m raw_data_index.run_index plan --data-dir {data_dir} --run-dir {run_dir or '<run_dir>'} --output-dir {raw_index_out} --profile-name {profile_name or 'research_data'} --start-date {start_date or '<start_date>'} --end-date {end_date or '<end_date>'} --read-only --plan-only --pretty",
+        ),
+        (
+            "data_quality_plan",
+            "Plan semantic data quality checks without scanning active data.",
+            f"uv run python -m data_quality_lab.run_quality_lab plan --data-dir {data_dir} --raw-data-index-manifest-path {raw_index_out / 'raw_data_index_manifest.json'} --raw-landing-report-path {landing_out / 'raw_data_landing_report.json'} --output-dir {data_quality_out} --profile-name {profile_name or 'research_data'} --start-date {start_date or '<start_date>'} --end-date {end_date or '<end_date>'} --pretty",
         ),
         (
             "compact",
@@ -116,6 +129,21 @@ def build_post_download_plan(
             "raw_data_index_validate",
             "Validate sidecar raw JSONL index freshness.",
             f"uv run python -m raw_data_index.run_index validate --data-dir {data_dir} --output-dir {raw_index_out} --pretty",
+        ),
+        (
+            "data_quality_run",
+            "Run semantic QA over stable raw datasets and raw index.",
+            f"uv run python -m data_quality_lab.run_quality_lab run --data-dir {data_dir} --raw-data-index-manifest-path {raw_index_out / 'raw_data_index_manifest.json'} --raw-landing-report-path {landing_out / 'raw_data_landing_report.json'} --output-dir {data_quality_out} --profile-name {profile_name or 'research_data'} --start-date {start_date or '<start_date>'} --end-date {end_date or '<end_date>'} --use-raw-data-index --pretty",
+        ),
+        (
+            "data_quality_scorecard",
+            "Refresh semantic QA scorecard and repair suggestions.",
+            f"uv run python -m data_quality_lab.run_quality_lab scorecard --data-dir {data_dir} --raw-data-index-manifest-path {raw_index_out / 'raw_data_index_manifest.json'} --raw-landing-report-path {landing_out / 'raw_data_landing_report.json'} --output-dir {data_quality_out} --profile-name {profile_name or 'research_data'} --use-raw-data-index --pretty",
+        ),
+        (
+            "data_quality_freeze_gate",
+            "Review semantic QA freeze/matrix/alpha gate.",
+            f"uv run python -m research_data_readiness.run_readiness assess --data-dir {data_dir} --raw-landing-report-path {landing_out / 'raw_data_landing_report.json'} --freeze-readiness-path {landing_out / 'raw_freeze_readiness_decision.json'} --data-quality-freeze-gate-path {data_quality_out / 'data_quality_freeze_gate.json'} --output-dir {root / 'semantic_readiness'} --profile-name {profile_name or 'research_data'} --pretty",
         ),
         (
             "data_lake_promote_candidate",
@@ -180,7 +208,7 @@ def build_post_download_plan(
         (
             "final_research_readiness",
             "Refresh final research readiness after post-download steps.",
-            f"uv run python -m research_data_readiness.run_readiness assess --data-dir {data_dir} --output-dir {root / 'final_readiness'} --profile-name {profile_name or 'research_data'} --pretty",
+            f"uv run python -m research_data_readiness.run_readiness assess --data-dir {data_dir} --data-quality-freeze-gate-path {data_quality_out / 'data_quality_freeze_gate.json'} --output-dir {root / 'final_readiness'} --profile-name {profile_name or 'research_data'} --pretty",
         ),
         (
             "final_package",

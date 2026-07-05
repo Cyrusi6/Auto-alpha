@@ -125,6 +125,31 @@ def render_app(config: DashboardConfig | None = None) -> None:
         _show_dataframe_or_empty("Raw Dataset Indexes", service.load_raw_dataset_indexes())
         _show_dataframe_or_empty("Raw Partition Summary", service.load_raw_partitions())
         _show_dataframe_or_empty("Raw Data Index Issues", service.load_raw_data_index_issues())
+        data_quality_report = service.load_data_quality_lab_report()
+        data_quality_scorecard = service.load_data_quality_scorecard()
+        data_quality_freeze_gate = service.load_data_quality_freeze_gate()
+        st.subheader("Semantic Data Quality")
+        if data_quality_report or data_quality_scorecard or data_quality_freeze_gate:
+            st.json(
+                {
+                    "status": data_quality_freeze_gate.get("status")
+                    or data_quality_scorecard.get("status")
+                    or data_quality_report.get("status"),
+                    "issue_count": data_quality_scorecard.get("issue_count", 0),
+                    "errors": data_quality_scorecard.get("error_count", 0),
+                    "warnings": data_quality_scorecard.get("warning_count", 0),
+                    "can_create_freeze": data_quality_freeze_gate.get("can_create_freeze"),
+                    "can_build_matrix": data_quality_freeze_gate.get("can_build_matrix"),
+                    "can_run_core_alpha": data_quality_freeze_gate.get("can_run_core_alpha"),
+                    "can_run_expanded_alpha": data_quality_freeze_gate.get("can_run_expanded_alpha"),
+                    "recommended_next_action": data_quality_freeze_gate.get("recommended_next_action"),
+                }
+            )
+        else:
+            st.info("No data_quality_lab_report.json found.")
+        _show_dataframe_or_empty("Dataset Semantic Quality", service.load_dataset_quality_summary())
+        _show_dataframe_or_empty("Semantic Quality Issues", service.load_data_quality_issues())
+        _show_dataframe_or_empty("Semantic Repair Suggestions", service.load_data_quality_repair_suggestions())
         _show_dataframe_or_empty("API Request Audit", service.load_api_audit())
         _show_dataframe_or_empty("Snapshots", service.load_snapshot_summary())
         col1, col2 = st.columns(2)

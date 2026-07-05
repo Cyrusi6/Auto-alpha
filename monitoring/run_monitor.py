@@ -52,6 +52,11 @@ from .checks import (
     check_data_source_smoke,
     check_data_lake_version,
     check_data_freshness,
+    check_data_quality_blockers,
+    check_data_quality_freeze_gate,
+    check_data_quality_lab,
+    check_core_dataset_semantic_quality,
+    check_cross_dataset_quality,
     check_corporate_action_ledger,
     check_corporate_action_report,
     check_adjustment_application,
@@ -239,6 +244,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--raw-data-index-manifest-path")
     parser.add_argument("--raw-data-index-report-path")
     parser.add_argument("--raw-data-index-validation-report-path")
+    parser.add_argument("--data-quality-lab-report-path")
+    parser.add_argument("--data-quality-scorecard-path")
+    parser.add_argument("--data-quality-freeze-gate-path")
+    parser.add_argument("--data-quality-issues-path")
+    parser.add_argument("--cross-dataset-quality-report-path")
     parser.add_argument("--research-data-readiness-report-path")
     parser.add_argument("--research-readiness-decision-path")
     parser.add_argument("--feature-readiness-catalog-path")
@@ -482,6 +492,25 @@ def main(argv: list[str] | None = None) -> int:
                 args.raw_data_index_validation_report_path,
             ),
         ),
+        (
+            "data_quality_lab",
+            lambda: check_data_quality_lab(
+                args.data_quality_lab_report_path,
+                args.data_quality_scorecard_path,
+                args.data_quality_freeze_gate_path,
+                args.data_quality_issues_path,
+            ),
+        ),
+        (
+            "data_quality_blockers",
+            lambda: check_data_quality_blockers(args.data_quality_scorecard_path, args.data_quality_freeze_gate_path),
+        ),
+        (
+            "core_dataset_semantic_quality",
+            lambda: check_core_dataset_semantic_quality(args.data_quality_freeze_gate_path),
+        ),
+        ("cross_dataset_quality", lambda: check_cross_dataset_quality(args.cross_dataset_quality_report_path)),
+        ("data_quality_freeze_gate", lambda: check_data_quality_freeze_gate(args.data_quality_freeze_gate_path)),
         ("raw_freeze_readiness", lambda: check_raw_freeze_readiness(args.raw_freeze_readiness_decision_path)),
         ("postprocess_plan_blockers", lambda: check_postprocess_plan_blockers(args.backfill_postprocess_plan_path)),
         ("research_data_readiness", lambda: check_research_data_readiness(args.research_data_readiness_report_path or args.research_readiness_decision_path)),

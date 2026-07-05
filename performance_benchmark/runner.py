@@ -31,6 +31,7 @@ from raw_data_index.report import write_raw_data_index_artifacts
 from raw_data_index.scanner import build_raw_data_index
 from raw_data_index.validator import validate_raw_data_index
 from raw_data_landing.report import build_landing_report
+from data_quality_lab.scanner import run_data_quality_scan
 from validation_lab.run_validation import main as run_validation_main
 from factor_certification.run_certify import main as run_certify_main
 from portfolio_lab.run_portfolio_lab import main as run_portfolio_lab_main
@@ -76,6 +77,9 @@ def run_benchmark(
         _run_item("raw_data_index_streaming_speed", lambda: _bench_raw_data_index(data_path, output_path)),
         _run_item("raw_data_index_validate_speed", lambda: _bench_raw_data_index_validate(data_path, output_path)),
         _run_item("raw_landing_with_index_speed", lambda: _bench_raw_landing_with_index(data_path, output_path)),
+        _run_item("data_quality_streaming_speed", lambda: _bench_data_quality(data_path, output_path, use_index=False)),
+        _run_item("data_quality_with_raw_index_speed", lambda: _bench_data_quality(data_path, output_path, use_index=True)),
+        _run_item("cross_dataset_quality_small", lambda: _bench_data_quality(data_path, output_path / "cross_dataset_quality", use_index=False)),
         _run_item("feature_v3_manifest_build", lambda: _bench_feature_v3_manifest()),
         _run_item("feature_v3_tensor_build_small", lambda: _bench_feature_set_v3(data_path)),
         _run_item("feature_family_readiness_speed", lambda: _bench_feature_family_readiness(data_path)),
@@ -122,6 +126,7 @@ def run_benchmark(
         "feature_build_seconds": item_map.get("feature_set_v2_build").wall_time_seconds if item_map.get("feature_set_v2_build") else 0.0,
         "raw_data_index_seconds": item_map.get("raw_data_index_streaming_speed").wall_time_seconds if item_map.get("raw_data_index_streaming_speed") else 0.0,
         "raw_landing_with_index_seconds": item_map.get("raw_landing_with_index_speed").wall_time_seconds if item_map.get("raw_landing_with_index_speed") else 0.0,
+        "data_quality_seconds": item_map.get("data_quality_streaming_speed").wall_time_seconds if item_map.get("data_quality_streaming_speed") else 0.0,
         "feature_count": item_map.get("feature_set_v2_build").n_features if item_map.get("feature_set_v2_build") else 0,
         "feature_v3_build_seconds": item_map.get("feature_v3_tensor_build_small").wall_time_seconds if item_map.get("feature_v3_tensor_build_small") else 0.0,
         "feature_v3_count": item_map.get("feature_v3_tensor_build_small").n_features if item_map.get("feature_v3_tensor_build_small") else 0,
@@ -340,6 +345,23 @@ def _bench_raw_landing_with_index(data_dir: Path, output_dir: Path) -> dict[str,
     return {
         "records_read": int(report.summary.get("total_records", 0) or sum(getattr(item, "records", 0) for item in report.datasets)),
         "n_features": len(report.datasets),
+    }
+
+
+def _bench_data_quality(data_dir: Path, output_dir: Path, use_index: bool) -> dict[str, int]:
+    paths = _ensure_raw_index(data_dir, output_dir) if use_index else {}
+    report, issues, _suggestions, _rules = run_data_quality_scan(
+        data_dir,
+        output_dir=output_dir / "data_quality_benchmark",
+        datasets=["securities", "trade_calendar", "daily_bars", "daily_basic", "daily_limits", "adjustment_factors"],
+        raw_data_index_manifest_path=paths.get("raw_data_index_manifest_path"),
+        use_raw_data_index=use_index,
+        max_records_per_dataset=10_000,
+    )
+    return {
+        "records_read": sum(item.record_count for item in report.scorecard.dataset_summaries),
+        "n_features": report.scorecard.dataset_count,
+        "formulas_evaluated": len(issues),
     }
 
 

@@ -2233,3 +2233,14 @@
 ### Follow-Ups
 - Do not build a full raw index on the active real Tushare download directory until backfill, repair, and freeze readiness are stable.
 - Future optimization can add partition-aware random access and parallel index build after the sidecar manifests are proven on frozen full-market data.
+
+## Task 049-A - Semantic Data Quality Lab And Freeze Gate
+
+- Added `data_quality_lab/`, a semantic QA layer for full-market A-share research datasets. It checks core daily data, trade calendar alignment, duplicate primary keys, OHLC validity, security lifecycle, daily/basic/limit coverage, adjustment factors, index membership, corporate actions, financial PIT announcement dates, expanded financial/event/flow/margin/holder/risk datasets, and cross-dataset mismatches.
+- Added severity-ranked artifacts: `data_quality_lab_report.json/md`, `data_quality_scorecard.json`, `data_quality_rules.json`, `data_quality_issues.jsonl`, `dataset_quality_summary.jsonl`, `cross_dataset_quality_report.json`, `data_quality_repair_suggestions.jsonl`, and `data_quality_freeze_gate.json`. Repair suggestions are non-mutating and only provide review commands.
+- Integrated semantic QA with `post_download_orchestrator` planning, `research_data_readiness` freeze/matrix/Alpha Factory decisions, monitoring checks, dashboard readers/Data-tab summaries, artifact schema registry, release inventory, packaging metadata, performance benchmark, and local CI quick smoke.
+- Added offline tests for semantic issue detection, optional event dataset handling, freeze-gate blocking, repair suggestions, post-download plan steps, research readiness gate consumption, monitoring/dashboard artifact reads, schema validation, and old-term scanning.
+
+### Follow-Ups
+- Do not run full semantic QA on the active real Tushare download directory while backfill is still writing; use `data_quality_lab.run_quality_lab plan` only.
+- Calibrate semantic QA thresholds on the first governed full-market freeze before making optional expanded dataset blockers stricter.

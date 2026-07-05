@@ -32,6 +32,7 @@ PLATFORM_MODULES = [
     "data_backfill",
     "data_lake",
     "data_pipeline",
+    "data_quality_lab",
     "data_source_validation",
     "evaluation",
     "execution",

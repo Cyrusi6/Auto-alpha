@@ -223,6 +223,23 @@ def main(argv: list[str] | None = None) -> int:
             ],
         ),
         (
+            "data_quality_lab_smoke",
+            [
+                sys.executable,
+                "-m",
+                "data_quality_lab.run_quality_lab",
+                "smoke",
+                "--data-dir",
+                str(sample_data_dir),
+                "--output-dir",
+                str(quick_dir / "data_quality_lab"),
+                "--raw-data-index-manifest-path",
+                str(quick_dir / "raw_data_index" / "raw_data_index_manifest.json"),
+                "--use-raw-data-index",
+                "--pretty",
+            ],
+        ),
+        (
             "backfill_repair_dry_run_smoke",
             [
                 sys.executable,

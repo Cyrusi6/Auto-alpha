@@ -26,6 +26,7 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--postprocess-plan-path")
     parser.add_argument("--real-data-sla-report-path")
     parser.add_argument("--matrix-freshness-report-path")
+    parser.add_argument("--data-quality-freeze-gate-path")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--profile-name")
     parser.add_argument("--expected-start-date")
@@ -50,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
         postprocess_plan_path=args.postprocess_plan_path,
         real_data_sla_report_path=args.real_data_sla_report_path,
         matrix_freshness_report_path=args.matrix_freshness_report_path,
+        data_quality_freeze_gate_path=args.data_quality_freeze_gate_path,
         profile_name=args.profile_name,
         strict=args.strict,
     )

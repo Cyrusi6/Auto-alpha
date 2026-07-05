@@ -1004,6 +1004,70 @@ def check_raw_data_index(
     }, alerts
 
 
+def check_data_quality_lab(
+    report_path: str | Path | None,
+    scorecard_path: str | Path | None = None,
+    freeze_gate_path: str | Path | None = None,
+    issues_path: str | Path | None = None,
+) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    report = _read_json(Path(report_path)) if report_path else {}
+    scorecard = _read_json(Path(scorecard_path)) if scorecard_path else {}
+    freeze_gate = _read_json(Path(freeze_gate_path)) if freeze_gate_path else {}
+    issues = _read_jsonl(Path(issues_path)) if issues_path else []
+    source_scorecard = scorecard or (report.get("scorecard", {}) if isinstance(report.get("scorecard"), dict) else {})
+    source_gate = freeze_gate or (report.get("freeze_gate", {}) if isinstance(report.get("freeze_gate"), dict) else {})
+    status = str(source_gate.get("status") or source_scorecard.get("status") or report.get("status") or "")
+    blocker_count = int(source_scorecard.get("blocker_count", 0) or 0)
+    error_count = int(source_scorecard.get("error_count", 0) or 0)
+    warning_count = int(source_scorecard.get("warning_count", 0) or 0)
+    core_blockers = int(source_gate.get("core_blocker_count", 0) or 0)
+    expanded_blockers = int(source_gate.get("expanded_blocker_count", 0) or 0)
+    can_freeze = bool(source_gate.get("can_create_freeze", True)) if source_gate else True
+    can_expanded = bool(source_gate.get("can_run_expanded_alpha", True)) if source_gate else True
+    alerts: list[MonitoringAlert] = []
+    if core_blockers or not can_freeze:
+        alerts.append(MonitoringAlert("error", "data_quality_lab", "semantic data quality blocks freeze/matrix/core alpha", {"core_blockers": core_blockers}))
+    elif expanded_blockers or not can_expanded:
+        alerts.append(MonitoringAlert("warning", "data_quality_lab", "semantic data quality blocks expanded alpha", {"expanded_blockers": expanded_blockers}))
+    elif warning_count:
+        alerts.append(MonitoringAlert("warning", "data_quality_lab", "semantic data quality has warnings", {"warnings": warning_count}))
+    return {
+        "exists": bool(report or scorecard or freeze_gate or issues),
+        "data_quality_status": status,
+        "data_quality_blocker_count": blocker_count,
+        "data_quality_error_count": error_count,
+        "data_quality_warning_count": warning_count,
+        "core_quality_blocker_count": core_blockers,
+        "expanded_quality_blocker_count": expanded_blockers,
+        "data_quality_issue_count": int(source_scorecard.get("issue_count", len(issues)) or 0),
+        "data_quality_can_create_freeze": can_freeze,
+        "data_quality_can_build_matrix": bool(source_gate.get("can_build_matrix", True)) if source_gate else True,
+        "data_quality_can_run_core_alpha": bool(source_gate.get("can_run_core_alpha", True)) if source_gate else True,
+        "data_quality_can_run_expanded_alpha": can_expanded,
+        "data_quality_recommended_next_action": str(source_gate.get("recommended_next_action", "")) if source_gate else "",
+    }, alerts
+
+
+def check_data_quality_blockers(scorecard_path: str | Path | None, freeze_gate_path: str | Path | None = None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    return check_data_quality_lab(None, scorecard_path=scorecard_path, freeze_gate_path=freeze_gate_path)
+
+
+def check_core_dataset_semantic_quality(freeze_gate_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    return check_data_quality_lab(None, freeze_gate_path=freeze_gate_path)
+
+
+def check_cross_dataset_quality(cross_dataset_report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(cross_dataset_report_path)) if cross_dataset_report_path else {}
+    mismatches = payload.get("mismatches", {}) if isinstance(payload.get("mismatches"), dict) else {}
+    mismatch_count = sum(int(value or 0) for value in mismatches.values())
+    alerts = [MonitoringAlert("warning", "cross_dataset_quality", "cross-dataset quality mismatches found", {"mismatch_count": mismatch_count})] if mismatch_count else []
+    return {"exists": bool(payload), "cross_dataset_mismatch_count": mismatch_count, "mismatches": mismatches}, alerts
+
+
+def check_data_quality_freeze_gate(freeze_gate_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    return check_data_quality_lab(None, freeze_gate_path=freeze_gate_path)
+
+
 def check_raw_freeze_readiness(decision_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     payload = _read_json(Path(decision_path)) if decision_path else {}
     status = str(payload.get("status") or "")

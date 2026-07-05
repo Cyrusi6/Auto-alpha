@@ -13,6 +13,7 @@ The current implementation is local-first. It uses deterministic sample data and
 - `backfill_repair/`: Explicit repair batch planner/runner for failed, quarantined, missing, empty, rate-limited, or timed-out backfill jobs; defaults to dry-run and blocks real data paths unless explicitly allowed.
 - `raw_data_landing/`: Read-only raw JSONL landing QA, coverage matrix, duplicate-key checks, and freeze readiness gate.
 - `raw_data_index/`: Streaming sidecar index for raw `records.jsonl` files; writes dataset summaries, hashes, date/security coverage, partition manifests, freshness validation, and active-download safety reports without changing the JSONL storage format.
+- `data_quality_lab/`: Semantic full-market data QA rules, cross-dataset consistency checks, severity scorecards, freeze/matrix/alpha gates, and non-mutating repair suggestions.
 - `research_data_readiness/`: Research-readiness gate that combines raw landing QA, running backfill progress, PIT safety, matrix freshness, and feature-family readiness.
 - `post_download_orchestrator/`: Plan-first post-download workflow generator and local state machine for observer, landing QA, repair review, compact/validate/stats, data lake freeze, PIT/leakage, matrix refresh, schema validation, freeze candidate packages, and research smoke.
 - `data_lake/`: Dataset fingerprints, dataset version registry, immutable research freezes, freeze validation, lineage graphs, and retention reports.
@@ -297,6 +298,39 @@ uv run python -m raw_data_index.run_index build \
   --pretty
 ```
 
+`data_quality_lab/` adds semantic QA on top of structural landing and raw-index checks. It validates daily price semantics, trading-calendar alignment, duplicate keys, security lifecycle, daily/basic/limit coverage, adjustment factors, financial PIT availability fields, index/industry membership, event/holder/risk datasets, and cross-dataset mismatches. It writes severity-ranked issues and repair suggestions only; it never mutates data:
+
+```bash
+uv run python -m data_quality_lab.run_quality_lab smoke \
+  --output-dir /tmp/auto-alpha-demo/data_quality_lab \
+  --pretty
+
+uv run python -m data_quality_lab.run_quality_lab run \
+  --data-dir /path/to/freeze_or_stable_data \
+  --raw-data-index-manifest-path /path/to/reports/raw_index_latest/raw_data_index_manifest.json \
+  --output-dir /path/to/reports/data_quality_latest \
+  --profile-name full_research_data \
+  --start-date 20100101 \
+  --end-date 20260630 \
+  --use-raw-data-index \
+  --pretty
+```
+
+While a real download is still active, run only the plan command. It writes a plan artifact and does not scan the data directory:
+
+```bash
+uv run python -m data_quality_lab.run_quality_lab plan \
+  --data-dir /home/lijunsi/data/auto-alpha/ashare_lake/data \
+  --raw-data-index-manifest-path /home/lijunsi/data/auto-alpha/ashare_lake/reports/raw_index_plan_latest/raw_data_index_manifest.json \
+  --output-dir /home/lijunsi/data/auto-alpha/ashare_lake/reports/data_quality_plan_latest \
+  --profile-name full_research_data \
+  --start-date 20100101 \
+  --end-date 20260630 \
+  --pretty
+```
+
+The main artifacts are `data_quality_lab_report.json/md`, `data_quality_scorecard.json`, `data_quality_issues.jsonl`, `dataset_quality_summary.jsonl`, `cross_dataset_quality_report.json`, `data_quality_repair_suggestions.jsonl`, and `data_quality_freeze_gate.json`. `research_data_readiness` can consume the freeze gate: core semantic blockers stop freeze, matrix, and core Alpha Factory; optional expanded blockers can still allow core alpha while blocking expanded v3 alpha.
+
 You can also assess research readiness while a download is still running. This is read-only and writes only report artifacts:
 
 ```bash
@@ -348,7 +382,7 @@ uv run python -m post_download_orchestrator.run_post_download plan \
   --pretty
 ```
 
-Do not run post-download `--execute` until the active backfill is finished, repair reports are clean, and readiness blockers are cleared. `--allow-incomplete` is diagnostic-only; it does not create freeze or matrix artifacts. The generated plan now includes raw-data-index plan/build/validate steps; the plan step stays diagnostic while build/validate remain blocked until readiness is green. A successful post-download run writes step state, step runs, events, a freeze candidate package, a final package, and an artifact catalog before any downstream Alpha Factory work is considered.
+Do not run post-download `--execute` until the active backfill is finished, repair reports are clean, semantic data-quality blockers are cleared, and readiness blockers are cleared. `--allow-incomplete` is diagnostic-only; it does not create freeze or matrix artifacts. The generated plan now includes raw-data-index plan/build/validate and semantic data-quality plan/run/scorecard/gate steps; plan steps stay diagnostic while build/QA/freeze steps remain blocked until readiness is green. A successful post-download run writes step state, step runs, events, a freeze candidate package, a final package, and an artifact catalog before any downstream Alpha Factory work is considered.
 
 After governed sync or backfill, register a dataset version and freeze research input data. A freeze copies or hardlinks local JSONL records plus universe artifacts, writes hashes and manifests, and can be required by matrix build, research suite, backtest, and operations commands:
 
@@ -1669,7 +1703,7 @@ Promotion does not prove alpha quality. It only creates a traceable availability
 
 ## Current Gaps
 
-- Tushare HTTP provider, production sync scaffolding, governed backfill plans, read-only running-backfill observation, explicit repair batches, raw landing QA, raw sidecar indexes, research-readiness gates, post-download state-machine orchestration, freeze candidate packages, offline fake smoke, gated online smoke/backfill, permission/rate diagnostics, audit summary, incremental recovery checks, baseline comparison, dataset versioning, research freezes, real-data runbooks, SLA checks, storage-size reports, and incremental matrix refresh are available; production use still requires real token/quota operation, real full-market performance runs, and more provider pairs.
+- Tushare HTTP provider, production sync scaffolding, governed backfill plans, read-only running-backfill observation, explicit repair batches, raw landing QA, raw sidecar indexes, semantic data-quality gates, research-readiness gates, post-download state-machine orchestration, freeze candidate packages, offline fake smoke, gated online smoke/backfill, permission/rate diagnostics, audit summary, incremental recovery checks, baseline comparison, dataset versioning, research freezes, real-data runbooks, SLA checks, storage-size reports, and incremental matrix refresh are available; production use still requires real token/quota operation, real full-market performance runs, and more provider pairs.
 - Barra-like risk model v1 and benchmark-aware portfolio optimization are available locally; future work should add production Barra definitions, robust full-market covariance calibration, a professional optimizer, and large-scale performance tuning.
 - Local daily simulation supports A-share constraints, pre-trade risk controls, local kill switch, override approvals, capacity estimates, impact-cost estimates, child-order scheduling, broker-adapter state, file instruction export, settlement-aware paper accounting, lot cost, realized PnL, NAV reconciliation, generic statement import, external account mirroring, EOD break management, and execution quality reports; future work should add finer real-world matching, minute-level volume modeling, verified real broker statement mappings, richer limit policies, and real broker connectivity.
 - Local formula search, batch formula evaluation, formula corpus construction, offline AlphaGPT supervised pretraining, a first neural-guided policy-search path, and a local CPU/GPU compute scheduler are available; future work should add stronger reinforcement learning, larger offline corpora, more operators, true full-market 4-GPU stress runs, richer DDP training, and broader stability validation.
