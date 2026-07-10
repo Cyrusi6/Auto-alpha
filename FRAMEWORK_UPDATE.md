@@ -2244,3 +2244,17 @@
 ### Follow-Ups
 - Do not run full semantic QA on the active real Tushare download directory while backfill is still writing; use `data_quality_lab.run_quality_lab plan` only.
 - Calibrate semantic QA thresholds on the first governed full-market freeze before making optional expanded dataset blockers stricter.
+
+## Real Data Ops - Lifecycle Repair And Matrix Loader Acceleration
+
+- Completed a post-download real-data readiness pass on the local Tushare lake without logging secrets or making additional Tushare requests. The governed raw index now covers 63 datasets and 144,460,710 records after lifecycle filtering.
+- Repaired `daily_bars` research-readiness blockers by removing 77,775 rows where `trade_date < securities.list_date`, preserving the original file as a timestamped backup and writing a lifecycle repair report.
+- Re-ran semantic QA after repair. Core gates now allow freeze, matrix build, and core Alpha Factory; expanded Alpha Factory remains blocked by optional expanded-data issues that need separate repair/review.
+- Added a manifest-only freeze candidate tied to the reviewed raw-data-index hash and QA gate, then built and validated a CSI300 matrix cache with 300 securities, 6,417 trade dates, and 33 core fields.
+- Optimized `AShareDataLoader` for real-data matrix builds: JSONL reads now stream line-by-line, universe codes are loaded before heavy datasets, selected universes filter records during reading, financial PIT alignment uses vectorized pivot/forward-fill, and index membership alignment avoids nested stock/date scans.
+- Generated a v3 feature-set manifest/readiness report for the real CSI300 matrix. Full v3 tensor build is deferred because the current rolling feature tensor path still needs vectorization before production-scale use.
+
+### Follow-Ups
+- Implement a partitioned or streaming full-market matrix builder before attempting all-stock default matrix cache generation.
+- Vectorize v3 rolling feature tensor generation before running expanded Feature Factory on real full-market data.
+- Repair or review expanded-data blockers before enabling `can_run_expanded_alpha`.

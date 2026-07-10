@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import torch
 
@@ -75,14 +76,6 @@ class AShareDataLoader:
 
         securities = self._read_jsonl("securities")
         calendar = self._read_jsonl("trade_calendar")
-        bars = self._read_jsonl("daily_bars")
-        daily_basic = self._read_jsonl("daily_basic")
-        financial_features = self._read_jsonl("financial_features")
-        daily_limits = self._read_optional_jsonl("daily_limits")
-        adjustment_factors = self._read_optional_jsonl("adjustment_factors")
-        index_members = self._read_optional_jsonl("index_members")
-        corporate_actions = self._read_optional_jsonl("corporate_actions") if self.corporate_action_aware else []
-        self.raw_corporate_actions = list(corporate_actions)
 
         universe_codes = self._load_universe_codes()
         selected_securities = [
@@ -96,13 +89,27 @@ class AShareDataLoader:
             str(record["ts_code"]): dict(record)
             for record in selected_securities
         }
+        selected_code_set = set(self.ts_codes)
 
-        bar_df = pd.DataFrame(bars)
-        basic_df = pd.DataFrame(daily_basic)
-        financial_df = pd.DataFrame(financial_features)
-        limit_df = pd.DataFrame(daily_limits)
-        adj_df = pd.DataFrame(adjustment_factors)
-        index_df = pd.DataFrame(index_members)
+        bars = self._read_jsonl("daily_bars", ts_codes=selected_code_set)
+        daily_basic = self._read_jsonl("daily_basic", ts_codes=selected_code_set)
+        financial_features = self._read_jsonl("financial_features", ts_codes=selected_code_set)
+        daily_limits = self._read_optional_jsonl("daily_limits", ts_codes=selected_code_set)
+        adjustment_factors = self._read_optional_jsonl("adjustment_factors", ts_codes=selected_code_set)
+        index_members = self._read_optional_jsonl("index_members", ts_codes=selected_code_set)
+        corporate_actions = (
+            self._read_optional_jsonl("corporate_actions", ts_codes=selected_code_set)
+            if self.corporate_action_aware
+            else []
+        )
+        self.raw_corporate_actions = list(corporate_actions)
+
+        bar_df = self._filter_frame_by_selected_codes(pd.DataFrame(bars), selected_code_set)
+        basic_df = self._filter_frame_by_selected_codes(pd.DataFrame(daily_basic), selected_code_set)
+        financial_df = self._filter_frame_by_selected_codes(pd.DataFrame(financial_features), selected_code_set)
+        limit_df = self._filter_frame_by_selected_codes(pd.DataFrame(daily_limits), selected_code_set)
+        adj_df = self._filter_frame_by_selected_codes(pd.DataFrame(adjustment_factors), selected_code_set)
+        index_df = self._filter_frame_by_selected_codes(pd.DataFrame(index_members), selected_code_set)
 
         raw = {
             "open": self._pivot_market(bar_df, "open"),
@@ -128,7 +135,7 @@ class AShareDataLoader:
         }
 
         self.raw_data_cache = {
-            key: torch.tensor(value, dtype=torch.float32, device=self.device)
+            key: self._to_float_tensor(value)
             for key, value in raw.items()
         }
         self.raw_data_cache["adjusted_close"] = self.raw_data_cache["close"] * self.raw_data_cache["adj_factor"]
@@ -212,6 +219,11 @@ class AShareDataLoader:
         self.target_ret = self._compute_target_ret(self._target_price_matrix())
         return self
 
+    def _filter_frame_by_selected_codes(self, df: pd.DataFrame, selected_codes: set[str]) -> pd.DataFrame:
+        if df.empty or "ts_code" not in df.columns:
+            return df
+        return df[df["ts_code"].astype(str).isin(selected_codes)].copy()
+
     def _compute_feature_tensor(self) -> torch.Tensor:
         if self.feature_set_manifest_path is not None:
             from feature_factory.builder import load_feature_manifest
@@ -245,17 +257,29 @@ class AShareDataLoader:
 
         self.feature_v3_extended_summary = attach_extended_feature_matrices(self, manifest)
 
-    def _read_jsonl(self, dataset: str) -> list[dict[str, object]]:
+    def _read_jsonl(self, dataset: str, ts_codes: set[str] | None = None) -> list[dict[str, object]]:
         path = self.data_dir / dataset / "records.jsonl"
         if not path.exists():
             raise FileNotFoundError(f"missing A-share dataset file: {path}")
-        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        return self._read_jsonl_path(path, ts_codes=ts_codes)
 
-    def _read_optional_jsonl(self, dataset: str) -> list[dict[str, object]]:
+    def _read_optional_jsonl(self, dataset: str, ts_codes: set[str] | None = None) -> list[dict[str, object]]:
         path = self.data_dir / dataset / "records.jsonl"
         if not path.exists():
             return []
-        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        return self._read_jsonl_path(path, ts_codes=ts_codes)
+
+    def _read_jsonl_path(self, path: Path, ts_codes: set[str] | None = None) -> list[dict[str, object]]:
+        records: list[dict[str, object]] = []
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                if ts_codes is not None and "ts_code" in record and str(record.get("ts_code")) not in ts_codes:
+                    continue
+                records.append(record)
+        return records
 
     def _load_universe_codes(self) -> set[str] | None:
         path: Path | None = self.universe_file
@@ -265,8 +289,8 @@ class AShareDataLoader:
             return None
         if not path.exists():
             raise FileNotFoundError(f"missing A-share universe file: {path}")
-        records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-        return {str(record["ts_code"]) for record in records if record.get("ts_code")}
+        with path.open(encoding="utf-8") as handle:
+            return {str(record["ts_code"]) for line in handle if line.strip() for record in [json.loads(line)] if record.get("ts_code")}
 
     def _pivot_market(self, df: pd.DataFrame, column: str) -> list[list[float]]:
         if df.empty or column not in df.columns:
@@ -321,33 +345,61 @@ class AShareDataLoader:
     def _align_financial(self, df: pd.DataFrame, column: str) -> list[list[float]]:
         if df.empty or column not in df.columns:
             return [[0.0 for _ in self.trade_dates] for _ in self.ts_codes]
-
-        aligned: list[list[float]] = []
-        for ts_code in self.ts_codes:
-            stock_df = df[df["ts_code"] == ts_code].sort_values(["announce_date", "report_period"])
-            values: list[float] = []
-            for trade_date in self.trade_dates:
-                available = stock_df[stock_df["announce_date"] <= trade_date]
-                if available.empty:
-                    values.append(0.0)
-                else:
-                    value = available.iloc[-1].get(column, 0.0)
-                    values.append(0.0 if pd.isna(value) else float(value))
-            aligned.append(values)
-        return aligned
+        date_col = "announce_date" if "announce_date" in df.columns else ("ann_date" if "ann_date" in df.columns else None)
+        if date_col is None or "ts_code" not in df.columns:
+            return [[0.0 for _ in self.trade_dates] for _ in self.ts_codes]
+        work_cols = ["ts_code", date_col, column]
+        sort_cols = ["ts_code", date_col]
+        for optional in ("report_period", "end_date", "update_flag"):
+            if optional in df.columns:
+                work_cols.append(optional)
+                sort_cols.append(optional)
+        work = df.loc[:, list(dict.fromkeys(work_cols))].copy()
+        work["ts_code"] = work["ts_code"].astype(str)
+        work[date_col] = work[date_col].astype(str)
+        work = work[
+            work["ts_code"].isin(self.ts_codes)
+            & work[date_col].str.fullmatch(r"\d{8}", na=False)
+        ]
+        if work.empty:
+            return [[0.0 for _ in self.trade_dates] for _ in self.ts_codes]
+        work[column] = pd.to_numeric(work[column], errors="coerce").fillna(0.0)
+        work = work.sort_values(sort_cols)
+        pivot = work.pivot_table(index=date_col, columns="ts_code", values=column, aggfunc="last")
+        return self._forward_align_pivot(pivot, fill_value=0.0)
 
     def _align_index_members(self, df: pd.DataFrame) -> list[list[float]]:
         if df.empty:
             return [[0.0 for _ in self.trade_dates] for _ in self.ts_codes]
-        aligned: list[list[float]] = []
-        for ts_code in self.ts_codes:
-            stock_df = df[df["ts_code"] == ts_code].sort_values(["trade_date", "index_code"])
-            values: list[float] = []
-            for trade_date in self.trade_dates:
-                available = stock_df[stock_df["trade_date"] <= trade_date]
-                values.append(0.0 if available.empty else 1.0)
-            aligned.append(values)
-        return aligned
+        date_col = "trade_date" if "trade_date" in df.columns else ("weight_date" if "weight_date" in df.columns else None)
+        if date_col is None or "ts_code" not in df.columns:
+            return [[0.0 for _ in self.trade_dates] for _ in self.ts_codes]
+        work = df.loc[:, ["ts_code", date_col]].copy()
+        work["ts_code"] = work["ts_code"].astype(str)
+        work[date_col] = work[date_col].astype(str)
+        work = work[
+            work["ts_code"].isin(self.ts_codes)
+            & work[date_col].str.fullmatch(r"\d{8}", na=False)
+        ]
+        if work.empty:
+            return [[0.0 for _ in self.trade_dates] for _ in self.ts_codes]
+        work["_member"] = 1.0
+        work = work.drop_duplicates(["ts_code", date_col], keep="last").sort_values(["ts_code", date_col])
+        pivot = work.pivot_table(index=date_col, columns="ts_code", values="_member", aggfunc="last")
+        return self._forward_align_pivot(pivot, fill_value=0.0)
+
+    def _forward_align_pivot(self, pivot: pd.DataFrame, fill_value: float = 0.0) -> np.ndarray:
+        if pivot.empty:
+            return np.full((len(self.ts_codes), len(self.trade_dates)), fill_value, dtype="float32")
+        pivot.index = pivot.index.astype(str)
+        all_dates = sorted(set(self.trade_dates).union(str(item) for item in pivot.index if str(item)))
+        aligned = (
+            pivot.reindex(index=all_dates, columns=self.ts_codes)
+            .ffill()
+            .reindex(index=self.trade_dates)
+            .fillna(fill_value)
+        )
+        return aligned.to_numpy(dtype="float32").T
 
     def _attach_corporate_action_matrices(self, records: list[dict[str, object]]) -> None:
         if self.corporate_action_dir is not None:
@@ -484,3 +536,8 @@ class AShareDataLoader:
         else:
             flag = valid & (close <= limit + tolerance)
         return flag.to(dtype=torch.float32)
+
+    def _to_float_tensor(self, value: object) -> torch.Tensor:
+        if isinstance(value, np.ndarray) and not value.flags.writeable:
+            value = np.array(value, copy=True)
+        return torch.as_tensor(value, dtype=torch.float32, device=self.device)
