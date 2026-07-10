@@ -1322,11 +1322,12 @@ The expanded v3 feature set must be explicitly requested:
 uv run python -m feature_factory.run_features build \
   --data-dir /tmp/auto-alpha-demo/data \
   --output-dir /tmp/auto-alpha-demo/features_v3 \
+  --device cpu \
   --feature-set-name ashare_features_v3 \
   --pretty
 ```
 
-v3 builds write `feature_family_readiness.json`, `feature_pit_alignment_report.json`, and `feature_build_warnings.jsonl` in addition to the usual manifest, coverage, values summary, tensor, and build-result artifacts. `feature_factory` can optionally read a raw-data-index manifest to quickly check required dataset existence and coverage before tensor work. `matrix_store` and `matrix_refresh` record the feature-set hash and recommend a full rebuild when the v3 catalog or PIT/corporate/target-return flags drift.
+Use `--device cpu` for large full-history tensors when shared GPU memory is constrained; `--device cuda` remains opt-in and `--device auto` preserves the configured default. Manifest-only freezes resolve their governed `source_data_dir` while keeping the freeze ID/hash in the feature manifest and build result. v3 builds write `feature_family_readiness.json`, `feature_pit_alignment_report.json`, and `feature_build_warnings.jsonl` in addition to the usual manifest, coverage, values summary, tensor, and build-result artifacts. `feature_factory` can optionally read a raw-data-index manifest to quickly check required dataset existence and coverage before tensor work. `matrix_store` and `matrix_refresh` record the feature-set hash and recommend a full rebuild when the v3 catalog or PIT/corporate/target-return flags drift.
 
 `alpha_factory/` is the campaign-level candidate funnel. It records campaign lineage, feature-set metadata, generator source budgets, random seed, compute configuration, static DSL checks, cheap proxy evaluation, optional `formula_batch_eval` full evaluation, novelty/diversity scoring, and shortlist artifacts:
 

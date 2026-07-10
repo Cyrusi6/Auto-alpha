@@ -14,7 +14,17 @@ from feature_factory import (
     build_feature_tensor_artifacts,
     load_feature_manifest,
 )
-from feature_factory.run_features import main as run_features_main
+from feature_factory.extended_builder import (
+    _days_since_event,
+    _days_to_event,
+    _pit_field_matrices,
+    _records,
+    _rolling_mean,
+    _rolling_std,
+    _rolling_sum,
+    _rolling_z,
+)
+from feature_factory.run_features import _resolve_data_dir, main as run_features_main
 from model_core.data_loader import AShareDataLoader
 from model_core.vocab import FEATURE_NAMES
 
@@ -59,6 +69,24 @@ def test_feature_set_v2_builds_artifacts_and_loader_can_opt_in(tmp_path):
     assert (tmp_path / "features" / "feature_values_summary.json").exists()
 
 
+def test_feature_builder_derives_corporate_action_flags_from_matrix_fields(tmp_path):
+    data_dir = _prepare_sample_data(tmp_path)
+    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+    loader.raw_data_cache["cash_dividend"] = torch.tensor(
+        [[0.0, 1.0, 0.0], [0.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+        dtype=torch.float32,
+    )
+    loader.raw_data_cache["stock_distribution_ratio"] = torch.tensor(
+        [[0.0, 0.0, 0.0], [0.0, 0.5, 0.0], [0.0, 0.0, 0.0]],
+        dtype=torch.float32,
+    )
+
+    result = build_feature_tensor_artifacts(loader, tmp_path / "features_v2_actions", feature_set_name=FEATURE_SET_V2)
+
+    assert "missing source for feature CASH_DIVIDEND_FLAG" not in result.warnings
+    assert "missing source for feature STOCK_DISTRIBUTION_FLAG" not in result.warnings
+
+
 def test_feature_manifest_hash_is_stable_for_same_inputs():
     left = build_feature_set_manifest(FEATURE_SET_V2, created_at="2026-01-01T00:00:00Z")
     right = build_feature_set_manifest(FEATURE_SET_V2, created_at="2026-01-02T00:00:00Z")
@@ -80,6 +108,8 @@ def test_run_features_cli_build_and_validate(tmp_path, capsys):
                 str(output_dir),
                 "--feature-set-name",
                 FEATURE_SET_V2,
+                "--device",
+                "cpu",
                 "--pretty",
             ]
         )
@@ -103,6 +133,19 @@ def test_run_features_cli_build_and_validate(tmp_path, capsys):
     )
     validate_payload = json.loads(capsys.readouterr().out)
     assert validate_payload["feature_count"] == build_payload["feature_count"]
+
+
+def test_feature_factory_resolves_manifest_only_freeze_source_data(tmp_path):
+    data_dir = tmp_path / "governed_data"
+    freeze_dir = tmp_path / "freeze"
+    data_dir.mkdir()
+    freeze_dir.mkdir()
+    (freeze_dir / "freeze_manifest.json").write_text(
+        json.dumps({"mode": "manifest_only_candidate", "source_data_dir": str(data_dir)}),
+        encoding="utf-8",
+    )
+
+    assert _resolve_data_dir(None, str(freeze_dir)) == str(data_dir)
 
 
 def test_feature_set_v3_manifest_extends_v2_with_pit_contracts():
@@ -155,6 +198,104 @@ def test_feature_set_v3_fake_expanded_datasets_build_nonzero_matrices(tmp_path):
         assert key in loader.raw_data_cache
         assert torch.isfinite(loader.raw_data_cache[key]).all()
         assert float(loader.raw_data_cache[key].abs().sum().item()) > 0.0
+
+
+def test_v3_vectorized_rolling_features_match_reference_implementation():
+    values = torch.tensor(
+        [
+            [1.0, 2.0, 4.0, 8.0, 16.0, 32.0],
+            [3.0, -1.0, 5.0, 0.0, 2.0, 7.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    for window in (1, 3, 10):
+        expected_sum = _rolling_reference(values, window, "sum")
+        expected_mean = _rolling_reference(values, window, "mean")
+        expected_std = _rolling_reference(values, window, "std")
+        expected_z = (values - expected_mean) / torch.clamp(expected_std, min=1e-6)
+
+        torch.testing.assert_close(_rolling_sum(values, window), expected_sum)
+        torch.testing.assert_close(_rolling_mean(values, window), expected_mean)
+        torch.testing.assert_close(_rolling_std(values, window), expected_std, atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(_rolling_z(values, window), expected_z, atol=1e-5, rtol=1e-5)
+
+
+def test_v3_vectorized_rolling_features_limit_nonfinite_values_to_active_window():
+    values = torch.tensor([[1.0, float("nan"), 3.0, 4.0, 5.0]], dtype=torch.float32)
+    result = _rolling_mean(values, 2)
+
+    assert torch.isfinite(result[:, :1]).all()
+    assert torch.isnan(result[:, 1:3]).all()
+    torch.testing.assert_close(result[:, 3:], torch.tensor([[3.5, 4.5]]))
+
+
+def test_v3_expanded_records_stream_and_filter_to_loaded_universe(tmp_path):
+    dataset_dir = tmp_path / "moneyflow"
+    dataset_dir.mkdir()
+    rows = [
+        {"ts_code": "000001.SZ", "trade_date": "20240102", "net_mf_amount": 1},
+        {"ts_code": "000002.SZ", "trade_date": "20240102", "net_mf_amount": 2},
+        {"ts_code": "000001.SZ", "trade_date": "20250102", "net_mf_amount": 3},
+    ]
+    (dataset_dir / "records.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    loader = type("Loader", (), {"ts_codes": ["000001.SZ"], "trade_dates": ["20240102"]})()
+
+    records = _records(loader, {}, tmp_path, "moneyflow")
+
+    assert records == [rows[0]]
+
+
+def test_v3_event_distance_features_use_nearest_available_event():
+    loader = type(
+        "Loader",
+        (),
+        {
+            "ts_codes": ["000001.SZ"],
+            "trade_dates": ["20240102", "20240103", "20240104", "20240105"],
+            "raw_data_cache": {"close": torch.ones((1, 4))},
+        },
+    )()
+    records = [
+        {"ts_code": "000001.SZ", "event_date": "20240103"},
+        {"ts_code": "000001.SZ", "event_date": "20240105"},
+    ]
+
+    torch.testing.assert_close(_days_to_event(loader, records, "event_date"), torch.tensor([[1.0, 0.0, 1.0, 0.0]]))
+    torch.testing.assert_close(_days_since_event(loader, records, "event_date"), torch.tensor([[0.0, 0.0, 1.0, 0.0]]))
+
+
+def test_v3_pit_alignment_keeps_non_trading_day_announcements():
+    loader = type(
+        "Loader",
+        (),
+        {
+            "ts_codes": ["000001.SZ"],
+            "trade_dates": ["20240105", "20240108", "20240109"],
+            "raw_data_cache": {"close": torch.ones((1, 3))},
+        },
+    )()
+    records = [{"ts_code": "000001.SZ", "ann_date": "20240106", "value": 12.0}]
+
+    matrix = _pit_field_matrices(loader, records, "ann_date", {"metric": ("value",)})["metric"]
+
+    torch.testing.assert_close(matrix, torch.tensor([[0.0, 12.0, 12.0]]))
+
+
+def _rolling_reference(values: torch.Tensor, window: int, operation: str) -> torch.Tensor:
+    columns = []
+    for idx in range(values.shape[1]):
+        current = values[:, max(0, idx - window + 1) : idx + 1]
+        if operation == "sum":
+            columns.append(current.sum(dim=1))
+        elif operation == "mean":
+            columns.append(current.mean(dim=1))
+        else:
+            columns.append(current.std(dim=1, unbiased=False))
+    return torch.stack(columns, dim=1)
 
 
 def _write_fake_expanded_records(data_dir):

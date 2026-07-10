@@ -24,6 +24,7 @@ def _build_parser() -> argparse.ArgumentParser:
         cmd.add_argument("--data-version-manifest-path")
         cmd.add_argument("--matrix-cache-dir")
         cmd.add_argument("--output-dir", required=True)
+        cmd.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
         cmd.add_argument("--feature-set-name", default="ashare_features_v1")
         cmd.add_argument("--feature-set-version", default="1.0")
         cmd.add_argument("--feature-set-manifest-path")
@@ -61,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     if freeze_report.error_count:
         raise RuntimeError(f"data freeze validation failed: {freeze_report.status}")
-    data_dir = str(Path(args.data_freeze_dir) / "data") if args.data_freeze_dir else args.data_dir
+    data_dir = _resolve_data_dir(args.data_dir, args.data_freeze_dir)
     if args.command == "validate":
         manifest = build_feature_set_manifest(
             args.feature_set_name,
@@ -78,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
 
     loader = AShareDataLoader(
         data_dir=data_dir,
+        device=None if args.device == "auto" else args.device,
         matrix_cache_dir=args.matrix_cache_dir,
         use_matrix_cache=bool(args.matrix_cache_dir and (Path(args.matrix_cache_dir) / "metadata.json").exists()),
         point_in_time=args.point_in_time,
@@ -103,6 +105,22 @@ def main(argv: list[str] | None = None) -> int:
     write_feature_factory_report(result.to_dict(), output_dir)
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))
     return 0
+
+
+def _resolve_data_dir(data_dir: str | None, data_freeze_dir: str | None) -> str | None:
+    if not data_freeze_dir:
+        return data_dir
+    freeze_root = Path(data_freeze_dir)
+    physical_data_dir = freeze_root / "data"
+    if physical_data_dir.exists():
+        return str(physical_data_dir)
+    manifest_path = freeze_root / "freeze_manifest.json"
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        source_data_dir = manifest.get("source_data_dir")
+        if source_data_dir and Path(source_data_dir).exists():
+            return str(Path(source_data_dir))
+    return data_dir
 
 
 if __name__ == "__main__":

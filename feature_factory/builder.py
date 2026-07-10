@@ -15,7 +15,12 @@ from model_core.factors import robust_cross_section_zscore
 
 from .catalog import FEATURE_SET_V3, build_feature_set_manifest, manifest_from_payload
 from .coverage import build_feature_coverage_report
-from .extended_builder import attach_extended_feature_matrices, write_extended_feature_reports
+from .extended_builder import (
+    _rolling_std,
+    _rolling_z,
+    attach_extended_feature_matrices,
+    write_extended_feature_reports,
+)
 from .models import FeatureDefinition, FeatureSetManifest, FeatureTensorBuildResult
 
 
@@ -135,6 +140,9 @@ def build_feature_tensor_artifacts(
         warnings=warnings,
     )
     result_payload = result.to_dict()
+    result_payload["data_freeze_id"] = manifest.data_freeze_id
+    result_payload["data_freeze_hash"] = manifest.data_freeze_hash
+    result_payload["feature_set_hash"] = manifest.content_hash
     result_payload["raw_data_index_used"] = bool(raw_index_summary.get("raw_data_index_used"))
     result_payload["dataset_index_status"] = raw_index_summary
     if extended_summary:
@@ -211,6 +219,10 @@ def _compute_raw_feature(raw: dict[str, torch.Tensor], name: str) -> torch.Tenso
     if key is None:
         return None
     value = raw.get(key)
+    if value is None and name == "CASH_DIVIDEND_FLAG" and "cash_dividend" in raw:
+        value = (raw["cash_dividend"] != 0).to(dtype=torch.float32)
+    if value is None and name == "STOCK_DISTRIBUTION_FLAG" and "stock_distribution_ratio" in raw:
+        value = (raw["stock_distribution_ratio"] != 0).to(dtype=torch.float32)
     if value is None:
         return None
     if value.ndim == 1:
@@ -227,25 +239,6 @@ def _log_return(x: torch.Tensor, periods: int) -> torch.Tensor:
     out = torch.log(torch.clamp(x, min=1e-6) / torch.clamp(delayed, min=1e-6))
     out[:, :periods] = 0.0
     return out
-
-
-def _rolling_std(x: torch.Tensor, window: int) -> torch.Tensor:
-    values = []
-    for idx in range(x.shape[1]):
-        start = max(0, idx - window + 1)
-        values.append(x[:, start : idx + 1].std(dim=1, unbiased=False))
-    return torch.stack(values, dim=1)
-
-
-def _rolling_z(x: torch.Tensor, window: int) -> torch.Tensor:
-    values = []
-    for idx in range(x.shape[1]):
-        start = max(0, idx - window + 1)
-        current = x[:, start : idx + 1]
-        mean = current.mean(dim=1)
-        std = current.std(dim=1, unbiased=False)
-        values.append((x[:, idx] - mean) / torch.clamp(std, min=1e-6))
-    return torch.stack(values, dim=1)
 
 
 def _infer_shape(raw: dict[str, torch.Tensor]) -> tuple[int, int]:

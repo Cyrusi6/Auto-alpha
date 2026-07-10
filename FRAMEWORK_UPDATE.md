@@ -2258,3 +2258,26 @@
 - Implement a partitioned or streaming full-market matrix builder before attempting all-stock default matrix cache generation.
 - Vectorize v3 rolling feature tensor generation before running expanded Feature Factory on real full-market data.
 - Repair or review expanded-data blockers before enabling `can_run_expanded_alpha`.
+
+## Real CSI300 V3 Feature Tensor And Rolling Vectorization
+
+- Replaced the duplicated Python date loops used by v2/v3 rolling mean, sum, standard deviation, and z-score features with cumulative-statistics tensor operations. The vectorized path preserves expanding prefixes, limits non-finite propagation to the active window, and is shared by the core and expanded v3 builders.
+- Vectorized industry-relative and event-distance features, cached repeated daily/PIT matrices, built all 12 financial-statement features from one PIT alignment pass, and changed expanded JSONL reads to stream and retain only the loaded universe through the matrix cache.
+- Added manifest-only freeze source resolution, explicit `--device auto|cpu|cuda` selection, freeze/hash lineage in the build result, and corporate-action flag derivation from matrix fields.
+- Built the first governed real CSI300 v3 tensor from `freeze_892e61bd99575f42`: 300 securities, 6,417 dates, 95 features, float32, 731,538,128 bytes, finite ratio 1.0, and SHA256 `c85a02619bd8b6a05acd211814892e88ec518d6635e099a1717f1a253bcd6adc`.
+- The final CPU build completed in 200.17 seconds with a 6.70 GiB peak RSS. The 300 x 6,417 rolling benchmark delivered a 13.82x aggregate speedup; maximum reference deviation was below 0.001 under the recorded float32 acceptance tolerance.
+- Wrote `feature_v3_performance_acceptance.json/md` beside the real tensor. Strict artifact-schema validation recognized 8 artifacts with 0 errors and one expected warning for an empty feature-warning JSONL.
+- Real coverage review found 17 zero-coverage features. Market-wide index features become zero after cross-sectional normalization, while new-share/disclosure/pledge/unlock/northbound families remain affected by current expanded-data or field-mapping readiness and must stay out of promoted Alpha campaigns until reviewed.
+
+### Validation
+
+- `uv run pytest -q`: passed, 481 tests.
+- Focused feature/matrix/PIT/Alpha/readiness regression suite: passed, 30 tests.
+- Real Feature Factory command with the reviewed fresh raw index, manifest-only freeze, CSI300 matrix cache, PIT mode, corporate-action awareness, required freeze/index gates, and `--device cpu`: passed.
+- `uv run python -m artifact_schema.run_validate --strict --fail-on-error`: passed with 0 errors.
+
+### Follow-Ups
+
+- Change market-level feature transforms from cross-sectional normalization to an appropriate identity or time-series transform before enabling those features for Alpha search.
+- Review the remaining zero-coverage pledge, unlock, northbound, disclosure, and new-share fields against real Tushare schemas before enabling expanded Alpha Factory.
+- Add partition-aware expanded dataset reads to avoid scanning multi-gigabyte moneyflow and margin JSONL files for each new process.
