@@ -8,6 +8,7 @@ from statistics import mean, pstdev
 import torch
 
 from .models import FactorValidationSummary, FactorValidationWindowResult, ValidationIssue, ValidationSplit
+from .policy import EngineeringRobustnessPolicy, load_validation_policy
 
 
 def evaluate_factor_splits(
@@ -16,23 +17,44 @@ def evaluate_factor_splits(
     trade_dates: list[str],
     splits: list[ValidationSplit],
     factor_id: str,
+    *,
+    validity: torch.Tensor | None = None,
+    active_mask: torch.Tensor | None = None,
+    target_available_mask: torch.Tensor | None = None,
+    index_member_mask: torch.Tensor | None = None,
+    policy: EngineeringRobustnessPolicy | None = None,
 ) -> tuple[list[FactorValidationWindowResult], FactorValidationSummary, list[ValidationIssue]]:
+    policy = policy or EngineeringRobustnessPolicy(
+        policy_id="legacy_api_compatibility_only",
+        min_cross_section_breadth=2,
+        min_oos_dates=0,
+        min_standard_deviation=-1.0,
+        min_mean_rank_ic=-1.0,
+        min_mean_icir=-1e9,
+        min_window_pass_ratio=0.0,
+        max_train_test_decay=1e9,
+    )
     date_index = {date: idx for idx, date in enumerate(trade_dates)}
     results: list[FactorValidationWindowResult] = []
     issues: list[ValidationIssue] = []
+    daily_cache: dict[int, dict | None] = {}
     for split in splits:
-        train = _metrics_for_dates(factors, target_ret, split.train_dates, date_index)
-        valid = _metrics_for_dates(factors, target_ret, split.validation_dates, date_index)
-        test = _metrics_for_dates(factors, target_ret, split.test_dates, date_index)
+        metric_args = (factors, target_ret, date_index, validity, active_mask, target_available_mask, index_member_mask, policy.min_cross_section_breadth, daily_cache)
+        train = _metrics_for_dates(*metric_args[:2], split.train_dates, *metric_args[2:])
+        valid = _metrics_for_dates(*metric_args[:2], split.validation_dates, *metric_args[2:])
+        test = _metrics_for_dates(*metric_args[:2], split.test_dates, *metric_args[2:])
         warnings = []
         if test.get("n_observations", 0.0) < 2:
             warnings.append("insufficient_test_observations")
+            issues.append(ValidationIssue("warning", "insufficient_test_observations", f"split {split.split_id} has too few test observations", {"split_id": split.split_id}))
+        if test.get("n_dates", 0.0) < policy.min_oos_dates:
+            warnings.append("insufficient_oos_dates")
             issues.append(
                 ValidationIssue(
-                    severity="warning",
-                    code="insufficient_test_observations",
-                    message=f"split {split.split_id} has too few test observations",
-                    metadata={"split_id": split.split_id},
+                    severity="blocker",
+                    code="insufficient_oos_dates",
+                    message=f"split {split.split_id} has fewer than {policy.min_oos_dates} valid OOS dates",
+                    metadata={"split_id": split.split_id, "n_dates": test.get("n_dates", 0.0)},
                 )
             )
         results.append(
@@ -45,7 +67,17 @@ def evaluate_factor_splits(
                 warnings=warnings,
             )
         )
-    summary = summarize_window_results(factor_id, splits[0].method if splits else "unknown", results, issues)
+    finite_valid = factors[validity.bool()] if validity is not None and validity.shape == factors.shape else factors[torch.isfinite(factors)]
+    if finite_valid.numel() == 0:
+        issues.append(ValidationIssue("blocker", "no_valid_factor_values", "factor has no valid values"))
+    else:
+        standard_deviation = float(finite_valid.float().std(unbiased=False).item())
+        nonzero_ratio = float((finite_valid != 0).float().mean().item())
+        if standard_deviation <= policy.min_standard_deviation:
+            issues.append(ValidationIssue("blocker", "zero_variance_factor", "factor is constant or zero variance", {"standard_deviation": standard_deviation}))
+        if nonzero_ratio <= 1e-8:
+            issues.append(ValidationIssue("blocker", "all_zero_factor", "factor contains only zeros"))
+    summary = summarize_window_results(factor_id, splits[0].method if splits else "unknown", results, issues, policy=policy)
     return results, summary, issues
 
 
@@ -54,20 +86,43 @@ def summarize_window_results(
     split_method: str,
     results: list[FactorValidationWindowResult],
     issues: list[ValidationIssue] | None = None,
+    policy: EngineeringRobustnessPolicy | None = None,
 ) -> FactorValidationSummary:
+    policy = policy or EngineeringRobustnessPolicy(
+        policy_id="legacy_api_compatibility_only",
+        min_cross_section_breadth=2,
+        min_oos_dates=0,
+        min_standard_deviation=-1.0,
+        min_mean_rank_ic=-1.0,
+        min_mean_icir=-1e9,
+        min_window_pass_ratio=0.0,
+        max_train_test_decay=1e9,
+    )
     test_scores = [_finite(item.test_metrics.get("out_of_sample_score", 0.0)) for item in results]
     rank_ics = [_finite(item.test_metrics.get("rank_ic_mean", 0.0)) for item in results]
     icirs = [_finite(item.test_metrics.get("icir", 0.0)) for item in results]
     train_scores = [_finite(item.train_metrics.get("out_of_sample_score", 0.0)) for item in results]
     if not test_scores:
+        issues = list(issues or []) + [ValidationIssue("blocker", "no_oos_windows", "no out-of-sample windows were evaluated")]
         test_scores = [0.0]
     avg_score = float(mean(test_scores))
     score_std = float(pstdev(test_scores)) if len(test_scores) > 1 else 0.0
     pass_ratio = float(sum(score >= 0.0 for score in test_scores) / len(test_scores))
     train_mean = float(mean(train_scores)) if train_scores else 0.0
     train_test_decay = float(train_mean - avg_score)
-    blocker_count = sum(1 for issue in issues or [] if issue.severity == "blocker")
-    warning_count = sum(1 for issue in issues or [] if issue.severity == "warning")
+    threshold_failures = []
+    if (float(mean(rank_ics)) if rank_ics else 0.0) < policy.min_mean_rank_ic:
+        threshold_failures.append(("mean_rank_ic_below_policy", float(mean(rank_ics)) if rank_ics else 0.0, policy.min_mean_rank_ic))
+    if (float(mean(icirs)) if icirs else 0.0) < policy.min_mean_icir:
+        threshold_failures.append(("mean_icir_below_policy", float(mean(icirs)) if icirs else 0.0, policy.min_mean_icir))
+    if pass_ratio < policy.min_window_pass_ratio:
+        threshold_failures.append(("window_pass_ratio_below_policy", pass_ratio, policy.min_window_pass_ratio))
+    if train_test_decay > policy.max_train_test_decay:
+        threshold_failures.append(("train_test_decay_above_policy", train_test_decay, policy.max_train_test_decay))
+    issue_rows = list(issues or [])
+    issue_rows.extend(ValidationIssue("blocker", code, f"policy threshold failed: {value} vs {threshold}", {"value": value, "threshold": threshold, "policy_id": policy.policy_id}) for code, value, threshold in threshold_failures)
+    blocker_count = sum(1 for issue in issue_rows if issue.severity == "blocker")
+    warning_count = sum(1 for issue in issue_rows if issue.severity == "warning")
     status = "passed" if blocker_count == 0 else "blocked"
     return FactorValidationSummary(
         factor_id=factor_id,
@@ -90,6 +145,7 @@ def summarize_window_results(
             "score_std": score_std,
             "window_count": float(len(results)),
             "positive_score_windows": float(sum(score >= 0.0 for score in test_scores)),
+            "policy_version": 1.0,
         },
     )
 
@@ -99,6 +155,12 @@ def _metrics_for_dates(
     target_ret: torch.Tensor,
     dates: list[str],
     date_index: dict[str, int],
+    validity: torch.Tensor | None = None,
+    active_mask: torch.Tensor | None = None,
+    target_available_mask: torch.Tensor | None = None,
+    index_member_mask: torch.Tensor | None = None,
+    min_breadth: int = 2,
+    daily_cache: dict[int, dict | None] | None = None,
 ) -> dict[str, float]:
     if not dates:
         return _empty_metrics()
@@ -113,17 +175,38 @@ def _metrics_for_dates(
         idx = date_index.get(trade_date)
         if idx is None or idx >= factors.shape[1] or idx >= target_ret.shape[1]:
             continue
-        x = factors[:, idx].detach().float().cpu()
-        y = target_ret[:, idx].detach().float().cpu()
-        mask = torch.isfinite(x) & torch.isfinite(y)
-        if int(mask.sum().item()) < 2:
+        cached = daily_cache.get(idx) if daily_cache is not None and idx in daily_cache else None
+        if daily_cache is not None and idx in daily_cache and cached is None:
             continue
-        xv = x[mask]
-        yv = y[mask]
-        obs += int(mask.sum().item())
-        coverages.append(float(mask.float().mean().item()))
-        rank_ics.append(_pearson(_rank(xv), _rank(yv)))
-        spread, selected = _top_bottom_spread(xv, yv, mask.nonzero().flatten().tolist())
+        if cached is None:
+            x = factors[:, idx].detach().float().cpu()
+            y = target_ret[:, idx].detach().float().cpu()
+            mask = torch.isfinite(x) & torch.isfinite(y)
+            for governed_mask in (validity, active_mask, target_available_mask, index_member_mask):
+                if governed_mask is not None:
+                    mask &= governed_mask[:, idx].detach().bool().cpu()
+            breadth = int(mask.sum().item())
+            if breadth < int(min_breadth):
+                if daily_cache is not None:
+                    daily_cache[idx] = None
+                continue
+            xv = x[mask]
+            yv = y[mask]
+            spread, selected = _top_bottom_spread(xv, yv, mask.nonzero().flatten().tolist())
+            cached = {
+                "observations": breadth,
+                "coverage": float(mask.float().mean().item()),
+                "rank_ic": _pearson(_rank(xv), _rank(yv)),
+                "spread": spread,
+                "selected": selected,
+            }
+            if daily_cache is not None:
+                daily_cache[idx] = cached
+        obs += int(cached["observations"])
+        coverages.append(float(cached["coverage"]))
+        rank_ics.append(float(cached["rank_ic"]))
+        spread = float(cached["spread"])
+        selected = set(cached["selected"])
         spreads.append(spread)
         losses.append(spread)
         if prev_selected is not None:
@@ -194,9 +277,17 @@ def _empty_metrics() -> dict[str, float]:
 
 
 def _rank(values: torch.Tensor) -> torch.Tensor:
-    order = torch.argsort(values)
-    ranks = torch.zeros_like(values, dtype=torch.float32)
-    ranks[order] = torch.arange(len(values), dtype=torch.float32)
+    order = torch.argsort(values, stable=True)
+    sorted_values = values[order]
+    ranks = torch.empty_like(values, dtype=torch.float32)
+    start = 0
+    while start < len(values):
+        end = start + 1
+        while end < len(values) and bool(sorted_values[end] == sorted_values[start]):
+            end += 1
+        average_rank = (start + end - 1) / 2.0
+        ranks[order[start:end]] = average_rank
+        start = end
     return ranks
 
 

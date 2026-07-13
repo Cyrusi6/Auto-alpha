@@ -50,18 +50,35 @@ def run_job(
         elif not command:
             raise ValueError("job command is empty")
         else:
-            proc = subprocess.run(
+            proc = subprocess.Popen(
                 command,
                 cwd=job.cwd or None,
                 env=env,
                 text=True,
-                capture_output=True,
-                timeout=job.max_duration_seconds,
-                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
+            heartbeat_manager = GpuLeaseManager(store.state_dir)
+            last_heartbeat = 0.0
+            while proc.poll() is None:
+                elapsed = time.perf_counter() - start
+                if job.max_duration_seconds is not None and elapsed > job.max_duration_seconds:
+                    proc.kill()
+                    stdout, stderr = proc.communicate()
+                    raise subprocess.TimeoutExpired(command, job.max_duration_seconds, output=stdout, stderr=stderr)
+                if elapsed - last_heartbeat >= 15.0:
+                    write_heartbeat(store, job.job_id, ComputeJobStatus.RUNNING, lease.lease_id if lease else None, elapsed_seconds=elapsed)
+                    if lease is not None:
+                        heartbeat_manager.heartbeat(lease.lease_id)
+                    last_heartbeat = elapsed
+                try:
+                    proc.wait(timeout=0.25)
+                except subprocess.TimeoutExpired:
+                    pass
+            stdout, stderr = proc.communicate()
             return_code = int(proc.returncode)
-            stdout_tail = _tail(proc.stdout)
-            stderr_tail = _tail(proc.stderr)
+            stdout_tail = _tail(stdout)
+            stderr_tail = _tail(stderr)
             if return_code != 0:
                 status = ComputeJobStatus.FAILED
                 error = stderr_tail or f"return_code={return_code}"

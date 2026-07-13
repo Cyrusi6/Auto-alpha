@@ -13,7 +13,12 @@ def build_certification_queue(
     certification_policy_profile: str = "sample_lenient_certification",
 ) -> list[FactorCertificationQueueRecord]:
     store = LocalValidationCampaignStore(store_dir)
-    leaderboard = [row for row in store.load_leaderboard() if row.get("certification_ready") is True]
+    leaderboard = [
+        row for row in store.load_leaderboard()
+        if row.get("certification_ready") is True
+        and ((row.get("metadata") or {}).get("source_result") or {}).get("selection_data_reused") is not True
+        and ((row.get("metadata") or {}).get("source_result") or {}).get("untouched_holdout") is True
+    ]
     queue: list[FactorCertificationQueueRecord] = []
     for idx, row in enumerate(leaderboard[: max(0, top_k)]):
         metadata = row.get("metadata", {}) if isinstance(row.get("metadata"), dict) else {}

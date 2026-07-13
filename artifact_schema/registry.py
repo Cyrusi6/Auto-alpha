@@ -252,6 +252,22 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         ["status", "candidate_count", "shard_count", "result_count"],
         ["validation_campaign_store_report.json"],
     ),
+    "factor_materialization_manifest": _definition(
+        "factor_materialization_manifest",
+        ["factor_id", "materialization_status", "formula_hash", "formula_tokens", "operator_version", "transform_method"],
+        ["materialization_manifest.json"],
+        optional=["shape", "dtype", "stock_axis_hash", "date_axis_hash", "value_sha256", "validity_sha256", "statistics", "lineage", "input_fingerprint", "blocker"],
+    ),
+    "engineering_robustness_report": _definition(
+        "engineering_robustness_report",
+        ["status", "evidence_level", "candidate_count", "materialization_success_count", "validation_blocked_count", "blocker_distribution", "gpu_shards"],
+        ["engineering_robustness_report.json"],
+    ),
+    "clean_holdout_campaign_plan": _definition(
+        "clean_holdout_campaign_plan",
+        ["status", "research_end_date", "holdout_start_date", "firewall_rule", "start_factor_search"],
+        ["clean_holdout_campaign_plan.json"],
+    ),
     "validation_candidate_dedup_report": _definition(
         "validation_candidate_dedup_report",
         ["validation_campaign_id", "candidate_count", "duplicate_count"],

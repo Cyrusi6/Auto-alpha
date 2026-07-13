@@ -4,19 +4,27 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import time
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+import torch
+
 from artifact_schema.writer import write_json_artifact, write_jsonl_artifact
 from backtest.io import describe_factor, select_factor_id
 from data_lake import validate_research_input
+from evaluation import evaluate_by_splits, split_trade_dates
 from factor_store import LocalFactorStore
 from alpha_experiment_store.leaderboard import load_candidate_pool
 from feature_promotion import load_promotion_gate
 from model_core.data_loader import AShareDataLoader
+from model_core.backtest import AShareFactorEvaluator
 
+from .materialization import FactorMaterializer, MaterializationInputs, load_materialized_factor
 from .metrics import evaluate_factor_splits
 from .models import (
     FactorValidationTarget,
@@ -29,6 +37,7 @@ from .models import (
 from .multiple_testing import analyze_multiple_testing
 from .overfit import estimate_overfit_risk
 from .placebo import run_placebo_tests
+from .policy import load_validation_policy
 from .regime import run_regime_validation
 from .report import write_validation_lab_artifacts
 from .sensitivity import run_sensitivity_tests
@@ -67,6 +76,13 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--real-data-sla-report-path")
     parser.add_argument("--require-real-data-sla-pass", action="store_true")
     parser.add_argument("--matrix-refresh-report-path")
+    parser.add_argument("--matrix-cache-dir")
+    parser.add_argument("--feature-tensor-path")
+    parser.add_argument("--campaign-manifest-path")
+    parser.add_argument("--materialization-dir")
+    parser.add_argument("--materialization-manifest-path")
+    parser.add_argument("--strict-materialization", action="store_true")
+    parser.add_argument("--device", default="cpu")
     parser.add_argument("--factor-store-dir", required=True)
     parser.add_argument("--factor-id")
     parser.add_argument("--factor-type", choices=["single", "composite", "any"], default="any")
@@ -92,12 +108,16 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--as-of-date", default="20240104")
     parser.add_argument("--universe-name")
     parser.add_argument("--universe-file")
-    parser.add_argument("--split-method", default="simple_walk_forward")
-    parser.add_argument("--train-size", type=int, default=1)
-    parser.add_argument("--validation-size", type=int, default=0)
-    parser.add_argument("--test-size", type=int, default=1)
-    parser.add_argument("--step-size", type=int, default=1)
+    parser.add_argument("--split-method", default="rolling_walk_forward")
+    parser.add_argument("--validation-policy", default="real_long_history_engineering_robustness_v1")
+    parser.add_argument("--train-size", type=int, default=756)
+    parser.add_argument("--validation-size", type=int, default=126)
+    parser.add_argument("--test-size", type=int, default=126)
+    parser.add_argument("--step-size", type=int, default=126)
     parser.add_argument("--embargo-size", type=int, default=0)
+    parser.add_argument("--label-horizon", type=int, default=1)
+    parser.add_argument("--research-end-date")
+    parser.add_argument("--holdout-start-date")
     parser.add_argument("--cscv-groups", type=int, default=2)
     parser.add_argument("--max-cscv-combinations", type=int, default=6)
     parser.add_argument("--run-multiple-testing", action="store_true")
@@ -136,19 +156,34 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _run_candidate_pool(args: argparse.Namespace) -> dict[str, Any]:
+    started = time.perf_counter()
+    if str(args.device).startswith("cuda") and torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
     rows = _filter_candidate_pool(load_candidate_pool(args.validation_candidate_pool_path), args)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, Any]] = []
     for idx, row in enumerate(rows):
         candidate_dir = output_dir / "candidates" / f"rank_{int(row.get('rank', idx + 1)):04d}_{row.get('factor_id', 'factor')}"
-        result = _run_single(
-            args,
-            factor_id_override=str(row.get("factor_id")),
-            output_dir_override=str(candidate_dir),
-            factor_store_dir_override=str(row.get("factor_store_dir") or args.factor_store_dir),
-            candidate_pool_row=row,
-        )
+        try:
+            result = _run_single(
+                args,
+                factor_id_override=str(row.get("factor_id")),
+                output_dir_override=str(candidate_dir),
+                factor_store_dir_override=str(row.get("factor_store_dir") or args.factor_store_dir),
+                candidate_pool_row=row,
+            )
+        except Exception as exc:
+            factor_id = str(row.get("factor_id"))
+            materialization_manifest = Path(args.materialization_dir or output_dir / "materialized_factors") / factor_id / "materialization_manifest.json"
+            result = {
+                "status": "blocked",
+                "factor_id": factor_id,
+                "validation_blocker_count": 1,
+                "validation_summary": {"status": "blocked", "blocker_count": 1, "warning_count": 0, "out_of_sample_score": 0.0, "metrics": {}},
+                "error": str(exc),
+                "paths": {"materialization_manifest_path": str(materialization_manifest) if materialization_manifest.exists() else ""},
+            }
         results.append(
             {
                 "factor_id": result.get("factor_id"),
@@ -156,6 +191,13 @@ def _run_candidate_pool(args: argparse.Namespace) -> dict[str, Any]:
                 "status": result.get("status"),
                 "validation_blocker_count": result.get("validation_blocker_count", 0),
                 "out_of_sample_score": (result.get("validation_summary") or {}).get("out_of_sample_score", 0.0),
+                "validation_summary": result.get("validation_summary", {}),
+                "selection_data_reused": True,
+                "untouched_holdout": False,
+                "evidence_level": "retrospective_engineering_only",
+                "certification_ready": False,
+                "portfolio_ready": False,
+                "error": result.get("error"),
                 "source_candidate": row,
                 "paths": result.get("paths", {}),
             }
@@ -177,6 +219,15 @@ def _run_candidate_pool(args: argparse.Namespace) -> dict[str, Any]:
         "blocked_count": blocked,
         "results_path": str(results_path),
         "top_results": results[:10],
+        "resource_usage": {
+            "cuda_visible_devices": os.getenv("CUDA_VISIBLE_DEVICES", ""),
+            "requested_device": args.device,
+            "actual_device": str(torch.cuda.current_device()) if str(args.device).startswith("cuda") and torch.cuda.is_available() else "cpu",
+            "peak_gpu_memory_mb": float(torch.cuda.max_memory_allocated() / 1024**2) if str(args.device).startswith("cuda") and torch.cuda.is_available() else 0.0,
+            "elapsed_seconds": float(time.perf_counter() - started),
+            "throughput_factors_per_second": float(len(results) / max(time.perf_counter() - started, 1e-9)),
+            "fallback_to_cpu": bool(str(args.device).startswith("cuda") and not torch.cuda.is_available()),
+        },
     }
     report_path = write_json_artifact(output_dir / "validation_candidate_pool_report.json", report, "validation_candidate_pool_report", "validation_lab")
     return report | {
@@ -204,34 +255,92 @@ def _run_single(
     data_dir = str(Path(args.data_freeze_dir) / "data") if args.data_freeze_dir else args.data_dir
     if not data_dir:
         raise ValueError("--data-dir or --data-freeze-dir is required")
-    loader = AShareDataLoader(
-        data_dir=data_dir,
-        device="cpu",
-        universe_name=args.universe_name,
-        universe_file=args.universe_file,
-    ).load_data()
     store = LocalFactorStore(factor_store_dir_override or args.factor_store_dir)
     factor_id = factor_id_override or _select_factor(args, store)
     factor_meta = describe_factor(store, factor_id)
-    factors = store.load_factor_values_matrix(factor_id, loader.ts_codes, loader.trade_dates, device="cpu")
+    factor_record = next((record for record in store.load_factors() if record.factor_id == factor_id), None)
+    if factor_record is None:
+        raise RuntimeError(f"factor metadata missing: {factor_id}")
+    policy = load_validation_policy(args.validation_policy)
+    if args.strict_materialization:
+        matrix = _load_governed_matrix_context(args)
+        manifest_path = args.materialization_manifest_path
+        if not manifest_path:
+            if not args.materialization_dir or not args.feature_tensor_path or not args.feature_set_manifest_path or not args.matrix_cache_dir or not args.data_freeze_dir:
+                raise RuntimeError("strict materialization requires freeze, matrix, feature manifest/tensor and materialization dir")
+            materializer = FactorMaterializer(
+                MaterializationInputs(
+                    data_freeze_dir=args.data_freeze_dir,
+                    matrix_cache_dir=args.matrix_cache_dir,
+                    feature_manifest_path=args.feature_set_manifest_path,
+                    feature_tensor_path=args.feature_tensor_path,
+                    promotion_policy_path=args.feature_promotion_policy_path,
+                    target_return_mode=matrix["target_return_mode"],
+                    feature_cutoff_mode=matrix["feature_cutoff_mode"],
+                    point_in_time=True,
+                    campaign_manifest_path=args.campaign_manifest_path,
+                ),
+                args.materialization_dir,
+                device=args.device,
+                min_coverage=policy.min_coverage,
+                max_coverage=policy.max_coverage,
+            )
+            materialization = materializer.materialize(factor_record)
+            if materialization.status != "success":
+                raise RuntimeError(f"factor materialization blocked: {materialization.blocker}")
+            manifest_path = materialization.manifest_path
+        factors, validity, materialization_manifest = load_materialized_factor(manifest_path)
+        if tuple(factors.shape) != tuple(matrix["target_ret"].shape):
+            raise RuntimeError("materialized factor axis/shape mismatch")
+        trade_dates = matrix["trade_dates"]
+        target_ret = matrix["target_ret"]
+        raw_data_cache = matrix["raw_data_cache"]
+    else:
+        loader = AShareDataLoader(
+            data_dir=data_dir,
+            device="cpu",
+            universe_name=args.universe_name,
+            universe_file=args.universe_file,
+        ).load_data()
+        factors = store.load_factor_values_matrix(factor_id, loader.ts_codes, loader.trade_dates, device="cpu")
+        validity = torch.isfinite(factors)
+        materialization_manifest = {}
+        trade_dates = loader.trade_dates
+        target_ret = loader.target_ret
+        raw_data_cache = loader.raw_data_cache
+        matrix = {
+            "active_mask": raw_data_cache.get("active_mask"),
+            "pit_available_mask": raw_data_cache.get("pit_available_mask"),
+            "index_member_matrix": raw_data_cache.get("index_member_matrix"),
+        }
+    effective_embargo = max(int(args.embargo_size), int(factor_record.lookback_days or 1) + int(args.label_horizon))
     splits = build_splits(
         args.split_method,
-        loader.trade_dates,
+        trade_dates,
         args.train_size,
         args.validation_size,
         args.test_size,
         args.step_size,
-        args.embargo_size,
+        effective_embargo,
         args.cscv_groups,
         args.max_cscv_combinations,
     )
     window_results, validation_summary, issues = evaluate_factor_splits(
         factors,
-        loader.target_ret,
-        loader.trade_dates,
+        target_ret,
+        trade_dates,
         splits,
         factor_id,
+        validity=validity,
+        active_mask=matrix.get("active_mask"),
+        target_available_mask=matrix.get("pit_available_mask"),
+        index_member_mask=matrix.get("index_member_matrix"),
+        policy=policy,
     )
+    screening_reproduction = _screening_reproduction(factor_record, factors, target_ret, trade_dates)
+    if screening_reproduction.get("available") and not screening_reproduction.get("within_tolerance"):
+        issues.append(ValidationIssue("blocker", "screening_reproduction_mismatch", "materialized factor did not reproduce original full-eval metrics", screening_reproduction))
+        validation_summary = replace(validation_summary, blocker_count=validation_summary.blocker_count + 1, status="blocked")
     promotion_metadata, promotion_issues = _feature_promotion_metadata(
         args.feature_set_manifest_path,
         list(_factor_field(store, factor_id, "formula") or []),
@@ -261,35 +370,23 @@ def _run_single(
         placebo, placebo_trials = run_placebo_tests(
             factor_id,
             factors,
-            loader.target_ret,
-            loader.trade_dates,
+            target_ret,
+            trade_dates,
             validation_summary.out_of_sample_score,
             n_trials=args.placebo_trials,
         )
     regimes = []
     regime_summary: dict[str, Any] = {"regime_count": 0, "regime_pass_ratio": 0.0}
     if args.run_regime or args.command in {"regime", "run-suite", "smoke"}:
-        regimes, regime_summary = run_regime_validation(factors, loader.target_ret, loader.trade_dates, loader.raw_data_cache)
+        regimes, regime_summary = run_regime_validation(factors, target_ret, trade_dates, raw_data_cache)
     sensitivity_results = []
     sensitivity_surface: dict[str, Any] = {"scenario_count": 0, "sensitivity_pass_ratio": 0.0}
     if args.run_sensitivity or args.command in {"sensitivity", "run-suite", "smoke"}:
-        sensitivity_results, sensitivity_surface = run_sensitivity_tests(
-            validation_summary.out_of_sample_score,
-            _parse_ints(args.top_n_values),
-            _parse_floats(args.max_weight_values),
-            _parse_floats(args.cost_multipliers),
-            _parse_floats(args.capacity_participations),
-        )
+        sensitivity_surface = {"scenario_count": 0, "sensitivity_pass_ratio": 0.0, "status": "unsupported", "reason": "requires real A-share simulator reruns"}
     stress_results = []
     stress_summary: dict[str, Any] = {"stress_scenario_count": 0, "stress_backtest_pass_ratio": 0.0}
     if args.run_stress_backtest or args.command in {"stress-backtest", "run-suite", "smoke"}:
-        stress_results, stress_summary = run_stress_backtest_bundle(
-            {"score": validation_summary.out_of_sample_score},
-            cost_multipliers=_parse_floats(args.cost_multipliers),
-            participations=_parse_floats(args.capacity_participations),
-            top_n_values=_parse_ints(args.top_n_values),
-            max_weight_values=_parse_floats(args.max_weight_values),
-        )
+        stress_summary = {"stress_scenario_count": 0, "stress_backtest_pass_ratio": 0.0, "status": "unsupported", "reason": "requires real A-share simulator reruns with independent curves/fills/costs"}
     target = FactorValidationTarget(
         factor_id=factor_id,
         factor_type=factor_meta.get("factor_type", args.factor_type),
@@ -302,11 +399,26 @@ def _run_single(
             "factor_meta": factor_meta,
             "freeze_status": freeze_report.status,
             "candidate_pool_row": candidate_pool_row or {},
+            "validation_policy": policy.to_dict(),
+            "effective_embargo_size": effective_embargo,
+            "label_horizon": args.label_horizon,
+            "selection_data_reused": True,
+            "untouched_holdout": False,
+            "evidence_level": "retrospective_engineering_only",
+            "certification_supported": False,
+            "portfolio_supported": False,
+            "materialization_manifest": materialization_manifest,
+            "screening_reproduction": screening_reproduction,
+            "research_end_date": args.research_end_date,
+            "holdout_start_date": args.holdout_start_date,
+            "research_holdout_firewall_enabled": bool(args.research_end_date or args.holdout_start_date),
+            "universe_mode": matrix.get("universe_mode", "unknown"),
+            "survivorship_bias_blocker": bool(matrix.get("survivorship_bias_blocker", False)),
             **_feature_pit_metadata(args.feature_set_manifest_path, list(_factor_field(store, factor_id, "formula") or [])),
             **promotion_metadata,
         },
     )
-    status = "passed" if validation_summary.blocker_count == 0 else "blocked"
+    status = validation_summary.status
     report = ValidationLabReport(
         created_at=_utc_now(),
         target=target.to_dict(),
@@ -355,8 +467,87 @@ def _run_single(
         "validation_summary": validation_summary.to_dict(),
         "multiple_testing_summary": multiple_testing.to_dict(),
         "overfit_risk_summary": overfit.to_dict(),
+        "selection_data_reused": True,
+        "untouched_holdout": False,
+        "evidence_level": "retrospective_engineering_only",
+        "certification_ready": False,
+        "portfolio_ready": False,
         "paths": paths,
     }
+
+
+def _load_governed_matrix_context(args: argparse.Namespace) -> dict[str, Any]:
+    matrix_dir = Path(args.matrix_cache_dir)
+    required = ["trade_dates.json", "ts_codes.json", "active_mask.npy", "pit_available_mask.npy", "index_member_matrix.npy", "matrix_version_manifest.json"]
+    missing = [name for name in required if not (matrix_dir / name).exists()]
+    if missing:
+        raise RuntimeError(f"missing governed matrix artifacts: {','.join(missing)}")
+    trade_dates = [str(item) for item in json.loads((matrix_dir / "trade_dates.json").read_text(encoding="utf-8"))]
+    manifest = json.loads((matrix_dir / "matrix_version_manifest.json").read_text(encoding="utf-8"))
+    target_mode = str(manifest.get("target_return_mode") or "adjusted_close")
+    price_name = "total_return.npy" if target_mode == "corporate_action_total_return" else "adjusted_close.npy"
+    price = np.asarray(np.load(matrix_dir / price_name, mmap_mode="r"), dtype=np.float32)
+    target = np.zeros_like(price, dtype=np.float32)
+    target_valid = np.zeros_like(price, dtype=bool)
+    valid_price = np.isfinite(price[:, :-1]) & np.isfinite(price[:, 1:]) & (np.abs(price[:, :-1]) > 1e-12)
+    next_return = np.zeros_like(price[:, :-1], dtype=np.float32)
+    next_return[valid_price] = np.log(np.clip(price[:, 1:][valid_price], 1e-6, None) / np.clip(price[:, :-1][valid_price], 1e-6, None))
+    target[:, :-1] = next_return
+    target_valid[:, :-1] = valid_price
+    masks = {name: torch.tensor(np.asarray(np.load(matrix_dir / f"{name}.npy", mmap_mode="r"), dtype=np.float32), dtype=torch.bool) for name in ["active_mask", "pit_available_mask", "index_member_matrix"]}
+    index_np = masks["index_member_matrix"].numpy()
+    has_pit_constituent_proof = bool(
+        manifest.get("universe_mode") == "daily_pit_constituents"
+        and manifest.get("historical_constituent_proof")
+    )
+    fixed_asof = not has_pit_constituent_proof
+    target_tensor = torch.from_numpy(target)
+    return {
+        "trade_dates": trade_dates,
+        "target_ret": target_tensor,
+        "active_mask": masks["active_mask"],
+        "pit_available_mask": masks["pit_available_mask"] & torch.from_numpy(target_valid),
+        "index_member_matrix": masks["index_member_matrix"],
+        "target_return_mode": target_mode,
+        "feature_cutoff_mode": str(manifest.get("feature_cutoff_mode") or "unknown"),
+        "raw_data_cache": masks | {"target_ret": target_tensor},
+        "universe_mode": "fixed_asof_constituents" if fixed_asof else "daily_pit_constituents",
+        "survivorship_bias_blocker": fixed_asof,
+    }
+
+
+def _screening_reproduction(factor_record, factors: torch.Tensor, target_ret: torch.Tensor, trade_dates: list[str]) -> dict[str, Any]:
+    expected = ((factor_record.metadata or {}).get("metrics_by_split") or {}) if factor_record is not None else {}
+    if not expected:
+        return {"available": False, "within_tolerance": False, "reason": "original metrics unavailable"}
+    recomputed = evaluate_by_splits(
+        AShareFactorEvaluator(),
+        factors,
+        {},
+        torch.nan_to_num(target_ret, nan=0.0, posinf=0.0, neginf=0.0),
+        trade_dates,
+        split_trade_dates(trade_dates),
+    )
+    tolerances = {
+        "rank_ic_mean": 1e-3,
+        "rank_ic_ir": 3e-3,
+        "turnover": 1e-3,
+        "top_bottom_spread": 8e-3,
+        "score": 1.2e-2,
+    }
+    comparisons = {}
+    within = True
+    for split_name in ["train", "valid", "test", "all"]:
+        for metric in ["rank_ic_mean", "rank_ic_ir", "top_bottom_spread", "turnover", "score"]:
+            if metric not in (expected.get(split_name) or {}):
+                continue
+            left = float((expected.get(split_name) or {}).get(metric, 0.0))
+            right = float((recomputed.get(split_name) or {}).get(metric, 0.0))
+            delta = abs(left - right)
+            tolerance = tolerances[metric]
+            comparisons[f"{split_name}.{metric}"] = {"expected": left, "recomputed": right, "absolute_error": delta, "tolerance": tolerance}
+            within = within and delta <= tolerance
+    return {"available": True, "within_tolerance": within, "tolerances": tolerances, "comparisons": comparisons}
 
 
 def _filter_candidate_pool(rows: list[dict[str, Any]], args: argparse.Namespace) -> list[dict[str, Any]]:

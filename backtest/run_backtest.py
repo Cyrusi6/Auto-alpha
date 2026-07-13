@@ -90,8 +90,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--execution-buckets", default="open,morning,afternoon,close")
     parser.add_argument("--execution-plan-dir")
     parser.add_argument("--point-in-time", action="store_true")
-    parser.add_argument("--feature-cutoff-mode", default="same_day_after_close")
-    parser.add_argument("--signal-lag-days", type=int, default=0)
+    parser.add_argument("--feature-cutoff-mode", default="next_open")
+    parser.add_argument("--signal-lag-days", type=int, default=1)
     parser.add_argument("--min-listing-days", type=int, default=0)
     parser.add_argument("--exclude-st", action="store_true")
     parser.add_argument("--active-mask-path")
@@ -145,6 +145,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    if args.feature_cutoff_mode == "same_day_after_close" and int(args.signal_lag_days) <= 0:
+        print(json.dumps({"status": "blocked", "error": "same_day_after_close with signal_lag_days=0 is look-ahead leakage"}, ensure_ascii=False))
+        return 1
+    if int(args.signal_lag_days) < 0:
+        print(json.dumps({"status": "blocked", "error": "signal_lag_days must be non-negative"}, ensure_ascii=False))
+        return 1
     output_dir = Path(args.output_dir)
     freeze_report = validate_research_input(args.data_dir, args.data_freeze_dir, args.require_data_freeze)
     if freeze_report.error_count > 0:
@@ -182,6 +188,7 @@ def main(argv: list[str] | None = None) -> int:
     factor_meta = describe_factor(store, factor_id)
     values = store.load_factor_values(factor_id)
     factors = factor_values_to_matrix(values, loader.ts_codes, loader.trade_dates)
+    factors = apply_signal_lag(factors, int(args.signal_lag_days))
     policy_context = _portfolio_policy_context(portfolio_policy, policy_gate)
 
     simulator = AShareBacktestSimulator(
@@ -214,6 +221,7 @@ def main(argv: list[str] | None = None) -> int:
     result.metrics["data_freeze_enabled"] = 1.0 if args.data_freeze_dir else 0.0
     result.metrics["data_hash_drift_count"] = float(freeze_report.error_count)
     result.metrics["signal_lag_days"] = float(args.signal_lag_days)
+    result.metrics["signal_contract_next_open"] = 1.0 if args.feature_cutoff_mode == "next_open" and args.signal_lag_days >= 1 else 0.0
     if args.point_in_time and "active_mask" in loader.raw_data_cache:
         active_mask = loader.raw_data_cache["active_mask"]
         result.metrics["active_universe_coverage"] = float(active_mask.mean().item()) if active_mask.numel() else 0.0
@@ -656,6 +664,20 @@ def _parse_int_list(value: str | None) -> list[int]:
 
 def _parse_str_list(value: str | None) -> list[str]:
     return [item.strip() for item in (value or "").split(",") if item.strip()]
+
+
+def apply_signal_lag(factors, signal_lag_days: int):
+    """Move signal availability to the actual target-weight and execution date."""
+    import torch
+
+    lag = int(signal_lag_days)
+    tensor = factors.detach().clone() if hasattr(factors, "detach") else torch.tensor(factors, dtype=torch.float32)
+    if lag == 0:
+        return tensor
+    shifted = torch.full_like(tensor, float("nan"))
+    if lag < tensor.shape[1]:
+        shifted[:, lag:] = tensor[:, :-lag]
+    return shifted
 
 
 if __name__ == "__main__":

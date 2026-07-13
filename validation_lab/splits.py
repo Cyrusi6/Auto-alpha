@@ -42,13 +42,15 @@ def build_rolling_walk_forward_splits(
     validation_size: int,
     test_size: int,
     step_size: int,
+    embargo_size: int = 0,
 ) -> list[ValidationSplit]:
     dates = sorted(dates)
     train_size = max(1, int(train_size))
     validation_size = max(0, int(validation_size))
     test_size = max(1, int(test_size))
     step_size = max(1, int(step_size))
-    total = train_size + validation_size + test_size
+    embargo_size = max(0, int(embargo_size))
+    total = train_size + validation_size + test_size + embargo_size * 2
     if len(dates) < total:
         return build_simple_walk_forward_splits(dates, max(1, min(train_size, len(dates) - 1)), test_size, step_size)
     splits = []
@@ -56,14 +58,18 @@ def build_rolling_walk_forward_splits(
     idx = 0
     while start + total <= len(dates):
         train_end = start + train_size
-        valid_end = train_end + validation_size
+        valid_start = train_end + embargo_size
+        valid_end = valid_start + validation_size
+        test_start = valid_end + embargo_size
         splits.append(
             ValidationSplit(
                 split_id=f"rolling_walk_forward_{idx}",
                 method=ValidationSplitMethod.rolling_walk_forward,
                 train_dates=dates[start:train_end],
-                validation_dates=dates[train_end:valid_end],
-                test_dates=dates[valid_end : valid_end + test_size],
+                validation_dates=dates[valid_start:valid_end],
+                test_dates=dates[test_start : test_start + test_size],
+                embargo_dates=dates[train_end:valid_start] + dates[valid_end:test_start],
+                metadata={"embargo_size": embargo_size},
             )
         )
         start += step_size
@@ -171,7 +177,7 @@ def build_splits(
     max_cscv_combinations: int,
 ) -> list[ValidationSplit]:
     if method == ValidationSplitMethod.rolling_walk_forward:
-        return build_rolling_walk_forward_splits(dates, train_size, validation_size, test_size, step_size)
+        return build_rolling_walk_forward_splits(dates, train_size, validation_size, test_size, step_size, embargo_size)
     if method == ValidationSplitMethod.anchored_walk_forward:
         return build_anchored_walk_forward_splits(dates, train_size, test_size, step_size)
     if method == ValidationSplitMethod.purged_embargo:

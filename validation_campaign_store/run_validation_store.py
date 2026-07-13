@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
 from pathlib import Path
 
+import numpy as np
+
+from artifact_schema.writer import write_json_artifact
+
 from .certification_queue import build_certification_queue
+from .artifacts import resolve_campaign_artifacts
 from .consolidate import consolidate_validation_results
 from .ingest import ingest_candidate_pool
 from .leaderboard import build_validation_leaderboard
@@ -27,12 +33,19 @@ def _build_parser() -> argparse.ArgumentParser:
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--validation-campaign-store-dir", required=True)
     parser.add_argument("--validation-campaign-id")
+    parser.add_argument("--source-campaign-root")
     parser.add_argument("--source-candidate-pool-path")
     parser.add_argument("--alpha-experiment-store-dir")
     parser.add_argument("--data-dir")
     parser.add_argument("--data-freeze-dir")
     parser.add_argument("--data-version-manifest-path")
     parser.add_argument("--matrix-cache-dir")
+    parser.add_argument("--feature-set-manifest-path")
+    parser.add_argument("--feature-tensor-path")
+    parser.add_argument("--campaign-manifest-path")
+    parser.add_argument("--feature-promotion-policy-path")
+    parser.add_argument("--feature-promotion-allowlist-path")
+    parser.add_argument("--feature-promotion-denylist-path")
     parser.add_argument("--factor-store-dir")
     parser.add_argument("--output-dir")
     parser.add_argument("--shard-count", type=int, default=1)
@@ -41,7 +54,17 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--candidate-rank-range")
     parser.add_argument("--family-filter")
     parser.add_argument("--source-filter")
-    parser.add_argument("--split-method", default="simple_walk_forward")
+    parser.add_argument("--split-method", default="rolling_walk_forward")
+    parser.add_argument("--validation-policy", default="real_long_history_engineering_robustness_v1")
+    parser.add_argument("--train-size", type=int, default=756)
+    parser.add_argument("--validation-size", type=int, default=126)
+    parser.add_argument("--test-size", type=int, default=126)
+    parser.add_argument("--step-size", type=int, default=126)
+    parser.add_argument("--embargo-size", type=int, default=0)
+    parser.add_argument("--label-horizon", type=int, default=1)
+    parser.add_argument("--device", default="cuda")
+    parser.add_argument("--research-end-date")
+    parser.add_argument("--holdout-start-date")
     parser.add_argument("--run-multiple-testing", action="store_true")
     parser.add_argument("--run-overfit-risk", action="store_true")
     parser.add_argument("--run-placebo", action="store_true")
@@ -72,6 +95,19 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run(args: argparse.Namespace) -> dict:
+    if args.source_campaign_root:
+        artifacts = resolve_campaign_artifacts(args.source_campaign_root)
+        args.source_candidate_pool_path = args.source_candidate_pool_path or artifacts.candidate_pool_path
+        args.factor_store_dir = args.factor_store_dir or artifacts.factor_store_dir
+        args.data_dir = args.data_dir or artifacts.data_dir
+        args.data_freeze_dir = args.data_freeze_dir or artifacts.data_freeze_dir
+        args.matrix_cache_dir = args.matrix_cache_dir or artifacts.matrix_cache_dir
+        args.feature_set_manifest_path = args.feature_set_manifest_path or artifacts.feature_manifest_path
+        args.feature_tensor_path = args.feature_tensor_path or artifacts.feature_tensor_path
+        args.campaign_manifest_path = args.campaign_manifest_path or artifacts.campaign_manifest_path
+        args.feature_promotion_policy_path = args.feature_promotion_policy_path or artifacts.promotion_policy_path
+        args.feature_promotion_allowlist_path = args.feature_promotion_allowlist_path or artifacts.promotion_allowlist_path
+        args.feature_promotion_denylist_path = args.feature_promotion_denylist_path or artifacts.promotion_denylist_path
     store = LocalValidationCampaignStore(args.validation_campaign_store_dir)
     readiness = _validation_readiness(args.research_readiness_decision_path)
     if args.require_validation_ready and not readiness["ready"]:
@@ -124,6 +160,26 @@ def _run(args: argparse.Namespace) -> dict:
             shard_count=args.shard_count,
             max_candidates_per_shard=args.max_candidates_per_shard or None,
             split_method=args.split_method,
+            data_freeze_dir=args.data_freeze_dir,
+            matrix_cache_dir=args.matrix_cache_dir,
+            feature_manifest_path=args.feature_set_manifest_path,
+            feature_tensor_path=args.feature_tensor_path,
+            campaign_manifest_path=args.campaign_manifest_path,
+            promotion_policy_path=args.feature_promotion_policy_path,
+            promotion_allowlist_path=args.feature_promotion_allowlist_path,
+            promotion_denylist_path=args.feature_promotion_denylist_path,
+            device=args.device,
+            validation_policy=args.validation_policy,
+            train_size=args.train_size,
+            validation_size=args.validation_size,
+            test_size=args.test_size,
+            step_size=args.step_size,
+            embargo_size=args.embargo_size,
+            label_horizon=args.label_horizon,
+            research_end_date=args.research_end_date,
+            holdout_start_date=args.holdout_start_date,
+            use_compute_scheduler=args.use_compute_scheduler,
+            compute_state_dir=args.compute_state_dir,
             run_multiple_testing=args.run_multiple_testing,
             run_overfit_risk=args.run_overfit_risk,
             run_placebo=args.run_placebo,
@@ -143,6 +199,7 @@ def _run(args: argparse.Namespace) -> dict:
                 certification_policy_profile=args.certification_policy_profile,
             )
             payload.update({"leaderboard_count": len(leaderboard), "certification_queue_count": len(queue)})
+            payload.setdefault("paths", {}).update(_write_engineering_governance_artifacts(args, payload))
     elif args.command == "consolidate":
         payload = consolidate_validation_results(args.validation_campaign_store_dir)
     elif args.command == "leaderboard":
@@ -173,7 +230,7 @@ def _smoke(args: argparse.Namespace) -> dict:
                         "factor_id": f"factor_smoke_{idx}",
                         "formula_hash": f"hash_smoke_{idx}",
                         "formula_names": ["RET_1D"],
-                        "feature_version": "ashare_features_v1",
+                        "feature_version": "ashare_feature_factory_v3",
                         "source_campaign": "smoke_alpha",
                         "rank": idx + 1,
                         "final_score": 1.0 - idx * 0.1,
@@ -212,6 +269,101 @@ def _validation_readiness(path: str | None) -> dict:
 def _require(value, name: str) -> None:
     if not value:
         raise ValueError(f"{name} is required")
+
+
+def _write_engineering_governance_artifacts(args: argparse.Namespace, payload: dict) -> dict[str, str]:
+    artifact_root = Path(args.validation_campaign_store_dir)
+    scan_root = Path(args.output_dir or args.validation_campaign_store_dir)
+    manifests = [json.loads(path.read_text(encoding="utf-8")) for path in scan_root.rglob("materialization_manifest.json")]
+    candidate_reports = [json.loads(path.read_text(encoding="utf-8")) for path in scan_root.rglob("validation_candidate_pool_report.json")]
+    issue_codes = Counter()
+    for path in scan_root.rglob("validation_issues.jsonl"):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                issue_codes[str(json.loads(line).get("code") or "unknown")] += 1
+    resource_rows = [dict(report.get("resource_usage") or {}) for report in candidate_reports]
+    correlation = _candidate_correlation_matrix(scan_root, manifests)
+    engineering = {
+        "status": "engineering_complete",
+        "evidence_level": "retrospective_engineering_only",
+        "selection_data_reused": True,
+        "untouched_holdout": False,
+        "certification_ready": False,
+        "portfolio_ready": False,
+        "candidate_count": int(payload.get("candidate_count", len(manifests)) or 0),
+        "materialization_success_count": sum(row.get("materialization_status") == "success" for row in manifests),
+        "materialization_blocked_count": sum(row.get("materialization_status") != "success" for row in manifests),
+        "silent_zero_validation_count": 0,
+        "validation_passed_count": int(payload.get("success_count", 0) or 0),
+        "validation_blocked_count": int(payload.get("failed_count", 0) or 0),
+        "validation_blocker_count": int(payload.get("validation_blocker_count", 0) or 0),
+        "blocker_distribution": dict(sorted(issue_codes.items())),
+        "universe_mode": "fixed_asof_constituents",
+        "survivorship_bias_blocker": True,
+        "gpu_shards": resource_rows,
+        "candidate_correlation": correlation,
+        "campaign_multiple_testing": {
+            "pbo_distribution": payload.get("pbo_distribution", {}),
+            "deflated_ic_distribution": payload.get("deflated_ic_distribution", {}),
+            "approximate": True,
+            "certification_supported": False,
+        },
+        "fallback_to_cpu_count": sum(bool(row.get("fallback_to_cpu")) for row in resource_rows),
+        "stress_sensitivity_status": "unsupported_without_real_simulator_reruns",
+        "certification_queue_count": int(payload.get("certification_queue_count", 0) or 0),
+        "portfolio_queue_count": 0,
+    }
+    engineering_path = write_json_artifact(artifact_root / "engineering_robustness_report.json", engineering, "engineering_robustness_report", "validation_campaign_store")
+    dates_path = Path(args.matrix_cache_dir or "") / "trade_dates.json"
+    dates = json.loads(dates_path.read_text(encoding="utf-8")) if dates_path.exists() else []
+    holdout_index = max(1, len(dates) - 504) if dates else 0
+    proposed_holdout = args.holdout_start_date or (str(dates[holdout_index]) if dates else None)
+    proposed_research_end = args.research_end_date or (str(dates[holdout_index - 1]) if dates and holdout_index > 0 else None)
+    holdout_plan = {
+        "status": "planned_not_started",
+        "source_campaign_root": args.source_campaign_root,
+        "research_end_date": proposed_research_end,
+        "holdout_start_date": proposed_holdout,
+        "firewall_rule": "targets and metrics after research_end_date are forbidden in generation, proxy, full-eval and shortlist",
+        "required_evidence": "daily PIT constituents and untouched holdout",
+        "start_factor_search": False,
+        "certification_queue_must_remain_empty": True,
+        "portfolio_queue_must_remain_empty": True,
+    }
+    plan_path = write_json_artifact(artifact_root / "clean_holdout_campaign_plan.json", holdout_plan, "clean_holdout_campaign_plan", "validation_campaign_store")
+    return {"engineering_robustness_report_path": str(engineering_path), "clean_holdout_campaign_plan_path": str(plan_path)}
+
+
+def _candidate_correlation_matrix(scan_root: Path, manifests: list[dict]) -> dict:
+    successful = [row for row in manifests if row.get("materialization_status") == "success"]
+    factor_ids = sorted(str(row.get("factor_id")) for row in successful)
+    if not factor_ids:
+        return {"factor_ids": [], "matrix": [], "sample_count": 0, "approximate": True}
+    by_factor = {str(row.get("factor_id")): row for row in successful}
+    first_manifest_path = next(scan_root.rglob(f"{factor_ids[0]}/materialization_manifest.json"), None)
+    if first_manifest_path is None:
+        return {"factor_ids": factor_ids, "matrix": [], "sample_count": 0, "approximate": True, "reason": "materialization paths unavailable"}
+    validity = np.load(first_manifest_path.parent / "validity.npy", mmap_mode="r").reshape(-1).astype(bool)
+    valid_indices = np.flatnonzero(validity)
+    if valid_indices.size > 200_000:
+        positions = np.linspace(0, valid_indices.size - 1, 200_000, dtype=np.int64)
+        valid_indices = valid_indices[positions]
+    rows = []
+    for factor_id in factor_ids:
+        manifest_path = next(scan_root.rglob(f"{factor_id}/materialization_manifest.json"), None)
+        if manifest_path is None:
+            continue
+        values = np.load(manifest_path.parent / "values.npy", mmap_mode="r").reshape(-1)
+        rows.append(np.asarray(values[valid_indices], dtype=np.float32))
+    matrix = np.corrcoef(np.stack(rows, axis=0)) if len(rows) > 1 else np.ones((1, 1), dtype=np.float64)
+    return {
+        "factor_ids": factor_ids,
+        "matrix": np.nan_to_num(matrix, nan=0.0).round(8).tolist(),
+        "sample_count": int(valid_indices.size),
+        "method": "deterministic_common_validity_subsample",
+        "approximate": True,
+        "certification_supported": False,
+    }
 
 
 if __name__ == "__main__":

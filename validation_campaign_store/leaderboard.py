@@ -33,8 +33,8 @@ def build_validation_leaderboard(store_dir: str, *, top_k: int = 100, family_cap
             formula_hash=row.formula_hash,
             validation_score=row.validation_score,
             score_components=dict((row.metadata or {}).get("score_components", {})),
-            certification_ready=row.blocker_count == 0 and row.validation_status in {"passed", "warning"},
-            reason="certification ready" if row.blocker_count == 0 else "validation blockers exist",
+            certification_ready=False,
+            reason="retrospective engineering evidence; selection data reused and untouched holdout unavailable",
             metadata=row.metadata,
         )
         for idx, row in enumerate(selected)

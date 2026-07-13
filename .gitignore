@@ -52,6 +52,17 @@ ENV/
 htmlcov/
 .tox/
 
+# Governed research data and large artifacts
+/data/
+/artifacts/
+/campaigns/
+/checkpoints/
+*.npy
+*.npz
+*.memmap
+*.pt
+*.pth
+
 # Jupyter Notebook
 .ipynb_checkpoints
 

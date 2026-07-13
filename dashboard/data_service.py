@@ -401,6 +401,12 @@ class AshareDashboardService:
     def load_validation_campaign_store_report(self) -> dict[str, Any]:
         return self._read_first_json(self._validation_campaign_artifact_candidates("validation_campaign_store_report.json"))
 
+    def load_engineering_robustness_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_campaign_artifact_candidates("engineering_robustness_report.json"))
+
+    def load_clean_holdout_campaign_plan(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_campaign_artifact_candidates("clean_holdout_campaign_plan.json"))
+
     def load_validation_campaigns(self) -> pd.DataFrame:
         return self._read_first_jsonl(self._validation_campaign_artifact_candidates("validation_campaigns.jsonl"))
 

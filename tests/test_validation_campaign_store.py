@@ -98,7 +98,7 @@ def test_validation_campaign_store_end_to_end_and_certification_queue_dry_run(tm
     assert payload["shard_count"] == 2
     assert payload["candidate_count"] == 2
     assert payload["leaderboard_count"] == 2
-    assert payload["certification_queue_count"] >= 1
+    assert payload["certification_queue_count"] == 0
     assert (campaign_dir / "validation_campaign_registry.json").exists()
     assert (campaign_dir / "validation_candidate_results.jsonl").exists()
     assert (campaign_dir / "validation_leaderboard.jsonl").exists()
@@ -109,7 +109,7 @@ def test_validation_campaign_store_end_to_end_and_certification_queue_dry_run(tm
     queue_summary, _queue_alerts = check_factor_certification_queue(campaign_dir / "factor_certification_queue.jsonl")
     assert store_summary["validation_result_count"] == 2
     assert leaderboard_summary["validation_leaderboard_count"] == 2
-    assert queue_summary["certification_queue_count"] >= 1
+    assert queue_summary["certification_queue_count"] == 0
     assert not [alert for alert in store_alerts if alert.severity == "error"]
 
     dry_code = certify_main(
@@ -130,7 +130,7 @@ def test_validation_campaign_store_end_to_end_and_certification_queue_dry_run(tm
     dry_payload = json.loads(capsys.readouterr().out)
     assert dry_code == 0
     assert dry_payload["dry_run"] is True
-    assert dry_payload["selected_count"] == 1
+    assert dry_payload["selected_count"] == 0
 
 
 def test_validation_campaign_store_schema_validation(tmp_path, capsys):

@@ -1879,6 +1879,8 @@ def check_validation_campaign_store(
     registry_path: str | Path | None = None,
 ) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     report = _read_json(Path(report_path)) if report_path else {}
+    engineering_path = Path(report_path).parent / "engineering_robustness_report.json" if report_path else None
+    engineering = _read_json(engineering_path) if engineering_path and engineering_path.exists() else {}
     registry = _read_json(Path(registry_path)) if registry_path else {}
     payload = report or registry
     status = str(payload.get("status", "missing") if payload else "missing")
@@ -1899,6 +1901,10 @@ def check_validation_campaign_store(
         "validation_failed_shard_count": failed_shards,
         "validation_result_count": result_count,
         "validation_campaign_blocker_count": blocker_count,
+        "materialization_success_count": int(engineering.get("materialization_success_count", 0) or 0),
+        "silent_zero_validation_count": int(engineering.get("silent_zero_validation_count", 0) or 0),
+        "survivorship_bias_blocker": bool(engineering.get("survivorship_bias_blocker", False)),
+        "fallback_to_cpu_count": int(engineering.get("fallback_to_cpu_count", 0) or 0),
     }, alerts
 
 

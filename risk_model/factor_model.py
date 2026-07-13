@@ -65,7 +65,7 @@ def estimate_specific_risk(loader, factor_exposures: FactorExposureMatrix, facto
     return torch.clamp(torch.nan_to_num(specific, nan=1e-6, posinf=1e-6, neginf=1e-6), min=1e-6)
 
 
-def build_barra_like_risk_model(loader, lookback: int | None = None, shrinkage: float = 0.1) -> FactorRiskModel:
+def build_barra_like_risk_model(loader, lookback: int | None = None, shrinkage: float = 0.1, as_of_index: int | None = None) -> FactorRiskModel:
     style = build_style_exposures(loader)
     industry, industry_names, _ = build_industry_exposures(loader)
     n_dates = len(loader.trade_dates)
@@ -74,18 +74,24 @@ def build_barra_like_risk_model(loader, lookback: int | None = None, shrinkage: 
     style_cube = torch.stack([style[name] for name in style_names], dim=1)
     exposures = torch.cat([style_cube, industry_cube], dim=1)
     factor_names = [*style_names, *industry_names]
-    if lookback is not None and lookback > 0 and n_dates > lookback:
-        exposures_for_estimation = exposures[:, :, -lookback:]
+    estimation_end = n_dates if as_of_index is None else max(0, min(int(as_of_index), n_dates))
+    estimation_start = 0 if lookback is None or lookback <= 0 else max(0, estimation_end - int(lookback))
+    if estimation_end > estimation_start:
+        exposures_for_estimation = exposures[:, :, estimation_start:estimation_end]
         original_dates = list(loader.trade_dates)
         original_target = loader.target_ret
         class _WindowLoader:
             pass
         estimation_loader = _WindowLoader()
-        estimation_loader.target_ret = original_target[:, -lookback:]
-        estimation_loader.trade_dates = original_dates[-lookback:]
+        estimation_loader.target_ret = original_target[:, estimation_start:estimation_end]
+        estimation_loader.trade_dates = original_dates[estimation_start:estimation_end]
     else:
-        exposures_for_estimation = exposures
-        estimation_loader = loader
+        exposures_for_estimation = exposures[:, :, :0]
+        class _EmptyLoader:
+            pass
+        estimation_loader = _EmptyLoader()
+        estimation_loader.target_ret = loader.target_ret[:, :0]
+        estimation_loader.trade_dates = []
     exposure_matrix = FactorExposureMatrix(
         factor_names=factor_names,
         style_factor_names=style_names,
@@ -110,6 +116,9 @@ def build_barra_like_risk_model(loader, lookback: int | None = None, shrinkage: 
         "factor_covariance_trace": float(torch.trace(factor_covariance).item()),
         "specific_risk_mean": float(specific_risk.mean().item()) if specific_risk.numel() else 0.0,
         "specific_risk_max": float(specific_risk.max().item()) if specific_risk.numel() else 0.0,
+        "estimation_start_index": estimation_start,
+        "estimation_end_index_exclusive": estimation_end,
+        "point_in_time": as_of_index is not None,
     }
     return FactorRiskModel(
         spec=FactorModelSpec(style_factors=style_names, industry_factors=industry_names, shrinkage=shrinkage, lookback=lookback),

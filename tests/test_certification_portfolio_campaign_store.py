@@ -88,7 +88,22 @@ def _prepare_validation_queue(tmp_path, capsys):
         ]
     ) == 0
     capsys.readouterr()
-    return data_dir, store_dir, validation_dir / "factor_certification_queue.jsonl"
+    queue_path = validation_dir / "factor_certification_queue.jsonl"
+    assert queue_path.read_text(encoding="utf-8") == ""
+    clean_queue = {
+        "queue_id": "certq_clean_holdout_1",
+        "validation_candidate_id": rows[0]["factor_id"],
+        "factor_id": rows[0]["factor_id"],
+        "priority": 1,
+        "certification_policy_profile": "sample_lenient_certification",
+        "validation_result_path": "",
+        "factor_store_dir": str(store_dir),
+        "status": "queued",
+        "reason": "synthetic untouched-holdout certification fixture",
+        "metadata": {"selection_data_reused": False, "untouched_holdout": True, "evidence_level": "clean_holdout_test_fixture"},
+    }
+    queue_path.write_text(json.dumps(clean_queue, sort_keys=True) + "\n", encoding="utf-8")
+    return data_dir, store_dir, queue_path
 
 
 def test_certification_and_portfolio_campaign_store_end_to_end(tmp_path, capsys):
@@ -109,8 +124,8 @@ def test_certification_and_portfolio_campaign_store_end_to_end(tmp_path, capsys)
         ]
     ) == 0
     cert_payload = json.loads(capsys.readouterr().out)
-    assert cert_payload["certified_factor_pool_count"] == 1
-    assert sum(1 for line in (certification_dir / "certified_factor_pool.jsonl").read_text().splitlines() if line.strip()) == 1
+    assert cert_payload["certified_factor_pool_count"] == 0
+    assert sum(1 for line in (certification_dir / "certified_factor_pool.jsonl").read_text().splitlines() if line.strip()) == 0
 
     portfolio_dir = tmp_path / "portfolio_campaign"
     assert portfolio_campaign_main(
@@ -134,19 +149,19 @@ def test_certification_and_portfolio_campaign_store_end_to_end(tmp_path, capsys)
         ]
     ) == 0
     portfolio_payload = json.loads(capsys.readouterr().out)
-    assert portfolio_payload["production_candidate_bundle_count"] == 1
-    assert portfolio_payload["optimizer_policy_activation_queue_count"] == 1
+    assert portfolio_payload["production_candidate_bundle_count"] == 0
+    assert portfolio_payload["optimizer_policy_activation_queue_count"] == 0
 
     cert_summary, cert_alerts = check_factor_certification_campaign(certification_dir / "factor_certification_campaign_report.json")
     pool_summary, _ = check_certified_factor_pool(certification_dir / "certified_factor_pool.jsonl")
     portfolio_summary, _ = check_portfolio_campaign(portfolio_dir / "portfolio_certification_campaign_report.json")
     bundle_summary, _ = check_production_candidate_bundle(portfolio_dir / "production_candidate_bundle.jsonl")
     activation_summary, _ = check_optimizer_policy_activation_queue(portfolio_dir / "optimizer_policy_activation_queue.jsonl")
-    assert cert_summary["certified_factor_pool_count"] == 1
-    assert pool_summary["certified_factor_pool_count"] == 1
-    assert portfolio_summary["production_candidate_bundle_count"] == 1
-    assert bundle_summary["production_candidate_bundle_count"] == 1
-    assert activation_summary["optimizer_policy_activation_queue_count"] == 1
+    assert cert_summary["certified_factor_pool_count"] == 0
+    assert pool_summary["certified_factor_pool_count"] == 0
+    assert portfolio_summary["production_candidate_bundle_count"] == 0
+    assert bundle_summary["production_candidate_bundle_count"] == 0
+    assert activation_summary["optimizer_policy_activation_queue_count"] == 0
     assert not [alert for alert in cert_alerts if alert.severity == "error"]
 
     assert artifact_validate_main(

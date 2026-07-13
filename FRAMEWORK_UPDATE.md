@@ -2306,3 +2306,25 @@
 - Run the 20-candidate validation pool through deterministic out-of-sample and walk-forward validation before any certification or portfolio use; the current full-evaluation test split is weak on average and should be treated as a screening result, not production evidence.
 - Review and repair the remaining 11 zero-coverage expanded features before widening the promotion policy beyond the governed core set.
 - Replace JSONL factor-value materialization with a compact columnar/partitioned store before persisting large full-history factor matrices.
+## 2026-07-13 - Task 050-A
+
+### 本次变更摘要
+- 新增唯一正式 `FactorMaterializer`，从真实 campaign manifest 自动解析 freeze、matrix cache、v3 feature tensor/manifest、promotion policy、factor store 和 candidate pool，使用 dynamic vocab `StackVM` 重算并写入紧凑 `float32 NPY + validity mask`。
+- Validation Lab 改为版本化 `real_long_history_engineering_robustness_v1`，默认 rolling walk-forward `756/126/126/126`，embargo 至少覆盖公式 lookback 与 label horizon；全零、零方差、低 breadth、样本不足、血缘漂移和缺失文件均 fail closed。
+- 接通四个独立 CUDA shard、独占 GPU lease、长任务 heartbeat、不可变输入 fingerprint resume、资源/显存/吞吐/OOM/fallback 报告；正式路径移除 1 日窗口硬编码。
+- 回测默认合同改为 `signal(t close) -> execution(t+1 open)`，零 lag 的 same-day-after-close 明确阻断；信号 lag 实际移动矩阵，风险协方差和 Barra-like 估计改为逐时点历史窗口。
+- 当前 retrospective campaign 强制记录 selection-data reuse、无 untouched holdout 与 fixed-as-of survivorship blocker，certification/portfolio queue 为空；stress/sensitivity 未真实重跑模拟器时明确标记 unsupported。
+
+### 真实运行结果
+- CSI300 v3 当前 20 个候选：20/20 紧凑物化成功，20/20 engineering validation blocked，silent-zero validation 为 0，certification queue 为 0。
+- 四张 RTX 4090 均产生真实 shard job，GPU fallback=0、OOM=0；相同输入复放的物化 SHA 与核心 metrics 摘要 hash 一致。
+- 真实输出保留在服务器独立 validation 目录，仓库不提交 NPY、campaign 数据或绝对路径配置。
+
+### 主要文件
+- `validation_lab/materialization.py`、`validation_lab/policy.py`、`validation_lab/metrics.py`、`validation_lab/run_validation.py`
+- `validation_campaign_store/artifacts.py`、`validation_campaign_store/scheduler.py`、`validation_campaign_store/run_validation_store.py`
+- `backtest/run_backtest.py`、`backtest/simulator.py`、`risk_model/covariance.py`、`risk_model/factor_model.py`
+- `artifact_schema/registry.py`、`dashboard/data_service.py`、`monitoring/checks.py`、`tests/test_task_050a.py`
+
+### 后续待办
+- 下一任务应基于 `clean_holdout_campaign_plan.json` 启动全新 research-cutoff campaign，并补充可证明的逐日 PIT CSI300 历史成分数据；在此之前不得进入 certification、portfolio 或实盘。

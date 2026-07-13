@@ -5,8 +5,11 @@ from __future__ import annotations
 import torch
 
 
-def estimate_return_covariance(loader, lookback: int | None = None, shrinkage: float = 0.1) -> torch.Tensor:
+def estimate_return_covariance(loader, lookback: int | None = None, shrinkage: float = 0.1, as_of_index: int | None = None) -> torch.Tensor:
     returns = loader.target_ret.detach().cpu().to(dtype=torch.float32)
+    if as_of_index is not None:
+        end = max(0, min(int(as_of_index), returns.shape[1]))
+        returns = returns[:, :end]
     if lookback is not None and lookback > 0:
         returns = returns[:, -lookback:]
     n_stocks = returns.shape[0]

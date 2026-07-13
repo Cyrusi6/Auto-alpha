@@ -136,16 +136,20 @@ class AShareBacktestSimulator:
         snapshots: list[PortfolioSnapshot] = []
         fills: list[TradeFill] = []
         total_cost = 0.0
-        covariance = estimate_return_covariance(loader)
         optimizer = PortfolioOptimizer(self.optimization_config)
         risk_metric_rows: list[dict[str, float]] = []
-        factor_risk_model = (
-            build_barra_like_risk_model(loader, lookback=self.risk_model_lookback, shrinkage=self.risk_model_shrinkage)
-            if self.use_factor_risk_model
-            else None
-        )
+        factor_risk_model = None
 
         for date_idx, trade_date in enumerate(loader.trade_dates):
+            covariance = estimate_return_covariance(loader, lookback=self.risk_model_lookback, shrinkage=self.risk_model_shrinkage, as_of_index=date_idx)
+            factor_risk_model = None
+            if self.use_factor_risk_model and date_idx > 0:
+                factor_risk_model = build_barra_like_risk_model(
+                    loader,
+                    lookback=self.risk_model_lookback,
+                    shrinkage=self.risk_model_shrinkage,
+                    as_of_index=date_idx,
+                )
             if date_idx > 0:
                 realized_return = float((current_weights * target_ret[:, date_idx - 1]).sum().item())
                 equity *= 1.0 + realized_return
