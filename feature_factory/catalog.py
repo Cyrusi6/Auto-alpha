@@ -268,15 +268,15 @@ def _v3(
 
 def _v3_extra_definitions() -> list[FeatureDefinition]:
     return [
-        _v3("INDEX_RETURN_1D", FeatureFamily.index_market, ["index_daily_bars.close"], required=["index_daily_bars"], lookback=1),
-        _v3("INDEX_RETURN_5D", FeatureFamily.index_market, ["index_daily_bars.close"], required=["index_daily_bars"], lookback=5),
-        _v3("INDEX_RETURN_20D", FeatureFamily.index_market, ["index_daily_bars.close"], required=["index_daily_bars"], lookback=20),
-        _v3("INDEX_VOLATILITY_20D", FeatureFamily.index_market, ["index_daily_bars.close"], required=["index_daily_bars"], lookback=20),
+        _v3("INDEX_RETURN_1D", FeatureFamily.index_market, ["index_daily_bars.close"], required=["index_daily_bars"], lookback=60, transform="time_series_zscore"),
+        _v3("INDEX_RETURN_5D", FeatureFamily.index_market, ["index_daily_bars.close"], required=["index_daily_bars"], lookback=60, transform="time_series_zscore"),
+        _v3("INDEX_RETURN_20D", FeatureFamily.index_market, ["index_daily_bars.close"], required=["index_daily_bars"], lookback=60, transform="time_series_zscore"),
+        _v3("INDEX_VOLATILITY_20D", FeatureFamily.index_market, ["index_daily_bars.close"], required=["index_daily_bars"], lookback=60, transform="time_series_zscore"),
         _v3("BENCHMARK_RELATIVE_RETURN_5D", FeatureFamily.index_market, ["close", "index_daily_bars.close"], required=["daily_bars"], optional=["index_daily_bars"], lookback=5),
         _v3("BENCHMARK_RELATIVE_RETURN_20D", FeatureFamily.index_market, ["close", "index_daily_bars.close"], required=["daily_bars"], optional=["index_daily_bars"], lookback=20),
         _v3("MARKET_REGIME_UP_DOWN_FLAG", FeatureFamily.index_market, ["index_daily_bars.close"], required=["index_daily_bars"], transform="identity"),
-        _v3("INDEX_VALUATION_PE", FeatureFamily.index_market, ["index_daily_basic.pe"], required=["index_daily_basic"]),
-        _v3("INDEX_VALUATION_PB", FeatureFamily.index_market, ["index_daily_basic.pb"], required=["index_daily_basic"]),
+        _v3("INDEX_VALUATION_PE", FeatureFamily.index_market, ["index_daily_basic.pe"], required=["index_daily_basic"], lookback=60, transform="time_series_zscore"),
+        _v3("INDEX_VALUATION_PB", FeatureFamily.index_market, ["index_daily_basic.pb"], required=["index_daily_basic"], lookback=60, transform="time_series_zscore"),
         _v3("INDUSTRY_MEMBER_FLAG", FeatureFamily.industry, ["industry_members"], required=["industry_members"], transform="identity", used_for_filter=True, used_for_risk=True),
         _v3("INDUSTRY_RELATIVE_RETURN_5D", FeatureFamily.industry, ["industry_members", "close"], required=["daily_bars"], optional=["industry_members"], lookback=5),
         _v3("INDUSTRY_RELATIVE_RETURN_20D", FeatureFamily.industry, ["industry_members", "close"], required=["daily_bars"], optional=["industry_members"], lookback=20),

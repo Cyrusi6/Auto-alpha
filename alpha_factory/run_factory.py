@@ -37,6 +37,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--report-dir")
     parser.add_argument("--matrix-cache-dir")
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--feature-set-name", default="ashare_features_v1")
     parser.add_argument("--feature-set-manifest-path")
     parser.add_argument("--require-feature-family-ready")
@@ -67,6 +68,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-lookback", type=int, default=20)
     parser.add_argument("--proxy-max-candidates", type=int, default=30)
     parser.add_argument("--proxy-max-dates", type=int, default=3)
+    parser.add_argument("--full-eval-max-candidates", type=int, default=30)
     parser.add_argument("--top-k", type=int, default=8)
     parser.add_argument("--max-per-family", type=int, default=3)
     parser.add_argument("--min-novelty-score", type=float, default=0.0)
@@ -129,6 +131,7 @@ def main(argv: list[str] | None = None) -> int:
         formula_corpus_path=args.formula_corpus_path,
         candidates_json=args.candidates_json,
         matrix_cache_dir=args.matrix_cache_dir,
+        device=args.device,
         universe_name=args.universe_name,
         universe_file=args.universe_file,
         feature_set_name=args.feature_set_name,
@@ -156,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
         max_lookback=args.max_lookback,
         proxy_max_candidates=args.proxy_max_candidates,
         proxy_max_dates=args.proxy_max_dates,
+        full_eval_max_candidates=args.full_eval_max_candidates,
         top_k=args.top_k,
         max_per_family=args.max_per_family,
         min_novelty_score=args.min_novelty_score,

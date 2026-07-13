@@ -8,6 +8,7 @@ from dashboard.data_service import AshareDashboardService
 from data_pipeline.ashare import AShareDataConfig, AShareDataManager
 from feature_factory import FEATURE_SET_V2, FEATURE_SET_V3, build_feature_set_manifest
 from alpha_factory.templates import template_formulas
+from factor_store import LocalFactorStore
 from formula_search.run_search import main as run_search_main
 
 
@@ -185,6 +186,7 @@ def test_alpha_factory_cli_with_full_eval_writes_batch_eval_lineage(tmp_path, ca
 
     assert exit_code == 0
     assert payload["summary"]["full_eval_count"] >= 0
+    assert payload["summary"]["best_score"] < 10.0
     assert payload["summary"]["alpha_campaign_id"] == payload["campaign_id"]
     assert (tmp_path / "batch_eval" / "formula_batch_eval_result.json").exists()
     eval_payload = json.loads((tmp_path / "batch_eval" / "formula_batch_eval_result.json").read_text(encoding="utf-8"))
@@ -193,6 +195,10 @@ def test_alpha_factory_cli_with_full_eval_writes_batch_eval_lineage(tmp_path, ca
     assert (tmp_path / "alpha_store" / "alpha_experiment_registry.json").exists()
     assert (tmp_path / "alpha_store" / "alpha_experiment_store_report.json").exists()
     assert "alpha_experiment_store_report_path" in payload["paths"]
+    assert list((tmp_path / "store" / "factor_values").glob("*.jsonl")) == []
+    registered = LocalFactorStore(tmp_path / "store").load_factors()
+    assert len(registered) <= 3
+    assert all((record.metadata or {}).get("registration_mode") == "shortlist_metadata_only" for record in registered)
 
 
 def test_alpha_factory_readiness_gate_blocks_without_loading_data(tmp_path, capsys):

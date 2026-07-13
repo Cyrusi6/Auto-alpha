@@ -14,7 +14,9 @@ from feature_factory import (
     build_feature_tensor_artifacts,
     load_feature_manifest,
 )
+from feature_factory.builder import build_feature_matrix
 from feature_factory.extended_builder import (
+    _index_market_feature,
     _days_since_event,
     _days_to_event,
     _pit_field_matrices,
@@ -24,6 +26,7 @@ from feature_factory.extended_builder import (
     _rolling_sum,
     _rolling_z,
 )
+from feature_factory.models import FeatureDefinition
 from feature_factory.run_features import _resolve_data_dir, main as run_features_main
 from model_core.data_loader import AShareDataLoader
 from model_core.vocab import FEATURE_NAMES
@@ -162,6 +165,68 @@ def test_feature_set_v3_manifest_extends_v2_with_pit_contracts():
     weak = [item for item in v3.feature_definitions if item.get("pit_safety") == "weak_pit"]
     assert weak
     assert all(item.get("default_enabled") is False for item in weak)
+
+
+def test_feature_set_v3_market_features_use_time_series_transforms():
+    manifest = build_feature_set_manifest(FEATURE_SET_V3, created_at="2026-01-01T00:00:00Z")
+    definitions = {item["feature_name"]: item for item in manifest.feature_definitions}
+
+    for name in [
+        "INDEX_RETURN_1D",
+        "INDEX_RETURN_5D",
+        "INDEX_RETURN_20D",
+        "INDEX_VOLATILITY_20D",
+        "INDEX_VALUATION_PE",
+        "INDEX_VALUATION_PB",
+    ]:
+        assert definitions[name]["transform"] == "time_series_zscore"
+        assert definitions[name]["lookback"] == 60
+    assert definitions["MARKET_REGIME_UP_DOWN_FLAG"]["transform"] == "identity"
+
+
+def test_time_series_zscore_preserves_market_regime_signal_across_dates():
+    values = torch.tensor([[1.0, 2.0, 4.0, 3.0, 6.0], [1.0, 2.0, 4.0, 3.0, 6.0]])
+    definition = FeatureDefinition(
+        feature_name="INDEX_RETURN_1D",
+        feature_version=FEATURE_SET_V3,
+        family="index_market",
+        source_fields=["index_daily_bars.close"],
+        tensor_key="index_return_1d",
+        transform="time_series_zscore",
+        lookback=3,
+    )
+
+    matrix, warnings = build_feature_matrix({"close": torch.ones_like(values), "index_return_1d": values}, definition)
+
+    assert warnings == []
+    assert float(matrix.abs().sum()) > 0.0
+    torch.testing.assert_close(matrix[0], matrix[1])
+
+
+def test_index_market_feature_selects_csi300_series_from_multi_index_data(tmp_path):
+    loader = type(
+        "Loader",
+        (),
+        {
+            "universe_name": "csi300_20260630",
+            "ts_codes": ["000001.SZ", "000002.SZ"],
+            "trade_dates": ["20240102", "20240103", "20240104"],
+            "raw_data_cache": {"close": torch.ones((2, 3))},
+        },
+    )()
+    records = [
+        {"ts_code": "000300.SH", "trade_date": "20240102", "close": 100.0},
+        {"ts_code": "000905.SH", "trade_date": "20240102", "close": 100.0},
+        {"ts_code": "000300.SH", "trade_date": "20240103", "close": 110.0},
+        {"ts_code": "000905.SH", "trade_date": "20240103", "close": 200.0},
+        {"ts_code": "000300.SH", "trade_date": "20240104", "close": 121.0},
+        {"ts_code": "000905.SH", "trade_date": "20240104", "close": 400.0},
+    ]
+
+    matrix = _index_market_feature(loader, "INDEX_RETURN_1D", {"index_daily_bars": records}, tmp_path)
+
+    assert 0.09 < float(matrix[0, 1]) < 0.10
+    torch.testing.assert_close(matrix[0], matrix[1])
 
 
 def test_feature_set_v3_missing_expanded_dataset_warns_without_crashing(tmp_path):

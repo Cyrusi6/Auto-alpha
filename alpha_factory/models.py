@@ -70,6 +70,7 @@ class AlphaCampaignConfig:
     formula_corpus_path: str | None = None
     candidates_json: str | None = None
     matrix_cache_dir: str | None = None
+    device: str = "auto"
     universe_name: str | None = None
     universe_file: str | None = None
     feature_set_name: str = "ashare_features_v1"
@@ -97,6 +98,7 @@ class AlphaCampaignConfig:
     max_lookback: int = 20
     proxy_max_candidates: int = 30
     proxy_max_dates: int = 3
+    full_eval_max_candidates: int = 30
     top_k: int = 8
     max_per_family: int = 3
     min_novelty_score: float = 0.0

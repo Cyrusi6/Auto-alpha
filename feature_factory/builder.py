@@ -58,6 +58,8 @@ def build_feature_matrix(raw: dict[str, torch.Tensor], definition: FeatureDefini
     base = torch.nan_to_num(base.to(dtype=torch.float32), nan=0.0, posinf=0.0, neginf=0.0)
     if definition.transform == "identity":
         return base, warnings
+    if definition.transform == "time_series_zscore":
+        return torch.nan_to_num(_rolling_z(base, max(2, definition.lookback)), nan=0.0, posinf=0.0, neginf=0.0), warnings
     return robust_cross_section_zscore(base), warnings
 
 

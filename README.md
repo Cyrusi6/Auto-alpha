@@ -1327,7 +1327,7 @@ uv run python -m feature_factory.run_features build \
   --pretty
 ```
 
-Use `--device cpu` for large full-history tensors when shared GPU memory is constrained; `--device cuda` remains opt-in and `--device auto` preserves the configured default. Manifest-only freezes resolve their governed `source_data_dir` while keeping the freeze ID/hash in the feature manifest and build result. v3 builds write `feature_family_readiness.json`, `feature_pit_alignment_report.json`, and `feature_build_warnings.jsonl` in addition to the usual manifest, coverage, values summary, tensor, and build-result artifacts. `feature_factory` can optionally read a raw-data-index manifest to quickly check required dataset existence and coverage before tensor work. `matrix_store` and `matrix_refresh` record the feature-set hash and recommend a full rebuild when the v3 catalog or PIT/corporate/target-return flags drift.
+Use `--device cpu` for large full-history tensors when shared GPU memory is constrained; `--device cuda` remains opt-in and `--device auto` preserves the configured default. Manifest-only freezes resolve their governed `source_data_dir` while keeping the freeze ID/hash in the feature manifest and build result. v3 index-market returns, volatility, and valuation use a 60-day time-series z-score rather than a cross-sectional z-score, so a market-wide value is not erased when broadcast across the stock universe. v3 builds write `feature_family_readiness.json`, `feature_pit_alignment_report.json`, and `feature_build_warnings.jsonl` in addition to the usual manifest, coverage, values summary, tensor, and build-result artifacts. `feature_factory` can optionally read a raw-data-index manifest to quickly check required dataset existence and coverage before tensor work. `matrix_store` and `matrix_refresh` record the feature-set hash and recommend a full rebuild when the v3 catalog or PIT/corporate/target-return flags drift.
 
 `alpha_factory/` is the campaign-level candidate funnel. It records campaign lineage, feature-set metadata, generator source budgets, random seed, compute configuration, static DSL checks, cheap proxy evaluation, optional `formula_batch_eval` full evaluation, novelty/diversity scoring, and shortlist artifacts:
 
@@ -1347,12 +1347,15 @@ uv run python -m alpha_factory.run_factory run \
   --mutation-budget 8 \
   --crossover-budget 4 \
   --proxy-max-candidates 30 \
+  --full-eval-max-candidates 20 \
   --top-k 8 \
   --use-batch-eval \
   --batch-eval-dir /tmp/auto-alpha-demo/alpha_batch_eval \
   --batch-eval-device cpu \
   --pretty
 ```
+
+`--full-eval-max-candidates` ranks proxy-passed candidates by proxy score before the expensive full-history evaluation. `--device` controls the proxy loader independently from `--batch-eval-device`. Final multi-objective scoring uses the proxy-score percentile within the passed candidate set so proxy heuristics cannot overwhelm full-evaluation metrics. When batch evaluation is enabled, shortlist selection is limited to candidates that actually completed full evaluation. With `--register-shortlist`, full evaluation remains metric-only and the final shortlist is registered as lightweight factor metadata; full stock-date factor values are intentionally not serialized during campaign screening and can be materialized later by validation or production workflows.
 
 To use v3 templates, pass the v3 manifest explicitly. The generator skips weak-PIT and disabled features unless `--include-weak-pit-features` is set, and family-level budgets or readiness requirements can narrow the expanded search space:
 

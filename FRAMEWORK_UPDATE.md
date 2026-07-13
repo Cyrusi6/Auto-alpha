@@ -2281,3 +2281,28 @@
 - Change market-level feature transforms from cross-sectional normalization to an appropriate identity or time-series transform before enabling those features for Alpha search.
 - Review the remaining zero-coverage pledge, unlock, northbound, disclosure, and new-share fields against real Tushare schemas before enabling expanded Alpha Factory.
 - Add partition-aware expanded dataset reads to avoid scanning multi-gigabyte moneyflow and margin JSONL files for each new process.
+
+## Real CSI300 Market Features, Promotion Gate, And First Controlled Alpha Campaign
+
+- Corrected six market-wide v3 features that were erased by cross-sectional normalization. `INDEX_RETURN_1D`, `INDEX_RETURN_5D`, `INDEX_RETURN_20D`, `INDEX_VOLATILITY_20D`, `INDEX_VALUATION_PE`, and `INDEX_VALUATION_PB` now use a 60-day time-series z-score; multi-index raw data is explicitly filtered to the requested CSI300 benchmark.
+- Restored universe lineage when loading a matrix cache and added explicit Alpha Factory proxy-loader device selection plus a configurable `full_eval_max_candidates` cap.
+- Rebuilt the governed real CSI300 v3 tensor from the manifest-only freeze and lifecycle-filtered matrix cache: 300 securities, 6,417 dates, 95 features, finite ratio 1.0, nonzero ratio 0.3987023231, feature tensor SHA256 `948aa257b8954becbbf7bfce12ce0d382d6386a52ab64555af27b65ca8d03c5`, and feature-set hash `99d0757a9723156a417edb780719185e4482b9025a49e3065d806d3208799985`.
+- The six repaired index features now have nonzero ratios from 0.4977518022 to 0.5757295489. Zero-coverage features fell from 17 to 11; new-share, disclosure, pledge, unlock, and northbound fields remain denied pending source/schema review.
+- Created a reviewed core promotion package with policy hash `5d8478429c92d9d96e60a783afe9770e960ad5ace39ea02cad924194ab6ec252`: 38 `alpha_eligible` features, 10 `risk_filter_only` features, 47 blocked features, 0 weak-PIT promotions, and 0 unresolved review items.
+- Fixed Alpha Factory resume hydration, limited expensive full evaluation to the highest proxy-ranked candidates, normalized proxy contribution by within-campaign percentile, and prohibited candidates without a completed full evaluation from entering the shortlist.
+- Changed `--register-shortlist` to lightweight final-only registration. Screening no longer writes one full stock-date JSONL matrix per evaluated formula; the final factor store keeps formula, split metrics, gate result, lineage, and `factor_values_materialized=false` for later validation-time materialization.
+- Completed the first controlled real CSI300 v3 campaign at `/home/lijunsi/data/auto-alpha/ashare_lake/campaigns/alpha_factory_csi300_core_v3_20260713`: 187 unique generated candidates from a 300-attempt budget, 187 static passes, 145 proxy passes, 20 full-history evaluations, 20 approved shortlist factors, 20 leaderboard rows, and 20 validation-pool candidates. The final best multi-objective score is 1.1807828379.
+- The first uncached 20-formula CPU full evaluation completed in 231.17 seconds with the CSI300 matrix cache. A later deterministic resume replay hit all 20 cache records. Lightweight registration reduced the completed campaign directory from the interrupted multi-gigabyte trajectory to about 1.8 MiB, with 20 factor metadata records and 0 materialized factor-value files.
+
+### Validation
+
+- Focused Alpha/Feature Factory/matrix-cache regression suite: passed, 26 tests before the final scoring and shortlist fixes; Alpha Factory regression suite passed again, 6 tests.
+- Full repository regression suite after all fixes: passed, 486 tests in 161.82 seconds.
+- Strict artifact-schema validation passed for all three outputs with 0 errors: Alpha Factory 13 artifacts/0 warnings, promotion package 8 artifacts/0 warnings, and Feature Factory 8 artifacts/1 expected warning for the empty feature-warning JSONL. Informational unknown-field notices remain non-blocking schema-registry coverage items.
+- Real end-to-end commands passed for v3 tensor build, promotion init/evidence/review/apply, controlled Alpha Factory resume/full evaluation, experiment-store ingestion, leaderboard generation, and validation-pool generation.
+
+### Follow-Ups
+
+- Run the 20-candidate validation pool through deterministic out-of-sample and walk-forward validation before any certification or portfolio use; the current full-evaluation test split is weak on average and should be treated as a screening result, not production evidence.
+- Review and repair the remaining 11 zero-coverage expanded features before widening the promotion policy beyond the governed core set.
+- Replace JSONL factor-value materialization with a compact columnar/partitioned store before persisting large full-history factor matrices.

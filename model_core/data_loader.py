@@ -170,6 +170,8 @@ class AShareDataLoader:
 
         reader = MatrixStoreReader(self.matrix_cache_dir)
         metadata = reader.load_metadata()
+        if self.universe_name is None:
+            self.universe_name = metadata.get("effective_universe_name") or metadata.get("universe_name")
         self.ts_codes = reader.load_ts_codes()
         self.trade_dates = reader.load_trade_dates()
         if not self.ts_codes or not self.trade_dates:

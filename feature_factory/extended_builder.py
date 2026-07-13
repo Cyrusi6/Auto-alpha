@@ -571,8 +571,12 @@ def _days_since_event(loader, records: list[dict[str, Any]], date_field: str) ->
 def _daily_series(loader, records: list[dict[str, Any]], field: str) -> torch.Tensor | None:
     if not records:
         return None
+    benchmark_index_code = _benchmark_index_code(loader, records)
     rows = []
     for record in records:
+        record_index_code = str(record.get("ts_code") or record.get("index_code") or "")
+        if benchmark_index_code and record_index_code and record_index_code != benchmark_index_code:
+            continue
         trade_date = str(record.get("trade_date") or "")
         if trade_date:
             rows.append({"trade_date": trade_date, "value": _num(record, field)})
@@ -581,6 +585,28 @@ def _daily_series(loader, records: list[dict[str, Any]], field: str) -> torch.Te
     df = pd.DataFrame(rows)
     series = df.groupby("trade_date")["value"].last().reindex(loader.trade_dates).ffill().fillna(0.0)
     return torch.tensor(series.to_numpy(dtype="float32"), dtype=torch.float32, device=loader.raw_data_cache["close"].device)
+
+
+def _benchmark_index_code(loader, records: list[dict[str, Any]]) -> str | None:
+    explicit = getattr(loader, "benchmark_index_code", None)
+    if explicit:
+        return str(explicit)
+    universe_name = str(getattr(loader, "universe_name", "") or "").lower()
+    mappings = {
+        "csi300": "000300.SH",
+        "hs300": "000300.SH",
+        "csi500": "000905.SH",
+        "csi1000": "000852.SH",
+        "sse50": "000016.SH",
+    }
+    for prefix, index_code in mappings.items():
+        if prefix in universe_name:
+            return index_code
+    available = {
+        str(record.get("ts_code") or record.get("index_code") or "")
+        for record in records
+    }
+    return "000300.SH" if "000300.SH" in available else None
 
 
 def _build_financial_feature_matrices(loader, dataset_cache: dict[str, list[dict[str, Any]]], data_dir: Path) -> dict[str, torch.Tensor]:

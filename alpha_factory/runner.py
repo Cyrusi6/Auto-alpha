@@ -13,7 +13,7 @@ from typing import Any
 from artifact_schema.writer import write_json_artifact, write_jsonl_artifact
 from compute_cluster import ComputeDeviceType, ComputeJobKind, ComputeJobSpec, ComputeSchedulerConfig, LocalComputeScheduler
 from data_lake import validate_research_input
-from factor_store import LocalFactorStore
+from factor_store import FactorRecord, LocalFactorStore, make_factor_id
 from formula_batch_eval import FormulaBatchEvalConfig, FormulaBatchEvaluator, FormulaEvalRequest, merge_shard_outputs
 from model_core.data_loader import AShareDataLoader
 
@@ -52,7 +52,7 @@ class AlphaFactoryRunner:
         )
         if freeze.error_count:
             raise RuntimeError(f"data freeze validation failed: {freeze.status}")
-        data_dir = str(Path(self.config.data_freeze_dir) / "data") if self.config.data_freeze_dir else self.config.data_dir
+        data_dir = _resolve_data_dir(self.config.data_dir, self.config.data_freeze_dir)
         manifest = self._feature_manifest(freeze)
         self.current_feature_manifest = manifest
         promotion_gate = load_promotion_gate(
@@ -85,6 +85,7 @@ class AlphaFactoryRunner:
         )
         loader = AShareDataLoader(
             data_dir=data_dir,
+            device=None if self.config.device == "auto" else self.config.device,
             universe_name=self.config.universe_name,
             universe_file=self.config.universe_file,
             matrix_cache_dir=self.config.matrix_cache_dir,
@@ -100,6 +101,31 @@ class AlphaFactoryRunner:
         full_rows, full_summary = self._run_full_eval(candidates, data_dir, campaign)
         novelty = score_novelty(candidates, self.store.load_factors())
         candidates, scored_rows = score_candidates(candidates, proxy_rows, full_rows, novelty)
+        if self.config.use_batch_eval:
+            evaluated_hashes = {
+                str((row.get("request") or {}).get("formula_hash"))
+                for row in full_rows
+                if isinstance(row, dict)
+                and isinstance(row.get("request"), dict)
+                and row.get("status") not in {"error", "invalid"}
+            }
+            candidates = [
+                item
+                if item.formula_hash in evaluated_hashes or item.status == "rejected"
+                else replace(item, status="rejected", reject_reason="not_selected_for_full_eval")
+                for item in candidates
+            ]
+            rejected_ids = {
+                item.alpha_candidate_id
+                for item in candidates
+                if item.reject_reason == "not_selected_for_full_eval"
+            }
+            scored_rows = [
+                row
+                if row.get("alpha_candidate_id") not in rejected_ids
+                else row | {"status": "rejected", "reject_reason": "not_selected_for_full_eval"}
+                for row in scored_rows
+            ]
         self.paths["alpha_scored_candidates_path"] = str(
             write_jsonl_artifact(
                 self.output_dir / "alpha_scored_candidates.jsonl",
@@ -116,7 +142,11 @@ class AlphaFactoryRunner:
         )
         self.paths.update(write_diversity_outputs(shortlist, rejected, diversity_report, self.output_dir))
         if self.config.register_shortlist:
-            self._annotate_registered_shortlist(shortlist, campaign.campaign_id)
+            full_summary["registered_shortlist_factors"] = self._register_shortlist_metadata(
+                shortlist,
+                full_rows,
+                campaign.campaign_id,
+            )
         summary = self._summary(
             candidates,
             static_rows,
@@ -237,9 +267,10 @@ class AlphaFactoryRunner:
         )
         if self.config.build_feature_set or self.config.feature_set_name != "ashare_features_v1":
             feature_dir = Path(self.config.feature_output_dir) if self.config.feature_output_dir else self.output_dir / "features"
-            data_dir = str(Path(self.config.data_freeze_dir) / "data") if self.config.data_freeze_dir else self.config.data_dir
+            data_dir = _resolve_data_dir(self.config.data_dir, self.config.data_freeze_dir)
             loader = AShareDataLoader(
                 data_dir=data_dir,
+                device=None if self.config.device == "auto" else self.config.device,
                 matrix_cache_dir=self.config.matrix_cache_dir,
                 use_matrix_cache=bool(self.config.matrix_cache_dir and (Path(self.config.matrix_cache_dir) / "metadata.json").exists()),
                 point_in_time=self.config.point_in_time,
@@ -312,7 +343,23 @@ class AlphaFactoryRunner:
         if proxy_path.exists() and report_path.exists() and not self.config.refresh_proxy:
             rows = [json.loads(line) for line in proxy_path.read_text(encoding="utf-8").splitlines() if line.strip()]
             summary = json.loads(report_path.read_text(encoding="utf-8")).get("summary", {})
-            return candidates, rows, summary
+            by_candidate = {str(row.get("alpha_candidate_id") or ""): row for row in rows}
+            restored = []
+            for candidate in candidates:
+                row = by_candidate.get(candidate.alpha_candidate_id)
+                if row is None:
+                    restored.append(candidate)
+                    continue
+                status = str(row.get("status") or candidate.status)
+                restored.append(
+                    replace(
+                        candidate,
+                        proxy_score=float(row.get("proxy_score", candidate.proxy_score) or 0.0),
+                        status=status,
+                        reject_reason=None if status == "proxy_passed" else candidate.reject_reason or "proxy_cache_rejected",
+                    )
+                )
+            return restored, rows, summary
         candidates, rows, summary = run_proxy_eval(
             candidates,
             loader,
@@ -327,9 +374,17 @@ class AlphaFactoryRunner:
         return candidates, rows, summary
 
     def _run_full_eval(self, candidates, data_dir: str, campaign) -> tuple[list[dict], dict[str, Any]]:
-        selected = [item for item in candidates if item.status == "proxy_passed"]
+        eligible = [item for item in candidates if item.status == "proxy_passed"]
+        selected = sorted(eligible, key=lambda item: (-float(item.proxy_score), item.alpha_candidate_id))
+        if self.config.full_eval_max_candidates > 0:
+            selected = selected[: self.config.full_eval_max_candidates]
+        selection_summary = {
+            "proxy_passed_candidates": len(eligible),
+            "selected_for_full_eval": len(selected),
+            "full_eval_max_candidates": self.config.full_eval_max_candidates,
+        }
         if not self.config.use_batch_eval or not selected:
-            summary = {"enabled": bool(self.config.use_batch_eval), "evaluated": 0}
+            summary = {"enabled": bool(self.config.use_batch_eval), "evaluated": 0, **selection_summary}
             self.paths["alpha_full_eval_summary_path"] = str(
                 write_json_artifact(self.output_dir / "alpha_full_eval_summary.json", summary, "alpha_full_eval_summary", "alpha_factory")
             )
@@ -356,7 +411,8 @@ class AlphaFactoryRunner:
             for item in selected
         ]
         if self._should_run_full_eval_with_scheduler():
-            return self._run_full_eval_with_scheduler(requests, data_dir, campaign, eval_dir)
+            rows, summary = self._run_full_eval_with_scheduler(requests, data_dir, campaign, eval_dir)
+            return rows, summary | selection_summary
         result = FormulaBatchEvaluator(
             FormulaBatchEvalConfig(
                 data_dir=data_dir,
@@ -375,7 +431,7 @@ class AlphaFactoryRunner:
                 chunk_size=self.config.batch_eval_chunk_size,
                 use_eval_cache=self.config.use_eval_cache,
                 eval_cache_dir=self.config.eval_cache_dir,
-                register_approved=self.config.register_shortlist,
+                register_approved=False,
                 batch_id=campaign.campaign_id,
                 continue_on_error=True,
                 shard_count=max(self.config.shard_count, 1),
@@ -394,6 +450,7 @@ class AlphaFactoryRunner:
             "evaluated": len(rows),
             "batch_id": result.batch_id,
             "formula_batch_eval_result_path": result.paths.get("formula_batch_eval_result_path"),
+            **selection_summary,
         }
         self.paths["alpha_full_eval_summary_path"] = str(
             write_json_artifact(self.output_dir / "alpha_full_eval_summary.json", summary, "alpha_full_eval_summary", "alpha_factory")
@@ -510,8 +567,6 @@ class AlphaFactoryRunner:
                 args.extend(["--matrix-cache-dir", self.config.matrix_cache_dir, "--use-matrix-cache"])
             if self.config.use_eval_cache:
                 args.extend(["--use-eval-cache", "--eval-cache-dir", str(shard_dir / "eval_cache")])
-            if self.config.register_shortlist:
-                args.append("--register-approved")
             jobs.append(
                 ComputeJobSpec(
                     job_id=f"{campaign.campaign_id}_formula_batch_eval_shard_{shard_id:04d}",
@@ -569,8 +624,6 @@ class AlphaFactoryRunner:
             warnings.append(
                 f"compute scheduler incomplete: status={compute_report.status}, success={compute_report.success_count}/{compute_report.job_count}"
             )
-        if self.config.register_shortlist:
-            warnings.append("scheduler shard jobs register only into shard-local factor stores; main factor store registration is deferred")
         self.warnings.extend(warnings)
         if warnings:
             summary["warnings"] = warnings
@@ -579,10 +632,60 @@ class AlphaFactoryRunner:
         )
         return rows, summary
 
-    def _annotate_registered_shortlist(self, shortlist, campaign_id: str) -> None:
-        # Factor registration happens during batch eval for approved candidates. Keep this hook
-        # non-destructive: hidden tests assert the method is callable and metadata is preserved.
-        _ = shortlist, campaign_id
+    def _register_shortlist_metadata(self, shortlist, full_rows, campaign_id: str) -> int:
+        rows_by_candidate = {
+            str(row.get("alpha_candidate_id") or (row.get("request") or {}).get("name")): row
+            for row in full_rows
+            if isinstance(row, dict)
+        }
+        registered = 0
+        created_at = _utc_now()
+        for candidate in shortlist:
+            row = rows_by_candidate.get(candidate.alpha_candidate_id)
+            request = row.get("request") if isinstance(row, dict) else None
+            if not isinstance(request, dict):
+                continue
+            formula_hash = str(request.get("formula_hash") or candidate.formula_hash)
+            if self.store.find_factor_by_hash(formula_hash) is not None:
+                continue
+            metrics_by_split = row.get("metrics_by_split") if isinstance(row.get("metrics_by_split"), dict) else {}
+            metadata = {
+                "alpha_campaign_id": campaign_id,
+                "alpha_candidate_id": candidate.alpha_candidate_id,
+                "alpha_family_tags": candidate.family_tags,
+                "proxy_score": candidate.proxy_score,
+                "full_eval_score": candidate.full_eval_score,
+                "novelty_score": candidate.novelty_score,
+                "final_score": candidate.final_score,
+                "metrics_by_split": metrics_by_split,
+                "max_abs_correlation": float(row.get("max_abs_correlation", 0.0) or 0.0),
+                "factor_values_materialized": False,
+                "registration_mode": "shortlist_metadata_only",
+            }
+            status = str(row.get("status") or "candidate")
+            self.store.save_factor(
+                FactorRecord(
+                    factor_id=str(row.get("factor_id") or make_factor_id(formula_hash)),
+                    formula=list(request.get("formula_names") or candidate.formula_names),
+                    formula_tokens=list(request.get("formula_tokens") or candidate.formula_tokens),
+                    formula_hash=formula_hash,
+                    feature_version=candidate.feature_version,
+                    operator_version=candidate.operator_version,
+                    lookback_days=int(request.get("lookback") or candidate.lookback),
+                    created_at=created_at,
+                    status=status,
+                    description=request.get("description"),
+                    metrics=metrics_by_split.get("all") if isinstance(metrics_by_split.get("all"), dict) else {},
+                    transform_method=self.config.factor_transform,
+                    gate_status=status,
+                    gate_reasons=list(row.get("gate_reasons") or []),
+                    metadata=metadata,
+                    factor_type="single",
+                    batch_id=campaign_id,
+                )
+            )
+            registered += 1
+        return registered
 
     def _summary(
         self,
@@ -665,6 +768,22 @@ def _campaign_id(name: str, created_at: str, seed: int) -> str:
     digest = hashlib.sha256(f"{name}|{created_at}|{seed}".encode("utf-8")).hexdigest()[:12]
     safe = "".join(char if char.isalnum() else "_" for char in name).strip("_") or "campaign"
     return f"alpha_{safe}_{digest}"
+
+
+def _resolve_data_dir(data_dir: str, data_freeze_dir: str | None) -> str:
+    if not data_freeze_dir:
+        return data_dir
+    freeze_root = Path(data_freeze_dir)
+    physical_data_dir = freeze_root / "data"
+    if physical_data_dir.exists():
+        return str(physical_data_dir)
+    manifest_path = freeze_root / "freeze_manifest.json"
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        source_data_dir = manifest.get("source_data_dir")
+        if source_data_dir and Path(source_data_dir).exists():
+            return str(Path(source_data_dir))
+    return data_dir
 
 
 def _file_hash(path: str | None) -> str | None:
