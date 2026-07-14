@@ -12,6 +12,7 @@ from typing import Any, Callable, Iterable
 
 from ..config import AShareDataConfig
 from ..rate_limit import RateLimitEvent, SimpleRateLimiter
+from ..request_normalization import tushare_code_semantic_hash, tushare_request_fingerprint
 
 
 class TushareApiError(ValueError):
@@ -45,6 +46,8 @@ class TushareResponseEnvelope:
     records: list[dict[str, Any]]
     item_count: int
     duration_seconds: float
+    request_fingerprint: str = ""
+    code_semantic_hash: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -57,6 +60,8 @@ class TushareResponseEnvelope:
             "records": self.records,
             "item_count": self.item_count,
             "duration_seconds": self.duration_seconds,
+            "request_fingerprint": self.request_fingerprint,
+            "code_semantic_hash": self.code_semantic_hash,
         }
 
 
@@ -128,6 +133,11 @@ class TushareHttpClient:
             raise TushareSchemaError("Tushare response data.fields must contain strings")
         if not all(isinstance(item, list) for item in items):
             raise TushareSchemaError("Tushare response data.items must contain row lists")
+        if any(len(item) != len(response_fields) for item in items):
+            raise TushareSchemaError("Tushare response row width does not match data.fields")
+        requested_field_list = [field.strip() for field in request_fields.split(",") if field.strip()]
+        if items and requested_field_list and not set(requested_field_list).issubset(response_fields):
+            raise TushareSchemaError("Tushare response omitted requested fields")
 
         records = [dict(zip(response_fields, item)) for item in items]
         return TushareResponseEnvelope(
@@ -140,6 +150,8 @@ class TushareHttpClient:
             records=records,
             item_count=len(items),
             duration_seconds=max(0.0, time.perf_counter() - started),
+            request_fingerprint=tushare_request_fingerprint(api_name, params=request_params, fields=request_fields),
+            code_semantic_hash=tushare_code_semantic_hash(),
         )
 
     def _send_with_retry(self, request: urllib.request.Request) -> dict[str, Any]:

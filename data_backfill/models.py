@@ -46,11 +46,19 @@ class BackfillJob:
     request_budget_group: str = "default"
     status: str = BackfillJobStatus.pending
     records: int = 0
+    requested: int = 0
+    fetched: int = 0
+    written: int = 0
+    dedup: int = 0
+    rejected: int = 0
+    dataset_total: int = 0
     error: str | None = None
     output_path: str | None = None
     staging_path: str | None = None
     cache_hit_count: int = 0
     audit_id: str | None = None
+    negative_attestation_path: str | None = None
+    publish_receipt_path: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:

@@ -12,6 +12,7 @@ from ..cache import TushareResponseCache
 from ..config import AShareDataConfig
 from ..dataset_registry import DATASET_DEFINITIONS, AShareDatasetDefinition
 from ..rate_limit import SimpleRateLimiter
+from ..request_normalization import tushare_request_fingerprint
 from ..schema import (
     AdjustmentFactor,
     CorporateAction,
@@ -32,6 +33,7 @@ class TushareAShareDataProvider:
     def __init__(self, client: Any | None = None, rate_limiter: SimpleRateLimiter | None = None):
         self.client = client
         self.rate_limiter = rate_limiter
+        self.last_job_metrics: dict[str, Any] = {}
 
     def fetch_dataset_job(
         self,
@@ -51,10 +53,14 @@ class TushareAShareDataProvider:
         provider = TushareAShareDataProvider(client=client)
         fetcher = getattr(provider, f"fetch_{job.dataset}", None)
         if fetcher is None and job.dataset in DATASET_DEFINITIONS:
-            return provider.fetch_generic_dataset(job.dataset, job_config)
+            records = provider.fetch_generic_dataset(job.dataset, job_config)
+            self.last_job_metrics = _job_metrics(client, len(records), provider.last_job_metrics)
+            return records
         if fetcher is None:
             raise ValueError(f"unsupported Tushare dataset: {job.dataset}")
-        return fetcher(job_config)
+        records = fetcher(job_config)
+        self.last_job_metrics = _job_metrics(client, len(records), provider.last_job_metrics)
+        return records
 
     def fetch_securities(self, config: AShareDataConfig) -> list[Security]:
         rows: list[dict[str, Any]] = []
@@ -344,10 +350,16 @@ class TushareAShareDataProvider:
     def fetch_generic_dataset(self, dataset: str, config: AShareDataConfig) -> list[dict[str, Any]]:
         definition = DATASET_DEFINITIONS[dataset]
         records: list[dict[str, Any]] = []
+        rejected = 0
         for params in _generic_param_batches(definition, config):
             rows = self._post(config, definition.api_name, params=params, fields=definition.field_string)
             for row in rows:
-                records.append(_normalise_generic_row(row, definition))
+                normalized = _normalise_generic_row(row, definition)
+                if normalized is None:
+                    rejected += 1
+                else:
+                    records.append(normalized)
+        self.last_job_metrics = {"rejected": rejected}
         return records
 
     def _post(
@@ -400,11 +412,22 @@ def _generic_date_batches(
     return [_date_params(config)]
 
 
-def _normalise_generic_row(row: dict[str, Any], definition: AShareDatasetDefinition) -> dict[str, Any]:
+def _normalise_generic_row(row: dict[str, Any], definition: AShareDatasetDefinition) -> dict[str, Any] | None:
     payload = {field: _clean(row.get(field)) for field in definition.fields}
-    for key, value in row.items():
-        if key not in payload:
-            payload[key] = _clean(value)
+    if definition.dataset == "suspensions":
+        if not is_valid_ts_code(_text(payload.get("ts_code"))):
+            return None
+        if not is_valid_yyyymmdd(_text(payload.get("trade_date"))):
+            return None
+        suspend_type = _text(payload.get("suspend_type")).upper()
+        if suspend_type not in {"S", "R"}:
+            return None
+        payload["suspend_type"] = suspend_type
+    elif definition.dataset == "st_status_daily":
+        if not is_valid_ts_code(_text(payload.get("ts_code"))):
+            return None
+        if not is_valid_yyyymmdd(_text(payload.get("trade_date"))):
+            return None
     return payload
 
 
@@ -446,6 +469,9 @@ class _CachedAuditedClient:
         self.job = job
         self.cache = cache
         self.auditor = auditor
+        self.fetched_count = 0
+        self.request_fingerprints: list[str] = []
+        self.negative_attestations: list[dict[str, Any]] = []
 
     def post(self, api_name: str, params: dict[str, Any] | None = None, fields: Any = None) -> list[dict[str, Any]]:
         started_at = utc_now()
@@ -460,12 +486,44 @@ class _CachedAuditedClient:
             if cached is not None and cached.hit:
                 cache_hit = True
                 records = cached.records
+                self.fetched_count += len(records)
+                self.request_fingerprints.append(tushare_request_fingerprint(api_name, params=params, fields=fields))
+                if cached.negative_attestation is not None:
+                    self.negative_attestations.append(dict(cached.negative_attestation))
                 return records
 
-            records = self.client.post(api_name, params=params, fields=fields)
+            envelope = self.client.post_with_metadata(api_name, params=params, fields=fields) if hasattr(self.client, "post_with_metadata") else None
+            if envelope is not None:
+                records = list(envelope.records)
+                response_code = int(envelope.response_code)
+                response_message = str(envelope.response_message)
+                response_fields = list(envelope.response_fields)
+                item_count = int(envelope.item_count)
+            else:
+                records = self.client.post(api_name, params=params, fields=fields)
+                response_code = 0
+                response_message = ""
+                response_fields = [field.strip() for field in str(fields or "").split(",") if field.strip()]
+                item_count = len(records)
+            self.fetched_count += len(records)
+            fingerprint = tushare_request_fingerprint(api_name, params=params, fields=fields)
+            self.request_fingerprints.append(fingerprint)
+            if not records:
+                self.negative_attestations.append(
+                    {"assertion": "provider_returned_zero_rows", "request_fingerprint": fingerprint, "response_code": response_code, "item_count": 0}
+                )
             rate_event = getattr(self.client, "last_rate_limit_event", None)
             if self.cache is not None:
-                self.cache.write(api_name, params=params, fields=fields, records=records)
+                self.cache.write(
+                    api_name,
+                    params=params,
+                    fields=fields,
+                    records=records,
+                    response_code=response_code,
+                    response_message=response_message,
+                    response_fields=response_fields,
+                    item_count=item_count,
+                )
             return records
         except Exception as exc:
             status = "error"
@@ -495,6 +553,17 @@ class _CachedAuditedClient:
                         rate_limit_request_index=getattr(rate_event, "request_index", None),
                     )
                 )
+
+
+def _job_metrics(client: _CachedAuditedClient, output_count: int, provider_metrics: dict[str, Any]) -> dict[str, Any]:
+    rejected = int(provider_metrics.get("rejected", 0))
+    inferred_rejected = max(0, int(client.fetched_count) - int(output_count))
+    return {
+        "fetched": int(client.fetched_count),
+        "rejected": max(rejected, inferred_rejected),
+        "request_fingerprints": list(client.request_fingerprints),
+        "negative_attestations": list(client.negative_attestations),
+    }
 
 
 def _clean(value: Any) -> Any | None:

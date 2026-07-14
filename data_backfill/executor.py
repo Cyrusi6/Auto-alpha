@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -33,6 +32,9 @@ from .staging import (
     quarantine_job,
     save_backfill_state,
     successful_job_ids,
+    atomic_publish_staging,
+    resume_evidence_valid,
+    write_negative_attestation,
     write_staging_records,
 )
 
@@ -105,8 +107,11 @@ def execute_backfill_plan(
     blocked = quota.status != "ok"
     for job in plan.jobs:
         if resume and job.job_id in completed:
-            jobs.append(replace(job, status=BackfillJobStatus.resumed, records=int(state.jobs[job.job_id].get("records", 0))))
-            continue
+            previous = state.jobs[job.job_id]
+            if resume_evidence_valid(previous):
+                restored = {key: previous[key] for key in BackfillJob.__dataclass_fields__ if key in previous and key != "status"}
+                jobs.append(replace(job, **restored, status=BackfillJobStatus.resumed))
+                continue
         if blocked:
             skipped = replace(job, status=BackfillJobStatus.skipped, error=quota.reason)
             jobs.append(skipped)
@@ -118,20 +123,52 @@ def execute_backfill_plan(
             continue
         try:
             records = _fetch_job(provider, config, job, cache=cache, auditor=auditor)
+            provider_metrics = dict(getattr(provider, "last_job_metrics", {}) or {})
+            fetched = int(provider_metrics.get("fetched", len(records)))
+            rejected = int(provider_metrics.get("rejected", max(0, fetched - len(records))))
+            negative_attestation_path: str | None = None
+            if fetched == 0:
+                negative_attestation_path = str(
+                    write_negative_attestation(
+                        staging_root,
+                        job,
+                        list(provider_metrics.get("negative_attestations", [])),
+                    )
+                )
             if direct_append:
                 staging_records_path = None
                 payloads = [_to_jsonable(record) for record in records]
+                written = _append_records_fast(storage, job.dataset, payloads, dataset_key_sets.get(job.dataset))
+                dedup = len(payloads) - written
+                dataset_counts[job.dataset] = dataset_counts.get(job.dataset, 0) + written
+                publish_receipt_path = None
             else:
-                staging_records_path, _, record_count = write_staging_records(staging_root, job, records)
-                payloads = _read_jsonl(staging_records_path)
-            written = _append_records_fast(storage, job.dataset, payloads, dataset_key_sets.get(job.dataset))
-            dataset_counts[job.dataset] = dataset_counts.get(job.dataset, 0) + written
+                staging_records_path, _, _ = write_staging_records(staging_root, job, records)
+                publish = atomic_publish_staging(data_dir, staging_records_path, job)
+                written = int(publish["written"])
+                dedup = int(publish["dedup"])
+                dataset_counts[job.dataset] = int(publish["dataset_total"])
+                publish_receipt_path = str(publish["publish_receipt_path"])
             done = replace(
                 job,
                 status=BackfillJobStatus.success,
                 records=dataset_counts[job.dataset],
+                requested=job.estimated_requests,
+                fetched=fetched,
+                written=written,
+                dedup=dedup,
+                rejected=rejected,
+                dataset_total=dataset_counts[job.dataset],
                 output_path=str(storage.dataset_path(job.dataset)),
                 staging_path=str(staging_records_path) if staging_records_path is not None else None,
+                negative_attestation_path=negative_attestation_path,
+                publish_receipt_path=publish_receipt_path,
+                metadata={
+                    **job.metadata,
+                    "request_fingerprints": list(provider_metrics.get("request_fingerprints", [])),
+                    "resume_miss": bool(resume and job.job_id in completed),
+                    "atomic_publish": not direct_append,
+                },
             )
             state = mark_job(state, done)
             save_backfill_state(state, target_state)
@@ -179,7 +216,13 @@ def execute_backfill_plan(
         "skipped_jobs": sum(job.status == BackfillJobStatus.skipped for job in jobs),
         "resumed_jobs": sum(job.status == BackfillJobStatus.resumed for job in jobs),
         "quarantined_jobs": sum(job.status == BackfillJobStatus.failed for job in jobs),
-        "records": sum(job.records for job in jobs if job.status in {BackfillJobStatus.success, BackfillJobStatus.resumed}),
+        "records": sum(job.written for job in jobs if job.status in {BackfillJobStatus.success, BackfillJobStatus.resumed}),
+        "requested": sum(job.requested for job in jobs),
+        "fetched": sum(job.fetched for job in jobs),
+        "written": sum(job.written for job in jobs),
+        "dedup": sum(job.dedup for job in jobs),
+        "rejected": sum(job.rejected for job in jobs),
+        "dataset_total": {dataset: dataset_counts.get(dataset, 0) for dataset in plan.scope.datasets},
         "coverage_gap_count": coverage.gap_count,
         "token_expiry": token_expiry,
         "request_budget_used": sum(job.estimated_requests for job in jobs if job.status in {BackfillJobStatus.success, BackfillJobStatus.failed}),
@@ -270,15 +313,6 @@ def _fetch_job(provider: Any, config: AShareDataConfig, job: BackfillJob, cache:
             raise AttributeError(f"provider does not support dataset: {job.dataset}")
         fetcher = lambda cfg: generic(job.dataset, cfg)
     return list(fetcher(job_config))
-
-
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            if line.strip():
-                rows.append(json.loads(line))
-    return rows
 
 
 def _append_records_fast(

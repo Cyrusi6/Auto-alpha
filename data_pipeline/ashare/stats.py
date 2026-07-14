@@ -105,8 +105,6 @@ def _record_date_value(record: dict[str, Any]) -> Any:
         "record_date",
         "end_date",
         "report_period",
-        "suspend_date",
-        "resume_date",
         "ipo_date",
         "issue_date",
         "start_date",

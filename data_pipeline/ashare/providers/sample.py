@@ -387,9 +387,9 @@ def _sample_value(
         return index_code or "801010.SI"
     if field in {"l2_code", "l3_code", "industry_code"}:
         return {"l2_code": "801011.SI", "l3_code": "851011.SI"}.get(field, "801010.SI")
-    if field in {"trade_date", "cal_date", "suspend_date", "ann_date", "f_ann_date", "first_ann_date", "actual_date", "modify_date", "ipo_date", "issue_date", "begin_date", "close_date", "start_date", "in_date", "float_date", "list_date"}:
+    if field in {"trade_date", "cal_date", "ann_date", "f_ann_date", "first_ann_date", "actual_date", "modify_date", "ipo_date", "issue_date", "begin_date", "close_date", "start_date", "in_date", "float_date", "list_date"}:
         return date
-    if field in {"end_date", "report_period", "pre_date", "out_date", "resume_date", "exp_date", "release_date"}:
+    if field in {"end_date", "report_period", "pre_date", "out_date", "exp_date", "release_date"}:
         return "20231231"
     if field in {"name", "fullname", "holder_name", "buyer", "seller", "exalter", "publisher", "audit_agency", "audit_sign", "pledgor"}:
         return "样例"
@@ -403,7 +403,7 @@ def _sample_value(
         return "银行"
     if field in {"is_new", "is_pub", "is_audit", "is_release", "update_flag"}:
         return "1"
-    if field in {"report_type", "comp_type", "end_type", "curr_type", "type", "proc", "side", "reason", "change_reason", "suspend_reason", "reason_type", "holder_type", "in_de", "share_type", "category", "index_type", "weight_rule", "audit_result", "remark", "summary", "perf_summary", "desc"}:
+    if field in {"report_type", "comp_type", "end_type", "curr_type", "type", "proc", "side", "reason", "change_reason", "holder_type", "in_de", "share_type", "category", "index_type", "weight_rule", "audit_result", "remark", "summary", "perf_summary", "desc"}:
         return "样例"
     if field in {"base_date"}:
         return "20041231"

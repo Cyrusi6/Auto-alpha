@@ -2352,3 +2352,17 @@
 ### 下一任务建议
 - 先完成 governed suspension event backfill/schema normalization，并补足可证明的历史 ST effective intervals；随后从不可变新 freeze 构建全套 lifecycle/tradability/raw-field/target validity masks。
 - 只有 mask proof、feature validity、pre-compute research firewall 和未来 untouched date 均通过后，才启动四张不同物理 GPU 的 strict 20-factor retrospective rerun；该重放仍不得进入 certification 或 portfolio。
+
+## 2026-07-14 - Task 052-A Ingestion/Backfill Governance
+
+### 本次变更摘要
+- 将 `suspensions` 切换为 `suspend_d` 唯一规范契约：`ts_code,trade_date,suspend_timing,suspend_type`，主键为 `ts_code,trade_date,suspend_type`，仅接受 `S/R`；新增 `st_status_daily` 对应 `stock_st` 日频状态契约，同时保留既有 `namechange` 契约。
+- 新增 token-free Tushare 请求规范化、稳定 request fingerprint 与 code semantic hash；缓存升级为版本化 envelope，记录规范请求、响应字段、item count、内容 SHA、complete 标记和零行 negative attestation，并采用临时文件 + `os.replace` 原子写入。
+- Tushare HTTP/client/cache 对 JSON 损坏、响应字段缺失、行宽不一致、item count 截断、内容 hash 不一致、语义版本漂移均 fail-closed，不再使用 `zip` 静默吞掉截断列。
+- Backfill job 新增 `requested/fetched/written/dedup/rejected/dataset_total` 治理计数；零行成功请求写出 negative attestation，默认发布链路改为严格读取 staging、校验 schema/主键、合并去重、fsync 后原子替换，并生成 publish receipt。
+- Resume 不再仅信任 state 中的 success；必须同时存在输出、原子 publish receipt，零行任务还必须存在 negative attestation。证据缺失时记录 `resume_miss` 并重新执行，避免误跳过未落盘或证据损坏的任务。
+- Raw data index/status registry 纳入 `st_status_daily`，并移除所涉 ingestion/index 模块中的旧停复牌日期字段分类。
+
+### 测试
+- 新增 `tests/test_task_052a_ingestion.py`，覆盖规范契约、请求指纹、缓存信封/负证明、缓存损坏/截断/语义漂移、HTTP 行宽校验、停复牌与 ST 规范化、作业计数、原子发布失败保护和 resume miss。
+- 聚焦与相邻 provider/backfill/raw-index/storage/pipeline 测试共 50 项通过；扩展 backfill/monitoring 相邻测试 18 项通过，未发起真实网络请求。
