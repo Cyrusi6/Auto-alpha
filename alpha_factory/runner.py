@@ -25,6 +25,7 @@ from .generators import generate_alpha_candidates
 from .models import AlphaCampaignConfig, AlphaCampaignManifest, AlphaFactoryReport
 from .novelty import score_novelty
 from .proxy_eval import run_proxy_eval
+from research_firewall.lineage import build_loader_lineage
 from .report import write_artifact_catalog, write_campaign_report, write_generation_stats, write_jsonl
 from .scoring import score_candidates
 from .static_checks import run_static_checks
@@ -89,7 +90,10 @@ class AlphaFactoryRunner:
             universe_name=self.config.universe_name,
             universe_file=self.config.universe_file,
             matrix_cache_dir=self.config.matrix_cache_dir,
-            use_matrix_cache=bool(self.config.matrix_cache_dir and (Path(self.config.matrix_cache_dir) / "metadata.json").exists()),
+            use_matrix_cache=bool(
+                self.config.matrix_cache_dir
+                and any((Path(self.config.matrix_cache_dir) / name).exists() for name in ("task_052a_strict_matrix_manifest.json", "metadata.json"))
+            ),
             point_in_time=self.config.point_in_time,
             feature_cutoff_mode=self.config.feature_cutoff_mode,
             corporate_action_aware=self.config.corporate_action_aware,
@@ -275,7 +279,10 @@ class AlphaFactoryRunner:
                 data_dir=data_dir,
                 device=None if self.config.device == "auto" else self.config.device,
                 matrix_cache_dir=self.config.matrix_cache_dir,
-                use_matrix_cache=bool(self.config.matrix_cache_dir and (Path(self.config.matrix_cache_dir) / "metadata.json").exists()),
+                use_matrix_cache=bool(
+                    self.config.matrix_cache_dir
+                    and any((Path(self.config.matrix_cache_dir) / name).exists() for name in ("task_052a_strict_matrix_manifest.json", "metadata.json"))
+                ),
                 point_in_time=self.config.point_in_time,
                 corporate_action_aware=self.config.corporate_action_aware,
                 target_return_mode=self.config.target_return_mode,
@@ -346,26 +353,35 @@ class AlphaFactoryRunner:
     def _load_or_run_proxy(self, candidates, loader):
         proxy_path = self.output_dir / "alpha_proxy_eval.jsonl"
         report_path = self.output_dir / "alpha_proxy_eval_report.json"
+        expected_lineage = build_loader_lineage(
+            loader,
+            stage="alpha_proxy_eval",
+            extra={"max_dates": int(max(self.config.proxy_max_dates, 1)), "seed": int(self.config.seed)},
+        )
         if proxy_path.exists() and report_path.exists() and not self.config.refresh_proxy:
             rows = [json.loads(line) for line in proxy_path.read_text(encoding="utf-8").splitlines() if line.strip()]
             summary = json.loads(report_path.read_text(encoding="utf-8")).get("summary", {})
-            by_candidate = {str(row.get("alpha_candidate_id") or ""): row for row in rows}
-            restored = []
-            for candidate in candidates:
-                row = by_candidate.get(candidate.alpha_candidate_id)
-                if row is None:
-                    restored.append(candidate)
-                    continue
-                status = str(row.get("status") or candidate.status)
-                restored.append(
-                    replace(
-                        candidate,
-                        proxy_score=float(row.get("proxy_score", candidate.proxy_score) or 0.0),
-                        status=status,
-                        reject_reason=None if status == "proxy_passed" else candidate.reject_reason or "proxy_cache_rejected",
+            if summary.get("lineage_hash") != expected_lineage["lineage_hash"]:
+                rows = []
+                summary = {}
+            else:
+                by_candidate = {str(row.get("alpha_candidate_id") or ""): row for row in rows}
+                restored = []
+                for candidate in candidates:
+                    row = by_candidate.get(candidate.alpha_candidate_id)
+                    if row is None:
+                        restored.append(candidate)
+                        continue
+                    status = str(row.get("status") or candidate.status)
+                    restored.append(
+                        replace(
+                            candidate,
+                            proxy_score=float(row.get("proxy_score", candidate.proxy_score) or 0.0),
+                            status=status,
+                            reject_reason=None if status == "proxy_passed" else candidate.reject_reason or "proxy_cache_rejected",
+                        )
                     )
-                )
-            return restored, rows, summary
+                return restored, rows, summary
         candidates, rows, summary = run_proxy_eval(
             candidates,
             loader,
@@ -429,7 +445,10 @@ class AlphaFactoryRunner:
                 report_dir=self.config.report_dir or str(self.output_dir / "reports"),
                 output_dir=str(eval_dir),
                 matrix_cache_dir=self.config.matrix_cache_dir,
-                use_matrix_cache=bool(self.config.matrix_cache_dir and (Path(self.config.matrix_cache_dir) / "metadata.json").exists()),
+                use_matrix_cache=bool(
+                    self.config.matrix_cache_dir
+                    and any((Path(self.config.matrix_cache_dir) / name).exists() for name in ("task_052a_strict_matrix_manifest.json", "metadata.json"))
+                ),
                 device=self.config.batch_eval_device,
                 factor_transform=self.config.factor_transform,
                 enable_gate=self.config.enable_gate,
@@ -449,6 +468,9 @@ class AlphaFactoryRunner:
                     self.config.feature_promotion_allowlist_path,
                     self.config.feature_promotion_policy_path,
                 ),
+                research_end_date=self.config.research_end_date,
+                holdout_start_date=self.config.holdout_start_date,
+                label_horizon=self.config.label_horizon,
             )
         ).run(requests)
         rows = [item.to_dict() for item in result.results]
@@ -570,8 +592,18 @@ class AlphaFactoryRunner:
             promotion_hash = _promotion_policy_hash(self.config.feature_promotion_allowlist_path, self.config.feature_promotion_policy_path)
             if promotion_hash:
                 args.extend(["--feature-promotion-policy-hash", promotion_hash])
-            if self.config.matrix_cache_dir and (Path(self.config.matrix_cache_dir) / "metadata.json").exists():
+            if self.config.matrix_cache_dir and any((Path(self.config.matrix_cache_dir) / name).exists() for name in ("task_052a_strict_matrix_manifest.json", "metadata.json")):
                 args.extend(["--matrix-cache-dir", self.config.matrix_cache_dir, "--use-matrix-cache"])
+            args.extend(
+                [
+                    "--research-end-date",
+                    str(self.config.research_end_date or "20240530"),
+                    "--holdout-start-date",
+                    str(self.config.holdout_start_date or "20240531"),
+                    "--label-horizon",
+                    str(int(self.config.label_horizon or 2)),
+                ]
+            )
             if self.config.use_eval_cache:
                 args.extend(["--use-eval-cache", "--eval-cache-dir", str(shard_dir / "eval_cache")])
             jobs.append(

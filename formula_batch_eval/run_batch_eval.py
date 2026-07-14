@@ -67,9 +67,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--feature-set-manifest-path")
     parser.add_argument("--alpha-campaign-id")
     parser.add_argument("--feature-promotion-policy-hash")
-    parser.add_argument("--research-end-date")
-    parser.add_argument("--holdout-start-date")
-    parser.add_argument("--label-horizon", type=int, default=1)
+    parser.add_argument("--research-end-date", default="20240530")
+    parser.add_argument("--holdout-start-date", default="20240531")
+    parser.add_argument("--label-horizon", type=int, default=2)
     parser.add_argument("--eligible-date-hash")
     parser.add_argument("--pretty", action="store_true")
     return parser

@@ -2385,3 +2385,20 @@
 ### 执行边界
 - 本任务只用 pytest 临时目录中的合成数据验证生成器，没有写入或修改任何真实 lake、freeze、matrix、campaign 或 factor-store 数据。
 - 新增模块无 Solana、Jupiter、Birdeye、DexScreener、meme/token/crypto 旧逻辑；旧通用 matrix builder 保留供非 052-A 路径使用，052-A 正式工程矩阵只允许唯一严格 builder。
+
+## 2026-07-14 - Task 052-A Research Firewall and Validation Contract Corrections
+
+### 本次变更摘要
+- 将 Alpha Factory、Formula Batch Eval 与 Validation Lab 默认研究边界固定为 `20240530`，诊断起点固定为 `20240531`，标签端点契约固定为 `t+2`；原始 JSONL 与严格矩阵路径统一先保留端点数据完成计算，再截取研究观测轴。
+- Research Firewall 的访问审计改为记录实际读取的 observation/target endpoint；被预过滤且未参与计算的未来记录不再误计为越界读取，proxy sampled target 读取逐日期写入审计。
+- v3 feature validity 要求每个 `source_fields` 依赖都存在有效性来源；任一依赖缺失时整项 fail-closed，并在 manifest 记录 dependency 与 missing dependency。
+- 严格矩阵读取原生支持 `task_052a_strict_matrix_manifest.json`、`index_membership.npy`、`membership_known_mask.npy`、`bar_observed_mask.npy` 和持久化 `next_open_t1_t2_return.npy`，不再从价格矩阵临时重算验证目标。
+- Factor Materializer 的 factor observation validity 仅由公式传播、feature validity、真实 bar/PIT observation 与历史 membership 决定，明确排除 target；target 文件与 target mode 不再进入物化 cache fingerprint。
+- Validation Lab 以持久化 target + target availability 构建 common eligibility、连续 eligible segments 和 segment-local splits；筛选契约变化时输出 `not_comparable_due_to_contract_change`，不再错误按复现偏差拒绝。
+- Alpha proxy cache、formula eval cache 和 `skip_existing` 增加严格 lineage hash；公式哈希相同但 matrix/axes/firewall/horizon/target contract/feature manifest 任一漂移时必须重新评估。
+- Validation Lab 对外最终状态收敛为 `data_blocked`、`statistically_rejected`、`historical_replay_passed`，内部工程汇总状态不作为最终发布状态。
+
+### 测试与执行边界
+- 新增 `tests/test_task_052a_firewall.py`，覆盖 cutoff/diagnostic/t+2、实际读取审计、v3 validity 缺失依赖、严格持久化目标、eligible diagnostics、contract-change screening 和 lineage-before-skip 哨兵。
+- `uv run python -m pytest -q --basetemp=.pytest-tmp-task052-suite tests/test_task_052a_firewall.py tests/test_task_052a_ingestion.py tests/test_task_052a_matrix.py tests/test_task_051a.py tests/test_task_050a.py tests/test_formula_batch_eval.py tests/test_alpha_factory.py tests/test_data_loader_matrix_cache.py tests/test_model_core_data_loader.py tests/test_feature_factory.py tests/test_validation_lab.py`：74 项通过。
+- 未执行真实数据回放、网络请求、GPU 作业、campaign、factor-store 写入或端到端实盘命令。

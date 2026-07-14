@@ -18,7 +18,7 @@ class DateFirewall:
     research_end_date: str
     holdout_start_date: str | None = None
     label_horizon: int = 1
-    policy_version: str = "research_holdout_firewall_v1"
+    policy_version: str = "research_diagnostic_firewall_v2"
     access_audit: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -33,6 +33,15 @@ class DateFirewall:
     def research_dates(self, trade_dates: Sequence[str]) -> list[str]:
         dates = [str(value) for value in trade_dates]
         selected = [value for value in dates if value <= self.research_end_date]
+        if self.label_horizon:
+            selected = selected[: max(0, len(selected) - int(self.label_horizon))]
+        return selected
+
+    def diagnostic_dates(self, trade_dates: Sequence[str]) -> list[str]:
+        if not self.holdout_start_date:
+            return []
+        dates = [str(value) for value in trade_dates]
+        selected = [value for value in dates if value >= self.holdout_start_date]
         if self.label_horizon:
             selected = selected[: max(0, len(selected) - int(self.label_horizon))]
         return selected
@@ -56,6 +65,29 @@ class DateFirewall:
                 f"research firewall blocked {component}:{purpose} target ending {end_date} after {self.research_end_date}"
             )
 
+    def audit_observation_access(
+        self,
+        dates: Sequence[str],
+        *,
+        component: str,
+        purpose: str,
+        view: str = "research",
+    ) -> None:
+        for date in (str(value) for value in dates):
+            allowed = date <= self.research_end_date if view == "research" else bool(self.holdout_start_date and date >= self.holdout_start_date)
+            self.access_audit.append(
+                {
+                    "component": component,
+                    "purpose": purpose,
+                    "access_type": "observation_read",
+                    "view": view,
+                    "date": date,
+                    "allowed": allowed,
+                }
+            )
+            if not allowed:
+                raise FirewallAccessError(f"research firewall blocked actual {view} observation read on {date}")
+
     def filter_records(self, records: Iterable[dict[str, Any]], *, date_field: str, component: str) -> list[dict[str, Any]]:
         selected: list[dict[str, Any]] = []
         for record in records:
@@ -64,8 +96,17 @@ class DateFirewall:
                 continue
             date = str(value)
             allowed = date <= self.research_end_date
-            self.access_audit.append({"component": component, "purpose": "raw_record", "date": date, "allowed": allowed})
             if allowed:
+                self.access_audit.append(
+                    {
+                        "component": component,
+                        "purpose": "raw_record",
+                        "access_type": "observation_read",
+                        "view": "research_source",
+                        "date": date,
+                        "allowed": True,
+                    }
+                )
                 selected.append(record)
         return selected
 
@@ -123,11 +164,35 @@ class ResearchDataView:
     def eligible_date_hash(self) -> str:
         return self.firewall.eligible_date_hash(self.trade_dates)
 
-    def truncate_axis(self, values, *, axis: int = -1):
-        count = len(self.eligible_dates)
-        slices = [slice(None)] * values.ndim
-        slices[axis] = slice(0, count)
-        return values[tuple(slices)]
+    @property
+    def eligible_indices(self) -> tuple[int, ...]:
+        eligible = set(self.eligible_dates)
+        return tuple(index for index, date in enumerate(self.trade_dates) if date in eligible)
+
+    @property
+    def diagnostic_dates(self) -> tuple[str, ...]:
+        return tuple(self.firewall.diagnostic_dates(self.trade_dates))
+
+    @property
+    def diagnostic_indices(self) -> tuple[int, ...]:
+        eligible = set(self.diagnostic_dates)
+        return tuple(index for index, date in enumerate(self.trade_dates) if date in eligible)
+
+    def truncate_axis(self, values, *, axis: int = -1, component: str | None = None, purpose: str = "observation"):
+        return self.select_axis(values, axis=axis, view="research", component=component, purpose=purpose)
+
+    def select_axis(self, values, *, axis: int = -1, view: str = "research", component: str | None = None, purpose: str = "observation"):
+        indices = self.eligible_indices if view == "research" else self.diagnostic_indices
+        dates = self.eligible_dates if view == "research" else self.diagnostic_dates
+        if component:
+            self.firewall.audit_observation_access(dates, component=component, purpose=purpose, view=view)
+        if hasattr(values, "index_select"):
+            import torch
+
+            return values.index_select(axis % values.ndim, torch.tensor(indices, dtype=torch.long, device=values.device))
+        import numpy as np
+
+        return np.take(values, indices, axis=axis)
 
 
 def _parse_date(value: str) -> datetime:

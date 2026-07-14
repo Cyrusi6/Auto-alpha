@@ -82,7 +82,7 @@ class FormulaBatchEvalConfig:
     feature_promotion_policy_hash: str | None = None
     research_end_date: str | None = None
     holdout_start_date: str | None = None
-    label_horizon: int = 1
+    label_horizon: int = 2
     eligible_date_hash: str | None = None
 
     def to_dict(self) -> dict[str, Any]:

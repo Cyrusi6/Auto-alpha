@@ -31,6 +31,7 @@ from model_core.data_loader import AShareDataLoader
 from model_core.vm import StackVM
 from model_core.vocab import FORMULA_VOCAB
 from research.models import FactorCandidate
+from research_firewall.lineage import build_loader_lineage
 
 from .models import (
     FormulaBatchEvalBenchmark,
@@ -80,6 +81,16 @@ class FormulaBatchEvaluator:
         batch_id = self.config.batch_id or _make_batch_id(created_at)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.loader.load_data()
+        self.lineage = build_loader_lineage(
+            self.loader,
+            stage="formula_batch_eval",
+            extra={
+                "transform": self.config.factor_transform,
+                "train_ratio": self.config.train_ratio,
+                "valid_ratio": self.config.valid_ratio,
+                "feature_promotion_policy_hash": self.config.feature_promotion_policy_hash,
+            },
+        )
         if self.config.use_eval_cache:
             self._cache = self._load_cache()
 
@@ -165,8 +176,10 @@ class FormulaBatchEvaluator:
             self.feature_version,
             OPERATOR_VERSION,
         )
+        request = replace(request, formula_hash=formula_hash)
         existing = self.store.find_factor_by_hash(formula_hash)
-        if existing is not None and self.config.skip_existing:
+        existing_lineage = ((existing.metadata or {}).get("evaluation_lineage_hash") if existing is not None else None)
+        if existing is not None and self.config.skip_existing and existing_lineage == self.lineage["lineage_hash"]:
             return FormulaEvalResult(
                 request=request,
                 factor_id=existing.factor_id,
@@ -234,6 +247,8 @@ class FormulaBatchEvaluator:
                 "max_abs_correlation": float(research.max_abs_correlation),
                 "similar_factors": research.similar_factors,
                 "gate_decision": gate_payload,
+                "evaluation_lineage": self.lineage,
+                "evaluation_lineage_hash": self.lineage["lineage_hash"],
                 **(request.metadata or {}),
             }
             self.store.save_factor(
@@ -344,6 +359,7 @@ class FormulaBatchEvaluator:
             "holdout_start_date": self.config.holdout_start_date,
             "label_horizon": self.config.label_horizon,
             "eligible_date_hash": self.config.eligible_date_hash or hashlib.sha256("\n".join(self.loader.trade_dates).encode()).hexdigest(),
+            "evaluation_lineage_hash": self.lineage["lineage_hash"],
         }
         return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
 

@@ -25,6 +25,7 @@ from model_core.data_loader import AShareDataLoader
 from model_core.backtest import AShareFactorEvaluator
 
 from .materialization import FactorMaterializer, MaterializationInputs, load_materialized_factor
+from .eligibility import build_common_eligibility, eligible_date_segments
 from .metrics import evaluate_factor_splits
 from .models import (
     FactorValidationTarget,
@@ -42,7 +43,7 @@ from .policy import load_validation_policy
 from .regime import run_regime_validation
 from .report import write_validation_lab_artifacts
 from .sensitivity import run_sensitivity_tests
-from .splits import build_splits
+from .splits import build_splits, build_splits_for_eligible_segments
 from .stress_backtest import run_stress_backtest_bundle
 
 
@@ -118,9 +119,9 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--test-size", type=int, default=126)
     parser.add_argument("--step-size", type=int, default=126)
     parser.add_argument("--embargo-size", type=int, default=0)
-    parser.add_argument("--label-horizon", type=int, default=1)
-    parser.add_argument("--research-end-date")
-    parser.add_argument("--holdout-start-date")
+    parser.add_argument("--label-horizon", type=int, default=2)
+    parser.add_argument("--research-end-date", default="20240530")
+    parser.add_argument("--holdout-start-date", default="20240531")
     parser.add_argument("--cscv-groups", type=int, default=2)
     parser.add_argument("--max-cscv-combinations", type=int, default=6)
     parser.add_argument("--run-multiple-testing", action="store_true")
@@ -180,10 +181,10 @@ def _run_candidate_pool(args: argparse.Namespace) -> dict[str, Any]:
             factor_id = str(row.get("factor_id"))
             materialization_manifest = Path(args.materialization_dir or output_dir / "materialized_factors") / factor_id / "materialization_manifest.json"
             result = {
-                "status": "blocked",
+                "status": "data_blocked",
                 "factor_id": factor_id,
                 "validation_blocker_count": 1,
-                "validation_summary": {"status": "blocked", "blocker_count": 1, "warning_count": 0, "out_of_sample_score": 0.0, "metrics": {}},
+                "validation_summary": {"status": "data_blocked", "blocker_count": 1, "warning_count": 0, "out_of_sample_score": 0.0, "metrics": {}},
                 "error": str(exc),
                 "paths": {"materialization_manifest_path": str(materialization_manifest) if materialization_manifest.exists() else ""},
             }
@@ -211,10 +212,11 @@ def _run_candidate_pool(args: argparse.Namespace) -> dict[str, Any]:
         "validation_candidate_pool_results",
         "validation_lab",
     )
-    passed = sum(1 for item in results if item.get("status") == "passed")
-    blocked = sum(1 for item in results if item.get("status") == "blocked")
+    passed = sum(1 for item in results if item.get("status") == "historical_replay_passed")
+    blocked = sum(1 for item in results if item.get("status") == "data_blocked")
+    rejected = sum(1 for item in results if item.get("status") == "statistically_rejected")
     report = {
-        "status": "passed" if blocked == 0 else "blocked",
+        "status": "data_blocked" if blocked else ("statistically_rejected" if rejected else "historical_replay_passed"),
         "validation_candidate_pool_path": args.validation_candidate_pool_path,
         "candidate_count": len(rows),
         "validated_candidate_count": len(results),
@@ -322,20 +324,38 @@ def _run_single(
             "active_mask": raw_data_cache.get("active_mask"),
             "pit_available_mask": raw_data_cache.get("pit_available_mask"),
             "index_member_matrix": raw_data_cache.get("index_member_matrix"),
-            "firewall_proof": loader.date_firewall.proof(loader.trade_dates, raw_truncated_before_compute=True) if loader.date_firewall else {},
+            "firewall_proof": loader.date_firewall.proof(loader.firewall_source_trade_dates or loader.trade_dates, raw_truncated_before_compute=True) if loader.date_firewall else {},
         }
     effective_embargo = max(int(args.embargo_size), int(factor_record.lookback_days or 1) + int(args.label_horizon))
-    splits = build_splits(
-        args.split_method,
-        trade_dates,
-        args.train_size,
-        args.validation_size,
-        args.test_size,
-        args.step_size,
-        effective_embargo,
-        args.cscv_groups,
-        args.max_cscv_combinations,
-    )
+    eligibility = matrix.get("eligibility")
+    if eligibility is not None:
+        segments = eligible_date_segments(trade_dates, eligibility)
+        if args.holdout_start_date:
+            segments = [[date for date in segment if date >= args.holdout_start_date] for segment in segments]
+            segments = [segment for segment in segments if segment]
+        splits = build_splits_for_eligible_segments(
+            args.split_method,
+            segments,
+            args.train_size,
+            args.validation_size,
+            args.test_size,
+            args.step_size,
+            effective_embargo,
+            args.cscv_groups,
+            args.max_cscv_combinations,
+        )
+    else:
+        splits = build_splits(
+            args.split_method,
+            trade_dates,
+            args.train_size,
+            args.validation_size,
+            args.test_size,
+            args.step_size,
+            effective_embargo,
+            args.cscv_groups,
+            args.max_cscv_combinations,
+        )
     window_results, validation_summary, issues = evaluate_factor_splits(
         factors,
         target_ret,
@@ -344,12 +364,19 @@ def _run_single(
         factor_id,
         validity=validity,
         active_mask=matrix.get("active_mask"),
-        target_available_mask=matrix.get("pit_available_mask"),
+        target_available_mask=matrix.get("target_available_mask") if matrix.get("target_available_mask") is not None else matrix.get("pit_available_mask"),
         index_member_mask=matrix.get("index_member_matrix"),
+        eligible_date_mask=torch.from_numpy(eligibility.eligible_mask) if eligibility is not None else None,
         policy=policy,
     )
-    screening_reproduction = _screening_reproduction(factor_record, factors, target_ret, trade_dates)
-    if screening_reproduction.get("available") and not screening_reproduction.get("within_tolerance"):
+    screening_reproduction = _screening_reproduction(
+        factor_record,
+        factors,
+        target_ret,
+        trade_dates,
+        current_contract=_validation_contract(matrix, args),
+    )
+    if screening_reproduction.get("status") == "comparable_mismatch":
         issues.append(ValidationIssue("blocker", "screening_reproduction_mismatch", "materialized factor did not reproduce original full-eval metrics", screening_reproduction))
         validation_summary = replace(validation_summary, blocker_count=validation_summary.blocker_count + 1, status="statistically_rejected")
     promotion_metadata, promotion_issues = _feature_promotion_metadata(
@@ -498,36 +525,60 @@ def _run_single(
 
 def _load_governed_matrix_context(args: argparse.Namespace) -> dict[str, Any]:
     matrix_dir = Path(args.matrix_cache_dir)
-    required = ["trade_dates.json", "ts_codes.json", "active_mask.npy", "pit_available_mask.npy", "index_member_matrix.npy", "matrix_version_manifest.json"]
-    missing = [name for name in required if not (matrix_dir / name).exists()]
+    paths = {
+        "trade_dates": matrix_dir / "trade_dates.json",
+        "ts_codes": matrix_dir / "ts_codes.json",
+        "active_mask": _first_existing_matrix_path(matrix_dir, ["bar_observed_mask.npy", "active_mask.npy"], "active_observation_mask_missing"),
+        "pit_available_mask": _first_existing_matrix_path(matrix_dir, ["bar_observed_mask.npy", "pit_available_mask.npy"], "pit_observation_mask_missing"),
+        "index_member_matrix": _first_existing_matrix_path(matrix_dir, ["index_membership.npy", "index_member_matrix.npy"], "index_membership_missing"),
+        "membership_known": _first_existing_matrix_path(matrix_dir, ["membership_known_mask.npy", "membership_known.npy"], "membership_known_missing"),
+        "manifest": _first_existing_matrix_path(matrix_dir, ["task_052a_strict_matrix_manifest.json", "matrix_version_manifest.json"], "matrix_manifest_missing"),
+    }
+    missing = [name for name in ("trade_dates", "ts_codes") if not paths[name].exists()]
     if missing:
         raise RuntimeError(f"missing governed matrix artifacts: {','.join(missing)}")
-    trade_dates = [str(item) for item in json.loads((matrix_dir / "trade_dates.json").read_text(encoding="utf-8"))]
-    manifest = json.loads((matrix_dir / "matrix_version_manifest.json").read_text(encoding="utf-8"))
-    target_mode = str(manifest.get("target_return_mode") or "adjusted_close")
-    price_name = "total_return.npy" if target_mode == "corporate_action_total_return" else "adjusted_close.npy"
-    price = np.asarray(np.load(matrix_dir / price_name, mmap_mode="r"), dtype=np.float32)
-    target = np.zeros_like(price, dtype=np.float32)
-    target_valid = np.zeros_like(price, dtype=bool)
-    valid_price = np.isfinite(price[:, :-1]) & np.isfinite(price[:, 1:]) & (np.abs(price[:, :-1]) > 1e-12)
-    next_return = np.zeros_like(price[:, :-1], dtype=np.float32)
-    next_return[valid_price] = np.log(np.clip(price[:, 1:][valid_price], 1e-6, None) / np.clip(price[:, :-1][valid_price], 1e-6, None))
-    target[:, :-1] = next_return
-    target_valid[:, :-1] = valid_price
-    masks = {name: torch.tensor(np.asarray(np.load(matrix_dir / f"{name}.npy", mmap_mode="r"), dtype=np.float32), dtype=torch.bool) for name in ["active_mask", "pit_available_mask", "index_member_matrix"]}
+    trade_dates = [str(item) for item in json.loads(paths["trade_dates"].read_text(encoding="utf-8"))]
+    manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
+    target_mode = str(manifest.get("target_return_mode") or (manifest.get("target_contract") or {}).get("name") or "unknown")
+    target, target_valid, target_path, target_validity_path = _load_persisted_target(matrix_dir, manifest, int(args.label_horizon))
+    masks = {name: torch.tensor(np.asarray(np.load(paths[name], mmap_mode="r"), dtype=np.float32), dtype=torch.bool) for name in ["active_mask", "pit_available_mask", "index_member_matrix"]}
+    membership_known = np.asarray(np.load(paths["membership_known"], mmap_mode="r"), dtype=np.bool_)
+    membership_by_date = membership_known.reshape(-1) if membership_known.ndim == 1 else membership_known.any(axis=0)
+    gap_path = matrix_dir / "unexplained_data_gap_mask.npy"
+    structural_gap_free = np.ones(len(trade_dates), dtype=np.bool_)
+    if gap_path.exists():
+        gaps = np.asarray(np.load(gap_path, mmap_mode="r"), dtype=np.bool_)
+        structural_gap_free = (~gaps).any(axis=0)
+    diagnostic_boundary = np.ones(len(trade_dates), dtype=np.bool_)
+    if args.holdout_start_date:
+        diagnostic_boundary = np.asarray([date >= args.holdout_start_date for date in trade_dates], dtype=np.bool_)
+    eligibility = build_common_eligibility(
+        trade_dates,
+        membership_known=membership_by_date,
+        snapshot_valid=membership_by_date,
+        target_data_valid=target_valid.any(axis=0) & diagnostic_boundary,
+        structural_gap_free=structural_gap_free,
+    )
     index_np = masks["index_member_matrix"].numpy()
     has_pit_constituent_proof = bool(
         manifest.get("universe_mode") == "daily_pit_constituents"
         and manifest.get("historical_constituent_proof")
     )
     fixed_asof = not has_pit_constituent_proof
-    target_tensor = torch.from_numpy(target)
+    target_tensor = torch.from_numpy(np.array(target, copy=True))
     return {
         "trade_dates": trade_dates,
         "target_ret": target_tensor,
         "active_mask": masks["active_mask"],
-        "pit_available_mask": masks["pit_available_mask"] & torch.from_numpy(target_valid),
+        "pit_available_mask": masks["pit_available_mask"],
+        "target_available_mask": torch.from_numpy(np.array(target_valid, copy=True)),
         "index_member_matrix": masks["index_member_matrix"],
+        "eligibility": eligibility,
+        "target_path": str(target_path),
+        "target_validity_path": str(target_validity_path),
+        "target_contract_hash": manifest.get("target_contract_hash"),
+        "target_contract": dict(manifest.get("target_contract") or {}),
+        "matrix_semantic_hash": manifest.get("semantic_hash"),
         "target_return_mode": target_mode,
         "feature_cutoff_mode": str(manifest.get("feature_cutoff_mode") or "unknown"),
         "raw_data_cache": masks | {"target_ret": target_tensor},
@@ -545,10 +596,33 @@ def _load_governed_matrix_context(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def _screening_reproduction(factor_record, factors: torch.Tensor, target_ret: torch.Tensor, trade_dates: list[str]) -> dict[str, Any]:
+def _screening_reproduction(
+    factor_record,
+    factors: torch.Tensor,
+    target_ret: torch.Tensor,
+    trade_dates: list[str],
+    *,
+    current_contract: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     expected = ((factor_record.metadata or {}).get("metrics_by_split") or {}) if factor_record is not None else {}
     if not expected:
-        return {"available": False, "within_tolerance": False, "reason": "original metrics unavailable"}
+        return {"available": False, "within_tolerance": False, "status": "not_comparable_due_to_contract_change", "reason": "original metrics unavailable"}
+    original_lineage = (factor_record.metadata or {}).get("evaluation_lineage") or {}
+    original_contract = {
+        "target_return_mode": original_lineage.get("target_return_mode"),
+        "label_horizon": original_lineage.get("label_horizon"),
+        "eligible_date_hash": original_lineage.get("eligible_date_hash"),
+        "target_contract": original_lineage.get("target_contract") or {},
+        "matrix_semantic_hash": original_lineage.get("matrix_semantic_hash"),
+    }
+    if current_contract and any(original_contract.get(key) != current_contract.get(key) for key in current_contract):
+        return {
+            "available": True,
+            "within_tolerance": False,
+            "status": "not_comparable_due_to_contract_change",
+            "original_contract": original_contract,
+            "current_contract": current_contract,
+        }
     recomputed = evaluate_by_splits(
         AShareFactorEvaluator(),
         factors,
@@ -576,7 +650,54 @@ def _screening_reproduction(factor_record, factors: torch.Tensor, target_ret: to
             tolerance = tolerances[metric]
             comparisons[f"{split_name}.{metric}"] = {"expected": left, "recomputed": right, "absolute_error": delta, "tolerance": tolerance}
             within = within and delta <= tolerance
-    return {"available": True, "within_tolerance": within, "tolerances": tolerances, "comparisons": comparisons}
+    return {"available": True, "within_tolerance": within, "status": "comparable_match" if within else "comparable_mismatch", "tolerances": tolerances, "comparisons": comparisons}
+
+
+def _load_persisted_target(matrix_dir: Path, manifest: dict[str, Any], horizon: int) -> tuple[np.ndarray, np.ndarray, Path, Path]:
+    contract_name = (manifest.get("target_contract") or {}).get("name")
+    target_candidates = [
+        manifest.get("target_return_path"),
+        f"{contract_name}.npy" if contract_name else None,
+        f"target_ret_t{horizon}.npy",
+        f"target_ret_h{horizon}.npy",
+        "target_ret.npy",
+    ]
+    validity_candidates = [
+        manifest.get("target_available_mask_path"),
+        f"target_available_mask_t{horizon}.npy",
+        f"target_available_mask_h{horizon}.npy",
+        "target_available_mask.npy",
+    ]
+    target_path = _first_existing_matrix_path(matrix_dir, target_candidates, "persisted_target_missing")
+    validity_path = _first_existing_matrix_path(matrix_dir, validity_candidates, "persisted_target_validity_missing")
+    target = np.asarray(np.load(target_path, mmap_mode="r"), dtype=np.float32)
+    validity = np.asarray(np.load(validity_path, mmap_mode="r"), dtype=np.bool_)
+    if target.shape != validity.shape:
+        raise RuntimeError("persisted target/value validity shape mismatch")
+    return target, validity, target_path, validity_path
+
+
+def _first_existing_matrix_path(matrix_dir: Path, candidates: list[Any], error: str) -> Path:
+    for value in candidates:
+        if not value:
+            continue
+        path = Path(value)
+        if not path.is_absolute():
+            path = matrix_dir / path
+        if path.exists():
+            return path
+    raise RuntimeError(error)
+
+
+def _validation_contract(matrix: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
+    eligibility = matrix.get("eligibility")
+    return {
+        "target_return_mode": matrix.get("target_return_mode"),
+        "label_horizon": int(args.label_horizon),
+        "eligible_date_hash": eligibility.eligible_date_hash if eligibility is not None else None,
+        "target_contract": matrix.get("target_contract") or {},
+        "matrix_semantic_hash": matrix.get("matrix_semantic_hash"),
+    }
 
 
 def _filter_candidate_pool(rows: list[dict[str, Any]], args: argparse.Namespace) -> list[dict[str, Any]]:

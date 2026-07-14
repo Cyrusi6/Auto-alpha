@@ -8,6 +8,7 @@ from dataclasses import replace
 import torch
 
 from model_core.vm import StackVM
+from research_firewall.lineage import build_loader_lineage
 
 
 def run_proxy_eval(candidates, loader, *, max_candidates: int, max_dates: int, vocab=None, seed: int = 0) -> tuple[list, list[dict], dict]:
@@ -26,6 +27,8 @@ def run_proxy_eval(candidates, loader, *, max_candidates: int, max_dates: int, v
         offset = int(seed) % len(loader.trade_dates)
         date_indices = sorted({(position + offset) % len(loader.trade_dates) for position in positions})
     date_tensor = torch.tensor(date_indices, dtype=torch.long, device=loader.feat_tensor.device)
+    lineage = build_loader_lineage(loader, stage="alpha_proxy_eval", extra={"max_dates": int(max_dates), "seed": int(seed)})
+    _audit_sampled_target_reads(loader, date_indices)
     for candidate in candidates:
         if candidate.status == "rejected" or attempted >= max_candidates:
             updated.append(candidate)
@@ -61,6 +64,7 @@ def run_proxy_eval(candidates, loader, *, max_candidates: int, max_dates: int, v
                 "runtime_ms": float((time.perf_counter() - start) * 1000.0),
                 "proxy_score": score,
                 "sampled_dates": [loader.trade_dates[index] for index in date_indices],
+                "lineage_hash": lineage["lineage_hash"],
             }
             updated.append(replace(candidate, proxy_score=score, status=status, reject_reason=None if status == "proxy_passed" else "zero_variance_proxy"))
             rows.append(row)
@@ -84,8 +88,25 @@ def run_proxy_eval(candidates, loader, *, max_candidates: int, max_dates: int, v
         "sampled_dates": [loader.trade_dates[index] for index in date_indices],
         "eligible_date_hash": __import__("hashlib").sha256("\n".join(loader.trade_dates).encode()).hexdigest(),
         "seed": int(seed),
+        "lineage": lineage,
+        "lineage_hash": lineage["lineage_hash"],
     }
     return updated, rows, summary
+
+
+def _audit_sampled_target_reads(loader, date_indices: list[int]) -> None:
+    firewall = getattr(loader, "date_firewall", None)
+    source_dates = list(getattr(loader, "firewall_source_trade_dates", None) or [])
+    if firewall is None or not source_dates:
+        return
+    source_index = {date: index for index, date in enumerate(source_dates)}
+    horizon = int(getattr(loader, "label_horizon", 1))
+    for index in date_indices:
+        start = loader.trade_dates[index]
+        endpoint_index = source_index[start] + horizon
+        if endpoint_index >= len(source_dates):
+            raise RuntimeError(f"proxy target endpoint unavailable: {start}+{horizon}")
+        firewall.assert_target_access(start, source_dates[endpoint_index], component="alpha_proxy_eval", purpose="sampled_target_read")
 
 
 def _rank_ic(factor: torch.Tensor, target: torch.Tensor) -> float:

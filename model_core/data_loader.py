@@ -63,7 +63,9 @@ class AShareDataLoader:
         self.corporate_action_application_mode = corporate_action_application_mode
         self.feature_set_name = feature_set_name
         self.feature_set_manifest_path = Path(feature_set_manifest_path) if feature_set_manifest_path is not None else None
+        self.label_horizon = int(label_horizon)
         self.date_firewall = DateFirewall(research_end_date, holdout_start_date, label_horizon) if research_end_date else None
+        self.firewall_source_trade_dates: list[str] = []
         self.ts_codes: list[str] = []
         self.trade_dates: list[str] = []
         self.security_metadata: dict[str, dict[str, object]] = {}
@@ -89,7 +91,7 @@ class AShareDataLoader:
         self.ts_codes = sorted(str(record["ts_code"]) for record in selected_securities)
         self.trade_dates = sorted(record["trade_date"] for record in calendar if record.get("is_open", False))
         if self.date_firewall is not None:
-            self.trade_dates = list(ResearchDataView(self.date_firewall, tuple(self.trade_dates)).eligible_dates)
+            self.trade_dates = [date for date in self.trade_dates if date <= self.date_firewall.research_end_date]
         if not self.ts_codes or not self.trade_dates:
             raise ValueError("A-share data directory does not contain aligned securities and trade dates")
         self.security_metadata = {
@@ -166,10 +168,14 @@ class AShareDataLoader:
         if self.point_in_time:
             self._attach_point_in_time_masks(securities)
         self.feat_tensor = self._compute_feature_tensor()
-        self.target_ret = self._compute_target_ret(self._target_price_matrix())
+        self.target_ret = self._compute_target_ret(self._target_price_matrix(), self.label_horizon)
+        self._apply_research_view()
         return self
 
     def _load_from_matrix_cache(self) -> "AShareDataLoader":
+        strict_manifest_path = self.matrix_cache_dir / "task_052a_strict_matrix_manifest.json"
+        if strict_manifest_path.exists():
+            return self._load_from_strict_engineering_matrix(strict_manifest_path)
         if not (self.matrix_cache_dir / "metadata.json").exists():
             raise FileNotFoundError(f"matrix cache metadata not found: {self.matrix_cache_dir / 'metadata.json'}")
 
@@ -190,6 +196,7 @@ class AShareDataLoader:
             self.security_metadata = {ts_code: {"ts_code": ts_code} for ts_code in self.ts_codes}
 
         self.raw_data_cache = reader.to_raw_data_cache(device=self.device)
+        self._apply_firewall_source_boundary()
         if "adj_factor" not in self.raw_data_cache:
             self.raw_data_cache["adj_factor"] = torch.ones_like(self.raw_data_cache["close"])
         if "adjusted_close" not in self.raw_data_cache:
@@ -225,7 +232,53 @@ class AShareDataLoader:
             self._attach_point_in_time_masks(None)
 
         self.feat_tensor = self._compute_feature_tensor()
-        self.target_ret = self._compute_target_ret(self._target_price_matrix())
+        self.target_ret = self._compute_target_ret(self._target_price_matrix(), self.label_horizon)
+        self._apply_research_view()
+        return self
+
+    def _load_from_strict_engineering_matrix(self, manifest_path: Path) -> "AShareDataLoader":
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.ts_codes = [str(item) for item in json.loads((self.matrix_cache_dir / "ts_codes.json").read_text(encoding="utf-8"))]
+        self.trade_dates = [str(item) for item in json.loads((self.matrix_cache_dir / "trade_dates.json").read_text(encoding="utf-8"))]
+        self.security_metadata = {ts_code: {"ts_code": ts_code} for ts_code in self.ts_codes}
+        raw: dict[str, torch.Tensor] = {}
+        for field in manifest.get("raw_fields", []):
+            path = self.matrix_cache_dir / f"{field}.npy"
+            if path.exists():
+                raw[str(field)] = torch.tensor(np.asarray(np.load(path, mmap_mode="r"), dtype=np.float32), device=self.device)
+        aliases = {
+            "index_member_matrix": "index_membership.npy",
+            "active_mask": "bar_observed_mask.npy",
+            "pit_available_mask": "bar_observed_mask.npy",
+            "membership_known": "membership_known_mask.npy",
+        }
+        for name, filename in aliases.items():
+            path = self.matrix_cache_dir / filename
+            if path.exists():
+                raw[name] = torch.tensor(np.asarray(np.load(path, mmap_mode="r"), dtype=np.float32), device=self.device)
+        if "close" not in raw or "adj_factor" not in raw:
+            raise ValueError("strict engineering matrix requires explicit close and adj_factor")
+        raw["adjusted_close"] = raw["close"] * raw["adj_factor"]
+        if "open" in raw:
+            raw["adjusted_open"] = raw["open"] * raw["adj_factor"]
+        self.raw_data_cache = raw
+        original_dates = list(self.trade_dates)
+        selected = [index for index, date in enumerate(original_dates) if self.date_firewall is None or date <= self.date_firewall.research_end_date]
+        self._apply_firewall_source_boundary()
+        target_name = str((manifest.get("target_contract") or {}).get("name") or "next_open_t1_t2_return")
+        target_path = self.matrix_cache_dir / f"{target_name}.npy"
+        if not target_path.exists():
+            raise ValueError(f"strict persisted target missing: {target_path}")
+        target = torch.tensor(np.asarray(np.load(target_path, mmap_mode="r"), dtype=np.float32), device=self.device)
+        if len(selected) != len(original_dates):
+            target = target.index_select(1, torch.tensor(selected, dtype=torch.long, device=self.device))
+        self.target_return_mode = target_name
+        self.industry_codes = torch.zeros(len(self.ts_codes), dtype=torch.long, device=self.device)
+        self.raw_data_cache["industry_codes"] = self.industry_codes
+        self.raw_data_cache["industry_code_matrix"] = self.industry_codes.unsqueeze(1).expand(-1, len(self.trade_dates))
+        self.feat_tensor = self._compute_feature_tensor()
+        self.target_ret = target
+        self._apply_research_view()
         return self
 
     def _filter_frame_by_selected_codes(self, df: pd.DataFrame, selected_codes: set[str]) -> pd.DataFrame:
@@ -290,6 +343,19 @@ class AShareDataLoader:
                 if ts_codes is not None and "ts_code" in record and str(record.get("ts_code")) not in ts_codes:
                     continue
                 records.append(record)
+                if self.date_firewall is not None:
+                    dates = [str(record[field]) for field in ("trade_date", "ann_date", "f_ann_date", "availability_date") if record.get(field) not in {None, ""}]
+                    for date in dates:
+                        self.date_firewall.access_audit.append(
+                            {
+                                "component": f"data_loader:{path.stem}",
+                                "purpose": "raw_record",
+                                "access_type": "observation_read",
+                                "view": "research_source",
+                                "date": date,
+                                "allowed": True,
+                            }
+                        )
         return records
 
     def _record_inside_research(self, record: dict[str, object]) -> bool:
@@ -464,7 +530,7 @@ class AShareDataLoader:
         self.raw_data_cache["stock_distribution_ratio"] = stock_ratio
         self.raw_data_cache["corporate_action_flag"] = flag
         self.raw_data_cache["total_return_close"] = total_return_close
-        self.raw_data_cache["total_return"] = self._compute_target_ret(total_return_close)
+        self.raw_data_cache["total_return"] = self._compute_target_ret(total_return_close, self.label_horizon)
 
     def _build_industry_codes(self) -> torch.Tensor:
         industries = [
@@ -535,13 +601,64 @@ class AShareDataLoader:
         return self.raw_data_cache["adjusted_close"]
 
     @staticmethod
-    def _compute_target_ret(close: torch.Tensor) -> torch.Tensor:
+    def _compute_target_ret(close: torch.Tensor, horizon: int = 1) -> torch.Tensor:
         target = torch.zeros_like(close)
-        if close.shape[1] > 1:
-            current = torch.clamp(close[:, :-1], min=1e-6)
-            nxt = torch.clamp(close[:, 1:], min=1e-6)
-            target[:, :-1] = torch.log(nxt / current)
+        horizon = max(1, int(horizon))
+        if close.shape[1] > horizon:
+            current = torch.clamp(close[:, :-horizon], min=1e-6)
+            endpoint = torch.clamp(close[:, horizon:], min=1e-6)
+            target[:, :-horizon] = torch.log(endpoint / current)
         return torch.nan_to_num(target, nan=0.0, posinf=0.0, neginf=0.0).to(dtype=torch.float32)
+
+    def _apply_research_view(self) -> None:
+        if self.date_firewall is None:
+            return
+        source_dates = list(self.trade_dates)
+        view = ResearchDataView(self.date_firewall, tuple(source_dates))
+        self.firewall_source_trade_dates = source_dates
+        indices = list(view.eligible_indices)
+        self.trade_dates = list(view.eligible_dates)
+        index = torch.tensor(indices, dtype=torch.long, device=self.device)
+        for name, value in list(self.raw_data_cache.items()):
+            if isinstance(value, torch.Tensor) and value.ndim >= 2 and value.shape[-1] == len(source_dates):
+                self.raw_data_cache[name] = value.index_select(value.ndim - 1, index)
+        if self.feat_tensor is not None:
+            self.feat_tensor = self.feat_tensor.index_select(2, index)
+        if self.target_ret is not None:
+            self.target_ret = self.target_ret.index_select(1, index)
+            self.date_firewall.audit_observation_access(
+                self.trade_dates,
+                component="data_loader",
+                purpose="target_and_feature_view",
+                view="research",
+            )
+            for position in indices:
+                endpoint = position + self.label_horizon
+                if endpoint < len(source_dates):
+                    self.date_firewall.assert_target_access(
+                        source_dates[position],
+                        source_dates[endpoint],
+                        component="data_loader",
+                        purpose=f"target_t_plus_{self.label_horizon}",
+                    )
+
+    def _apply_firewall_source_boundary(self) -> None:
+        if self.date_firewall is None:
+            return
+        source_dates = list(self.trade_dates)
+        selected = [index for index, date in enumerate(source_dates) if date <= self.date_firewall.research_end_date]
+        bounded_dates = [source_dates[index] for index in selected]
+        index = torch.tensor(selected, dtype=torch.long, device=self.device)
+        for name, value in list(self.raw_data_cache.items()):
+            if isinstance(value, torch.Tensor) and value.ndim >= 2 and value.shape[-1] == len(source_dates):
+                self.raw_data_cache[name] = value.index_select(value.ndim - 1, index)
+        self.trade_dates = bounded_dates
+        self.date_firewall.audit_observation_access(
+            bounded_dates,
+            component="matrix_data_loader",
+            purpose="source_view_before_compute",
+            view="research",
+        )
 
     @staticmethod
     def _limit_flag(close: torch.Tensor, limit: torch.Tensor, direction: str) -> torch.Tensor:

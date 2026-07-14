@@ -145,7 +145,7 @@ class AlphaCampaignConfig:
     dedupe_across_campaigns: bool = False
     research_end_date: str | None = None
     holdout_start_date: str | None = None
-    label_horizon: int = 1
+    label_horizon: int = 2
     previous_experiment_dirs: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:

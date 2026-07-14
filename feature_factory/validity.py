@@ -29,8 +29,11 @@ def build_feature_validity_tensor(
         raise ValueError("feature definition count mismatch")
     for feature_index, definition in enumerate(definitions):
         fields = list(definition.get("source_fields") or [])
-        masks = [source_validity[field] for field in fields if field in source_validity]
-        base = np.logical_and.reduce(masks) if masks else np.zeros_like(eligible_mask, dtype=np.bool_)
+        missing_fields = [field for field in fields if field not in source_validity]
+        masks = [np.asarray(source_validity[field], dtype=np.bool_) for field in fields if field in source_validity]
+        if any(mask.shape != eligible_mask.shape for mask in masks):
+            raise ValueError(f"source validity axis mismatch: {definition.get('feature_name')}")
+        base = np.logical_and.reduce(masks) if masks and not missing_fields else np.zeros_like(eligible_mask, dtype=np.bool_)
         lookback = max(1, int(definition.get("lookback") or 1))
         valid = _rolling_valid(base, lookback) if lookback > 1 else base.copy()
         valid &= eligible_mask
@@ -45,7 +48,9 @@ def build_feature_validity_tensor(
             "valid_coverage": float(valid.sum() / denominator) if denominator else 0.0,
             "nonzero_coverage": float(((feature_tensor[:, feature_index, :] != 0) & valid).sum() / denominator) if denominator else 0.0,
             "max_breadth": int(valid.sum(axis=0).max(initial=0)),
-            "blocker": None if valid.any() else "zero_valid_coverage",
+            "validity_dependencies": fields,
+            "missing_validity_dependencies": missing_fields,
+            "blocker": "missing_validity_dependency" if missing_fields else (None if valid.any() else "zero_valid_coverage"),
         })
     output = Path(output_dir); output.mkdir(parents=True, exist_ok=True)
     tensor_path = output / "feature_validity_tensor.npy"
