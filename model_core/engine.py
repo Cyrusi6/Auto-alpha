@@ -239,7 +239,7 @@ class FactorMiningEngine:
             formula_hash=formula_hash,
             feature_version=self.feature_version,
             operator_version=self.operator_version,
-            lookback_days=formula_semantics.required_observations,
+            lookback_days=formula_semantics.max_raw_lag,
             created_at=created_at,
             status=research.status,
             metrics=metrics_by_split["all"],

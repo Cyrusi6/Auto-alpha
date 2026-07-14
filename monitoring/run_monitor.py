@@ -157,6 +157,7 @@ from .checks import (
     check_regime_validation,
     check_sensitivity_validation,
     check_stress_backtest_validation,
+    check_task054c_engineering_baseline,
     check_uncertified_production_candidate,
     check_validation_lab,
     check_validation_campaign_leaderboard,
@@ -386,6 +387,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--validation-leaderboard-path")
     parser.add_argument("--factor-certification-queue-path")
     parser.add_argument("--validation-large-campaign-plan-path")
+    parser.add_argument("--task054c-final-verification-path")
     parser.add_argument("--factor-certification-campaign-report-path")
     parser.add_argument("--factor-certification-campaign-registry-path")
     parser.add_argument("--certified-factor-pool-path")
@@ -576,6 +578,7 @@ def main(argv: list[str] | None = None) -> int:
         ("regime_validation", lambda: check_regime_validation(args.regime_validation_report_path)),
         ("sensitivity_validation", lambda: check_sensitivity_validation(args.sensitivity_report_path)),
         ("stress_backtest_validation", lambda: check_stress_backtest_validation(args.stress_backtest_report_path)),
+        ("task054c_engineering_baseline", lambda: check_task054c_engineering_baseline(args.task054c_final_verification_path)),
         (
             "factor_certification",
             lambda: check_factor_certification(args.factor_certification_decision_path, args.factor_certification_scorecard_path),

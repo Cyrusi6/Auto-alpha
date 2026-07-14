@@ -561,6 +561,73 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
             "certification_queue_count", "portfolio_queue_count", "paper_queue_count", "live_queue_count",
         ],
     ),
+    "task054c_normalized_replay_store_manifest": _definition(
+        "task054c_normalized_replay_store_manifest",
+        ["generation_id", "content_hash", "records_file", "records_sha256", "record_count", "identity_root"],
+        ["normalized_replay_store_manifest.json"],
+    ),
+    "task054c_engineering_bundle_manifest": _definition(
+        "task054c_engineering_bundle_manifest",
+        ["generation_id", "content_hash", "matrix_content_hash", "tensor_content_hash", "normalized_store_content_hash", "exact20_identity_root", "exact20_ids", "artifact_paths"],
+        ["engineering_bundle_manifest.json"],
+        optional=[
+            "schema_version", "date_axis_hash", "eligible_date_hash", "feature_axis_hash",
+            "freeze_content_hash", "freeze_manifest_sha256", "historical_selection_contaminated",
+            "matrix_manifest_sha256", "normalized_store_manifest_sha256", "overlay_content_hash",
+            "overlay_manifest_sha256", "promotion_policy_sha256", "semantics_contract_hash",
+            "stock_axis_hash", "target_contract", "tensor_manifest_sha256", "time_contract",
+            "universe_content_hash", "universe_manifest_sha256",
+        ],
+    ),
+    "task054c_research_projection_manifest": _definition(
+        "task054c_research_projection_manifest",
+        ["generation_id", "content_hash", "research_computation_identity", "research_date_start", "research_date_end", "research_date_count", "matrix_root", "tensor_root", "matrix_content_hash", "tensor_content_hash"],
+        ["research_projection_manifest.json"],
+    ),
+    "task054c_production_sentinel": _definition(
+        "task054c_production_sentinel",
+        ["status", "evidence_scope", "protocol_version", "bundle_hash", "executions", "scheduler_evidence", "proof", "content_hash"],
+        ["task054c_production_sentinel.json"],
+        optional=["schema_version", "mutation_manifest_sha256", "threat_model"],
+    ),
+    "task054c_pre_gpu_gate_seal": _definition(
+        "task054c_pre_gpu_gate_seal",
+        ["status", "bundle_hash", "eligible_date_hash", "exact20_identity_root", "stages", "seal_hash"],
+        ["task054c_pre_gpu_gate_seal.json"],
+        optional=["schema_version", "certification_ready", "portfolio_ready", "paper_ready", "live_ready", "source_manifests"],
+    ),
+    "task054c_final_verification": _definition(
+        "task054c_final_verification",
+        ["status", "bundle_hash", "sentinel_hash", "seal_hash", "replay", "content_hash"],
+        ["task054c_final_verification.json"],
+        optional=[
+            "schema_version", "exact20_identity_root", "normalized_store_content_hash",
+            "historical_selection_contaminated", "certification_ready", "portfolio_ready",
+            "paper_ready", "live_ready", "certification_queue_count", "portfolio_queue_count",
+            "paper_queue_count", "live_queue_count", "source_artifact_sha256",
+        ],
+    ),
+    "task054c_cpu_preflight": _definition(
+        "task054c_cpu_preflight",
+        ["all_materialized", "candidate_count", "candidate_root", "content_hash", "isolated_from_gpu_cache", "seal_hash", "source_preflight_sha256"],
+        ["task054c_cpu_preflight.json"],
+        optional=["schema_version"],
+    ),
+    "task054c_lookback_unit_audit": _definition(
+        "task054c_lookback_unit_audit",
+        ["candidate_count", "mismatch_count", "addendum_required", "content_hash"],
+        ["lookback_unit_audit.json"],
+    ),
+    "task054c_tensor_lineage_addendum": _definition(
+        "task054c_tensor_lineage_addendum",
+        ["status", "task054b_tensor_content_hash", "task054c_tensor_content_hash", "values_sha256_unchanged", "validity_sha256_unchanged", "content_hash"],
+        ["task054c_tensor_lineage_addendum.json"],
+    ),
+    "task054c_mutation_generations": _definition(
+        "task054c_mutation_generations",
+        ["pre_registered_before_outcome_read", "probe_formula_dependency", "cells", "generations", "content_hash"],
+        ["task054c_mutation_generations.json"],
+    ),
     "validation_candidate_dedup_report": _definition(
         "validation_candidate_dedup_report",
         ["validation_campaign_id", "candidate_count", "duplicate_count"],

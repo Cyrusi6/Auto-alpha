@@ -51,6 +51,25 @@ class LocalValidationCampaignStore:
         write_jsonl_artifact(self.results_path, payloads, "validation_candidate_results", "validation_campaign_store")
         self.write_registry()
 
+    def record_shard_results(self, shard_id: str, rows: Iterable[dict[str, Any]]) -> Path:
+        """Persist native validation results for a planned shard and mark it complete."""
+        shards = self.load_shards()
+        matches = [row for row in shards if str(row.get("shard_id")) == str(shard_id)]
+        if len(matches) != 1:
+            raise RuntimeError(f"validation_shard_not_found:{shard_id}")
+        shard = matches[0]
+        output_dir = Path(str(shard.get("output_dir") or ""))
+        payloads = [dict(row) for row in rows]
+        path = write_jsonl_artifact(output_dir / "validation_candidate_pool_results.jsonl", payloads, "validation_candidate_pool_results", "validation_campaign_store")
+        updated = []
+        for row in shards:
+            if str(row.get("shard_id")) != str(shard_id):
+                updated.append(row)
+                continue
+            updated.append({**row, "status": "success", "success_count": len(payloads), "failed_count": 0, "validation_lab_report_path": str(path)})
+        self.write_shards(updated)
+        return path
+
     def write_leaderboard(self, records: Iterable[ValidationLeaderboardRecord | dict[str, Any]]) -> None:
         payloads = [_payload(record) for record in records]
         write_jsonl_artifact(self.leaderboard_path, payloads, "validation_leaderboard", "validation_campaign_store")

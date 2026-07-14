@@ -84,6 +84,9 @@ class FormulaBatchEvalConfig:
     holdout_start_date: str | None = None
     label_horizon: int = 2
     eligible_date_hash: str | None = None
+    canonical_feature_tensor_path: str | None = None
+    canonical_feature_validity_tensor_path: str | None = None
+    research_computation_identity: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

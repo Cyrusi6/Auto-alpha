@@ -491,7 +491,7 @@ class StrictEngineeringPITMatrixBuilder:
                 "suspension_policy_hash": _hash_json(SUSPENSION_POLICY),
                 "source_timing_semantics_certified": False,
                 "intraday_simulation_supported": False,
-                "raw_truncated_before_compute": True,
+                "raw_truncated_before_compute": False,
                 "research_eligibility_contract_applied": True,
                 "research_firewall_attestation_required": True,
                 "research_end_date": self.config.research_observable_cutoff,

@@ -20,8 +20,10 @@ from factor_engine.transforms import preprocess_factor_with_validity
 from factor_store.hash import make_factor_id, stable_formula_hash
 from factor_store.models import FactorRecord
 from feature_factory.builder import load_feature_manifest
+from feature_factory.semantics import build_feature_semantics_map
 from feature_factory.vocab_adapter import make_formula_vocab_from_manifest
 from model_core.vm import StackVM
+from data_lake.task052_freeze import resolve_task052_governed_freeze_manifest
 
 
 _FILE_HASH_CACHE: dict[tuple[str, int, int], str] = {}
@@ -52,6 +54,7 @@ class MaterializationInputs:
     eligibility_contract_hash: str | None = None
     validation_policy_hash: str | None = None
     requested_embargo_size: int = 0
+    research_computation_identity: str | None = None
 
 
 @dataclass(frozen=True)
@@ -202,7 +205,7 @@ class FactorMaterializer:
             research_eligibility = np.asarray(np.load(eligibility_path, mmap_mode="r"), dtype=np.bool_)
             if research_eligibility.shape != (len(trade_dates),):
                 raise MaterializationBlocker("research_eligibility_shape_mismatch")
-        freeze_manifest = _first_existing(required["data_freeze_dir"] / "freeze_manifest.json", required["data_freeze_dir"] / "dataset_version_manifest.json")
+        freeze_manifest = resolve_task052_governed_freeze_manifest(required["data_freeze_dir"])
         freeze_payload = json.loads(freeze_manifest.read_text(encoding="utf-8"))
         matrix_payload = json.loads(axis_paths["matrix_manifest"].read_text(encoding="utf-8"))
         promotion_path = Path(self.inputs.promotion_policy_path) if self.inputs.promotion_policy_path else None
@@ -262,6 +265,17 @@ class FactorMaterializer:
                 "research_feature_validity_sha256": _hash_npy_date_view(validity_path, research_eligibility),
             }
         )
+        if self.inputs.research_computation_identity:
+            research_fingerprint_payload = {
+                "research_computation_identity": self.inputs.research_computation_identity,
+                "factor_id": factor.factor_id,
+                "formula_hash": factor.formula_hash,
+                "formula_tokens": identity["formula_tokens"],
+                "transform_method": factor.transform_method,
+                "code_semantic_hash": fingerprint_payload["code_semantic_hash"],
+                "coverage_policy": fingerprint_payload["coverage_policy"],
+            }
+        cache_fingerprint = _hash_json(research_fingerprint_payload) if self.inputs.research_computation_identity else _hash_json(fingerprint_payload)
         return {
             "feature_manifest": feature_manifest,
             "vm": vm,
@@ -272,7 +286,7 @@ class FactorMaterializer:
             "masks": masks,
             "axis_paths": axis_paths,
             "fingerprint_payload": fingerprint_payload,
-            "input_fingerprint": _hash_json(fingerprint_payload),
+            "input_fingerprint": cache_fingerprint,
             "research_fingerprint_payload": research_fingerprint_payload,
             "research_cache_key": _hash_json(research_fingerprint_payload),
             "freeze_payload": freeze_payload,
@@ -575,20 +589,13 @@ def _validate_factor_identity(factor: FactorRecord, vm: StackVM, feature_lookbac
         "operator_version": str(factor.operator_version),
         "complexity": complexity,
         "effective_lookback": effective_lookback,
+        "required_observations": effective_lookback + 1,
     }
 
 
 def _feature_lookbacks(feature_manifest: Any) -> dict[str, int]:
-    result: dict[str, int] = {}
-    for definition in feature_manifest.feature_definitions:
-        payload = definition.to_dict() if hasattr(definition, "to_dict") else dict(definition)
-        contract = payload.get("dependency_graph") or payload.get("feature_contract") or {}
-        if contract:
-            lookback = max(1, int(contract.get("effective_lookback", 1)) - 1)
-        else:
-            lookback = max(1, int(payload.get("lookback", 1) or 1))
-        result[str(payload.get("feature_name"))] = lookback
-    return result
+    semantics = build_feature_semantics_map(feature_manifest)
+    return {name: int(contract.max_raw_lag) for name, contract in semantics.items()}
 
 
 def _resolve_device(device: str) -> torch.device:

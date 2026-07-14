@@ -198,7 +198,7 @@ def test_static_admission_uses_canonical_required_observations_not_stored_lookba
         feature_semantics=semantics,
     )
     assert checked[0].status == "rejected"
-    assert checked[0].lookback == 80
+    assert checked[0].lookback == 79
     assert rows[0]["canonical_max_raw_lag"] == 79
     assert rows[0]["required_observations"] == 80
     assert "lookback_exceeds_limit" in rows[0]["errors"]

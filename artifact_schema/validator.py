@@ -55,7 +55,7 @@ def validate_artifact(
         if isinstance(payload, dict):
             artifact_type = payload.get("artifact_type") or artifact_type
             schema_version = payload.get("schema_version") or definition.schema_version
-            if payload.get("artifact_type") is None or payload.get("schema_version") is None:
+            if payload.get("schema_version") is None:
                 compatibility_mode = ArtifactCompatibilityMode.legacy
                 issues.append(_issue(target, ArtifactSeverity.warning, "legacy_artifact", "JSON artifact lacks artifact_type/schema_version; inferred by filename", artifact_type))
             else:

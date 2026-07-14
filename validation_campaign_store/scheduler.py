@@ -115,6 +115,9 @@ def run_validation_shards(
     task_052a_replay: bool = False,
     task_053a_replay: bool = False,
     task_054a_replay: bool = False,
+    task_054c_replay: bool = False,
+    pre_gpu_seal_path: str | None = None,
+    engineering_bundle_manifest_path: str | None = None,
     replay_readiness_path: str | None = None,
     replay_generation_label: str = "primary",
     replay_reference_evidence_path: str | None = None,
@@ -122,7 +125,7 @@ def run_validation_shards(
 ) -> dict[str, Any]:
     policy = load_validation_policy(validation_policy)
     policy.validate_window_parameters(train_size, validation_size, test_size, step_size)
-    if task_054a_replay:
+    if task_054a_replay or task_054c_replay:
         if validation_policy != "task054_production_engineering_v1":
             raise RuntimeError("task054_requires_locked_production_policy")
         if shard_count != 4 or max_candidates_per_shard != 5:
@@ -142,7 +145,7 @@ def run_validation_shards(
     if dry_run:
         return {"status": "planned", "shard_count": len(shards), "paths": store.paths()}
 
-    if task_052a_replay or task_053a_replay or task_054a_replay:
+    if task_052a_replay or task_053a_replay or task_054a_replay or task_054c_replay:
         return _run_task052a_replay(
             store,
             shards,
@@ -153,7 +156,10 @@ def run_validation_shards(
             compute_state_dir=compute_state_dir,
             replay_readiness_path=replay_readiness_path,
             resume=resume,
-            task_053a_replay=task_053a_replay or task_054a_replay,
+            task_053a_replay=task_053a_replay or task_054a_replay or task_054c_replay,
+            task_054c_replay=task_054c_replay,
+            pre_gpu_seal_path=pre_gpu_seal_path,
+            engineering_bundle_manifest_path=engineering_bundle_manifest_path,
             replay_generation_label=replay_generation_label,
             replay_reference_evidence_path=replay_reference_evidence_path,
             force_uncached_replay=force_uncached_replay,
@@ -188,6 +194,8 @@ def run_validation_shards(
                 "run_regime": run_regime,
                 "run_sensitivity": run_sensitivity,
                 "run_stress_backtest": run_stress_backtest,
+                "firewall_attestation_path": pre_gpu_seal_path if task_054c_replay else None,
+                "strict_factor_store": task_054c_replay,
             },
         )
 
@@ -393,6 +401,9 @@ def _run_task052a_replay(
     replay_readiness_path: str | None,
     resume: bool,
     task_053a_replay: bool,
+    task_054c_replay: bool,
+    pre_gpu_seal_path: str | None,
+    engineering_bundle_manifest_path: str | None,
     replay_generation_label: str,
     replay_reference_evidence_path: str | None,
     force_uncached_replay: bool,
@@ -412,7 +423,39 @@ def _run_task052a_replay(
     if not compute_state_dir:
         raise RuntimeError("Task 052-A replay requires compute_state_dir")
 
-    readiness = _load_task052a_readiness(replay_readiness_path, task_053a_replay=task_053a_replay)
+    if task_054c_replay:
+        from task_054_c.seal import validate_pre_gpu_seal
+        from task_054_c.bundle import validate_bundle
+        if not pre_gpu_seal_path or not engineering_bundle_manifest_path:
+            raise RuntimeError("task054c_requires_pre_gpu_seal_and_bundle")
+        seal = validate_pre_gpu_seal(pre_gpu_seal_path, bundle_manifest=engineering_bundle_manifest_path)
+        engineering_bundle = validate_bundle(engineering_bundle_manifest_path)
+        expected_store = Path(engineering_bundle["artifact_paths"]["normalized_store_root"]).resolve()
+        if Path(factor_store_dir).resolve() != expected_store:
+            raise RuntimeError("task054c_normalized_factor_store_mismatch")
+        for shard in shards:
+            for row in _read_jsonl(Path(str(shard.metadata["candidate_pool_path"]))):
+                override = str(row.get("factor_store_dir") or "")
+                if override and Path(override).resolve() != expected_store:
+                    raise RuntimeError(f"task054c_candidate_factor_store_override:{row.get('factor_id')}")
+        from task_054_c.research_view import validate_research_projection
+        from task_054_c.validators import sha256_file
+        research_stage = seal["stages"]["research"]
+        projection_manifest = Path(validation_kwargs.get("matrix_cache_dir")).parent / "research_projection_manifest.json"
+        projection = validate_research_projection(projection_manifest)
+        if projection["matrix_content_hash"] != research_stage["baseline_projection_matrix_content_hash"] or projection["tensor_content_hash"] != research_stage["baseline_projection_tensor_content_hash"]:
+            raise RuntimeError("task054c_research_projection_lineage_mismatch")
+        replay_tensor_manifest = json.loads((Path(validation_kwargs.get("feature_tensor_path")).parent / "task_053_v3_tensor_manifest.json").read_text(encoding="utf-8"))
+        freeze_manifest = Path(validation_kwargs.get("data_freeze_dir")) / "task_052a_governed_freeze_manifest.json"
+        if sha256_file(freeze_manifest) != engineering_bundle["freeze_manifest_sha256"]:
+            raise RuntimeError("task054c_freeze_lineage_mismatch")
+        if sha256_file(validation_kwargs.get("feature_manifest_path")) != replay_tensor_manifest["source"]["feature_manifest_sha256"]:
+            raise RuntimeError("task054c_feature_manifest_lineage_mismatch")
+        if sha256_file(validation_kwargs.get("promotion_policy_path")) != engineering_bundle["promotion_policy_sha256"]:
+            raise RuntimeError("task054c_promotion_policy_lineage_mismatch")
+        readiness = {"retrospective_replay_ready": True, "strict_matrix_replay_safe": True, "research_firewall_ready": True, "pre_gpu_seal_hash": seal["seal_hash"]}
+    else:
+        readiness = _load_task052a_readiness(replay_readiness_path, task_053a_replay=task_053a_replay)
     strict_paths = {
         "data_dir": data_dir,
         "factor_store_dir": factor_store_dir,
@@ -426,8 +469,13 @@ def _run_task052a_replay(
         "promotion_policy_path": validation_kwargs.get("promotion_policy_path"),
         "promotion_allowlist_path": validation_kwargs.get("promotion_allowlist_path"),
         "promotion_denylist_path": validation_kwargs.get("promotion_denylist_path"),
-        "replay_readiness_path": replay_readiness_path,
+        "replay_readiness_path": pre_gpu_seal_path if task_054c_replay else replay_readiness_path,
     }
+    if task_054c_replay:
+        strict_paths.update({
+            "pre_gpu_seal_path": pre_gpu_seal_path,
+            "engineering_bundle_manifest_path": engineering_bundle_manifest_path,
+        })
     missing = [name for name, value in strict_paths.items() if not value or not Path(str(value)).exists()]
     if missing:
         raise RuntimeError(f"Task 052-A replay inputs missing: {','.join(missing)}")
@@ -652,7 +700,9 @@ def _run_task052a_replay(
     deterministic_comparison = None
     if replay_reference_evidence_path:
         reference_payload = json.loads(Path(replay_reference_evidence_path).read_text(encoding="utf-8"))
-        if reference_payload.get("replay_bundle_hash") != replay_bundle["bundle_hash"]:
+        reference_manifest = json.loads(Path(reference_payload["replay_bundle_manifest_path"]).read_text(encoding="utf-8"))
+        current_manifest = json.loads(Path(replay_bundle["manifest_path"]).read_text(encoding="utf-8"))
+        if _replay_bundle_computation_identity(reference_manifest) != _replay_bundle_computation_identity(current_manifest):
             raise RuntimeError("uncached sibling replay bundle hash mismatch")
         deterministic_comparison = compare_replay_evidence(reference_payload.get("shards") or [], shard_evidence)
     campaign_evidence_path = _write_task052a_campaign_evidence(
@@ -786,6 +836,12 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def _replay_bundle_computation_identity(manifest: dict[str, Any]) -> str:
+    extra = {key: value for key, value in (manifest.get("extra") or {}).items() if key != "campaign_id"}
+    payload = json.dumps({"inputs": manifest.get("inputs") or {}, "extra": extra}, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def _validation_argv(shard: ValidationShardRecord, **kwargs) -> list[str]:
     shard_dir = Path(shard.output_dir)
     argv = [
@@ -807,12 +863,15 @@ def _validation_argv(shard: ValidationShardRecord, **kwargs) -> list[str]:
         "--feature-promotion-allowlist-path": kwargs.get("promotion_allowlist_path"),
         "--feature-promotion-denylist-path": kwargs.get("promotion_denylist_path"),
         "--research-end-date": kwargs.get("research_end_date"), "--holdout-start-date": kwargs.get("holdout_start_date"),
+        "--firewall-attestation-path": kwargs.get("firewall_attestation_path"),
     }
     for flag, value in optional.items():
         if value:
             argv.extend([flag, str(value)])
     if kwargs.get("feature_tensor_path"):
         argv.append("--strict-materialization")
+    if kwargs.get("strict_factor_store"):
+        argv.append("--strict-factor-store")
     for key, flag in {
         "run_multiple_testing": "--run-multiple-testing", "run_overfit_risk": "--run-overfit-risk",
         "run_placebo": "--run-placebo", "run_regime": "--run-regime", "run_sensitivity": "--run-sensitivity",

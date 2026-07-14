@@ -83,6 +83,9 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--task-052a-replay", action="store_true")
     parser.add_argument("--task-053a-replay", action="store_true")
     parser.add_argument("--task-054a-replay", action="store_true")
+    parser.add_argument("--task-054c-replay", action="store_true")
+    parser.add_argument("--pre-gpu-seal-path")
+    parser.add_argument("--engineering-bundle-manifest-path")
     parser.add_argument("--replay-readiness-path")
     parser.add_argument("--replay-generation-label", default="primary")
     parser.add_argument("--replay-reference-evidence-path")
@@ -203,6 +206,9 @@ def _run(args: argparse.Namespace) -> dict:
             task_052a_replay=args.task_052a_replay,
             task_053a_replay=args.task_053a_replay,
             task_054a_replay=args.task_054a_replay,
+            task_054c_replay=args.task_054c_replay,
+            pre_gpu_seal_path=args.pre_gpu_seal_path,
+            engineering_bundle_manifest_path=args.engineering_bundle_manifest_path,
             replay_readiness_path=args.replay_readiness_path,
             replay_generation_label=args.replay_generation_label,
             replay_reference_evidence_path=args.replay_reference_evidence_path,

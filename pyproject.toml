@@ -115,6 +115,7 @@ packages = [
     "task_053_a",
     "task_054_a",
     "task_054_b",
+    "task_054_c",
     "universe",
     "validation_campaign_store",
     "live_readiness",

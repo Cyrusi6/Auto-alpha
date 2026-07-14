@@ -71,6 +71,8 @@ class FormulaBatchEvaluator:
             research_end_date=config.research_end_date,
             holdout_start_date=config.holdout_start_date,
             label_horizon=config.label_horizon,
+            canonical_feature_tensor_path=config.canonical_feature_tensor_path,
+            canonical_feature_validity_tensor_path=config.canonical_feature_validity_tensor_path,
         )
         self.feature_version = (self.feature_manifest.feature_version if self.feature_manifest is not None else config.feature_set_name) or FEATURE_VERSION
         self.cache_dir = Path(config.eval_cache_dir) if config.eval_cache_dir else self.output_dir / "eval_cache"
@@ -285,7 +287,7 @@ class FormulaBatchEvaluator:
                     formula_hash=formula_hash,
                     feature_version=self.feature_version,
                     operator_version=OPERATOR_VERSION,
-                    lookback_days=int(request.lookback or self.vm.formula_lookback(request.formula_tokens)),
+                    lookback_days=int(request.lookback if request.lookback is not None else self.vm.formula_lookback(request.formula_tokens)),
                     created_at=created_at,
                     status=research.status,
                     description=request.description,
@@ -388,7 +390,7 @@ class FormulaBatchEvaluator:
             "holdout_start_date": self.config.holdout_start_date,
             "label_horizon": self.config.label_horizon,
             "eligible_date_hash": eligible_date_hash,
-            "evaluation_lineage_hash": self.lineage["lineage_hash"],
+            "research_computation_identity": getattr(self.config, "research_computation_identity", None) or self.lineage["lineage_hash"],
         }
         return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
 
@@ -728,6 +730,12 @@ def _loader_feature_validity(loader) -> torch.Tensor:
 
 
 def _loader_eligible_date_hash(loader, label_horizon: int, research_end_date: str | None) -> str:
+    if getattr(loader, "physical_research_projection", False):
+        manifest_path = Path(getattr(loader, "matrix_cache_dir")) / "task_052a_strict_matrix_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not manifest.get("eligible_date_hash"):
+            raise RuntimeError("physical research projection missing eligible_date_hash")
+        return str(manifest["eligible_date_hash"])
     dates = tuple(str(value) for value in loader.trade_dates)
     firewall = getattr(loader, "date_firewall", None)
     if firewall is not None:

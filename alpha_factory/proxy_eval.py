@@ -6,6 +6,7 @@ import hashlib
 import json
 import time
 from dataclasses import replace
+from pathlib import Path
 
 import torch
 
@@ -109,6 +110,8 @@ def run_proxy_eval(candidates, loader, *, max_candidates: int, max_dates: int, v
 
 
 def _audit_sampled_target_reads(loader, date_indices: list[int]) -> None:
+    if getattr(loader, "physical_research_projection", False):
+        return
     firewall = getattr(loader, "date_firewall", None)
     source_dates = list(getattr(loader, "firewall_source_trade_dates", None) or [])
     if firewall is None or not source_dates:
@@ -196,6 +199,10 @@ def _loader_signal_eligibility(loader) -> torch.Tensor:
 
 def _loader_research_indices(loader) -> tuple[list[int], str]:
     dates = tuple(str(value) for value in loader.trade_dates)
+    if getattr(loader, "physical_research_projection", False):
+        matrix_manifest = Path(getattr(loader, "matrix_cache_dir")) / "task_052a_strict_matrix_manifest.json"
+        payload = json.loads(matrix_manifest.read_text(encoding="utf-8"))
+        return list(range(len(dates))), str(payload["eligible_date_hash"])
     firewall = getattr(loader, "date_firewall", None)
     if firewall is None:
         payload = {"trade_dates": dates, "contract": "unbounded"}

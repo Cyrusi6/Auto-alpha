@@ -50,15 +50,16 @@ class StackVM:
         return int(complexity)
 
     def formula_lookback(self, formula_tokens: list[int], feature_lookbacks: dict[str, int] | None = None) -> int:
+        """Return canonical max raw lag, where the current observation is lag zero."""
         stack: list[int] = []
         feature_lookbacks = feature_lookbacks or {}
         for token in formula_tokens:
             token = int(token)
             if 0 <= token < self.feat_offset:
-                stack.append(max(1, int(feature_lookbacks.get(self.vocab.token_name(token), 1))))
+                stack.append(max(0, int(feature_lookbacks.get(self.vocab.token_name(token), 0))))
                 continue
             if token not in self.arity_map or len(stack) < self.arity_map[token]:
-                return 1
+                return 0
             arity = self.arity_map[token]
             inputs = stack[-arity:]
             del stack[-arity:]
@@ -69,7 +70,7 @@ class StackVM:
             else:
                 incremental = max(0, operator_window - 1)
             stack.append(max(inputs) + incremental)
-        return int(stack[0]) if len(stack) == 1 else 1
+        return int(stack[0]) if len(stack) == 1 else 0
 
     def formula_semantics(
         self,

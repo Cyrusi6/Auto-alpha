@@ -31,6 +31,22 @@ def test_json_artifact_strict_and_legacy_validation(tmp_path):
     assert any(issue.code == "legacy_artifact" for issue in legacy_result.issues)
 
 
+def test_filename_inferred_versioned_json_is_strict(tmp_path):
+    artifact = tmp_path / "task054c_cpu_preflight.json"
+    artifact.write_text(
+        '{"schema_version":"task054c_cpu_preflight_v1","all_materialized":true,'
+        '"candidate_count":20,"candidate_root":"root","content_hash":"hash",'
+        '"isolated_from_gpu_cache":true,"seal_hash":"seal","source_preflight_sha256":"source"}',
+        encoding="utf-8",
+    )
+
+    result = validate_artifact(artifact, strict=True)
+
+    assert result.valid is True
+    assert result.compatibility_mode == "strict"
+    assert not any(issue.code == "legacy_artifact" for issue in result.issues)
+
+
 def test_jsonl_sidecar_manifest_and_malformed_errors(tmp_path):
     orders_path = tmp_path / "orders.jsonl"
     write_jsonl_artifact(

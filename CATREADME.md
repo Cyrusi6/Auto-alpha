@@ -490,3 +490,5 @@ The Task 054 baseline is contaminated retrospective engineering evidence. The pr
 - Task 054-B DAG 使用分阶段 validator，顺序固定为 governed source → strict matrix → v3 tensor → production firewall sentinel → identity forensic → four-GPU replay。每一阶段都必须通过状态、schema、文件 SHA256、content hash 和上游 lineage 校验；四卡只能在前五阶段 gate 全部通过后执行，并继续要求精确 20 候选、四份 scheduler state、真实 CUDA replay evidence、uncached sibling 一致和 immutable resume `4/4`。
 - 即使工程链全部验证，终态仍为 `task054b_engineering_baseline_completed_historical_selection_contaminated_certification_blocked`；certification/portfolio/paper/live readiness 始终为 false，queue 始终为 0，不得宣称 clean OOS。
 - Git 仅允许提交 scrubbed 相对身份、哈希、计数、状态与验证摘要；不得提交真实服务器路径、NPY 或原始物理 GPU UUID。
+
+`task_054_c/` 是 Task 054-C 的唯一生产合同：原生 matrix/tensor/overlay validator、exact-20 normalized factor store、content-addressed canonical engineering bundle、受治理 mutation generation、物理 research/diagnostic projection、连续 receipt/read-ledger、固定 12 路 runner、pre-GPU seal 和独立 final verifier。研究进程只能映射 cutoff 边界内的 projection；证据威胁模型明确为 supervisor-attested/tamper-evident，历史选择污染和全部认证/部署 blocker 继续保留。

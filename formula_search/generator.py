@@ -104,7 +104,7 @@ def _make_candidate(
     names = vm.canonical_formula(formula_tokens)
     valid, reason = vm.validate_with_reason(formula_tokens)
     formula_hash = stable_formula_hash(formula_tokens, names, FEATURE_VERSION, OPERATOR_VERSION)
-    lookback = vm.formula_semantics(formula_tokens, feature_semantics).required_observations if feature_semantics else vm.formula_lookback(formula_tokens)
+    lookback = vm.formula_semantics(formula_tokens, feature_semantics).max_raw_lag if feature_semantics else vm.formula_lookback(formula_tokens)
     return FormulaCandidate(
         formula_tokens=formula_tokens,
         formula_names=names,

@@ -66,7 +66,7 @@ def generate_alpha_candidates(config, manifest) -> tuple[list[AlphaCandidateReco
             valid, reason = vm.validate_with_reason(formula_tokens)
             complexity = vm.formula_complexity(formula_tokens)
             formula_semantics = vm.formula_semantics(formula_tokens, feature_semantics)
-            lookback = formula_semantics.required_observations
+            lookback = formula_semantics.max_raw_lag
         except Exception as exc:
             valid, reason, complexity, lookback = False, str(exc), len(formula_tokens), 0
         formula_hash = stable_formula_hash(formula_tokens, formula_names, manifest.feature_version, manifest.operator_version)

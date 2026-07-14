@@ -41,6 +41,8 @@ class AShareDataLoader:
         research_end_date: str | None = None,
         holdout_start_date: str | None = None,
         label_horizon: int = 1,
+        canonical_feature_tensor_path: str | Path | None = None,
+        canonical_feature_validity_tensor_path: str | Path | None = None,
     ):
         self.data_dir = Path(data_dir) if data_dir is not None else Path(ModelConfig.DATA_DIR)
         self.device = torch.device(device) if device is not None else ModelConfig.DEVICE
@@ -64,6 +66,8 @@ class AShareDataLoader:
         self.feature_set_name = feature_set_name
         self.feature_set_manifest_path = Path(feature_set_manifest_path) if feature_set_manifest_path is not None else None
         self.label_horizon = int(label_horizon)
+        self.canonical_feature_tensor_path = Path(canonical_feature_tensor_path) if canonical_feature_tensor_path else None
+        self.canonical_feature_validity_tensor_path = Path(canonical_feature_validity_tensor_path) if canonical_feature_validity_tensor_path else None
         self.date_firewall = DateFirewall(research_end_date, holdout_start_date, label_horizon) if research_end_date else None
         self.firewall_source_trade_dates: list[str] = []
         self.ts_codes: list[str] = []
@@ -79,6 +83,7 @@ class AShareDataLoader:
         self.corporate_action_events: list[dict[str, object]] = []
         self.feat_tensor: torch.Tensor | None = None
         self.target_ret: torch.Tensor | None = None
+        self.physical_research_projection = False
 
     def load_data(self) -> "AShareDataLoader":
         if self.use_matrix_cache:
@@ -242,6 +247,7 @@ class AShareDataLoader:
 
     def _load_from_strict_engineering_matrix(self, manifest_path: Path) -> "AShareDataLoader":
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.physical_research_projection = bool(manifest.get("physical_research_projection", False))
         self.ts_codes = [str(item) for item in json.loads((self.matrix_cache_dir / "ts_codes.json").read_text(encoding="utf-8"))]
         self.trade_dates = [str(item) for item in json.loads((self.matrix_cache_dir / "trade_dates.json").read_text(encoding="utf-8"))]
         self.security_metadata = {ts_code: {"ts_code": ts_code} for ts_code in self.ts_codes}
@@ -316,7 +322,17 @@ class AShareDataLoader:
                 1, torch.tensor(selected, dtype=torch.long, device=self.device)
             )
         self.raw_data_cache["target_available_mask"] = self.target_available
-        if self.feature_set_manifest_path is not None:
+        if self.canonical_feature_tensor_path is not None or self.canonical_feature_validity_tensor_path is not None:
+            if self.canonical_feature_tensor_path is None or self.canonical_feature_validity_tensor_path is None:
+                raise ValueError("canonical feature values and validity must be supplied together")
+            values = np.load(self.canonical_feature_tensor_path, mmap_mode="r", allow_pickle=False)
+            validity = np.load(self.canonical_feature_validity_tensor_path, mmap_mode="r", allow_pickle=False)
+            if values.shape != validity.shape or values.shape[0] != len(self.ts_codes) or values.shape[2] != len(self.trade_dates):
+                raise ValueError("canonical feature tensor axis mismatch")
+            self.feat_tensor = torch.tensor(np.asarray(values, dtype=np.float32), device=self.device)
+            self.feature_validity = torch.tensor(np.asarray(validity, dtype=np.bool_), device=self.device)
+            self.feature_validity_summary = []
+        elif self.feature_set_manifest_path is not None:
             from feature_factory.builder import load_feature_manifest
             from feature_factory.validity import build_feature_values_and_validity
 
@@ -662,6 +678,10 @@ class AShareDataLoader:
     def _apply_research_view(self) -> None:
         if self.date_firewall is None:
             return
+        if self.physical_research_projection:
+            self.firewall_source_trade_dates = list(self.trade_dates)
+            self.date_firewall.audit_observation_access(self.trade_dates, component="data_loader", purpose="physical_research_projection", view="research")
+            return
         value_dates = list(self.trade_dates)
         source_dates = list(self.firewall_source_trade_dates or value_dates)
         view = ResearchDataView(self.date_firewall, tuple(source_dates))
@@ -702,6 +722,9 @@ class AShareDataLoader:
 
     def _apply_firewall_source_boundary(self) -> None:
         if self.date_firewall is None:
+            return
+        if self.physical_research_projection:
+            self.firewall_source_trade_dates = list(self.trade_dates)
             return
         source_dates = list(self.trade_dates)
         self.firewall_source_trade_dates = source_dates

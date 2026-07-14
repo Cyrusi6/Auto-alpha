@@ -90,6 +90,8 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--strict-materialization", action="store_true")
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--factor-store-dir", required=True)
+    parser.add_argument("--strict-factor-store", action="store_true")
+    parser.add_argument("--firewall-attestation-path")
     parser.add_argument("--factor-id")
     parser.add_argument("--factor-type", choices=["single", "composite", "any"], default="any")
     parser.add_argument("--latest-approved", action="store_true")
@@ -155,6 +157,12 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def run_validation_service(argv: list[str]) -> dict[str, Any]:
+    """Run validation through the production Python API and return its structured payload."""
+    args = _build_parser().parse_args(argv)
+    return _run(args)
+
+
 def _run(args: argparse.Namespace) -> dict[str, Any]:
     if args.validation_candidate_pool_path:
         return _run_candidate_pool(args)
@@ -170,16 +178,21 @@ def _run_candidate_pool(args: argparse.Namespace) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, Any]] = []
     for idx, row in enumerate(rows):
+        row_store = str(row.get("factor_store_dir") or "")
+        if args.strict_factor_store and row_store and Path(row_store).resolve() != Path(args.factor_store_dir).resolve():
+            raise RuntimeError(f"candidate_factor_store_override_forbidden:{row.get('factor_id')}")
         candidate_dir = output_dir / "candidates" / f"rank_{int(row.get('rank', idx + 1)):04d}_{row.get('factor_id', 'factor')}"
         try:
             result = _run_single(
                 args,
                 factor_id_override=str(row.get("factor_id")),
                 output_dir_override=str(candidate_dir),
-                factor_store_dir_override=str(row.get("factor_store_dir") or args.factor_store_dir),
+                factor_store_dir_override=str(args.factor_store_dir if args.strict_factor_store else (row.get("factor_store_dir") or args.factor_store_dir)),
                 candidate_pool_row=row,
             )
         except Exception as exc:
+            if args.strict_factor_store and _is_infrastructure_failure(exc):
+                raise
             factor_id = str(row.get("factor_id"))
             materialization_manifest = Path(args.materialization_dir or output_dir / "materialized_factors") / factor_id / "materialization_manifest.json"
             result = {
@@ -246,6 +259,22 @@ def _run_candidate_pool(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _is_infrastructure_failure(exc: Exception) -> bool:
+    message = str(exc)
+    return message.startswith(
+        (
+            "candidate_factor_store_override_forbidden",
+            "firewall_attestation_",
+            "pre_gpu_seal_",
+            "bundle_",
+            "normalized_store_",
+            "matrix_",
+            "tensor_",
+            "research_projection_",
+        )
+    )
+
+
 def _run_single(
     args: argparse.Namespace,
     *,
@@ -274,6 +303,7 @@ def _run_single(
     manifest_path: str | None = None
     if args.strict_materialization:
         matrix = _load_governed_matrix_context(args)
+        _validate_firewall_attestation(args, matrix, policy, factor_store_dir_override or args.factor_store_dir)
         manifest_path = args.materialization_manifest_path
         if not manifest_path:
             if not args.materialization_dir or not args.feature_tensor_path or not args.feature_set_manifest_path or not args.matrix_cache_dir or not args.data_freeze_dir:
@@ -296,7 +326,7 @@ def _run_single(
                     research_end_date=args.research_end_date,
                     label_horizon=int(args.label_horizon),
                     research_eligible_date_mask_path=str(Path(args.matrix_cache_dir) / "research_eligible_date_mask.npy") if args.research_end_date else None,
-                    eligibility_contract_hash=research_contract.eligible_date_hash(matrix["trade_dates"]) if research_contract else None,
+                    eligibility_contract_hash=matrix.get("eligible_date_hash") or (research_contract.eligible_date_hash(matrix["trade_dates"]) if research_contract else None),
                     validation_policy_hash=policy.policy_hash,
                     requested_embargo_size=int(args.embargo_size),
                 ),
@@ -337,16 +367,16 @@ def _run_single(
             "index_member_matrix": raw_data_cache.get("index_member_matrix"),
             "firewall_proof": loader.date_firewall.proof(loader.firewall_source_trade_dates or loader.trade_dates, raw_truncated_before_compute=True) if loader.date_firewall else {},
         }
-    recursive_lookback = int(
-        (materialization_manifest.get("factor_identity") or {}).get("effective_lookback")
-        or materialization_manifest.get("lookback_days")
-        or factor_record.lookback_days
-        or 1
+    lookback_candidates = (
+        (materialization_manifest.get("factor_identity") or {}).get("effective_lookback"),
+        materialization_manifest.get("lookback_days"),
+        factor_record.lookback_days,
     )
+    recursive_lookback = int(next(value for value in lookback_candidates if value is not None))
     minimum_embargo = recursive_lookback + int(args.label_horizon)
     effective_embargo = max(int(args.embargo_size), minimum_embargo)
     eligibility_contract = research_contract or ResearchEligibilityContract(trade_dates[-1], int(args.label_horizon))
-    eligibility_lineage = eligibility_contract.lineage(trade_dates)
+    eligibility_lineage = matrix.get("research_eligibility_contract") if matrix.get("physical_research_projection") else eligibility_contract.lineage(trade_dates)
     policy_lineage = {
         "policy": policy.to_dict(),
         "base_policy_hash": policy.policy_hash,
@@ -629,7 +659,7 @@ def _load_governed_matrix_context(args: argparse.Namespace) -> dict[str, Any]:
         if evaluable_path.exists()
         else np.ones(len(trade_dates), dtype=np.bool_)
     )
-    research_contract = ResearchEligibilityContract(args.research_end_date, int(args.label_horizon)) if args.research_end_date else None
+    research_contract = None if manifest.get("physical_research_projection") else (ResearchEligibilityContract(args.research_end_date, int(args.label_horizon)) if args.research_end_date else None)
     eligibility = build_common_eligibility(
         trade_dates,
         membership_known=membership_by_date,
@@ -645,6 +675,7 @@ def _load_governed_matrix_context(args: argparse.Namespace) -> dict[str, Any]:
     )
     fixed_asof = not has_pit_constituent_proof
     target_tensor = torch.from_numpy(np.array(target, copy=True))
+    firewall_attested = bool(getattr(args, "firewall_attestation_path", None))
     return {
         "trade_dates": trade_dates,
         "target_ret": target_tensor,
@@ -660,14 +691,24 @@ def _load_governed_matrix_context(args: argparse.Namespace) -> dict[str, Any]:
         "target_contract_hash": manifest.get("target_contract_hash"),
         "target_contract": dict(manifest.get("target_contract") or {}),
         "matrix_semantic_hash": manifest.get("semantic_hash"),
+        "matrix_content_hash": manifest.get("content_hash"),
         "target_return_mode": target_mode,
+        "physical_research_projection": bool(manifest.get("physical_research_projection", False)),
+        "eligible_date_hash": manifest.get("eligible_date_hash"),
+        "research_eligibility_contract": manifest.get("research_eligibility_contract") or {},
         "feature_cutoff_mode": str(manifest.get("feature_cutoff_mode") or "unknown"),
         "raw_data_cache": masks | {"target_ret": target_tensor},
         "universe_mode": "fixed_asof_constituents" if fixed_asof else str(manifest.get("universe_mode")),
         "survivorship_bias_blocker": fixed_asof,
         "firewall_proof": {
+            "research_holdout_firewall_enabled": bool(
+                firewall_attested
+                and manifest.get("physical_research_projection", False)
+                and manifest.get("raw_truncated_before_compute", False)
+                and manifest.get("research_eligibility_contract_applied", False)
+            ),
             "research_eligibility_contract_applied": bool(manifest.get("research_eligibility_contract_applied", False)),
-            "research_firewall_attested": False,
+            "research_firewall_attested": firewall_attested,
             "research_end_date": manifest.get("research_end_date") or (manifest.get("firewall") or {}).get("research_observable_cutoff"),
             "holdout_start_date": manifest.get("holdout_start_date") or (manifest.get("firewall") or {}).get("diagnostic_period_start"),
             "label_horizon": manifest.get("label_horizon") or (manifest.get("firewall") or {}).get("target_endpoint_horizon_trade_days"),
@@ -676,6 +717,27 @@ def _load_governed_matrix_context(args: argparse.Namespace) -> dict[str, Any]:
             "raw_truncated_before_compute": bool(manifest.get("raw_truncated_before_compute", False)),
         },
     }
+
+
+def _validate_firewall_attestation(args: argparse.Namespace, matrix: dict[str, Any], policy: Any, factor_store_dir: str) -> None:
+    if not getattr(args, "firewall_attestation_path", None):
+        return
+    from task_054_c.seal import validate_pre_gpu_seal
+    seal = validate_pre_gpu_seal(args.firewall_attestation_path)
+    research = seal["stages"]["research"]
+    identity = seal["stages"]["identity"]
+    if seal.get("eligible_date_hash") != matrix.get("eligible_date_hash") or research.get("baseline_projection_matrix_content_hash") != matrix.get("matrix_content_hash"):
+        raise RuntimeError("firewall_attestation_matrix_mismatch")
+    tensor_manifest_path = Path(args.feature_tensor_path).with_name("task_053_v3_tensor_manifest.json")
+    tensor_manifest = json.loads(tensor_manifest_path.read_text(encoding="utf-8"))
+    if tensor_manifest.get("content_hash") != research.get("baseline_projection_tensor_content_hash"):
+        raise RuntimeError("firewall_attestation_tensor_mismatch")
+    store_manifest_path = Path(factor_store_dir) / "normalized_replay_store_manifest.json"
+    store_manifest = json.loads(store_manifest_path.read_text(encoding="utf-8"))
+    if store_manifest.get("content_hash") != identity.get("normalized_store_content_hash"):
+        raise RuntimeError("firewall_attestation_factor_store_mismatch")
+    if policy.policy_hash != seal["stages"]["policy_code"].get("validation_policy_hash"):
+        raise RuntimeError("firewall_attestation_policy_mismatch")
 
 
 def _screening_reproduction(

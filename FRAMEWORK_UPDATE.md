@@ -2458,3 +2458,19 @@
 - 即使六阶段全部验证，唯一工程完成状态仍为 `task054b_engineering_baseline_completed_historical_selection_contaminated_certification_blocked`；certification、portfolio、paper、live readiness 始终为 false，四类 queue 始终为 0。
 - 不宣称 clean OOS、可认证、可组合、可 paper 或可 live；四卡不得在 gate 前执行。
 - 仓库不得提交真实服务器路径、NPY、原始物理 GPU UUID 或可反推出这些信息的未脱敏清单；只允许 scrubbed 相对身份、内容哈希、计数、状态和验证摘要。
+## 2026-07-14 - Task 054-C 生产合同收敛
+
+- 统一 `max_raw_lag` 与 `required_observations=max_raw_lag+1` 单位，generator、static check、FactorRecord、StackVM 和 materializer 共用相同含义；187 候选只读复核未发现单位结果漂移。
+- 新增 `task_054_c` 唯一生产协议、权威 generation validators、exact-20 normalized factor store、canonical engineering bundle、物理 research projection、真实 12 路 sentinel、pre-GPU seal 和独立 final verifier。
+- Research worker 不再映射完整 post-cutoff tensor；read ledger 在实际读取边界记录 bounded artifact 日期范围。receipt 固定公共 FQN 并绑定当前源码 hash、输入/输出 artifact SHA 和连续父 hash。
+- Task 054-B tensor 因 VM/lookback 语义源码 hash 改变产生 Task 054-C addendum 和新 content-addressed generation；实际 values/validity SHA 不变，旧 artifact 保持只读。
+- validation campaign scheduler 增加 Task 054-C 专用 seal/bundle gate 与 strict factor-store 模式，且保持 Task 052/053 既有 replay 合同独立。
+- artifact schema、dashboard reader 和 monitoring readiness 接入 Task 054-C；certification、portfolio、paper、live readiness 继续为 false，queue 继续为 0。
+
+### 真实生产闭环结果
+- 187 个历史候选的 lookback 单位只读复核为 `0` 个不一致，未产生 selection/rank addendum；exact-20 normalized factor store content hash 为 `874b4d4607624e9bfb7037b84c0b8e5d8763958fee93d82711818ede5088a479`，identity root 为 `855bbcd6ff41206360d4d3c6cdd864edfd80f4c53d68d974a445eb62cb3577cd`。
+- canonical engineering bundle hash 为 `00a57ceb15bebca123795e6135d93c7e49e35b7cf97bd997d4fd0e7e32cdcbed`；full-axis matrix/tensor content hash 分别为 `73699526ca22815ce0f0aabc8ded0adc1301d0e4f885a0698f50af0a02bf3a7f` 与 `32c89097fc7bd3169ca119aad2d655e009aedde1235954313a1fd6c9c3d741d8`，tensor shape 为 `637×95×6417`，values/validity 分区 SHA 与 Task 054-B 保持一致。
+- 物理 research projection 覆盖 `20000104–20240528` 共 5911 个交易日；最大合法 signal date 为 `20240528`，其 `t+2` endpoint 为 `20240530`。12/12 `real_production` sentinel 全部通过，sentinel hash 为 `194c588faba90964fd975ff5bca453c81b856847f8006667f9cafec4eb5aae30`，pre-GPU seal hash 为 `e29253dd61b4a369b70a3a8dcddf0106d9758f2103590f84543b6dff9734a7c8`。
+- CPU identity/materialization preflight 为 20/20 success。primary 与独立 sibling 均使用四张不同的 NVIDIA GeForce RTX 4090、每卡 5 个候选，fallback/OOM/retry 均为 0；两次 uncached replay truth hash 均为 `8f4dfa58f7dc11253e2452664c62312d4740878f2956df9dec9fb838da2448aa`，primary immutable resume 为 4/4。
+- 纠偏后的旧 20 工程终态为 `data_blocked=1`、`statistically_rejected=11`、`historical_replay_passed=8`；唯一 data-blocked 候选因各 rolling split 的有效 OOS 日期不足而阻断。该结果仅为历史选择污染下的 retrospective engineering replay，不是 clean OOS 或认证结果。
+- 独立 final verifier 状态为 `task054c_engineering_baseline_completed_historical_selection_contaminated_certification_blocked`，verification content hash 为 `2cff7127c62b164bd562247ff7d59abf3f10ef369c4a445096203ace87bc818a`。Certification、portfolio、paper、live readiness 均为 false，四类 queue 均为 0。

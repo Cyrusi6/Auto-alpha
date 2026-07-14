@@ -298,6 +298,7 @@ def validate_task054_replay_evidence(
             candidate_artifacts[candidate_id] = candidate
         observed_candidates.extend(candidate_ids)
         shards[shard_index] = {
+            "shard_index": shard_index,
             "evidence_path": str(path.resolve()),
             "evidence_sha256": sha256_file(path),
             "evidence_hash": claimed_hash,

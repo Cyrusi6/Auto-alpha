@@ -47,7 +47,7 @@ def run_static_checks(
                 formula_semantics = vm.formula_semantics(candidate.formula_tokens, feature_semantics)
             except ValueError as exc:
                 errors.append(str(exc))
-        canonical_lookback = formula_semantics.required_observations if formula_semantics is not None else None
+        canonical_lookback = formula_semantics.max_raw_lag if formula_semantics is not None else None
         if canonical_lookback is not None and canonical_lookback > max_lookback:
             errors.append("lookback_exceeds_limit")
         forbidden = sorted(set(candidate.formula_names) & FORBIDDEN_NAMES)
@@ -69,7 +69,7 @@ def run_static_checks(
                 "canonical_semantics_hash": formula_semantics.semantics_hash if formula_semantics is not None else None,
                 "feature_semantics_contract_hash": contract_hash,
                 "canonical_max_raw_lag": formula_semantics.max_raw_lag if formula_semantics is not None else None,
-                "required_observations": canonical_lookback,
+                "required_observations": formula_semantics.required_observations if formula_semantics is not None else None,
             },
         )
         updated.append(updated_candidate)
@@ -83,7 +83,7 @@ def run_static_checks(
                 "complexity": candidate.complexity,
                 "lookback": candidate.lookback,
                 "canonical_max_raw_lag": formula_semantics.max_raw_lag if formula_semantics is not None else None,
-                "required_observations": canonical_lookback,
+                "required_observations": formula_semantics.required_observations if formula_semantics is not None else None,
                 "canonical_semantics_hash": formula_semantics.semantics_hash if formula_semantics is not None else None,
                 "feature_semantics_contract_hash": contract_hash,
                 "feature_promotion": promotion_metadata,
