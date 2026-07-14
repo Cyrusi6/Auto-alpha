@@ -67,7 +67,10 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-complexity", type=int, default=20)
     parser.add_argument("--max-lookback", type=int, default=20)
     parser.add_argument("--proxy-max-candidates", type=int, default=30)
-    parser.add_argument("--proxy-max-dates", type=int, default=3)
+    parser.add_argument("--proxy-max-dates", type=int, default=63)
+    parser.add_argument("--research-end-date")
+    parser.add_argument("--holdout-start-date")
+    parser.add_argument("--label-horizon", type=int, default=1)
     parser.add_argument("--full-eval-max-candidates", type=int, default=30)
     parser.add_argument("--top-k", type=int, default=8)
     parser.add_argument("--max-per-family", type=int, default=3)
@@ -159,6 +162,9 @@ def main(argv: list[str] | None = None) -> int:
         max_lookback=args.max_lookback,
         proxy_max_candidates=args.proxy_max_candidates,
         proxy_max_dates=args.proxy_max_dates,
+        research_end_date=args.research_end_date,
+        holdout_start_date=args.holdout_start_date,
+        label_horizon=args.label_horizon,
         full_eval_max_candidates=args.full_eval_max_candidates,
         top_k=args.top_k,
         max_per_family=args.max_per_family,

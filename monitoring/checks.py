@@ -1881,6 +1881,8 @@ def check_validation_campaign_store(
     report = _read_json(Path(report_path)) if report_path else {}
     engineering_path = Path(report_path).parent / "engineering_robustness_report.json" if report_path else None
     engineering = _read_json(engineering_path) if engineering_path and engineering_path.exists() else {}
+    task_051_path = Path(report_path).parent / "task_051_engineering_report.json" if report_path else None
+    task_051 = _read_json(task_051_path) if task_051_path and task_051_path.exists() else {}
     registry = _read_json(Path(registry_path)) if registry_path else {}
     payload = report or registry
     status = str(payload.get("status", "missing") if payload else "missing")
@@ -1905,6 +1907,10 @@ def check_validation_campaign_store(
         "silent_zero_validation_count": int(engineering.get("silent_zero_validation_count", 0) or 0),
         "survivorship_bias_blocker": bool(engineering.get("survivorship_bias_blocker", False)),
         "fallback_to_cpu_count": int(engineering.get("fallback_to_cpu_count", 0) or 0),
+        "historical_snapshot_proof": bool(task_051.get("historical_snapshot_proof", False)),
+        "alpha_discovery_data_ready": bool(task_051.get("alpha_discovery_data_ready", False)),
+        "research_holdout_firewall_enabled": bool(task_051.get("research_holdout_firewall_enabled", False)),
+        "task_051_blocker_count": len(task_051.get("blockers", []) or []),
     }, alerts
 
 

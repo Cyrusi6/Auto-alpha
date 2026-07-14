@@ -56,6 +56,8 @@ def _candidate_result(
     stress: dict[str, Any],
 ) -> ValidationCandidateResult:
     validation_status = str(row.get("status") or summary.get("status") or "partial")
+    if validation_status in {"blocked", "failed", "error"}:
+        validation_status = "data_blocked"
     metrics = summary.get("metrics", {}) if isinstance(summary.get("metrics"), dict) else {}
     blocker_count = int(summary.get("blocker_count", row.get("validation_blocker_count", 0)) or 0)
     warning_count = int(summary.get("warning_count", 0) or 0)
@@ -107,7 +109,7 @@ def _candidate_result(
         stress_pass_ratio=components["stress_pass_ratio"],
         turnover_mean=components["turnover_penalty"],
         coverage_mean=components["coverage"],
-        max_drawdown=float(metrics.get("max_drawdown", summary.get("max_single_window_loss", 0.0)) or 0.0),
+        max_drawdown=float(metrics["max_drawdown"]) if metrics.get("max_drawdown") is not None else None,
         validation_score=float(score),
         blocker_count=blocker_count,
         warning_count=warning_count,
@@ -117,11 +119,19 @@ def _candidate_result(
 
 
 def _aggregate_report(results: list[ValidationCandidateResult]) -> dict[str, Any]:
+    passed_statuses = {"engineering_passed", "historical_replay_passed", "clean_holdout_passed"}
+    blocked_count = sum(1 for row in results if row.validation_status == "data_blocked")
+    status = "blocked" if not results or blocked_count == len(results) else "partial" if blocked_count else "completed"
     return {
-        "status": "success",
+        "status": status,
         "candidate_count": len(results),
-        "success_count": sum(1 for row in results if row.validation_status == "passed"),
-        "failed_count": sum(1 for row in results if row.validation_status not in {"passed", "warning"}),
+        "success_count": sum(1 for row in results if row.validation_status in passed_statuses),
+        "failed_count": sum(1 for row in results if row.validation_status not in passed_statuses),
+        "data_blocked_count": blocked_count,
+        "statistically_rejected_count": sum(1 for row in results if row.validation_status == "statistically_rejected"),
+        "engineering_passed_count": sum(1 for row in results if row.validation_status == "engineering_passed"),
+        "historical_replay_passed_count": sum(1 for row in results if row.validation_status == "historical_replay_passed"),
+        "clean_holdout_passed_count": sum(1 for row in results if row.validation_status == "clean_holdout_passed"),
         "insufficient_data_count": sum(1 for row in results if row.warning_count > 0 and row.blocker_count == 0),
         "validation_blocker_count": sum(row.blocker_count for row in results),
         "pbo_distribution": _distribution([row.pbo_estimate for row in results]),

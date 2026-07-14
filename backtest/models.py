@@ -60,11 +60,14 @@ class PortfolioSnapshot:
 class PortfolioBacktestResult:
     snapshots: list[PortfolioSnapshot]
     fills: list[TradeFill]
-    metrics: dict[str, float]
+    metrics: dict[str, object]
 
     def to_dict(self) -> dict[str, object]:
         return {
             "snapshots": [asdict(snapshot) for snapshot in self.snapshots],
             "fills": [asdict(fill) for fill in self.fills],
-            "metrics": {key: float(value) for key, value in self.metrics.items()},
+            "metrics": {
+                key: float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else value
+                for key, value in self.metrics.items()
+            },
         }

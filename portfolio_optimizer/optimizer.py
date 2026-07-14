@@ -28,6 +28,9 @@ class PortfolioOptimizer:
         benchmark_weights,
         covariance,
         loader,
+        *,
+        factor_risk_model=None,
+        date_index: int | None = None,
     ) -> OptimizationResult:
         alpha = _finite_tensor(alpha_scores, len(loader.ts_codes))
         current = _finite_tensor(current_weights, len(loader.ts_codes))
@@ -36,18 +39,14 @@ class PortfolioOptimizer:
         weights = self._initial_weights(alpha, benchmark)
         weights = self._apply_turnover(weights, current)
         weights = self._apply_tracking_error(weights, benchmark, cov)
-        factor_risk_model = None
         risk_decomposition = None
         active_decomposition = None
         style_exposure = {}
         active_style_exposure = {}
         if self.config.use_factor_risk_model:
-            factor_risk_model = build_barra_like_risk_model(
-                loader,
-                lookback=self.config.risk_model_lookback,
-                shrinkage=self.config.risk_model_shrinkage,
-            )
-            weights = self._apply_style_limits(weights, benchmark, factor_risk_model)
+            if factor_risk_model is None or date_index is None:
+                raise ValueError("point-in-time factor risk model and date_index are required")
+            weights = self._apply_style_limits(weights, benchmark, factor_risk_model, date_index)
         weights = self._finalize(weights)
 
         predicted_alpha = float((weights * alpha).sum().item())
@@ -66,10 +65,10 @@ class PortfolioOptimizer:
         if turnover > self.config.max_turnover + 1e-9 and "max_turnover" not in violations:
             violations.append("max_turnover")
         if factor_risk_model is not None:
-            risk_decomposition = portfolio_risk_decomposition(weights, factor_risk_model)
-            active_decomposition = active_risk_decomposition(weights, benchmark, factor_risk_model)
-            factor_exposure = portfolio_factor_exposure(weights, factor_risk_model)
-            active_factor_exposure = portfolio_factor_exposure(weights - benchmark, factor_risk_model)
+            risk_decomposition = portfolio_risk_decomposition(weights, factor_risk_model, date_index)
+            active_decomposition = active_risk_decomposition(weights, benchmark, factor_risk_model, date_index)
+            factor_exposure = portfolio_factor_exposure(weights, factor_risk_model, date_index)
+            active_factor_exposure = portfolio_factor_exposure(weights - benchmark, factor_risk_model, date_index)
             style_names = set(factor_risk_model.exposure_matrix.style_factor_names)
             style_exposure = {name: float(factor_exposure.get(name, 0.0)) for name in sorted(style_names)}
             active_style_exposure = {name: float(active_factor_exposure.get(name, 0.0)) for name in sorted(style_names)}
@@ -158,11 +157,11 @@ class PortfolioOptimizer:
             result = self._finalize(0.75 * result + 0.25 * benchmark)
         return result
 
-    def _apply_style_limits(self, weights: torch.Tensor, benchmark: torch.Tensor, factor_risk_model) -> torch.Tensor:
+    def _apply_style_limits(self, weights: torch.Tensor, benchmark: torch.Tensor, factor_risk_model, date_index: int) -> torch.Tensor:
         result = weights
         for _ in range(12):
-            factor_exposure = portfolio_factor_exposure(result, factor_risk_model)
-            active_factor_exposure = portfolio_factor_exposure(result - benchmark, factor_risk_model)
+            factor_exposure = portfolio_factor_exposure(result, factor_risk_model, date_index)
+            active_factor_exposure = portfolio_factor_exposure(result - benchmark, factor_risk_model, date_index)
             style_names = set(factor_risk_model.exposure_matrix.style_factor_names)
             max_style = max((abs(float(factor_exposure.get(name, 0.0))) for name in style_names), default=0.0)
             max_active = max((abs(float(active_factor_exposure.get(name, 0.0))) for name in style_names), default=0.0)

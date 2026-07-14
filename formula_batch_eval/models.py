@@ -80,6 +80,10 @@ class FormulaBatchEvalConfig:
     feature_set_manifest_path: str | None = None
     alpha_campaign_id: str | None = None
     feature_promotion_policy_hash: str | None = None
+    research_end_date: str | None = None
+    holdout_start_date: str | None = None
+    label_horizon: int = 1
+    eligible_date_hash: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

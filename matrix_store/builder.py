@@ -76,6 +76,8 @@ def build_matrix_cache(
     feature_set_name: str = "ashare_features_v1",
     feature_set_manifest_path: str | Path | None = None,
     raw_data_index_manifest_path: str | Path | None = None,
+    strict_historical_universe: bool = False,
+    historical_universe_dir: str | Path | None = None,
 ) -> MatrixCacheBuildResult:
     """Build a deterministic local matrix cache from JSONL datasets."""
 
@@ -88,9 +90,24 @@ def build_matrix_cache(
     cache_dir.mkdir(parents=True, exist_ok=True)
     effective_universe_name = universe_name
     universe_missing_fallback = False
+    historical_dir = Path(historical_universe_dir) if historical_universe_dir else None
+    historical_proof = None
+    if strict_historical_universe:
+        if historical_dir is None:
+            raise RuntimeError("strict historical universe requires --historical-universe-dir")
+        required = ["snapshot_proof_manifest.json", "historical_union_members.jsonl", "ts_codes.json", "trade_dates.json", "index_membership.npy", "index_weight.npy", "membership_known.npy"]
+        missing = [name for name in required if not (historical_dir / name).exists()]
+        if missing:
+            raise RuntimeError(f"strict historical universe artifacts missing: {','.join(missing)}")
+        historical_proof = json.loads((historical_dir / "snapshot_proof_manifest.json").read_text(encoding="utf-8"))
+        if not historical_proof.get("historical_constituent_proof"):
+            raise RuntimeError("historical constituent proof is not valid")
+        universe_file = historical_dir / "historical_union_members.jsonl"
     if universe_file is None and universe_name is not None:
         expected_universe_path = data_path / "universe" / f"{universe_name}.jsonl"
         if not expected_universe_path.exists():
+            if strict_historical_universe:
+                raise FileNotFoundError(f"strict universe missing: {expected_universe_path}")
             effective_universe_name = None
             universe_missing_fallback = True
 
@@ -112,8 +129,16 @@ def build_matrix_cache(
     ).load_data()
 
     raw = dict(loader.raw_data_cache)
-    if "ps_ttm" not in raw:
+    if "ps_ttm" not in raw and not strict_historical_universe:
         raw["ps_ttm"] = torch.zeros_like(raw["close"])
+    if strict_historical_universe:
+        expected_codes = json.loads((historical_dir / "ts_codes.json").read_text(encoding="utf-8"))
+        expected_dates = json.loads((historical_dir / "trade_dates.json").read_text(encoding="utf-8"))
+        if list(loader.ts_codes) != expected_codes or list(loader.trade_dates) != expected_dates:
+            raise RuntimeError("strict historical universe axis mismatch")
+        raw["index_member_matrix"] = torch.from_numpy(np.load(historical_dir / "index_membership.npy", allow_pickle=False))
+        raw["index_weight"] = torch.from_numpy(np.load(historical_dir / "index_weight.npy", allow_pickle=False))
+        raw["membership_known"] = torch.from_numpy(np.load(historical_dir / "membership_known.npy", allow_pickle=False)).unsqueeze(0).expand(len(loader.ts_codes), -1)
 
     field_infos: list[MatrixFieldInfo] = []
     for field in requested_fields:
@@ -122,6 +147,8 @@ def build_matrix_cache(
         else:
             values = raw.get(field)
         if values is None:
+            if strict_historical_universe:
+                raise RuntimeError(f"strict matrix required field missing: {field}")
             values = torch.zeros_like(raw["close"])
         array = _tensor_to_array(values, field)
         path = cache_dir / f"{field}.npy"
@@ -184,6 +211,11 @@ def build_matrix_cache(
         "universe_name": universe_name,
         "effective_universe_name": effective_universe_name,
         "universe_missing_fallback": universe_missing_fallback,
+        "strict_historical_universe": strict_historical_universe,
+        "universe_mode": "daily_pit_constituents" if strict_historical_universe else "legacy",
+        "historical_constituent_proof": bool(historical_proof and historical_proof.get("historical_constituent_proof")),
+        "snapshot_proof_hash": _source_content_hash(historical_dir / "snapshot_proof_manifest.json") if historical_dir else None,
+        "alpha_discovery_data_ready": False,
         "security_metadata": loader.security_metadata,
         "point_in_time": bool(point_in_time),
         "feature_cutoff_mode": feature_cutoff_mode,

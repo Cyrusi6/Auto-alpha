@@ -65,6 +65,9 @@ class FormulaBatchEvaluator:
             use_matrix_cache=config.use_matrix_cache,
             feature_set_name=config.feature_set_name,
             feature_set_manifest_path=config.feature_set_manifest_path,
+            research_end_date=config.research_end_date,
+            holdout_start_date=config.holdout_start_date,
+            label_horizon=config.label_horizon,
         )
         self.feature_version = (self.feature_manifest.feature_version if self.feature_manifest is not None else config.feature_set_name) or FEATURE_VERSION
         self.cache_dir = Path(config.eval_cache_dir) if config.eval_cache_dir else self.output_dir / "eval_cache"
@@ -337,6 +340,10 @@ class FormulaBatchEvaluator:
             "valid_ratio": self.config.valid_ratio,
             "universe_name": self.config.universe_name,
             "universe_file": self.config.universe_file,
+            "research_end_date": self.config.research_end_date,
+            "holdout_start_date": self.config.holdout_start_date,
+            "label_horizon": self.config.label_horizon,
+            "eligible_date_hash": self.config.eligible_date_hash or hashlib.sha256("\n".join(self.loader.trade_dates).encode()).hexdigest(),
         }
         return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
 

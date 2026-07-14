@@ -1304,6 +1304,24 @@ GitHub Actions are split by boundary:
 
 The package build uses hatchling and includes only A-share platform modules. It excludes tests, assets, paper material, experiments, and standalone non-platform files from the wheel/sdist.
 
+## Historical PIT CSI300 And Research Firewall
+
+`universe/historical.py` builds a content-addressed historical CSI300 snapshot proof from governed `index_members` and `trade_calendar` artifacts. It validates one explicit canonical index code, complete 300-name cross-sections, weight-sum tolerances, natural-month coverage and staleness, then writes a union-of-ever-members axis plus full-replacement daily membership/weight matrices. Dates before the first complete snapshot or after the staleness limit remain unknown rather than inheriting current constituents.
+
+`research_firewall/` provides the shared `DateFirewall` and `ResearchDataView`. The cutoff is applied before feature and target computation, and its research dates, label horizon, eligible-date hash and access audit are included in cache lineage. A configured date alone is not proof: `research_holdout_firewall_enabled=true` requires pre-compute truncation and zero out-of-bounds accesses.
+
+Formal historical matrix, feature and validation paths are fail-closed. Missing axes, masks, validity tensors, promotion evidence or proof manifests never fall back to all-market universes or all-zero observations. Daily OHLCV and daily-basic fields remain exact-date values with `NaN`/validity for missing observations; only explicitly governed financial availability and proven suspension valuation may carry through time.
+
+```bash
+uv run python -m task_051_a.run \
+  --source-campaign-root <campaign-root-from-artifact-catalog> \
+  --output-dir <independent-validation-output> \
+  --index-code 000300.SH \
+  --pretty
+```
+
+Evidence is separated into engineering evidence, contaminated/sealed retrospective replay, and future untouched holdout. Validation states are `data_blocked`, `statistically_rejected`, `engineering_passed`, `historical_replay_passed`, and `clean_holdout_passed`. Cost, capacity, stress and drawdown remain `null`/unsupported unless an independent A-share simulator rerun produced fills and an equity curve. Retrospective evidence cannot populate certification, portfolio or deployment queues.
+
 ## Formula Corpus, Batch Evaluation, And AlphaGPT Pretraining
 
 `feature_factory/` keeps the existing 11-feature v1 loader behavior as the default and adds opt-in `ashare_features_v2` and `ashare_features_v3` feature spaces. v2 extends the base feature set with additional return horizons, liquidity z-scores, volatility/downside-volatility, valuation, limit/suspension, index membership, and optional point-in-time/corporate-action flags. v3 adds a PIT-aware expanded-data catalog for index/industry/status, complete financial statements, earnings events, moneyflow, margin, abnormal trading, holder structure, pledge/repurchase/unlock, and northbound holding families. Missing optional raw fields are reported as warnings and encoded as zero matrices instead of breaking local sample runs. Weak-PIT or disabled features are visible in the manifest/readiness reports and are excluded from Alpha Factory sampling by default.

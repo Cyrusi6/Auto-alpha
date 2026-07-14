@@ -47,6 +47,8 @@ ENV/
 
 # Testing
 .pytest_cache/
+.pytest_tmp_*/
+.artifact_schema_*/
 .ci_artifacts/
 .coverage
 htmlcov/
@@ -57,11 +59,15 @@ htmlcov/
 /artifacts/
 /campaigns/
 /checkpoints/
+/validation_runs/
 *.npy
 *.npz
 *.memmap
 *.pt
 *.pth
+*.ckpt
+*.parquet
+*.arrow
 
 # Jupyter Notebook
 .ipynb_checkpoints

@@ -97,6 +97,33 @@ def preprocess_factor(
     return clean
 
 
+def preprocess_factor_with_validity(
+    factors: torch.Tensor,
+    validity: torch.Tensor,
+    raw_data: dict[str, torch.Tensor],
+    method: str,
+    eligible_mask: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    valid = validity.bool() & torch.isfinite(factors)
+    if eligible_mask is not None:
+        valid &= eligible_mask.bool()
+    masked = torch.where(valid, factors, torch.full_like(factors, float("nan")))
+    result = torch.zeros_like(factors, dtype=torch.float32)
+    for date_index in range(factors.shape[1]):
+        date_valid = valid[:, date_index]
+        if int(date_valid.sum()) < 2:
+            valid[:, date_index] = False
+            continue
+        date_raw: dict[str, torch.Tensor] = {}
+        for key, value in raw_data.items():
+            aligned = _align_matrix(value, factors)
+            date_raw[key] = aligned[date_valid, date_index : date_index + 1]
+        transformed = preprocess_factor(masked[date_valid, date_index : date_index + 1], date_raw, method)
+        result[date_valid, date_index] = transformed[:, 0]
+    valid &= torch.isfinite(result)
+    return torch.where(valid, result, torch.zeros_like(result)), valid
+
+
 def _finite(x: torch.Tensor) -> torch.Tensor:
     return torch.nan_to_num(x.to(dtype=torch.float32), nan=0.0, posinf=0.0, neginf=0.0)
 

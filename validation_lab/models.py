@@ -81,9 +81,9 @@ class FactorValidationSummary:
     split_method: str
     split_count: int
     out_of_sample_score: float
-    cost_adjusted_score: float
-    capacity_adjusted_score: float
-    risk_adjusted_score: float
+    cost_adjusted_score: float | None
+    capacity_adjusted_score: float | None
+    risk_adjusted_score: float | None
     window_pass_ratio: float
     stability_score: float
     mean_rank_ic: float
@@ -93,7 +93,8 @@ class FactorValidationSummary:
     blocker_count: int
     warning_count: int
     status: str
-    metrics: dict[str, float] = field(default_factory=dict)
+    metrics: dict[str, Any] = field(default_factory=dict)
+    unsupported_metrics: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

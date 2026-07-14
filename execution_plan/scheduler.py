@@ -10,7 +10,7 @@ from capacity_model import CapacityConfig, estimate_portfolio_capacity
 from .models import ChildOrder, ExecutionSchedule, ParentOrder
 
 
-DEFAULT_BUCKETS = ("open", "morning", "afternoon", "close")
+DEFAULT_BUCKETS = ("open",)
 
 
 @dataclass(frozen=True)
@@ -20,7 +20,7 @@ class ExecutionPlanConfig:
     min_child_order_value: float = 0.0
     lot_size: int = 100
     allow_partial: bool = True
-    price_field: str = "close"
+    price_field: str = "open"
     capacity_lookback: int = 20
     impact_base_bps: float = 5.0
     impact_power: float = 0.5
@@ -89,6 +89,8 @@ def build_execution_schedule(
     config: ExecutionPlanConfig | None = None,
 ) -> tuple[ExecutionSchedule, object]:
     config = config or ExecutionPlanConfig()
+    if tuple(config.buckets) != ("open",) or config.price_field != "open":
+        raise ValueError("daily next-open execution supports only the open bucket and open price")
     capacity_config = CapacityConfig(
         lookback=config.capacity_lookback,
         max_participation=config.max_child_participation,

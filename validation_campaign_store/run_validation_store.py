@@ -42,6 +42,8 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--matrix-cache-dir")
     parser.add_argument("--feature-set-manifest-path")
     parser.add_argument("--feature-tensor-path")
+    parser.add_argument("--feature-validity-tensor-path")
+    parser.add_argument("--snapshot-proof-manifest-path")
     parser.add_argument("--campaign-manifest-path")
     parser.add_argument("--feature-promotion-policy-path")
     parser.add_argument("--feature-promotion-allowlist-path")
@@ -55,7 +57,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--family-filter")
     parser.add_argument("--source-filter")
     parser.add_argument("--split-method", default="rolling_walk_forward")
-    parser.add_argument("--validation-policy", default="real_long_history_engineering_robustness_v1")
+    parser.add_argument("--validation-policy", default="real_long_history_engineering_robustness_v2")
     parser.add_argument("--train-size", type=int, default=756)
     parser.add_argument("--validation-size", type=int, default=126)
     parser.add_argument("--test-size", type=int, default=126)
@@ -164,6 +166,8 @@ def _run(args: argparse.Namespace) -> dict:
             matrix_cache_dir=args.matrix_cache_dir,
             feature_manifest_path=args.feature_set_manifest_path,
             feature_tensor_path=args.feature_tensor_path,
+            feature_validity_tensor_path=args.feature_validity_tensor_path,
+            snapshot_proof_manifest_path=args.snapshot_proof_manifest_path,
             campaign_manifest_path=args.campaign_manifest_path,
             promotion_policy_path=args.feature_promotion_policy_path,
             promotion_allowlist_path=args.feature_promotion_allowlist_path,
@@ -191,7 +195,10 @@ def _run(args: argparse.Namespace) -> dict:
             dry_run=args.dry_run,
         )
         if not args.dry_run:
+            run_status = payload.get("status")
             payload = payload | consolidate_validation_results(args.validation_campaign_store_dir)
+            if run_status in {"blocked", "partial", "error"}:
+                payload["status"] = run_status
             leaderboard = build_validation_leaderboard(args.validation_campaign_store_dir, top_k=args.top_k)
             queue = build_certification_queue(
                 args.validation_campaign_store_dir,
@@ -282,9 +289,25 @@ def _write_engineering_governance_artifacts(args: argparse.Namespace, payload: d
             if line.strip():
                 issue_codes[str(json.loads(line).get("code") or "unknown")] += 1
     resource_rows = [dict(report.get("resource_usage") or {}) for report in candidate_reports]
+    result_rows = []
+    for path in scan_root.rglob("validation_candidate_pool_results.jsonl"):
+        result_rows.extend(json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+    status_distribution = Counter(str(row.get("status") or "unknown") for row in result_rows)
+    proof_path = Path(args.snapshot_proof_manifest_path) if args.snapshot_proof_manifest_path else None
+    proof = json.loads(proof_path.read_text(encoding="utf-8")) if proof_path and proof_path.exists() else {}
+    historical_proof = bool(proof.get("historical_constituent_proof") or proof.get("proof_valid"))
+    universe_mode = "daily_pit_constituents" if historical_proof else "fixed_asof_constituents"
+    silent_zero_count = sum(
+        row.get("materialization_status") == "success"
+        and float((row.get("statistics") or {}).get("nonzero_ratio", 0.0) or 0.0) <= 0.0
+        for row in manifests
+    )
     correlation = _candidate_correlation_matrix(scan_root, manifests)
+    technical_status = str(payload.get("status") or "partial")
+    if technical_status == "success":
+        technical_status = "completed"
     engineering = {
-        "status": "engineering_complete",
+        "status": technical_status,
         "evidence_level": "retrospective_engineering_only",
         "selection_data_reused": True,
         "untouched_holdout": False,
@@ -293,13 +316,15 @@ def _write_engineering_governance_artifacts(args: argparse.Namespace, payload: d
         "candidate_count": int(payload.get("candidate_count", len(manifests)) or 0),
         "materialization_success_count": sum(row.get("materialization_status") == "success" for row in manifests),
         "materialization_blocked_count": sum(row.get("materialization_status") != "success" for row in manifests),
-        "silent_zero_validation_count": 0,
+        "silent_zero_validation_count": silent_zero_count,
         "validation_passed_count": int(payload.get("success_count", 0) or 0),
         "validation_blocked_count": int(payload.get("failed_count", 0) or 0),
         "validation_blocker_count": int(payload.get("validation_blocker_count", 0) or 0),
         "blocker_distribution": dict(sorted(issue_codes.items())),
-        "universe_mode": "fixed_asof_constituents",
-        "survivorship_bias_blocker": True,
+        "validation_status_distribution": dict(sorted(status_distribution.items())),
+        "universe_mode": universe_mode,
+        "historical_constituent_proof": historical_proof,
+        "survivorship_bias_blocker": not historical_proof,
         "gpu_shards": resource_rows,
         "candidate_correlation": correlation,
         "campaign_multiple_testing": {
@@ -311,19 +336,22 @@ def _write_engineering_governance_artifacts(args: argparse.Namespace, payload: d
         "fallback_to_cpu_count": sum(bool(row.get("fallback_to_cpu")) for row in resource_rows),
         "stress_sensitivity_status": "unsupported_without_real_simulator_reruns",
         "certification_queue_count": int(payload.get("certification_queue_count", 0) or 0),
-        "portfolio_queue_count": 0,
+        "portfolio_queue_count": int(payload.get("portfolio_queue_count", 0) or 0),
     }
     engineering_path = write_json_artifact(artifact_root / "engineering_robustness_report.json", engineering, "engineering_robustness_report", "validation_campaign_store")
     dates_path = Path(args.matrix_cache_dir or "") / "trade_dates.json"
     dates = json.loads(dates_path.read_text(encoding="utf-8")) if dates_path.exists() else []
-    holdout_index = max(1, len(dates) - 504) if dates else 0
-    proposed_holdout = args.holdout_start_date or (str(dates[holdout_index]) if dates else None)
-    proposed_research_end = args.research_end_date or (str(dates[holdout_index - 1]) if dates and holdout_index > 0 else None)
+    max_observed_date = max((str(item) for item in dates), default=None)
+    proposed_holdout = args.holdout_start_date if args.holdout_start_date and (not max_observed_date or args.holdout_start_date > max_observed_date) else None
+    proposed_research_end = args.research_end_date or max_observed_date
     holdout_plan = {
-        "status": "planned_not_started",
-        "source_campaign_root": args.source_campaign_root,
+        "status": "planned_not_started" if proposed_holdout else "waiting_for_future_data",
         "research_end_date": proposed_research_end,
         "holdout_start_date": proposed_holdout,
+        "max_observed_target_date": max_observed_date,
+        "selection_data_reused": True,
+        "untouched_holdout": False,
+        "evidence_level": "sealed_retrospective_replay",
         "firewall_rule": "targets and metrics after research_end_date are forbidden in generation, proxy, full-eval and shortlist",
         "required_evidence": "daily PIT constituents and untouched holdout",
         "start_factor_search": False,

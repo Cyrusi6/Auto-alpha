@@ -22,11 +22,18 @@ def plot_equity_curve(equity_curve: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def plot_backtest_metrics(metrics: dict[str, float]) -> go.Figure:
+def plot_backtest_metrics(metrics: dict[str, object]) -> go.Figure:
     if not metrics:
         return empty_figure("Backtest Metrics")
-    names = list(metrics.keys())
-    values = [float(metrics[name]) for name in names]
+    numeric = {
+        name: float(value)
+        for name, value in metrics.items()
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+    }
+    if not numeric:
+        return empty_figure("Backtest Metrics")
+    names = list(numeric.keys())
+    values = list(numeric.values())
     fig = go.Figure(data=[go.Bar(x=names, y=values)])
     fig.update_layout(title="Backtest Metrics", template="plotly_white", margin=dict(l=20, r=20, t=40, b=20))
     return fig

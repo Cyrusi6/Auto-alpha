@@ -24,14 +24,16 @@ def create_research_freeze(
     artifact_paths: dict[str, str | None] | None = None,
     matrix_cache_dir: str | Path | None = None,
 ) -> ResearchDataFreeze:
-    if mode not in {"copy", "hardlink", "manifest_only"}:
-        raise ValueError("freeze mode must be copy, hardlink, or manifest_only")
+    if mode == "hardlink":
+        raise ValueError("hardlink freezes are prohibited because source mutation can change a published freeze")
+    if mode not in {"copy", "manifest_only"}:
+        raise ValueError("freeze mode must be copy or manifest_only")
     source_data = Path(data_dir)
     root = Path(freeze_dir)
     root.mkdir(parents=True, exist_ok=True)
     frozen_data = root / "data"
     copied_mode = mode
-    if mode in {"copy", "hardlink"}:
+    if mode == "copy":
         datasets = {str(item["dataset"]) for item in dataset_version.dataset_fingerprints}
         datasets.update(path.parent.name for path in source_data.glob("*/records.jsonl"))
         for dataset in sorted(datasets):
@@ -42,14 +44,7 @@ def create_research_freeze(
             target.parent.mkdir(parents=True, exist_ok=True)
             if target.exists():
                 target.unlink()
-            if mode == "hardlink":
-                try:
-                    os.link(source, target)
-                except OSError:
-                    shutil.copy2(source, target)
-                    copied_mode = "copy"
-            else:
-                shutil.copy2(source, target)
+            shutil.copy2(source, target)
         universe_dir = source_data / "universe"
         if universe_dir.exists():
             target_universe = frozen_data / "universe"
@@ -88,7 +83,8 @@ def create_research_freeze(
         immutable_check_status="not_validated",
         metadata={"source_data_dir": str(source_data)},
     )
-    write_json_artifact(root / "research_data_freeze.json", freeze.to_dict(), "research_data_freeze", "data_lake")
+    research_freeze_path = write_json_artifact(root / "research_data_freeze.json", freeze.to_dict(), "research_data_freeze", "data_lake")
+    file_manifest.append(_file_manifest_entry(research_freeze_path, root))
     manifest_payload = {
         "freeze_id": freeze_id,
         "dataset_version_id": dataset_version.dataset_version_id,
@@ -174,16 +170,18 @@ def _build_file_manifest(root: Path, external_data_dir: Path | None = None) -> l
     else:
         candidates = [path for path in root.rglob("*") if path.is_file() and path.name not in {"freeze_manifest.json", "freeze_validation_report.json"}]
     for path in sorted(candidates):
-        rel = str(path.relative_to(root)) if path.is_relative_to(root) else str(path)
-        files.append(
-            {
-                "relative_path": rel,
-                "path": str(path),
-                "size_bytes": path.stat().st_size,
-                "sha256": hash_file_streaming(path),
-            }
-        )
+        files.append(_file_manifest_entry(path, root))
     return files
+
+
+def _file_manifest_entry(path: Path, root: Path) -> dict[str, object]:
+    rel = str(path.relative_to(root)) if path.is_relative_to(root) else str(path.resolve())
+    return {
+        "relative_path": rel,
+        "path": str(path.resolve()),
+        "size_bytes": path.stat().st_size,
+        "sha256": hash_file_streaming(path),
+    }
 
 
 def _manifest_content_hash(files: list[dict[str, object]]) -> str:

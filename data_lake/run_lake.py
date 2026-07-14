@@ -32,7 +32,7 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--freeze-dir")
     parser.add_argument("--freeze-name")
-    parser.add_argument("--freeze-mode", choices=["copy", "hardlink", "manifest_only"], default="copy")
+    parser.add_argument("--freeze-mode", choices=["copy", "manifest_only"], default="copy")
     parser.add_argument("--dataset-version-id")
     parser.add_argument("--data-freeze-id")
     parser.add_argument("--status", default="validated")

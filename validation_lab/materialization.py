@@ -17,7 +17,7 @@ import numpy as np
 import torch
 
 from artifact_schema.writer import attach_artifact_metadata
-from factor_engine.transforms import preprocess_factor
+from factor_engine.transforms import preprocess_factor_with_validity
 from factor_store.models import FactorRecord
 from feature_factory.builder import load_feature_manifest
 from feature_factory.vocab_adapter import make_formula_vocab_from_manifest
@@ -42,6 +42,10 @@ class MaterializationInputs:
     feature_cutoff_mode: str = "next_open"
     point_in_time: bool = True
     campaign_manifest_path: str | None = None
+    feature_validity_tensor_path: str | None = None
+    snapshot_proof_manifest_path: str | None = None
+    promotion_allowlist_path: str | None = None
+    promotion_denylist_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -131,11 +135,16 @@ class FactorMaterializer:
             "index_member_matrix": matrix_dir / "index_member_matrix.npy",
             "target": matrix_dir / _target_filename(self.inputs.target_return_mode),
             "matrix_manifest": matrix_dir / "matrix_version_manifest.json",
+            "membership_known": matrix_dir / "membership_known.npy",
         }
+        validity_path = Path(self.inputs.feature_validity_tensor_path) if self.inputs.feature_validity_tensor_path else required["feature_tensor_path"].with_name("feature_validity_tensor.npy")
+        axis_paths["feature_validity"] = validity_path
         missing_axes = [name for name, path in axis_paths.items() if not path.exists()]
         if missing_axes:
             raise MaterializationBlocker(f"missing_matrix_artifact:{','.join(missing_axes)}")
         feature_manifest = load_feature_manifest(required["feature_manifest_path"])
+        if str(factor.feature_version) not in {str(feature_manifest.feature_version), str(feature_manifest.feature_set_name)}:
+            raise MaterializationBlocker("feature_version_mismatch")
         if str(feature_manifest.operator_version) != str(factor.operator_version):
             raise MaterializationBlocker("operator_version_mismatch")
         vocab = make_formula_vocab_from_manifest(feature_manifest)
@@ -143,6 +152,10 @@ class FactorMaterializer:
         valid, reason = vm.validate_with_reason(list(factor.formula_tokens or []))
         if not valid:
             raise MaterializationBlocker(f"invalid_formula:{reason}")
+        if list(factor.formula or []) != vm.describe(list(factor.formula_tokens or [])):
+            raise MaterializationBlocker("formula_names_tokens_mismatch")
+        if int(factor.lookback_days) != int(vm.formula_lookback(list(factor.formula_tokens or []))):
+            raise MaterializationBlocker("formula_lookback_mismatch")
         tensor = np.load(required["feature_tensor_path"], mmap_mode="r")
         trade_dates = _read_list(axis_paths["trade_dates"])
         ts_codes = _read_list(axis_paths["ts_codes"])
@@ -151,6 +164,9 @@ class FactorMaterializer:
             raise MaterializationBlocker(f"feature_tensor_shape_mismatch:{tensor.shape}!={expected_shape}")
         if str(tensor.dtype) != "float32":
             raise MaterializationBlocker(f"feature_tensor_dtype_mismatch:{tensor.dtype}")
+        feature_validity = np.load(validity_path, mmap_mode="r")
+        if tuple(feature_validity.shape) != expected_shape or str(feature_validity.dtype) != "bool":
+            raise MaterializationBlocker("feature_validity_tensor_mismatch")
         masks = {name: np.load(path, mmap_mode="r") for name, path in axis_paths.items() if name in {"active_mask", "pit_available_mask", "index_member_matrix", "target"}}
         for name, matrix in masks.items():
             if tuple(matrix.shape) != (len(ts_codes), len(trade_dates)):
@@ -166,6 +182,9 @@ class FactorMaterializer:
             "formula_tokens": list(factor.formula_tokens or []),
             "operator_version": factor.operator_version,
             "transform_method": factor.transform_method,
+            "formula_names": list(factor.formula or []),
+            "feature_version": factor.feature_version,
+            "lookback_days": factor.lookback_days,
             "feature_manifest_sha256": _sha256(required["feature_manifest_path"]),
             "feature_tensor_sha256": _sha256(required["feature_tensor_path"]),
             "matrix_manifest_sha256": _sha256(axis_paths["matrix_manifest"]),
@@ -177,6 +196,15 @@ class FactorMaterializer:
             "pit_available_mask_sha256": _sha256(axis_paths["pit_available_mask"]),
             "index_member_matrix_sha256": _sha256(axis_paths["index_member_matrix"]),
             "target_sha256": _sha256(axis_paths["target"]),
+            "feature_validity_sha256": _sha256(validity_path),
+            "membership_known_sha256": _sha256(axis_paths["membership_known"]),
+            "campaign_manifest_sha256": _optional_sha(self.inputs.campaign_manifest_path),
+            "snapshot_proof_sha256": _optional_sha(self.inputs.snapshot_proof_manifest_path),
+            "promotion_allowlist_sha256": _optional_sha(self.inputs.promotion_allowlist_path),
+            "promotion_denylist_sha256": _optional_sha(self.inputs.promotion_denylist_path),
+            "transform_inputs": {name: _optional_sha(matrix_dir / filename) for name, filename in {"total_mv": "total_mv.npy", "industry_codes": "industry_codes.npy"}.items()},
+            "coverage_policy": {"min": self.min_coverage, "max": self.max_coverage},
+            "code_semantic_hash": _code_semantic_hash(),
             "target_return_mode": self.inputs.target_return_mode,
             "feature_cutoff_mode": self.inputs.feature_cutoff_mode,
             "point_in_time": self.inputs.point_in_time,
@@ -185,6 +213,7 @@ class FactorMaterializer:
             "feature_manifest": feature_manifest,
             "vm": vm,
             "tensor": tensor,
+            "feature_validity": feature_validity,
             "trade_dates": trade_dates,
             "ts_codes": ts_codes,
             "masks": masks,
@@ -225,15 +254,24 @@ class FactorMaterializer:
         started = time.perf_counter()
         tensor_np = context["tensor"]
         tensor = torch.tensor(np.asarray(tensor_np), dtype=torch.float32, device=self.device)
-        raw = context["vm"].execute(list(factor.formula_tokens or []), tensor)
-        if raw is None:
+        feature_validity = torch.tensor(np.asarray(context["feature_validity"]), dtype=torch.bool, device=self.device)
+        executed = context["vm"].execute_with_validity(list(factor.formula_tokens or []), tensor, feature_validity)
+        if executed is None:
             raise MaterializationBlocker("stack_vm_execution_failed")
+        raw, formula_validity = executed
         raw_data = self._transform_inputs(context)
-        transformed = preprocess_factor(raw, raw_data, factor.transform_method or "raw")
+        eligible = torch.tensor(
+            np.asarray(context["masks"]["active_mask"], dtype=bool)
+            & np.asarray(context["masks"]["index_member_matrix"], dtype=bool),
+            dtype=torch.bool,
+            device=self.device,
+        )
+        transformed, propagated_validity = preprocess_factor_with_validity(raw, formula_validity, raw_data, factor.transform_method or "raw", eligible)
         values = transformed.detach().to("cpu", dtype=torch.float32).numpy()
         masks = context["masks"]
         validity = (
-            np.isfinite(values)
+            propagated_validity.detach().cpu().numpy()
+            & np.isfinite(values)
             & np.asarray(masks["active_mask"], dtype=bool)
             & np.asarray(masks["pit_available_mask"], dtype=bool)
             & np.asarray(masks["index_member_matrix"], dtype=bool)
@@ -354,6 +392,23 @@ def _resolve_device(device: str) -> torch.device:
             raise MaterializationBlocker("cuda_required_but_unavailable")
         return torch.device(value)
     return torch.device("cpu")
+
+
+def _optional_sha(value: str | Path | None) -> str | None:
+    if not value:
+        return None
+    path = Path(value)
+    return _sha256(path) if path.exists() else None
+
+
+def _code_semantic_hash() -> str:
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        Path(__file__), root / "model_core" / "vm.py", root / "model_core" / "ops.py",
+        root / "model_core" / "validity.py", root / "factor_engine" / "transforms.py",
+        root / "validation_lab" / "policy.py", root / "validation_lab" / "splits.py",
+    ]
+    return _hash_json({str(path.relative_to(root)): _sha256(path) for path in paths})
 
 
 def _target_filename(mode: str) -> str:

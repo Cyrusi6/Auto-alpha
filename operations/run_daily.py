@@ -44,7 +44,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--capacity-aware", action="store_true")
     parser.add_argument("--execution-plan-dir")
     parser.add_argument("--max-participation", type=float, default=0.10)
-    parser.add_argument("--execution-buckets", default="open,morning,afternoon,close")
+    parser.add_argument("--execution-buckets", default="open")
     parser.add_argument("--broker-adapter", choices=["paper", "simulated", "file"], default="paper")
     parser.add_argument("--broker-store-dir")
     parser.add_argument("--broker-outbox-dir")

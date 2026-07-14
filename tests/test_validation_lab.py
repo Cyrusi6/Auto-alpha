@@ -223,7 +223,6 @@ def test_validation_metrics_handle_nan_and_small_sample():
 
     results, summary, issues = evaluate_factor_splits(factors, target, ["20240102"], splits, "factor_nan")
 
-    assert len(results) == 1
-    assert summary.status == "passed"
-    assert summary.warning_count >= 1
-    assert any(issue.code == "insufficient_test_observations" for issue in issues)
+    assert results == []
+    assert summary.status == "data_blocked"
+    assert any(issue.code == "data_blocked_window" for issue in issues)

@@ -61,7 +61,11 @@ def main(argv: list[str] | None = None) -> int:
     as_of_date = args.as_of_date or loader.trade_dates[-1]
     date_idx = loader.trade_dates.index(as_of_date) if as_of_date in loader.trade_dates else len(loader.trade_dates) - 1
     benchmark = benchmark_weights_from_index_members(loader, args.index_code, as_of_date)
-    covariance = estimate_return_covariance(loader)
+    covariance = estimate_return_covariance(loader, as_of_index=date_idx)
+    factor_risk_model = (
+        build_barra_like_risk_model(loader, lookback=args.risk_model_lookback, shrinkage=args.risk_model_shrinkage, as_of_index=date_idx)
+        if args.use_factor_risk_model else None
+    )
     config = OptimizationConfig(
         risk_aversion=args.risk_aversion,
         turnover_penalty=args.turnover_penalty,
@@ -83,6 +87,8 @@ def main(argv: list[str] | None = None) -> int:
         benchmark_weights=benchmark,
         covariance=covariance,
         loader=loader,
+        factor_risk_model=factor_risk_model,
+        date_index=date_idx if factor_risk_model is not None else None,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     weights_records = [
@@ -114,7 +120,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     weight_vector = _weights_to_vector(result.weights, loader.ts_codes)
     factor_risk_model = (
-        build_barra_like_risk_model(loader, lookback=args.risk_model_lookback, shrinkage=args.risk_model_shrinkage)
+        build_barra_like_risk_model(
+            loader,
+            lookback=args.risk_model_lookback,
+            shrinkage=args.risk_model_shrinkage,
+            as_of_index=date_idx,
+        )
         if args.use_factor_risk_model
         else None
     )

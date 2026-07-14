@@ -189,6 +189,27 @@ def build_splits(
     return build_simple_walk_forward_splits(dates, train_size, test_size, step_size)
 
 
+def build_splits_for_eligible_segments(
+    method: str,
+    segments: list[list[str]],
+    train_size: int,
+    validation_size: int,
+    test_size: int,
+    step_size: int,
+    embargo_size: int,
+    cscv_groups: int,
+    max_cscv_combinations: int,
+) -> list[ValidationSplit]:
+    results: list[ValidationSplit] = []
+    for segment_index, dates in enumerate(segments):
+        minimum = train_size + validation_size + test_size + 2 * embargo_size
+        if len(dates) < minimum:
+            continue
+        for split in build_splits(method, dates, train_size, validation_size, test_size, step_size, embargo_size, cscv_groups, max_cscv_combinations):
+            results.append(ValidationSplit(**{**split.to_dict(), "split_id": f"segment_{segment_index}_{split.split_id}", "metadata": split.metadata | {"eligible_segment": segment_index}}))
+    return results
+
+
 def _degraded_split(split_id: str, method: str, dates: list[str]) -> ValidationSplit:
     train = dates[:-1] if len(dates) > 1 else list(dates)
     test = dates[-1:] if dates else []

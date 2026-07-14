@@ -25,6 +25,7 @@ from validation_lab.stress_backtest import run_stress_backtest_bundle
 
 from .io import describe_factor, factor_values_to_matrix, select_factor_id
 from .simulator import AShareBacktestSimulator
+from .time_contract import BacktestTimeContract, normalize_execution_mode
 
 
 def _write_jsonl(path: Path, records: list[object]) -> None:
@@ -87,10 +88,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-participation", type=float, default=0.10)
     parser.add_argument("--impact-base-bps", type=float, default=5.0)
     parser.add_argument("--impact-power", type=float, default=0.5)
-    parser.add_argument("--execution-buckets", default="open,morning,afternoon,close")
+    parser.add_argument("--execution-buckets", default="open")
     parser.add_argument("--execution-plan-dir")
     parser.add_argument("--point-in-time", action="store_true")
-    parser.add_argument("--feature-cutoff-mode", default="next_open")
+    parser.add_argument("--feature-cutoff-mode", default="next_trade_day_open")
     parser.add_argument("--signal-lag-days", type=int, default=1)
     parser.add_argument("--min-listing-days", type=int, default=0)
     parser.add_argument("--exclude-st", action="store_true")
@@ -147,6 +148,11 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     if args.feature_cutoff_mode == "same_day_after_close" and int(args.signal_lag_days) <= 0:
         print(json.dumps({"status": "blocked", "error": "same_day_after_close with signal_lag_days=0 is look-ahead leakage"}, ensure_ascii=False))
+        return 1
+    try:
+        execution_mode, timing_warnings = normalize_execution_mode(args.feature_cutoff_mode)
+    except ValueError as exc:
+        print(json.dumps({"status": "blocked", "error": str(exc)}, ensure_ascii=False))
         return 1
     if int(args.signal_lag_days) < 0:
         print(json.dumps({"status": "blocked", "error": "signal_lag_days must be non-negative"}, ensure_ascii=False))
@@ -216,12 +222,14 @@ def main(argv: list[str] | None = None) -> int:
         impact_base_bps=args.impact_base_bps,
         impact_power=args.impact_power,
         execution_buckets=tuple(item.strip() for item in args.execution_buckets.split(",") if item.strip()),
+        time_contract=BacktestTimeContract(signal_lag_days=int(args.signal_lag_days)),
     )
     result = simulator.simulate(factors, loader)
     result.metrics["data_freeze_enabled"] = 1.0 if args.data_freeze_dir else 0.0
     result.metrics["data_hash_drift_count"] = float(freeze_report.error_count)
     result.metrics["signal_lag_days"] = float(args.signal_lag_days)
-    result.metrics["signal_contract_next_open"] = 1.0 if args.feature_cutoff_mode == "next_open" and args.signal_lag_days >= 1 else 0.0
+    result.metrics["execution_timing_mode"] = execution_mode
+    result.metrics["execution_timing_warnings"] = timing_warnings
     if args.point_in_time and "active_mask" in loader.raw_data_cache:
         active_mask = loader.raw_data_cache["active_mask"]
         result.metrics["active_universe_coverage"] = float(active_mask.mean().item()) if active_mask.numel() else 0.0

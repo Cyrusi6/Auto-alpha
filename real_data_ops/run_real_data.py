@@ -36,7 +36,7 @@ def _add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--data-lake-registry-dir")
     parser.add_argument("--freeze-dir")
     parser.add_argument("--freeze-name")
-    parser.add_argument("--freeze-mode", choices=("copy", "hardlink", "manifest_only"))
+    parser.add_argument("--freeze-mode", choices=("copy", "manifest_only"))
     parser.add_argument("--matrix-cache-dir")
     parser.add_argument("--start-date")
     parser.add_argument("--end-date")

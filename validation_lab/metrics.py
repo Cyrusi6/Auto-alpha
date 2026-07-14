@@ -22,6 +22,7 @@ def evaluate_factor_splits(
     active_mask: torch.Tensor | None = None,
     target_available_mask: torch.Tensor | None = None,
     index_member_mask: torch.Tensor | None = None,
+    eligible_date_mask: torch.Tensor | None = None,
     policy: EngineeringRobustnessPolicy | None = None,
 ) -> tuple[list[FactorValidationWindowResult], FactorValidationSummary, list[ValidationIssue]]:
     policy = policy or EngineeringRobustnessPolicy(
@@ -33,28 +34,37 @@ def evaluate_factor_splits(
         min_mean_icir=-1e9,
         min_window_pass_ratio=0.0,
         max_train_test_decay=1e9,
+        min_valid_oos_ratio=0.0,
+        min_valid_oos_dates=0,
+        min_evaluable_windows=0,
+        min_cumulative_oos_dates=0,
     )
     date_index = {date: idx for idx, date in enumerate(trade_dates)}
     results: list[FactorValidationWindowResult] = []
     issues: list[ValidationIssue] = []
     daily_cache: dict[int, dict | None] = {}
     for split in splits:
+        split_test_dates = [date for date in split.test_dates if eligible_date_mask is None or bool(eligible_date_mask[date_index[date]].item())]
         metric_args = (factors, target_ret, date_index, validity, active_mask, target_available_mask, index_member_mask, policy.min_cross_section_breadth, daily_cache)
         train = _metrics_for_dates(*metric_args[:2], split.train_dates, *metric_args[2:])
         valid = _metrics_for_dates(*metric_args[:2], split.validation_dates, *metric_args[2:])
-        test = _metrics_for_dates(*metric_args[:2], split.test_dates, *metric_args[2:])
+        test = _metrics_for_dates(*metric_args[:2], split_test_dates, *metric_args[2:])
         warnings = []
+        if not test.get("evaluable", False):
+            issues.append(ValidationIssue("blocker", "data_blocked_window", f"split {split.split_id} has no evaluable OOS data", {"split_id": split.split_id}))
+            continue
         if test.get("n_observations", 0.0) < 2:
             warnings.append("insufficient_test_observations")
             issues.append(ValidationIssue("warning", "insufficient_test_observations", f"split {split.split_id} has too few test observations", {"split_id": split.split_id}))
-        if test.get("n_dates", 0.0) < policy.min_oos_dates:
+        valid_ratio = float(test.get("n_dates", 0.0) / max(len(split.test_dates), 1))
+        if test.get("n_dates", 0.0) < policy.min_valid_oos_dates or valid_ratio < policy.min_valid_oos_ratio:
             warnings.append("insufficient_oos_dates")
             issues.append(
                 ValidationIssue(
                     severity="blocker",
                     code="insufficient_oos_dates",
-                    message=f"split {split.split_id} has fewer than {policy.min_oos_dates} valid OOS dates",
-                    metadata={"split_id": split.split_id, "n_dates": test.get("n_dates", 0.0)},
+                    message=f"split {split.split_id} does not meet valid OOS date policy",
+                    metadata={"split_id": split.split_id, "n_dates": test.get("n_dates", 0.0), "valid_ratio": valid_ratio},
                 )
             )
         results.append(
@@ -77,6 +87,11 @@ def evaluate_factor_splits(
             issues.append(ValidationIssue("blocker", "zero_variance_factor", "factor is constant or zero variance", {"standard_deviation": standard_deviation}))
         if nonzero_ratio <= 1e-8:
             issues.append(ValidationIssue("blocker", "all_zero_factor", "factor contains only zeros"))
+    cumulative_oos = sum(int(item.test_metrics.get("n_dates", 0)) for item in results)
+    if len(results) < policy.min_evaluable_windows:
+        issues.append(ValidationIssue("blocker", "insufficient_evaluable_windows", "too few evaluable OOS windows", {"count": len(results), "minimum": policy.min_evaluable_windows}))
+    if cumulative_oos < policy.min_cumulative_oos_dates:
+        issues.append(ValidationIssue("blocker", "insufficient_cumulative_oos_dates", "too few cumulative OOS dates", {"count": cumulative_oos, "minimum": policy.min_cumulative_oos_dates}))
     summary = summarize_window_results(factor_id, splits[0].method if splits else "unknown", results, issues, policy=policy)
     return results, summary, issues
 
@@ -97,17 +112,20 @@ def summarize_window_results(
         min_mean_icir=-1e9,
         min_window_pass_ratio=0.0,
         max_train_test_decay=1e9,
+        min_valid_oos_ratio=0.0,
+        min_valid_oos_dates=0,
+        min_evaluable_windows=0,
+        min_cumulative_oos_dates=0,
     )
-    test_scores = [_finite(item.test_metrics.get("out_of_sample_score", 0.0)) for item in results]
-    rank_ics = [_finite(item.test_metrics.get("rank_ic_mean", 0.0)) for item in results]
-    icirs = [_finite(item.test_metrics.get("icir", 0.0)) for item in results]
-    train_scores = [_finite(item.train_metrics.get("out_of_sample_score", 0.0)) for item in results]
+    test_scores = [_finite(item.test_metrics["out_of_sample_score"]) for item in results if item.test_metrics.get("evaluable")]
+    rank_ics = [_finite(item.test_metrics["rank_ic_mean"]) for item in results if item.test_metrics.get("evaluable")]
+    icirs = [_finite(item.test_metrics["icir"]) for item in results if item.test_metrics.get("evaluable")]
+    train_scores = [_finite(item.train_metrics["out_of_sample_score"]) for item in results if item.train_metrics.get("evaluable")]
     if not test_scores:
         issues = list(issues or []) + [ValidationIssue("blocker", "no_oos_windows", "no out-of-sample windows were evaluated")]
-        test_scores = [0.0]
-    avg_score = float(mean(test_scores))
+    avg_score = float(mean(test_scores)) if test_scores else 0.0
     score_std = float(pstdev(test_scores)) if len(test_scores) > 1 else 0.0
-    pass_ratio = float(sum(score >= 0.0 for score in test_scores) / len(test_scores))
+    pass_ratio = float(sum(score >= 0.0 for score in test_scores) / len(test_scores)) if test_scores else 0.0
     train_mean = float(mean(train_scores)) if train_scores else 0.0
     train_test_decay = float(train_mean - avg_score)
     threshold_failures = []
@@ -123,21 +141,34 @@ def summarize_window_results(
     issue_rows.extend(ValidationIssue("blocker", code, f"policy threshold failed: {value} vs {threshold}", {"value": value, "threshold": threshold, "policy_id": policy.policy_id}) for code, value, threshold in threshold_failures)
     blocker_count = sum(1 for issue in issue_rows if issue.severity == "blocker")
     warning_count = sum(1 for issue in issue_rows if issue.severity == "warning")
-    status = "passed" if blocker_count == 0 else "blocked"
+    data_blocker_codes = {
+        "data_blocked_window",
+        "no_oos_windows",
+        "insufficient_evaluable_windows",
+        "insufficient_cumulative_oos_dates",
+        "insufficient_oos_dates",
+        "no_valid_factor_values",
+    }
+    if any(issue.severity == "blocker" and issue.code in data_blocker_codes for issue in issue_rows):
+        status = "data_blocked"
+    elif blocker_count:
+        status = "statistically_rejected"
+    else:
+        status = "engineering_passed"
     return FactorValidationSummary(
         factor_id=factor_id,
         split_method=split_method,
         split_count=len(results),
         out_of_sample_score=avg_score,
-        cost_adjusted_score=avg_score - 0.01,
-        capacity_adjusted_score=avg_score - 0.01,
+        cost_adjusted_score=None,
+        capacity_adjusted_score=None,
         risk_adjusted_score=avg_score / (1.0 + score_std),
         window_pass_ratio=pass_ratio,
         stability_score=float(1.0 / (1.0 + score_std)),
         mean_rank_ic=float(mean(rank_ics)) if rank_ics else 0.0,
         mean_icir=float(mean(icirs)) if icirs else 0.0,
         train_test_decay=train_test_decay,
-        max_single_window_loss=float(min(test_scores)),
+        max_single_window_loss=float(min(test_scores)) if test_scores else 0.0,
         blocker_count=blocker_count,
         warning_count=warning_count,
         status=status,
@@ -145,8 +176,9 @@ def summarize_window_results(
             "score_std": score_std,
             "window_count": float(len(results)),
             "positive_score_windows": float(sum(score >= 0.0 for score in test_scores)),
-            "policy_version": 1.0,
+            "policy_version": 2.0,
         },
+        unsupported_metrics=["cost_adjusted_score", "capacity_adjusted_score", "drawdown"],
     )
 
 
@@ -225,6 +257,7 @@ def _metrics_for_dates(
     score = rank_mean + spread_mean + 0.1 * monotonicity - 0.1 * turnover
     t_stat = rank_mean / (rank_std / math.sqrt(len(rank_ics))) if rank_std > 1e-12 and len(rank_ics) > 1 else rank_mean
     return {
+        "evaluable": True,
         "rank_ic_mean": _finite(rank_mean),
         "rank_ic_std": _finite(rank_std),
         "rank_ic_t_stat": _finite(t_stat),
@@ -237,10 +270,10 @@ def _metrics_for_dates(
         "train_valid_decay": 0.0,
         "train_test_decay": 0.0,
         "out_of_sample_score": _finite(score),
-        "cost_adjusted_score": _finite(score - 0.01),
-        "capacity_adjusted_score": _finite(score - 0.01),
+        "cost_adjusted_score": None,
+        "capacity_adjusted_score": None,
         "risk_adjusted_score": _finite(score / (1.0 + abs(rank_std))),
-        "drawdown": _finite(min(losses) if losses else 0.0),
+        "drawdown": None,
         "max_single_window_loss": _finite(min(losses) if losses else 0.0),
         "window_pass_ratio": _finite(sum(value >= 0 for value in spreads) / len(spreads) if spreads else 0.0),
         "stability_score": _finite(1.0 / (1.0 + rank_std)),
@@ -249,7 +282,7 @@ def _metrics_for_dates(
     }
 
 
-def _empty_metrics() -> dict[str, float]:
+def _empty_metrics() -> dict[str, float | bool | None]:
     keys = [
         "rank_ic_mean",
         "rank_ic_std",
@@ -273,7 +306,7 @@ def _empty_metrics() -> dict[str, float]:
         "n_dates",
         "n_observations",
     ]
-    return {key: 0.0 for key in keys}
+    return {**{key: None for key in keys}, "n_dates": 0.0, "n_observations": 0.0, "evaluable": False}
 
 
 def _rank(values: torch.Tensor) -> torch.Tensor:

@@ -25,6 +25,7 @@ from .cost import AShareCostModel
 from .models import PortfolioBacktestResult, PortfolioSnapshot, TradeFill
 from .portfolio import build_long_only_targets, targets_to_weight_matrix
 from .rules import AShareTradingRules
+from .time_contract import BacktestTimeContract
 
 
 class AShareBacktestSimulator:
@@ -54,6 +55,7 @@ class AShareBacktestSimulator:
         impact_base_bps: float = 5.0,
         impact_power: float = 0.5,
         execution_buckets: tuple[str, ...] | None = None,
+        time_contract: BacktestTimeContract | None = None,
         cost_model: AShareCostModel | None = None,
         trading_rules: AShareTradingRules | None = None,
     ):
@@ -89,12 +91,18 @@ class AShareBacktestSimulator:
             impact_base_bps=impact_base_bps,
             impact_power=impact_power,
         )
+        self.time_contract = time_contract or BacktestTimeContract()
+        self.time_contract.validate()
+        buckets = execution_buckets or ("open",)
+        if tuple(buckets) != ("open",):
+            raise ValueError("formal daily next-open backtest only supports the open bucket")
         self.execution_plan_config = ExecutionPlanConfig(
-            buckets=execution_buckets or ("open", "morning", "afternoon", "close"),
+            buckets=buckets,
             max_child_participation=max_participation,
             capacity_lookback=capacity_lookback,
             impact_base_bps=impact_base_bps,
             impact_power=impact_power,
+            price_field="open",
         )
         self.cost_model = cost_model or AShareCostModel()
         self.trading_rules = trading_rules or AShareTradingRules(max_position_weight=max_weight)
@@ -110,12 +118,12 @@ class AShareBacktestSimulator:
         if self.portfolio_method not in {"equal_weight", "risk_aware"}:
             raise ValueError("portfolio_method must be equal_weight or risk_aware")
         factor_tensor = factors.detach().cpu() if hasattr(factors, "detach") else torch.tensor(factors)
-        close = loader.raw_data_cache["close"].detach().cpu()
-        volume = loader.raw_data_cache.get("volume", torch.zeros_like(close)).detach().cpu()
-        is_suspended = loader.raw_data_cache.get("is_suspended", torch.zeros_like(close)).detach().cpu()
-        limit_up = loader.raw_data_cache.get("limit_up_flag", torch.zeros_like(close)).detach().cpu()
-        limit_down = loader.raw_data_cache.get("limit_down_flag", torch.zeros_like(close)).detach().cpu()
-        active_mask = loader.raw_data_cache.get("active_mask", torch.ones_like(close)).detach().cpu()
+        open_price = loader.raw_data_cache["open"].detach().cpu()
+        volume = loader.raw_data_cache.get("volume", torch.zeros_like(open_price)).detach().cpu()
+        is_suspended = loader.raw_data_cache.get("is_suspended", torch.zeros_like(open_price)).detach().cpu()
+        limit_up = loader.raw_data_cache.get("limit_up_flag", torch.zeros_like(open_price)).detach().cpu()
+        limit_down = loader.raw_data_cache.get("limit_down_flag", torch.zeros_like(open_price)).detach().cpu()
+        active_mask = loader.raw_data_cache.get("active_mask", torch.ones_like(open_price)).detach().cpu()
         target_ret = loader.target_ret.detach().cpu()
         if self.portfolio_method == "equal_weight":
             targets_by_date = build_long_only_targets(
@@ -141,27 +149,49 @@ class AShareBacktestSimulator:
         factor_risk_model = None
 
         for date_idx, trade_date in enumerate(loader.trade_dates):
-            covariance = estimate_return_covariance(loader, lookback=self.risk_model_lookback, shrinkage=self.risk_model_shrinkage, as_of_index=date_idx)
+            risk_as_of_index = max(0, date_idx - 1)
+            covariance = estimate_return_covariance(loader, lookback=self.risk_model_lookback, shrinkage=self.risk_model_shrinkage, as_of_index=risk_as_of_index)
             factor_risk_model = None
             if self.use_factor_risk_model and date_idx > 0:
                 factor_risk_model = build_barra_like_risk_model(
                     loader,
                     lookback=self.risk_model_lookback,
                     shrinkage=self.risk_model_shrinkage,
-                    as_of_index=date_idx,
+                    as_of_index=risk_as_of_index,
                 )
             if date_idx > 0:
-                realized_return = float((current_weights * target_ret[:, date_idx - 1]).sum().item())
+                prior_open = open_price[:, date_idx - 1]
+                current_open = open_price[:, date_idx]
+                valid_open = torch.isfinite(prior_open) & torch.isfinite(current_open) & (prior_open > 0)
+                open_to_open = torch.where(valid_open, current_open / prior_open - 1.0, torch.zeros_like(current_open))
+                realized_return = float((current_weights * open_to_open).sum().item())
                 equity *= 1.0 + realized_return
 
             if self.portfolio_method == "risk_aware":
                 benchmark = benchmark_weights_from_index_members(loader, self.index_code, trade_date)
+                if self.use_factor_risk_model and factor_risk_model is None:
+                    desired_weights = current_weights.clone()
+                    snapshots.append(
+                        PortfolioSnapshot(
+                            trade_date=trade_date,
+                            equity=equity,
+                            cash=equity,
+                            positions_value=0.0,
+                            daily_return=realized_return if date_idx > 0 else 0.0,
+                            turnover=0.0,
+                            cost=0.0,
+                            n_positions=int(torch.count_nonzero(current_weights).item()),
+                        )
+                    )
+                    continue
                 opt_result = optimizer.optimize(
                     factor_tensor[:, date_idx],
                     current_weights=current_weights,
                     benchmark_weights=benchmark,
                     covariance=covariance,
                     loader=loader,
+                    factor_risk_model=factor_risk_model,
+                    date_index=risk_as_of_index if factor_risk_model is not None else None,
                 )
                 self.optimization_results.append(opt_result)
                 desired_weights = torch.tensor(
@@ -187,16 +217,17 @@ class AShareBacktestSimulator:
                     active_style = portfolio_factor_exposure(desired_weights - benchmark, factor_risk_model, date_idx)
                     risk_payload = portfolio_risk_decomposition(desired_weights, factor_risk_model, date_idx)
                     active_payload = active_risk_decomposition(desired_weights, benchmark, factor_risk_model, date_idx)
+                    factor_return_count = int(factor_risk_model.factor_returns.returns.shape[1])
                     attribution_payload = (
                         attribute_active_return(
                             desired_weights,
                             benchmark,
-                            target_ret[:, date_idx],
+                            open_to_open,
                             factor_risk_model.exposure_matrix,
                             factor_risk_model.factor_returns,
-                            date_idx,
+                            risk_as_of_index,
                         )
-                        if self.attribution
+                        if self.attribution and factor_return_count > 0 and date_idx > 0
                         else {}
                     )
                     self.risk_exposure_rows.append(
@@ -267,7 +298,7 @@ class AShareBacktestSimulator:
                 if abs(delta) <= 1e-9:
                     continue
                 side = "BUY" if delta > 0 else "SELL"
-                price = float(close[stock_idx, date_idx].item())
+                price = float(open_price[stock_idx, date_idx].item())
                 active = bool(active_mask[stock_idx, date_idx].item() > 0.5)
                 suspended = bool(is_suspended[stock_idx, date_idx].item() > 0.5)
                 is_limit_up = bool(limit_up[stock_idx, date_idx].item() > 0.5)
@@ -367,6 +398,13 @@ class AShareBacktestSimulator:
             prev_equity = equity
 
         metrics = self._metrics(snapshots, fills, total_cost)
+        filled = [fill for fill in fills if fill.status in {"FILLED", "PARTIAL"}]
+        fill_audit_ok = all(
+            abs(fill.price - float(open_price[loader.ts_codes.index(fill.ts_code), loader.trade_dates.index(fill.trade_date)].item())) <= 1e-8
+            for fill in filled
+        )
+        metrics["signal_contract_next_open"] = 1.0 if fill_audit_ok else 0.0
+        metrics["time_contract"] = self.time_contract.to_dict()
         if risk_metric_rows:
             metrics.update(_average_risk_metrics(risk_metric_rows))
         if self.risk_decomposition_rows:

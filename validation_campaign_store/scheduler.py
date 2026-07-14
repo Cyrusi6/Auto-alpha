@@ -72,12 +72,14 @@ def run_validation_shards(
     matrix_cache_dir: str | None = None,
     feature_manifest_path: str | None = None,
     feature_tensor_path: str | None = None,
+    feature_validity_tensor_path: str | None = None,
+    snapshot_proof_manifest_path: str | None = None,
     campaign_manifest_path: str | None = None,
     promotion_policy_path: str | None = None,
     promotion_allowlist_path: str | None = None,
     promotion_denylist_path: str | None = None,
     device: str = "cpu",
-    validation_policy: str = "real_long_history_engineering_robustness_v1",
+    validation_policy: str = "real_long_history_engineering_robustness_v2",
     train_size: int = 756,
     validation_size: int = 126,
     test_size: int = 126,
@@ -114,6 +116,20 @@ def run_validation_shards(
             raise RuntimeError("formal GPU validation requires exactly four shards")
         if not compute_state_dir:
             raise RuntimeError("--compute-state-dir is required with compute scheduler")
+        strict_inputs = {
+            "data_freeze_dir": data_freeze_dir,
+            "matrix_cache_dir": matrix_cache_dir,
+            "feature_manifest_path": feature_manifest_path,
+            "feature_tensor_path": feature_tensor_path,
+            "feature_validity_tensor_path": feature_validity_tensor_path,
+            "snapshot_proof_manifest_path": snapshot_proof_manifest_path,
+            "promotion_policy_path": promotion_policy_path,
+            "promotion_allowlist_path": promotion_allowlist_path,
+            "promotion_denylist_path": promotion_denylist_path,
+        }
+        missing_strict = [name for name, value in strict_inputs.items() if not value or not Path(value).exists()]
+        if missing_strict:
+            raise RuntimeError(f"formal GPU validation strict inputs missing: {','.join(missing_strict)}")
         jobs: list[ComputeJobSpec] = []
         immutable_resume_count = 0
         for shard in shards:
@@ -126,6 +142,8 @@ def run_validation_shards(
                 matrix_cache_dir=matrix_cache_dir,
                 feature_manifest_path=feature_manifest_path,
                 feature_tensor_path=feature_tensor_path,
+                feature_validity_tensor_path=feature_validity_tensor_path,
+                snapshot_proof_manifest_path=snapshot_proof_manifest_path,
                 campaign_manifest_path=campaign_manifest_path,
                 promotion_policy_path=promotion_policy_path,
                 promotion_allowlist_path=promotion_allowlist_path,
@@ -151,18 +169,16 @@ def run_validation_shards(
             fingerprint = _job_fingerprint(argv, shard)
             marker_path = Path(shard.output_dir) / "immutable_input_fingerprint.json"
             report_path = Path(shard.output_dir) / "validation_candidate_pool_report.json"
-            if resume and marker_path.exists() and report_path.exists():
-                marker = json.loads(marker_path.read_text(encoding="utf-8"))
-                if marker.get("immutable_input_fingerprint") == fingerprint:
-                    immutable_resume_count += 1
-                    continue
+            if resume and _valid_resume_marker(marker_path, report_path, fingerprint, shard.candidate_count):
+                immutable_resume_count += 1
+                continue
             jobs.append(
                 ComputeJobSpec(
                     job_id=f"validation_{shard.shard_index:02d}_{fingerprint[:16]}",
                     job_kind=ComputeJobKind.SHELL_COMMAND,
                     command=[sys.executable, "-m", "validation_lab.run_validation", *argv],
                     cwd=str(Path.cwd()),
-                    input_paths=[str(shard.metadata["candidate_pool_path"]), *(str(path) for path in [data_freeze_dir, matrix_cache_dir, feature_manifest_path, feature_tensor_path] if path)],
+                    input_paths=[str(shard.metadata["candidate_pool_path"]), *(str(path) for path in [data_freeze_dir, matrix_cache_dir, feature_manifest_path, feature_tensor_path, feature_validity_tensor_path, snapshot_proof_manifest_path] if path)],
                     output_dir=shard.output_dir,
                     required_device_type=ComputeDeviceType.CUDA,
                     gpu_count=1,
@@ -197,21 +213,24 @@ def run_validation_shards(
                 stale_heartbeat_seconds=300.0,
             )
         )
+        previous_run_ids = {str(run.get("run_id")) for run in scheduler.store.read_runs()}
         scheduler.submit_jobs(jobs)
         compute_report = scheduler.run()
         if dry_run:
             return {"status": "planned", "shard_count": len(shards), "compute_report": compute_report.to_dict(), "paths": store.paths()}
         updated = _collect_shard_results(shards)
         submitted_job_ids = {job.job_id for job in jobs}
-        current_runs = [run for run in scheduler.store.read_runs() if run.get("job_id") in submitted_job_ids]
+        current_runs = [run for run in scheduler.store.read_runs() if run.get("job_id") in submitted_job_ids and str(run.get("run_id")) not in previous_run_ids]
         current_gpu_successes = sum(
             run.get("status") == "success" and not run.get("fallback_to_cpu")
             for run in current_runs
         )
+        physical_devices = {tuple(run.get("device_indices") or []) for run in current_runs if run.get("status") == "success"}
         if (
             len(current_runs) != len(jobs)
             or current_gpu_successes != len(jobs)
             or immutable_resume_count + current_gpu_successes != 4
+            or (jobs and len(physical_devices) != len(jobs))
         ):
             for shard in updated:
                 if shard.status == "success":
@@ -223,8 +242,7 @@ def run_validation_shards(
         for shard in updated:
             fingerprint = fingerprints_by_shard.get(shard.shard_index)
             if shard.status == "success" and fingerprint:
-                marker = Path(shard.output_dir) / "immutable_input_fingerprint.json"
-                marker.write_text(json.dumps({"immutable_input_fingerprint": fingerprint}, indent=2, sort_keys=True), encoding="utf-8")
+                _write_resume_marker(Path(shard.output_dir), fingerprint, shard.candidate_count)
         return {
             "status": "success" if all(row.status == "success" for row in updated) else "partial",
             "shard_count": len(updated),
@@ -297,6 +315,8 @@ def _validation_argv(shard: ValidationShardRecord, **kwargs) -> list[str]:
     optional = {
         "--data-freeze-dir": kwargs.get("data_freeze_dir"), "--matrix-cache-dir": kwargs.get("matrix_cache_dir"),
         "--feature-set-manifest-path": kwargs.get("feature_manifest_path"), "--feature-tensor-path": kwargs.get("feature_tensor_path"),
+        "--feature-validity-tensor-path": kwargs.get("feature_validity_tensor_path"),
+        "--snapshot-proof-manifest-path": kwargs.get("snapshot_proof_manifest_path"),
         "--campaign-manifest-path": kwargs.get("campaign_manifest_path"),
         "--feature-promotion-policy-path": kwargs.get("promotion_policy_path"),
         "--feature-promotion-allowlist-path": kwargs.get("promotion_allowlist_path"),
@@ -353,6 +373,32 @@ def _fingerprint_file(path: Path) -> str:
     value = digest.hexdigest()
     _FINGERPRINT_FILE_CACHE[key] = value
     return value
+
+
+def _valid_resume_marker(marker_path: Path, report_path: Path, fingerprint: str, candidate_count: int) -> bool:
+    if not marker_path.exists() or not report_path.exists():
+        return False
+    try:
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return (
+        marker.get("immutable_input_fingerprint") == fingerprint
+        and marker.get("report_sha256") == _fingerprint_file(report_path)
+        and int(marker.get("candidate_count", -1)) == int(candidate_count)
+        and int(report.get("validated_candidate_count", -1)) == int(candidate_count)
+    )
+
+
+def _write_resume_marker(shard_dir: Path, fingerprint: str, candidate_count: int) -> None:
+    report_path = shard_dir / "validation_candidate_pool_report.json"
+    payload = {
+        "immutable_input_fingerprint": fingerprint,
+        "candidate_count": int(candidate_count),
+        "report_sha256": _fingerprint_file(report_path),
+    }
+    (shard_dir / "immutable_input_fingerprint.json").write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _read_existing_compute_report(compute_dir: Path) -> dict[str, Any]:

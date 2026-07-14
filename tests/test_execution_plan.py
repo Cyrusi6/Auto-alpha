@@ -25,7 +25,7 @@ def test_parent_child_schedule_and_quality_report(tmp_path):
         ExecutionOrder("20240104", "000001.SZ", "BUY", 0.1, 80_000.0),
         ExecutionOrder("20240104", "600000.SH", "BUY", 0.1, 60_000.0),
     ]
-    config = ExecutionPlanConfig(buckets=("open", "close"), max_child_participation=0.10)
+    config = ExecutionPlanConfig(buckets=("open",), max_child_participation=0.10)
     parents = build_parent_orders_from_target_orders(orders)
     schedule, capacity = build_execution_schedule(parents, loader, "20240104", config)
     simulated = simulate_child_orders(schedule, loader, AShareCostModel(), AShareTradingRules())

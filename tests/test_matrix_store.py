@@ -54,7 +54,7 @@ def test_matrix_reader_matches_jsonl_loader_alignment(tmp_path):
     assert reader.load_metadata()["n_stocks"] == len(json_loader.ts_codes)
     assert reader.load_ts_codes() == json_loader.ts_codes
     assert reader.load_trade_dates() == json_loader.trade_dates
-    assert torch.allclose(raw["adjusted_close"], json_loader.raw_data_cache["adjusted_close"])
+    assert torch.allclose(raw["adjusted_close"], json_loader.raw_data_cache["adjusted_close"], equal_nan=True)
     assert torch.allclose(raw["roe"], json_loader.raw_data_cache["roe"])
     assert raw["industry_codes"].shape[0] == len(json_loader.ts_codes)
 

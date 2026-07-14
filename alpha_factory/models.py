@@ -97,7 +97,7 @@ class AlphaCampaignConfig:
     max_complexity: int = 20
     max_lookback: int = 20
     proxy_max_candidates: int = 30
-    proxy_max_dates: int = 3
+    proxy_max_dates: int = 63
     full_eval_max_candidates: int = 30
     top_k: int = 8
     max_per_family: int = 3
@@ -143,6 +143,9 @@ class AlphaCampaignConfig:
     max_validation_candidates: int = 50
     leaderboard_top_k: int = 100
     dedupe_across_campaigns: bool = False
+    research_end_date: str | None = None
+    holdout_start_date: str | None = None
+    label_horizon: int = 1
     previous_experiment_dirs: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:

@@ -2328,3 +2328,27 @@
 
 ### 后续待办
 - 下一任务应基于 `clean_holdout_campaign_plan.json` 启动全新 research-cutoff campaign，并补充可证明的逐日 PIT CSI300 历史成分数据；在此之前不得进入 certification、portfolio 或实盘。
+
+## 2026-07-14 - Task 051-A
+
+### 本次变更摘要
+- 新增内容寻址的历史 CSI300 snapshot builder/audit：显式 canonical index 隔离、完整 300 股横截面与权重和校验、自然月覆盖、staleness、union-of-ever-members 股票轴、完整集合替换日频 membership/weight，以及 snapshot/source/axis/partition SHA proof。
+- 新增统一 `DateFirewall`/`ResearchDataView`，把 research cutoff、holdout、label horizon、eligible-date hash 与访问审计接入 loader、Alpha proxy/full eval、cache 和 validation lineage；仅参数非空不再代表防火墙已启用。
+- 增加 lifecycle、历史 ST ann-date、suspension schema normalization、精确日频字段、target 两端有效、feature/StackVM validity 传播、共同 eligible-date 连续窗口和 `data_blocked/statistically_rejected/engineering_passed/historical_replay_passed/clean_holdout_passed` 状态语义。
+- 关闭正式 OHLC/daily-basic 跨日 ffill、next-open 名实不符、optimizer 全样本风险模型重建、consolidate 覆盖 blocked/partial、旧 marker resume、subprocess PIPE 死锁和 hardlink freeze 等工程漏洞。
+- Artifact schema、dashboard、monitoring 与包清单已登记 Task 051 preflight、observation ledger、future holdout、targeted backfill、snapshot proof、feature validity 和 engineering report。
+
+### 真实数据审计与执行决策
+- Governed CSI300 成分源提供 206 个完整快照，覆盖 2016-01-29 至 2026-06-30、126 个自然月且无缺月；每期 300 个唯一成员，权重和范围 99.988–100.011，最大快照间隔 36 天，历史 union 637 只，调入/调出各 428，removed-member leakage 为 0。
+- 历史成分 proof 通过，因此 universe 可标记 `daily_pit_constituents`；但源没有公告时间，保留 `constituent_publication_timing_unknown` blocker。
+- 真实 suspensions 数据 623 条，但没有任何可用 `suspend_date`、`resume_date` 或 `trade_date`。同时历史 ST 结束日/公告日证据不完整，且不存在严格晚于全项目已观察目标日期的 future untouched holdout。
+- 因上述数据证明阻断，本轮按合同没有构建新 strict PIT matrix/v3 tensor、没有运行旧 20 因子、没有启动四卡 validation。`alpha_discovery_data_ready=false`、`research_holdout_firewall_enabled=false`，certification/portfolio/paper/live queue 均为 0。
+- 输出了精确 targeted backfill 计划，仅要求对 suspensions 的已审计缺口执行受治理、可恢复的定向补齐；未发起 Tushare 请求、未打印凭证、未修改 raw lake/freeze/旧 campaign/factor store。
+
+### 确定性与 Schema
+- 同一输入重放后，历史 membership、weight、known、source-date、union、snapshots 与 proof manifest 的 SHA 全部一致。
+- 新独立输出的 strict artifact schema validation 为 8 artifacts、0 errors、0 warnings、0 legacy artifacts、0 unknown artifacts。
+
+### 下一任务建议
+- 先完成 governed suspension event backfill/schema normalization，并补足可证明的历史 ST effective intervals；随后从不可变新 freeze 构建全套 lifecycle/tradability/raw-field/target validity masks。
+- 只有 mask proof、feature validity、pre-compute research firewall 和未来 untouched date 均通过后，才启动四张不同物理 GPU 的 strict 20-factor retrospective rerun；该重放仍不得进入 certification 或 portfolio。

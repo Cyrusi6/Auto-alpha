@@ -10,13 +10,22 @@ import torch
 from model_core.vm import StackVM
 
 
-def run_proxy_eval(candidates, loader, *, max_candidates: int, max_dates: int, vocab=None) -> tuple[list, list[dict], dict]:
+def run_proxy_eval(candidates, loader, *, max_candidates: int, max_dates: int, vocab=None, seed: int = 0) -> tuple[list, list[dict], dict]:
     vm = StackVM(vocab)
     updated = []
     rows: list[dict] = []
     passed = 0
     attempted = 0
     date_count = min(max_dates, len(loader.trade_dates))
+    if date_count <= 0:
+        raise RuntimeError("proxy has no eligible research dates")
+    if date_count == 1:
+        date_indices = [0]
+    else:
+        positions = [(idx * (len(loader.trade_dates) - 1)) // (date_count - 1) for idx in range(date_count)]
+        offset = int(seed) % len(loader.trade_dates)
+        date_indices = sorted({(position + offset) % len(loader.trade_dates) for position in positions})
+    date_tensor = torch.tensor(date_indices, dtype=torch.long, device=loader.feat_tensor.device)
     for candidate in candidates:
         if candidate.status == "rejected" or attempted >= max_candidates:
             updated.append(candidate)
@@ -27,8 +36,8 @@ def run_proxy_eval(candidates, loader, *, max_candidates: int, max_dates: int, v
             factor = vm.execute(candidate.formula_tokens, loader.feat_tensor)
             if factor is None:
                 raise RuntimeError("vm returned no factor")
-            factor = torch.nan_to_num(factor[:, :date_count], nan=0.0, posinf=0.0, neginf=0.0)
-            target = loader.target_ret[:, :date_count]
+            factor = torch.nan_to_num(factor.index_select(1, date_tensor), nan=0.0, posinf=0.0, neginf=0.0)
+            target = loader.target_ret.index_select(1, date_tensor)
             coverage = float(torch.isfinite(factor).to(torch.float32).mean().item())
             std = float(factor.std(unbiased=False).item())
             nonzero = float((factor != 0).to(torch.float32).mean().item())
@@ -51,6 +60,7 @@ def run_proxy_eval(candidates, loader, *, max_candidates: int, max_dates: int, v
                 "turnover_proxy": turnover,
                 "runtime_ms": float((time.perf_counter() - start) * 1000.0),
                 "proxy_score": score,
+                "sampled_dates": [loader.trade_dates[index] for index in date_indices],
             }
             updated.append(replace(candidate, proxy_score=score, status=status, reject_reason=None if status == "proxy_passed" else "zero_variance_proxy"))
             rows.append(row)
@@ -71,6 +81,9 @@ def run_proxy_eval(candidates, loader, *, max_candidates: int, max_dates: int, v
         "passed": passed,
         "failed": sum(1 for row in rows if row.get("status") == "failed"),
         "max_dates": date_count,
+        "sampled_dates": [loader.trade_dates[index] for index in date_indices],
+        "eligible_date_hash": __import__("hashlib").sha256("\n".join(loader.trade_dates).encode()).hexdigest(),
+        "seed": int(seed),
     }
     return updated, rows, summary
 

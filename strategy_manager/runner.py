@@ -78,7 +78,7 @@ class AShareStrategyRunner:
         capacity_aware: bool = False,
         execution_plan_dir: str | Path | None = None,
         max_participation: float = 0.10,
-        execution_buckets: str | tuple[str, ...] = "open,morning,afternoon,close",
+        execution_buckets: str | tuple[str, ...] = "open",
         propose_parent_orders: bool = False,
         export_child_orders: bool = False,
         propose_only: bool = False,
@@ -282,7 +282,11 @@ class AShareStrategyRunner:
         date_idx = self.loader.trade_dates.index(trade_date)
         if self.portfolio_method == "risk_aware":
             benchmark = benchmark_weights_from_index_members(self.loader, self.index_code, trade_date)
-            covariance = estimate_return_covariance(self.loader)
+            covariance = estimate_return_covariance(self.loader, as_of_index=date_idx)
+            factor_risk_model = (
+                build_barra_like_risk_model(self.loader, lookback=self.risk_model_lookback, shrinkage=self.risk_model_shrinkage, as_of_index=date_idx)
+                if self.use_factor_risk_model else None
+            )
             config = OptimizationConfig(
                 risk_aversion=self.risk_aversion,
                 turnover_penalty=self.turnover_penalty,
@@ -303,16 +307,13 @@ class AShareStrategyRunner:
                 benchmark_weights=benchmark,
                 covariance=covariance,
                 loader=self.loader,
+                factor_risk_model=factor_risk_model,
+                date_index=date_idx if factor_risk_model is not None else None,
             )
             self.optimization_summary = opt_result.to_dict()
             weight_vector = factor_matrix[:, date_idx].clone() * 0.0
             for idx, ts_code in enumerate(self.loader.ts_codes):
                 weight_vector[idx] = float(opt_result.weights.get(ts_code, 0.0))
-            factor_risk_model = (
-                build_barra_like_risk_model(self.loader, lookback=self.risk_model_lookback, shrinkage=self.risk_model_shrinkage)
-                if self.use_factor_risk_model
-                else None
-            )
             self.risk_report = build_risk_report(
                 weight_vector,
                 benchmark,
@@ -703,7 +704,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--capacity-aware", action="store_true")
     parser.add_argument("--execution-plan-dir")
     parser.add_argument("--max-participation", type=float, default=0.10)
-    parser.add_argument("--execution-buckets", default="open,morning,afternoon,close")
+    parser.add_argument("--execution-buckets", default="open")
     parser.add_argument("--propose-parent-orders", action="store_true")
     parser.add_argument("--export-child-orders", action="store_true")
     parser.add_argument("--propose-only", action="store_true")

@@ -22,16 +22,25 @@ class EngineeringRobustnessPolicy:
     min_window_pass_ratio: float = 0.5
     max_train_test_decay: float = 1.0
     certification_supported: bool = False
+    min_valid_oos_ratio: float = 0.90
+    min_valid_oos_dates: int = 114
+    min_evaluable_windows: int = 3
+    min_cumulative_oos_dates: int = 342
 
     def to_dict(self):
         return asdict(self)
 
 
-POLICIES = {"real_long_history_engineering_robustness_v1": EngineeringRobustnessPolicy()}
+POLICIES = {
+    "real_long_history_engineering_robustness_v1": EngineeringRobustnessPolicy(),
+    "real_long_history_engineering_robustness_v2": EngineeringRobustnessPolicy(
+        policy_id="real_long_history_engineering_robustness_v2",
+    ),
+}
 
 
 def load_validation_policy(policy_id: str | None) -> EngineeringRobustnessPolicy:
-    key = policy_id or "real_long_history_engineering_robustness_v1"
+    key = policy_id or "real_long_history_engineering_robustness_v2"
     if key not in POLICIES:
         raise ValueError(f"unknown validation policy: {key}")
     return POLICIES[key]

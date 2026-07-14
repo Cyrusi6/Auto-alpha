@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import torch
 
-from .ops import OPS_CONFIG, operator_complexity, operator_lookback
+from .ops import OPS_CONFIG, get_operator_spec, operator_complexity, operator_lookback
+from .validity import propagate_operator_validity
 from .vocab import FORMULA_VOCAB, FormulaVocab
 
 
@@ -102,3 +103,38 @@ class StackVM:
         if len(stack) != 1:
             return None
         return torch.nan_to_num(stack[0], nan=0.0, posinf=0.0, neginf=0.0)
+
+    def execute_with_validity(
+        self,
+        formula_tokens: list[int],
+        feat_tensor: torch.Tensor,
+        feature_validity: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor] | None:
+        if feature_validity.shape != feat_tensor.shape:
+            raise ValueError("feature validity shape mismatch")
+        stack: list[tuple[torch.Tensor, torch.Tensor]] = []
+        try:
+            for token in formula_tokens:
+                token = int(token)
+                if 0 <= token < self.feat_offset:
+                    if token >= feat_tensor.shape[1]:
+                        return None
+                    values = feat_tensor[:, token, :]
+                    validity = feature_validity[:, token, :].bool() & torch.isfinite(values)
+                    stack.append((values, validity))
+                    continue
+                if token not in self.op_map:
+                    return None
+                arity = self.arity_map[token]
+                if len(stack) < arity:
+                    return None
+                inputs = stack[-arity:]; del stack[-arity:]
+                values = [item[0] for item in inputs]
+                masks = [item[1] for item in inputs]
+                result = self.op_map[token](*values)
+                name = get_operator_spec(token, self.feat_offset).name
+                valid = propagate_operator_validity(name, masks, values) & torch.isfinite(result)
+                stack.append((torch.where(valid, result, torch.zeros_like(result)), valid))
+        except (RuntimeError, TypeError, ValueError, KeyError):
+            return None
+        return stack[0] if len(stack) == 1 else None

@@ -36,10 +36,13 @@ def _materialization_fixture(tmp_path: Path, *, zero: bool = False):
         tensor[:, 0, :] = np.arange(stocks * dates, dtype=np.float32).reshape(stocks, dates)
     tensor_path = features / "feature_tensor.npy"
     np.save(tensor_path, tensor)
+    validity_path = features / "feature_validity_tensor.npy"
+    np.save(validity_path, np.ones_like(tensor, dtype=np.bool_))
     (matrix / "trade_dates.json").write_text(json.dumps([f"202001{i:02d}" for i in range(1, dates + 1)]), encoding="utf-8")
     (matrix / "ts_codes.json").write_text(json.dumps([f"00000{i}.SZ" for i in range(stocks)]), encoding="utf-8")
     for name in ["active_mask", "pit_available_mask", "index_member_matrix"]:
         np.save(matrix / f"{name}.npy", np.ones((stocks, dates), dtype=np.float32))
+    np.save(matrix / "membership_known.npy", np.ones(dates, dtype=np.bool_))
     np.save(matrix / "adjusted_close.npy", np.full((stocks, dates), 10.0, dtype=np.float32))
     (matrix / "matrix_version_manifest.json").write_text(json.dumps({"target_return_mode": "adjusted_close", "feature_cutoff_mode": "next_open"}), encoding="utf-8")
     factor = FactorRecord(
@@ -53,7 +56,7 @@ def _materialization_fixture(tmp_path: Path, *, zero: bool = False):
         created_at="2026-01-01T00:00:00Z",
         transform_method="raw",
     )
-    inputs = MaterializationInputs(str(freeze), str(matrix), str(manifest_path), str(tensor_path), target_return_mode="adjusted_close")
+    inputs = MaterializationInputs(str(freeze), str(matrix), str(manifest_path), str(tensor_path), target_return_mode="adjusted_close", feature_validity_tensor_path=str(validity_path))
     return factor, inputs, tensor
 
 
@@ -100,11 +103,11 @@ def test_zero_variance_low_breadth_and_insufficient_oos_are_blocked():
     split = ValidationSplit("s", "rolling_walk_forward", dates[:1], dates[1:2], dates[2:])
     factors = torch.zeros((4, 4))
     targets = torch.arange(16, dtype=torch.float32).reshape(4, 4)
-    policy = EngineeringRobustnessPolicy(min_cross_section_breadth=5, min_oos_dates=2, min_mean_rank_ic=-1.0, min_mean_icir=-10.0, min_window_pass_ratio=0.0)
+    policy = EngineeringRobustnessPolicy(min_cross_section_breadth=5, min_oos_dates=2, min_mean_rank_ic=-1.0, min_mean_icir=-10.0, min_window_pass_ratio=0.0, min_valid_oos_dates=2, min_evaluable_windows=0, min_cumulative_oos_dates=0)
     _, summary, issues = evaluate_factor_splits(factors, targets, dates, [split], "factor", validity=torch.ones_like(factors, dtype=torch.bool), policy=policy)
-    assert summary.status == "blocked"
+    assert summary.status == "data_blocked"
     codes = {issue.code for issue in issues}
-    assert "insufficient_oos_dates" in codes
+    assert "data_blocked_window" in codes
 
 
 def test_signal_lag_moves_actual_signal_date():
@@ -144,7 +147,7 @@ def test_validation_scheduler_flag_creates_four_cuda_shards(tmp_path, monkeypatc
 
     class FakeJobStore:
         def read_runs(self):
-            return [{"job_id": job.job_id, "status": "success", "fallback_to_cpu": False} for job in captured]
+            return [{"run_id": f"run_{job.shard_id}", "job_id": job.job_id, "status": "success", "fallback_to_cpu": False, "device_indices": [job.shard_id]} for job in captured]
 
     class FakeScheduler:
         def __init__(self, _config):
@@ -161,6 +164,13 @@ def test_validation_scheduler_flag_creates_four_cuda_shards(tmp_path, monkeypatc
             return FakeReport()
 
     monkeypatch.setattr("validation_campaign_store.scheduler.LocalComputeScheduler", FakeScheduler)
+    strict = {}
+    for name in ["feature_tensor", "feature_validity", "feature_manifest", "snapshot_proof", "promotion_policy", "promotion_allowlist", "promotion_denylist"]:
+        path = tmp_path / f"{name}.json" if "tensor" not in name else tmp_path / f"{name}.npy"
+        path.write_bytes(b"test")
+        strict[name] = str(path)
+    freeze = tmp_path / "freeze"; freeze.mkdir()
+    matrix = tmp_path / "matrix"; matrix.mkdir()
     result = run_validation_shards(
         store_dir,
         data_dir=str(tmp_path),
@@ -170,7 +180,10 @@ def test_validation_scheduler_flag_creates_four_cuda_shards(tmp_path, monkeypatc
         shard_count=4,
         use_compute_scheduler=True,
         compute_state_dir=str(tmp_path / "compute"),
-        feature_tensor_path=str(tmp_path / "feature_tensor.npy"),
+        data_freeze_dir=str(freeze), matrix_cache_dir=str(matrix),
+        feature_tensor_path=strict["feature_tensor"], feature_validity_tensor_path=strict["feature_validity"],
+        feature_manifest_path=strict["feature_manifest"], snapshot_proof_manifest_path=strict["snapshot_proof"],
+        promotion_policy_path=strict["promotion_policy"], promotion_allowlist_path=strict["promotion_allowlist"], promotion_denylist_path=strict["promotion_denylist"],
     )
     assert result["status"] == "success"
     assert len(captured) == 4
@@ -200,6 +213,9 @@ def test_validation_scheduler_flag_creates_four_cuda_shards(tmp_path, monkeypatc
         shard_count=4,
         use_compute_scheduler=True,
         compute_state_dir=str(tmp_path / "compute-accumulated"),
-        feature_tensor_path=str(tmp_path / "feature_tensor.npy"),
+        data_freeze_dir=str(freeze), matrix_cache_dir=str(matrix),
+        feature_tensor_path=strict["feature_tensor"], feature_validity_tensor_path=strict["feature_validity"],
+        feature_manifest_path=strict["feature_manifest"], snapshot_proof_manifest_path=strict["snapshot_proof"],
+        promotion_policy_path=strict["promotion_policy"], promotion_allowlist_path=strict["promotion_allowlist"], promotion_denylist_path=strict["promotion_denylist"],
     )
     assert result["status"] == "success"

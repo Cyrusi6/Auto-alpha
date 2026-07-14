@@ -268,6 +268,58 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         ["status", "research_end_date", "holdout_start_date", "firewall_rule", "start_factor_search"],
         ["clean_holdout_campaign_plan.json"],
     ),
+    "feature_validity_manifest": _definition(
+        "feature_validity_manifest",
+        ["shape", "dtype", "feature_manifest_hash", "validity_sha256", "feature_summaries", "invalid_values_stored_as_zero"],
+        ["feature_validity_manifest.json"],
+        optional=["artifact_type", "schema_version", "producer", "created_at", "artifact_metadata", "feature_tensor_sha256"],
+    ),
+    "historical_index_snapshot_proof": _definition(
+        "historical_index_snapshot_proof",
+        ["index_code", "historical_constituent_proof", "snapshot_count", "snapshot_range", "month_coverage_count", "missing_months", "max_snapshot_gap_days", "union_member_count", "current_member_count", "removed_member_leakage", "stock_axis_hash", "date_axis_hash", "input_fingerprint", "partition_sha256", "blockers"],
+        ["snapshot_proof_manifest.json"],
+    ),
+    "historical_union_members": _definition(
+        "historical_union_members",
+        ["ts_code"],
+        ["historical_union_members.jsonl"],
+        kind="jsonl",
+        allow_empty=False,
+    ),
+    "historical_index_snapshots": _definition(
+        "historical_index_snapshots",
+        ["index_code", "snapshot_date", "ts_code", "weight"],
+        ["index_snapshots.jsonl"],
+        kind="jsonl",
+        allow_empty=False,
+    ),
+    "task_051_preflight_audit": _definition(
+        "task_051_preflight_audit",
+        ["status", "source_campaign_id", "raw_data_index_hash", "freeze_hash", "inputs", "suspension_record_count", "dated_suspension_event_count", "unknown_suspension_event_count", "blockers"],
+        ["task_051_preflight_audit.json"],
+    ),
+    "research_observation_ledger": _definition(
+        "research_observation_ledger",
+        ["campaign_id", "artifact_path", "observed_target_start_date", "max_observed_target_date", "formula_candidate_influenced", "selection_data_reused", "untouched_holdout", "evidence_level"],
+        ["research_observation_ledger.jsonl"],
+        kind="jsonl",
+        allow_empty=True,
+    ),
+    "future_untouched_holdout_plan": _definition(
+        "future_untouched_holdout_plan",
+        ["status", "max_observed_target_date", "earliest_holdout_date", "selection_data_reused", "untouched_holdout", "evidence_level", "reason"],
+        ["future_untouched_holdout_plan.json"],
+    ),
+    "targeted_backfill_plan": _definition(
+        "targeted_backfill_plan",
+        ["status", "default_action", "source_index_hash", "gaps", "credentials_required", "print_credentials"],
+        ["targeted_backfill_plan.json"],
+    ),
+    "task_051_engineering_report": _definition(
+        "task_051_engineering_report",
+        ["status", "historical_snapshot_proof", "universe_mode", "alpha_discovery_data_ready", "research_holdout_firewall_enabled", "run_twenty_factor_validation", "snapshot_summary", "blockers", "certification_queue_count", "portfolio_queue_count", "paper_deployment_queue_count", "live_deployment_queue_count"],
+        ["task_051_engineering_report.json"],
+    ),
     "validation_candidate_dedup_report": _definition(
         "validation_candidate_dedup_report",
         ["validation_campaign_id", "candidate_count", "duplicate_count"],

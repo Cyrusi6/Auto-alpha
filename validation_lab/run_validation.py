@@ -33,6 +33,7 @@ from .models import (
     PlaceboTestResult,
     ValidationIssue,
     ValidationLabReport,
+    ValidationSeverity,
 )
 from .multiple_testing import analyze_multiple_testing
 from .overfit import estimate_overfit_risk
@@ -78,6 +79,8 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--matrix-refresh-report-path")
     parser.add_argument("--matrix-cache-dir")
     parser.add_argument("--feature-tensor-path")
+    parser.add_argument("--feature-validity-tensor-path")
+    parser.add_argument("--snapshot-proof-manifest-path")
     parser.add_argument("--campaign-manifest-path")
     parser.add_argument("--materialization-dir")
     parser.add_argument("--materialization-manifest-path")
@@ -109,7 +112,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--universe-name")
     parser.add_argument("--universe-file")
     parser.add_argument("--split-method", default="rolling_walk_forward")
-    parser.add_argument("--validation-policy", default="real_long_history_engineering_robustness_v1")
+    parser.add_argument("--validation-policy", default="real_long_history_engineering_robustness_v2")
     parser.add_argument("--train-size", type=int, default=756)
     parser.add_argument("--validation-size", type=int, default=126)
     parser.add_argument("--test-size", type=int, default=126)
@@ -279,6 +282,10 @@ def _run_single(
                     feature_cutoff_mode=matrix["feature_cutoff_mode"],
                     point_in_time=True,
                     campaign_manifest_path=args.campaign_manifest_path,
+                    feature_validity_tensor_path=args.feature_validity_tensor_path,
+                    snapshot_proof_manifest_path=args.snapshot_proof_manifest_path,
+                    promotion_allowlist_path=args.feature_promotion_allowlist_path,
+                    promotion_denylist_path=args.feature_promotion_denylist_path,
                 ),
                 args.materialization_dir,
                 device=args.device,
@@ -301,6 +308,9 @@ def _run_single(
             device="cpu",
             universe_name=args.universe_name,
             universe_file=args.universe_file,
+            research_end_date=args.research_end_date,
+            holdout_start_date=args.holdout_start_date,
+            label_horizon=args.label_horizon,
         ).load_data()
         factors = store.load_factor_values_matrix(factor_id, loader.ts_codes, loader.trade_dates, device="cpu")
         validity = torch.isfinite(factors)
@@ -312,6 +322,7 @@ def _run_single(
             "active_mask": raw_data_cache.get("active_mask"),
             "pit_available_mask": raw_data_cache.get("pit_available_mask"),
             "index_member_matrix": raw_data_cache.get("index_member_matrix"),
+            "firewall_proof": loader.date_firewall.proof(loader.trade_dates, raw_truncated_before_compute=True) if loader.date_firewall else {},
         }
     effective_embargo = max(int(args.embargo_size), int(factor_record.lookback_days or 1) + int(args.label_horizon))
     splits = build_splits(
@@ -340,7 +351,7 @@ def _run_single(
     screening_reproduction = _screening_reproduction(factor_record, factors, target_ret, trade_dates)
     if screening_reproduction.get("available") and not screening_reproduction.get("within_tolerance"):
         issues.append(ValidationIssue("blocker", "screening_reproduction_mismatch", "materialized factor did not reproduce original full-eval metrics", screening_reproduction))
-        validation_summary = replace(validation_summary, blocker_count=validation_summary.blocker_count + 1, status="blocked")
+        validation_summary = replace(validation_summary, blocker_count=validation_summary.blocker_count + 1, status="statistically_rejected")
     promotion_metadata, promotion_issues = _feature_promotion_metadata(
         args.feature_set_manifest_path,
         list(_factor_field(store, factor_id, "formula") or []),
@@ -352,7 +363,15 @@ def _run_single(
             validation_summary,
             blocker_count=validation_summary.blocker_count + sum(item.severity == "blocker" for item in promotion_issues),
             warning_count=validation_summary.warning_count + sum(item.severity == "warning" for item in promotion_issues),
-            status="blocked",
+            status="statistically_rejected",
+        )
+    firewall_proof = dict(matrix.get("firewall_proof") or {})
+    if args.research_end_date and not firewall_proof.get("research_holdout_firewall_enabled"):
+        issues.append(ValidationIssue("blocker", "research_firewall_proof_failed", "research cutoff was configured without a proven pre-compute data boundary", firewall_proof))
+        validation_summary = replace(
+            validation_summary,
+            blocker_count=validation_summary.blocker_count + 1,
+            status="data_blocked",
         )
     multiple_testing, mt_rows = analyze_multiple_testing(
         factor_store=store,
@@ -411,14 +430,15 @@ def _run_single(
             "screening_reproduction": screening_reproduction,
             "research_end_date": args.research_end_date,
             "holdout_start_date": args.holdout_start_date,
-            "research_holdout_firewall_enabled": bool(args.research_end_date or args.holdout_start_date),
+            "research_holdout_firewall_enabled": bool(firewall_proof.get("research_holdout_firewall_enabled", False)),
+            "research_holdout_firewall_proof": firewall_proof,
             "universe_mode": matrix.get("universe_mode", "unknown"),
             "survivorship_bias_blocker": bool(matrix.get("survivorship_bias_blocker", False)),
             **_feature_pit_metadata(args.feature_set_manifest_path, list(_factor_field(store, factor_id, "formula") or [])),
             **promotion_metadata,
         },
     )
-    status = validation_summary.status
+    status = "historical_replay_passed" if validation_summary.status == "engineering_passed" else validation_summary.status
     report = ValidationLabReport(
         created_at=_utc_now(),
         target=target.to_dict(),
@@ -513,6 +533,15 @@ def _load_governed_matrix_context(args: argparse.Namespace) -> dict[str, Any]:
         "raw_data_cache": masks | {"target_ret": target_tensor},
         "universe_mode": "fixed_asof_constituents" if fixed_asof else "daily_pit_constituents",
         "survivorship_bias_blocker": fixed_asof,
+        "firewall_proof": {
+            "research_holdout_firewall_enabled": bool(manifest.get("research_holdout_firewall_enabled", False)),
+            "research_end_date": manifest.get("research_end_date"),
+            "holdout_start_date": manifest.get("holdout_start_date"),
+            "label_horizon": manifest.get("label_horizon"),
+            "eligible_date_hash": manifest.get("eligible_date_hash"),
+            "raw_truncated_before_compute": bool(manifest.get("raw_truncated_before_compute", False)),
+            "out_of_bounds_access_count": int(manifest.get("firewall_out_of_bounds_access_count", 0) or 0),
+        },
     }
 
 

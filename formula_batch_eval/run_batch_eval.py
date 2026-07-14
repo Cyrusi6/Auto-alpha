@@ -67,6 +67,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--feature-set-manifest-path")
     parser.add_argument("--alpha-campaign-id")
     parser.add_argument("--feature-promotion-policy-hash")
+    parser.add_argument("--research-end-date")
+    parser.add_argument("--holdout-start-date")
+    parser.add_argument("--label-horizon", type=int, default=1)
+    parser.add_argument("--eligible-date-hash")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -123,6 +127,10 @@ def main(argv: list[str] | None = None) -> int:
         feature_set_manifest_path=args.feature_set_manifest_path,
         alpha_campaign_id=args.alpha_campaign_id,
         feature_promotion_policy_hash=args.feature_promotion_policy_hash,
+        research_end_date=args.research_end_date,
+        holdout_start_date=args.holdout_start_date,
+        label_horizon=args.label_horizon,
+        eligible_date_hash=args.eligible_date_hash,
     )
     result = FormulaBatchEvaluator(config).run(requests)
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))

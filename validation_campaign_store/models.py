@@ -86,7 +86,7 @@ class ValidationCandidateResult:
     stress_pass_ratio: float = 0.0
     turnover_mean: float = 0.0
     coverage_mean: float = 0.0
-    max_drawdown: float = 0.0
+    max_drawdown: float | None = None
     validation_score: float = 0.0
     blocker_count: int = 0
     warning_count: int = 0

@@ -77,7 +77,7 @@ class ProductionDailyRunner:
         capacity_aware: bool = False,
         execution_plan_dir: str | Path | None = None,
         max_participation: float = 0.10,
-        execution_buckets: str | tuple[str, ...] = "open,morning,afternoon,close",
+        execution_buckets: str | tuple[str, ...] = "open",
         broker_adapter: str = "paper",
         broker_store_dir: str | Path | None = None,
         broker_outbox_dir: str | Path | None = None,
@@ -598,7 +598,7 @@ class ProductionDailyRunner:
                 parent_orders=parent_orders,
                 child_orders=child_orders,
                 buckets=sorted({order.bucket for order in child_orders}),
-                metadata={"approved": True},
+                metadata={"approved": True, "price_field": "open", "time_contract": "next_trade_day_open"},
             )
             simulated = simulate_child_orders(schedule, loader)
             plan_result = ExecutionPlanResult(

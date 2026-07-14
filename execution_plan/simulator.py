@@ -20,7 +20,10 @@ def simulate_child_orders(
     cost_model = cost_model or AShareCostModel()
     trading_rules = trading_rules or AShareTradingRules()
     date_idx = loader.trade_dates.index(schedule.trade_date)
-    close = loader.raw_data_cache["close"].detach().cpu()
+    price_field = str(schedule.metadata.get("price_field") or "")
+    if price_field != "open" or schedule.buckets != ["open"]:
+        raise ValueError("daily execution simulator only supports real open fills")
+    prices = loader.raw_data_cache[price_field].detach().cpu()
     volume = loader.raw_data_cache.get("volume").detach().cpu()
     is_suspended = loader.raw_data_cache.get("is_suspended").detach().cpu()
     limit_up = loader.raw_data_cache.get("limit_up_flag").detach().cpu()
@@ -32,7 +35,7 @@ def simulate_child_orders(
     for child in schedule.child_orders:
         stock_idx = loader.ts_codes.index(child.ts_code)
         side = child.side.upper()
-        price = float(close[stock_idx, date_idx].item())
+        price = float(prices[stock_idx, date_idx].item())
         if side == "BUY":
             allowed, reason = trading_rules.can_buy(
                 price,

@@ -26,7 +26,7 @@ def test_data_loader_uses_matrix_cache_when_requested(tmp_path):
     assert matrix_loader.trade_dates == json_loader.trade_dates
     assert matrix_loader.feat_tensor.shape == json_loader.feat_tensor.shape
     assert matrix_loader.target_ret.shape == json_loader.target_ret.shape
-    assert torch.allclose(matrix_loader.raw_data_cache["adjusted_close"], json_loader.raw_data_cache["adjusted_close"])
+    assert torch.allclose(matrix_loader.raw_data_cache["adjusted_close"], json_loader.raw_data_cache["adjusted_close"], equal_nan=True)
     assert torch.allclose(matrix_loader.raw_data_cache["limit_up_flag"], json_loader.raw_data_cache["limit_up_flag"])
     assert torch.equal(matrix_loader.industry_codes.cpu(), json_loader.industry_codes.cpu())
 

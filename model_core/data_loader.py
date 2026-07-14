@@ -11,6 +11,7 @@ import torch
 
 from .config import ModelConfig
 from .factors import AShareFeatureEngineer
+from research_firewall import DateFirewall, ResearchDataView
 
 
 class AShareDataLoader:
@@ -37,6 +38,9 @@ class AShareDataLoader:
         corporate_action_application_mode: str = "ex_date",
         feature_set_name: str = "ashare_features_v1",
         feature_set_manifest_path: str | Path | None = None,
+        research_end_date: str | None = None,
+        holdout_start_date: str | None = None,
+        label_horizon: int = 1,
     ):
         self.data_dir = Path(data_dir) if data_dir is not None else Path(ModelConfig.DATA_DIR)
         self.device = torch.device(device) if device is not None else ModelConfig.DEVICE
@@ -59,6 +63,7 @@ class AShareDataLoader:
         self.corporate_action_application_mode = corporate_action_application_mode
         self.feature_set_name = feature_set_name
         self.feature_set_manifest_path = Path(feature_set_manifest_path) if feature_set_manifest_path is not None else None
+        self.date_firewall = DateFirewall(research_end_date, holdout_start_date, label_horizon) if research_end_date else None
         self.ts_codes: list[str] = []
         self.trade_dates: list[str] = []
         self.security_metadata: dict[str, dict[str, object]] = {}
@@ -83,6 +88,8 @@ class AShareDataLoader:
         ]
         self.ts_codes = sorted(str(record["ts_code"]) for record in selected_securities)
         self.trade_dates = sorted(record["trade_date"] for record in calendar if record.get("is_open", False))
+        if self.date_firewall is not None:
+            self.trade_dates = list(ResearchDataView(self.date_firewall, tuple(self.trade_dates)).eligible_dates)
         if not self.ts_codes or not self.trade_dates:
             raise ValueError("A-share data directory does not contain aligned securities and trade dates")
         self.security_metadata = {
@@ -278,10 +285,20 @@ class AShareDataLoader:
                 if not line.strip():
                     continue
                 record = json.loads(line)
+                if self.date_firewall is not None and not self._record_inside_research(record):
+                    continue
                 if ts_codes is not None and "ts_code" in record and str(record.get("ts_code")) not in ts_codes:
                     continue
                 records.append(record)
         return records
+
+    def _record_inside_research(self, record: dict[str, object]) -> bool:
+        cutoff = self.date_firewall.research_end_date
+        for field in ("trade_date", "ann_date", "f_ann_date", "availability_date"):
+            value = record.get(field)
+            if value not in {None, ""} and str(value) > cutoff:
+                return False
+        return True
 
     def _load_universe_codes(self) -> set[str] | None:
         path: Path | None = self.universe_file
@@ -296,18 +313,16 @@ class AShareDataLoader:
 
     def _pivot_market(self, df: pd.DataFrame, column: str) -> list[list[float]]:
         if df.empty or column not in df.columns:
-            return [[0.0 for _ in self.trade_dates] for _ in self.ts_codes]
+            return [[float("nan") for _ in self.trade_dates] for _ in self.ts_codes]
         pivot = df.pivot_table(index="trade_date", columns="ts_code", values=column, aggfunc="last")
         pivot = pivot.reindex(index=self.trade_dates, columns=self.ts_codes)
-        pivot = pivot.ffill().fillna(0.0)
         return pivot.to_numpy(dtype="float32").T.tolist()
 
     def _pivot_optional_market(self, df: pd.DataFrame, column: str) -> list[list[float]]:
         if df.empty or column not in df.columns:
-            return [[0.0 for _ in self.trade_dates] for _ in self.ts_codes]
+            return [[float("nan") for _ in self.trade_dates] for _ in self.ts_codes]
         pivot = df.pivot_table(index="trade_date", columns="ts_code", values=column, aggfunc="last")
         pivot = pivot.reindex(index=self.trade_dates, columns=self.ts_codes)
-        pivot = pivot.ffill().fillna(0.0)
         return pivot.to_numpy(dtype="float32").T.tolist()
 
     def _pivot_adjustment_factor(self, df: pd.DataFrame) -> list[list[float]]:
@@ -338,10 +353,9 @@ class AShareDataLoader:
 
     def _pivot_daily_basic(self, df: pd.DataFrame, column: str) -> list[list[float]]:
         if column not in df.columns:
-            return [[0.0 for _ in self.trade_dates] for _ in self.ts_codes]
+            return [[float("nan") for _ in self.trade_dates] for _ in self.ts_codes]
         pivot = df.pivot_table(index="trade_date", columns="ts_code", values=column, aggfunc="last")
         pivot = pivot.reindex(index=self.trade_dates, columns=self.ts_codes)
-        pivot = pivot.ffill().fillna(0.0)
         return pivot.to_numpy(dtype="float32").T.tolist()
 
     def _align_financial(self, df: pd.DataFrame, column: str) -> list[list[float]]:

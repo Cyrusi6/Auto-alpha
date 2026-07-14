@@ -96,6 +96,9 @@ class AlphaFactoryRunner:
             target_return_mode=self.config.target_return_mode,
             feature_set_name=manifest.feature_set_name,
             feature_set_manifest_path=self.paths.get("feature_set_manifest_path") or self.config.feature_set_manifest_path,
+            research_end_date=self.config.research_end_date,
+            holdout_start_date=self.config.holdout_start_date,
+            label_horizon=self.config.label_horizon,
         ).load_data()
         candidates, proxy_rows, proxy_summary = self._load_or_run_proxy(candidates, loader)
         full_rows, full_summary = self._run_full_eval(candidates, data_dir, campaign)
@@ -276,6 +279,9 @@ class AlphaFactoryRunner:
                 point_in_time=self.config.point_in_time,
                 corporate_action_aware=self.config.corporate_action_aware,
                 target_return_mode=self.config.target_return_mode,
+                research_end_date=self.config.research_end_date,
+                holdout_start_date=self.config.holdout_start_date,
+                label_horizon=self.config.label_horizon,
             ).load_data()
             result = build_feature_tensor_artifacts(
                 loader,
@@ -366,6 +372,7 @@ class AlphaFactoryRunner:
             max_candidates=max(self.config.proxy_max_candidates, 0),
             max_dates=max(self.config.proxy_max_dates, 1),
             vocab=make_formula_vocab_from_manifest(self.current_feature_manifest) if self.current_feature_manifest is not None else None,
+            seed=self.config.seed,
         )
         self.paths["alpha_proxy_eval_path"] = str(write_jsonl_artifact(proxy_path, rows, "alpha_proxy_eval", "alpha_factory"))
         self.paths["alpha_proxy_eval_report_path"] = str(

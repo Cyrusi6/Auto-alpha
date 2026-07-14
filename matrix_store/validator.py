@@ -53,8 +53,12 @@ def validate_matrix_cache(cache_dir: str | Path) -> MatrixValidationReport:
             expected_shape = (n_stocks,) if field == "industry_codes" else (n_stocks, n_dates)
             if tuple(array.shape) != expected_shape:
                 errors.append(f"{field} shape {list(array.shape)} != {list(expected_shape)}")
-            if np.issubdtype(array.dtype, np.number) and not np.isfinite(array).all():
-                errors.append(f"{field} contains non-finite values")
+            if np.issubdtype(array.dtype, np.number):
+                if np.isinf(array).any():
+                    errors.append(f"{field} contains infinite values")
+                nan_count = int(np.isnan(array).sum())
+                if nan_count:
+                    warnings.append(f"{field} contains {nan_count} missing values; consumers must use validity masks")
     except Exception as exc:
         errors.append(str(exc))
 
