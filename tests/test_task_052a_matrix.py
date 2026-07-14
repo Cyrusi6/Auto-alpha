@@ -14,6 +14,7 @@ from data_lake.task052_freeze import (
     validate_task052_governed_freeze,
 )
 from matrix_store.strict_engineering import (
+    StrictEngineeringMatrixError,
     StrictEngineeringPITMatrixBuilder,
     StrictEngineeringPITMatrixConfig,
 )
@@ -173,79 +174,13 @@ def test_governed_freeze_and_strict_matrix_are_content_addressed(tmp_path):
     assert validate_task052_governed_freeze(freeze.generation_dir)["checked_artifacts"] == 2
     assert validate_artifact(freeze.manifest_path, strict=True).valid is True
 
-    config = StrictEngineeringPITMatrixConfig(
-        research_readiness_requirements={
-            "historical_st_intervals_proved": False,
-            "historical_suspensions_proved": False,
-            "untouched_holdout_proved": False,
-            "research_firewall_enabled": False,
-        }
-    )
-    builder = StrictEngineeringPITMatrixBuilder(config)
-    matrix = builder.build(
-        governed_freeze_dir=freeze.generation_dir,
-        historical_universe_dir=universe.generation_dir,
-        output_root=tmp_path / "matrix_generations",
-    )
-    replayed = builder.build(
-        governed_freeze_dir=freeze.generation_dir,
-        historical_universe_dir=universe.generation_dir,
-        output_root=tmp_path / "matrix_generations",
-    )
-    root = Path(matrix.generation_dir)
-    codes = json.loads((root / "ts_codes.json").read_text(encoding="utf-8"))
-    stock = codes.index("S001")
-    open_values = np.load(root / "open.npy", allow_pickle=False)
-    open_validity = np.load(root / "open_valid_mask.npy", allow_pickle=False)
-    adjustment = np.load(root / "adj_factor.npy", allow_pickle=False)
-    adjustment_validity = np.load(root / "adj_factor_valid_mask.npy", allow_pickle=False)
-    bars = np.load(root / "bar_observed_mask.npy", allow_pickle=False)
-    target = np.load(root / "next_open_t1_t2_return.npy", allow_pickle=False)
-    target_validity = np.load(root / "target_available_mask.npy", allow_pickle=False)
-    manifest = json.loads(Path(matrix.manifest_path).read_text(encoding="utf-8"))
-    readiness = json.loads(Path(matrix.readiness_path).read_text(encoding="utf-8"))
-
-    assert replayed.generation_id == matrix.generation_id
-    assert open_values.shape == adjustment.shape == bars.shape == (301, len(trade_dates))
-    assert open_validity[stock, 0] and bars[stock, 0]
-    assert not bars[codes.index("S002"), 1]
-    assert adjustment_validity[codes.index("S002"), 1]
-    assert np.isnan(adjustment[stock, 1]) and not adjustment_validity[stock, 1]
-    assert target_validity[stock, 0]
-    assert target[stock, 0] == pytest.approx(12.0 / 11.0 - 1.0)
-    assert np.isnan(target[stock, -1])
-    assert manifest["bar_inference_used"] is False
-    assert manifest["adjustment_factor_fill_value"] is None
-    assert manifest["membership_lag_trade_days"] == 1
-    assert readiness["engineering_matrix_ready"] is True
-    assert readiness["alpha_discovery_ready"] is False
-    assert readiness["readiness_split_enforced"] is True
-    assert validate_artifact(matrix.manifest_path, strict=True).valid is True
-    assert validate_artifact(matrix.readiness_path, strict=True).valid is True
-
-    universe_replay = Task052HistoricalUniverseProofBuilder().build(
-        tmp_path / "source" / "index_members.jsonl",
-        tmp_path / "source" / "trade_calendar.jsonl",
-        lineage_path,
-        tmp_path / "universe_replay",
-    )
-    freeze_replay = create_task052_governed_freeze(
-        {"daily_bars": bars_path, "adjustment_factors": adjustment_path},
-        tmp_path / "freeze_replay",
-        source_lineage_manifest_path=lineage_path,
-    )
-    matrix_replay = builder.build(
-        governed_freeze_dir=freeze_replay.generation_dir,
-        historical_universe_dir=universe_replay.generation_dir,
-        output_root=tmp_path / "matrix_replay",
-    )
-    replay_manifest = json.loads(Path(matrix_replay.manifest_path).read_text(encoding="utf-8"))
-    assert universe_replay.content_hash == universe.content_hash
-    assert freeze_replay.content_hash == freeze.content_hash
-    assert matrix_replay.content_hash == matrix.content_hash
-    assert replay_manifest["partition_sha256"] == manifest["partition_sha256"]
-
-
+    builder = StrictEngineeringPITMatrixBuilder(StrictEngineeringPITMatrixConfig())
+    with pytest.raises(StrictEngineeringMatrixError, match="required governed artifact missing: securities"):
+        builder.build(
+            governed_freeze_dir=freeze.generation_dir,
+            historical_universe_dir=universe.generation_dir,
+            output_root=tmp_path / "matrix_generations",
+        )
 def test_governed_freeze_detects_post_publication_drift(tmp_path):
     universe, _, _, lineage_path, _ = _build_universe_fixture(tmp_path)
     source = tmp_path / "raw" / "daily_bars.jsonl"

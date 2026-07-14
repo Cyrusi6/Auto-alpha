@@ -70,6 +70,9 @@ def test_metadata_only_materialization_matches_direct_stackvm_and_resumes(tmp_pa
     assert bool(validity.all())
     assert manifest["value_sha256"] and manifest["validity_sha256"]
     assert validate_artifact(Path(first.manifest_path), strict=True).valid is True
+    pointer = json.loads((tmp_path / "materialized" / factor.factor_id / "current_materialization.json").read_text(encoding="utf-8"))
+    assert pointer["generation_id"] == first.input_fingerprint
+    assert Path(first.manifest_path).parent.name == first.input_fingerprint
     second = materializer.materialize(factor)
     assert second.cache_hit is True
 
@@ -77,11 +80,15 @@ def test_metadata_only_materialization_matches_direct_stackvm_and_resumes(tmp_pa
 def test_lineage_or_transform_drift_causes_cache_miss(tmp_path):
     factor, inputs, _ = _materialization_fixture(tmp_path)
     materializer = FactorMaterializer(inputs, tmp_path / "materialized", min_coverage=0.01)
-    assert materializer.materialize(factor).cache_hit is False
+    original = materializer.materialize(factor)
+    assert original.cache_hit is False
     changed = FactorRecord(**{**factor.__dict__, "formula_hash": "changed", "transform_method": "zscore"})
     rerun = materializer.materialize(changed)
     assert rerun.status == "success"
     assert rerun.cache_hit is False
+    generations = tmp_path / "materialized" / factor.factor_id / "generations"
+    assert materializer.materialize(factor).cache_hit is True
+    assert {path.name for path in generations.iterdir()} == {original.input_fingerprint, rerun.input_fingerprint}
     matrix_manifest = Path(inputs.matrix_cache_dir) / "matrix_version_manifest.json"
     matrix_manifest.write_text(json.dumps({"target_return_mode": "adjusted_close", "feature_cutoff_mode": "next_open", "cache_hash": "changed"}), encoding="utf-8")
     drifted = materializer.materialize(changed)

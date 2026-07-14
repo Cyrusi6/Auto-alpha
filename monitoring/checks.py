@@ -1885,6 +1885,8 @@ def check_validation_campaign_store(
     task_051 = _read_json(task_051_path) if task_051_path and task_051_path.exists() else {}
     task_052_path = Path(report_path).parent / "task_052_readiness.json" if report_path else None
     task_052 = _read_json(task_052_path) if task_052_path and task_052_path.exists() else {}
+    task_053_path = Path(report_path).parent / "task_053_readiness.json" if report_path else None
+    task_053 = _read_json(task_053_path) if task_053_path and task_053_path.exists() else {}
     registry = _read_json(Path(registry_path)) if registry_path else {}
     payload = report or registry
     status = str(payload.get("status", "missing") if payload else "missing")
@@ -1919,6 +1921,12 @@ def check_validation_campaign_store(
         "task_052_research_firewall_ready": bool(task_052.get("research_firewall_ready", False)),
         "task_052_untouched_holdout_ready": bool(task_052.get("untouched_holdout_ready", False)),
         "task_052_blocker_count": len(task_052.get("blockers", []) or []),
+        "task_053_status": task_053.get("status", "missing") if task_053 else "missing",
+        "task_053_retrospective_replay_ready": bool(task_053.get("retrospective_replay_ready", False)),
+        "task_053_four_gpu_replay_completed": bool(task_053.get("four_gpu_replay_completed", False)),
+        "task_053_certification_ready": bool(task_053.get("certification_ready", False)),
+        "task_053_engineering_blocker_count": len(task_053.get("engineering_blockers", []) or []),
+        "task_053_certification_blocker_count": len(task_053.get("certification_blockers", []) or []),
     }, alerts
 
 

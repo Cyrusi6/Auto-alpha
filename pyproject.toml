@@ -111,6 +111,8 @@ packages = [
     "shadow_trading",
     "strategy_manager",
     "task_051_a",
+    "task_052_a",
+    "task_053_a",
     "universe",
     "validation_campaign_store",
     "live_readiness",

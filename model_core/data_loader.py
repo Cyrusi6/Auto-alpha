@@ -71,6 +71,9 @@ class AShareDataLoader:
         self.security_metadata: dict[str, dict[str, object]] = {}
         self.industry_codes: torch.Tensor | None = None
         self.raw_data_cache: dict[str, torch.Tensor] = {}
+        self.raw_validity_cache: dict[str, torch.Tensor] = {}
+        self.feature_validity: torch.Tensor | None = None
+        self.target_available: torch.Tensor | None = None
         self.feature_v3_extended_summary: dict[str, object] | None = None
         self.raw_corporate_actions: list[dict[str, object]] = []
         self.corporate_action_events: list[dict[str, object]] = []
@@ -242,15 +245,31 @@ class AShareDataLoader:
         self.trade_dates = [str(item) for item in json.loads((self.matrix_cache_dir / "trade_dates.json").read_text(encoding="utf-8"))]
         self.security_metadata = {ts_code: {"ts_code": ts_code} for ts_code in self.ts_codes}
         raw: dict[str, torch.Tensor] = {}
-        for field in manifest.get("raw_fields", []):
+        strict_fields = list(manifest.get("raw_fields", [])) + [
+            "adj_factor", "turnover_rate", "volume_ratio", "total_mv", "pb", "pe_ttm", "roe", "revenue_yoy"
+        ]
+        for field in dict.fromkeys(strict_fields):
             path = self.matrix_cache_dir / f"{field}.npy"
             if path.exists():
                 raw[str(field)] = torch.tensor(np.asarray(np.load(path, mmap_mode="r"), dtype=np.float32), device=self.device)
+            validity_path = next(
+                (candidate for candidate in (
+                    self.matrix_cache_dir / f"{field}_validity.npy",
+                    self.matrix_cache_dir / f"{field}_valid_mask.npy",
+                ) if candidate.exists()),
+                None,
+            )
+            if validity_path is not None:
+                self.raw_validity_cache[str(field)] = torch.tensor(
+                    np.asarray(np.load(validity_path, mmap_mode="r"), dtype=np.bool_), device=self.device
+                )
         aliases = {
-            "index_member_matrix": "index_membership.npy",
-            "active_mask": "bar_observed_mask.npy",
-            "pit_available_mask": "bar_observed_mask.npy",
-            "membership_known": "membership_known_mask.npy",
+            "index_member_matrix": "membership.npy",
+            "active_mask": "active.npy",
+            "pit_available_mask": "signal_eligible_at_close.npy",
+            "signal_eligible_at_close": "signal_eligible_at_close.npy",
+            "bar_observed_mask": "bar_observed.npy",
+            "membership_known": "membership_known.npy",
         }
         for name, filename in aliases.items():
             path = self.matrix_cache_dir / filename
@@ -261,6 +280,10 @@ class AShareDataLoader:
         raw["adjusted_close"] = raw["close"] * raw["adj_factor"]
         if "open" in raw:
             raw["adjusted_open"] = raw["open"] * raw["adj_factor"]
+        if "total_mv" in raw:
+            raw["log_mkt_cap"] = torch.log1p(torch.clamp(raw["total_mv"], min=0.0))
+            if "total_mv" in self.raw_validity_cache:
+                self.raw_validity_cache["log_mkt_cap"] = self.raw_validity_cache["total_mv"]
         self.raw_data_cache = raw
         original_dates = list(self.trade_dates)
         selected = [index for index, date in enumerate(original_dates) if self.date_firewall is None or date <= self.date_firewall.research_end_date]
@@ -273,10 +296,33 @@ class AShareDataLoader:
         if len(selected) != len(original_dates):
             target = target.index_select(1, torch.tensor(selected, dtype=torch.long, device=self.device))
         self.target_return_mode = target_name
-        self.industry_codes = torch.zeros(len(self.ts_codes), dtype=torch.long, device=self.device)
-        self.raw_data_cache["industry_codes"] = self.industry_codes
-        self.raw_data_cache["industry_code_matrix"] = self.industry_codes.unsqueeze(1).expand(-1, len(self.trade_dates))
-        self.feat_tensor = self._compute_feature_tensor()
+        industry_path = self.matrix_cache_dir / "industry_code_matrix.npy"
+        if industry_path.exists():
+            industry_matrix = torch.tensor(np.asarray(np.load(industry_path, mmap_mode="r")), dtype=torch.long, device=self.device)
+            self.raw_data_cache["industry_code_matrix"] = industry_matrix
+            self.industry_codes = industry_matrix[:, -1]
+            self.raw_data_cache["industry_codes"] = self.industry_codes
+        available_path = self.matrix_cache_dir / "target_available_mask.npy"
+        if not available_path.exists():
+            raise ValueError("strict persisted target availability missing")
+        self.target_available = torch.tensor(
+            np.asarray(np.load(available_path, mmap_mode="r"), dtype=np.bool_), device=self.device
+        )
+        if len(selected) != len(original_dates):
+            self.target_available = self.target_available.index_select(
+                1, torch.tensor(selected, dtype=torch.long, device=self.device)
+            )
+        self.raw_data_cache["target_available_mask"] = self.target_available
+        if self.feature_set_manifest_path is not None:
+            from feature_factory.builder import load_feature_manifest
+            from feature_factory.validity import build_feature_values_and_validity
+
+            feature_manifest = load_feature_manifest(self.feature_set_manifest_path)
+            self.feat_tensor, self.feature_validity, self.feature_validity_summary = build_feature_values_and_validity(
+                self, feature_manifest
+            )
+        else:
+            self.feat_tensor = self._compute_feature_tensor()
         self.target_ret = target
         self._apply_research_view()
         return self
@@ -622,10 +668,17 @@ class AShareDataLoader:
         for name, value in list(self.raw_data_cache.items()):
             if isinstance(value, torch.Tensor) and value.ndim >= 2 and value.shape[-1] == len(source_dates):
                 self.raw_data_cache[name] = value.index_select(value.ndim - 1, index)
+        for name, value in list(self.raw_validity_cache.items()):
+            if isinstance(value, torch.Tensor) and value.ndim >= 2 and value.shape[-1] == len(source_dates):
+                self.raw_validity_cache[name] = value.index_select(value.ndim - 1, index)
         if self.feat_tensor is not None:
             self.feat_tensor = self.feat_tensor.index_select(2, index)
+        if self.feature_validity is not None:
+            self.feature_validity = self.feature_validity.index_select(2, index)
         if self.target_ret is not None:
             self.target_ret = self.target_ret.index_select(1, index)
+            if self.target_available is not None and self.target_available.shape[1] == len(source_dates):
+                self.target_available = self.target_available.index_select(1, index)
             self.date_firewall.audit_observation_access(
                 self.trade_dates,
                 component="data_loader",
@@ -652,6 +705,9 @@ class AShareDataLoader:
         for name, value in list(self.raw_data_cache.items()):
             if isinstance(value, torch.Tensor) and value.ndim >= 2 and value.shape[-1] == len(source_dates):
                 self.raw_data_cache[name] = value.index_select(value.ndim - 1, index)
+        for name, value in list(self.raw_validity_cache.items()):
+            if isinstance(value, torch.Tensor) and value.ndim >= 2 and value.shape[-1] == len(source_dates):
+                self.raw_validity_cache[name] = value.index_select(value.ndim - 1, index)
         self.trade_dates = bounded_dates
         self.date_firewall.audit_observation_access(
             bounded_dates,

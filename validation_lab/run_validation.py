@@ -267,6 +267,7 @@ def _run_single(
     if factor_record is None:
         raise RuntimeError(f"factor metadata missing: {factor_id}")
     policy = load_validation_policy(args.validation_policy)
+    manifest_path: str | None = None
     if args.strict_materialization:
         matrix = _load_governed_matrix_context(args)
         manifest_path = args.materialization_manifest_path
@@ -330,9 +331,6 @@ def _run_single(
     eligibility = matrix.get("eligibility")
     if eligibility is not None:
         segments = eligible_date_segments(trade_dates, eligibility)
-        if args.holdout_start_date:
-            segments = [[date for date in segment if date >= args.holdout_start_date] for segment in segments]
-            segments = [segment for segment in segments if segment]
         splits = build_splits_for_eligible_segments(
             args.split_method,
             segments,
@@ -497,6 +495,8 @@ def _run_single(
         stress_results,
         issues,
     )
+    if manifest_path:
+        paths["materialization_manifest_path"] = str(manifest_path)
     return {
         "status": status,
         "factor_id": factor_id,
@@ -528,9 +528,21 @@ def _load_governed_matrix_context(args: argparse.Namespace) -> dict[str, Any]:
     paths = {
         "trade_dates": matrix_dir / "trade_dates.json",
         "ts_codes": matrix_dir / "ts_codes.json",
-        "active_mask": _first_existing_matrix_path(matrix_dir, ["bar_observed_mask.npy", "active_mask.npy"], "active_observation_mask_missing"),
-        "pit_available_mask": _first_existing_matrix_path(matrix_dir, ["bar_observed_mask.npy", "pit_available_mask.npy"], "pit_observation_mask_missing"),
-        "index_member_matrix": _first_existing_matrix_path(matrix_dir, ["index_membership.npy", "index_member_matrix.npy"], "index_membership_missing"),
+        "active_mask": _first_existing_matrix_path(
+            matrix_dir,
+            ["active.npy", "active_mask.npy"],
+            "active_lifecycle_mask_missing",
+        ),
+        "pit_available_mask": _first_existing_matrix_path(
+            matrix_dir,
+            ["signal_eligible_at_close.npy", "pit_available_mask.npy"],
+            "signal_eligibility_mask_missing",
+        ),
+        "index_member_matrix": _first_existing_matrix_path(
+            matrix_dir,
+            ["membership.npy", "index_membership.npy", "index_member_matrix.npy"],
+            "index_membership_missing",
+        ),
         "membership_known": _first_existing_matrix_path(matrix_dir, ["membership_known_mask.npy", "membership_known.npy"], "membership_known_missing"),
         "manifest": _first_existing_matrix_path(matrix_dir, ["task_052a_strict_matrix_manifest.json", "matrix_version_manifest.json"], "matrix_manifest_missing"),
     }
@@ -544,24 +556,25 @@ def _load_governed_matrix_context(args: argparse.Namespace) -> dict[str, Any]:
     masks = {name: torch.tensor(np.asarray(np.load(paths[name], mmap_mode="r"), dtype=np.float32), dtype=torch.bool) for name in ["active_mask", "pit_available_mask", "index_member_matrix"]}
     membership_known = np.asarray(np.load(paths["membership_known"], mmap_mode="r"), dtype=np.bool_)
     membership_by_date = membership_known.reshape(-1) if membership_known.ndim == 1 else membership_known.any(axis=0)
-    gap_path = matrix_dir / "unexplained_data_gap_mask.npy"
-    structural_gap_free = np.ones(len(trade_dates), dtype=np.bool_)
-    if gap_path.exists():
-        gaps = np.asarray(np.load(gap_path, mmap_mode="r"), dtype=np.bool_)
-        structural_gap_free = (~gaps).any(axis=0)
-    diagnostic_boundary = np.ones(len(trade_dates), dtype=np.bool_)
-    if args.holdout_start_date:
-        diagnostic_boundary = np.asarray([date >= args.holdout_start_date for date in trade_dates], dtype=np.bool_)
+    evaluable_path = matrix_dir / "evaluable_date_mask.npy"
+    structural_gap_free = (
+        np.asarray(np.load(evaluable_path, mmap_mode="r"), dtype=np.bool_).reshape(-1)
+        if evaluable_path.exists()
+        else np.ones(len(trade_dates), dtype=np.bool_)
+    )
+    research_boundary = np.ones(len(trade_dates), dtype=np.bool_)
+    if args.research_end_date:
+        research_boundary = np.asarray([date <= args.research_end_date for date in trade_dates], dtype=np.bool_)
     eligibility = build_common_eligibility(
         trade_dates,
         membership_known=membership_by_date,
         snapshot_valid=membership_by_date,
-        target_data_valid=target_valid.any(axis=0) & diagnostic_boundary,
+        target_data_valid=target_valid.any(axis=0) & research_boundary,
         structural_gap_free=structural_gap_free,
     )
     index_np = masks["index_member_matrix"].numpy()
     has_pit_constituent_proof = bool(
-        manifest.get("universe_mode") == "daily_pit_constituents"
+        manifest.get("universe_mode") in {"daily_pit_constituents", "daily_lagged_historical_constituents"}
         and manifest.get("historical_constituent_proof")
     )
     fixed_asof = not has_pit_constituent_proof
@@ -582,13 +595,13 @@ def _load_governed_matrix_context(args: argparse.Namespace) -> dict[str, Any]:
         "target_return_mode": target_mode,
         "feature_cutoff_mode": str(manifest.get("feature_cutoff_mode") or "unknown"),
         "raw_data_cache": masks | {"target_ret": target_tensor},
-        "universe_mode": "fixed_asof_constituents" if fixed_asof else "daily_pit_constituents",
+        "universe_mode": "fixed_asof_constituents" if fixed_asof else str(manifest.get("universe_mode")),
         "survivorship_bias_blocker": fixed_asof,
         "firewall_proof": {
             "research_holdout_firewall_enabled": bool(manifest.get("research_holdout_firewall_enabled", False)),
-            "research_end_date": manifest.get("research_end_date"),
-            "holdout_start_date": manifest.get("holdout_start_date"),
-            "label_horizon": manifest.get("label_horizon"),
+            "research_end_date": manifest.get("research_end_date") or (manifest.get("firewall") or {}).get("research_observable_cutoff"),
+            "holdout_start_date": manifest.get("holdout_start_date") or (manifest.get("firewall") or {}).get("diagnostic_period_start"),
+            "label_horizon": manifest.get("label_horizon") or (manifest.get("firewall") or {}).get("target_endpoint_horizon_trade_days"),
             "eligible_date_hash": manifest.get("eligible_date_hash"),
             "raw_truncated_before_compute": bool(manifest.get("raw_truncated_before_compute", False)),
             "out_of_bounds_access_count": int(manifest.get("firewall_out_of_bounds_access_count", 0) or 0),

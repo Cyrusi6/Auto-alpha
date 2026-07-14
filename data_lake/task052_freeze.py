@@ -16,13 +16,20 @@ from artifact_schema.writer import write_json_artifact
 
 DETERMINISTIC_CREATED_AT = "1970-01-01T00:00:00Z"
 FREEZE_SEMANTIC_CONTRACT = {
-    "task": "052-A",
+    "task": "053-A",
     "copy_mode": "byte_exact",
     "publication": "content_addressed_atomic_directory_rename",
     "overwrite": "prohibited",
     "validation": "all_partition_hashes_recomputed",
-    "version": 1,
+    "manifest_contract": "governed_freeze_v2",
+    "version": 2,
 }
+
+FREEZE_MANIFEST_FILENAMES = (
+    "task_053a_governed_freeze_manifest.json",
+    "task_052a_governed_freeze_manifest.json",
+    "freeze_manifest.json",
+)
 
 
 class GovernedFreezeError(RuntimeError):
@@ -82,7 +89,7 @@ def create_task052_governed_freeze(
         ],
     }
     content_hash = _hash_json(content_inputs)
-    generation_id = f"freeze_052a_{content_hash[:24]}"
+    generation_id = f"freeze_053a_{content_hash[:24]}"
     target = Path(output_root) / generation_id
     if not target.exists():
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -109,6 +116,20 @@ def create_task052_governed_freeze(
                     {key: item[key] for key in ("logical_name", "relative_path", "sha256", "size_bytes")}
                     for item in normalized
                 ],
+                "artifacts_by_name": {
+                    str(item["logical_name"]): {
+                        key: item[key] for key in ("relative_path", "sha256", "size_bytes")
+                    }
+                    for item in normalized
+                },
+                "datasets": {
+                    str(item["logical_name"]): {
+                        "records_path": str(item["relative_path"]),
+                        "sha256": str(item["sha256"]),
+                        "size_bytes": int(item["size_bytes"]),
+                    }
+                    for item in normalized
+                },
                 "immutable": True,
                 "publication": "atomic_directory_rename",
             }
@@ -120,6 +141,12 @@ def create_task052_governed_freeze(
                 created_at=DETERMINISTIC_CREATED_AT,
             )
             manifest_path.chmod(0o444)
+            compatibility_manifest = temporary / "freeze_manifest.json"
+            compatibility_manifest.write_text(
+                manifest_path.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            compatibility_manifest.chmod(0o444)
             os.replace(temporary, target)
         except Exception:
             _make_tree_writable(temporary)
@@ -142,13 +169,14 @@ def validate_task052_governed_freeze(
     expected_content_hash: str | None = None,
 ) -> dict[str, Any]:
     root = Path(generation_dir)
-    manifest_path = root / "task_052a_governed_freeze_manifest.json"
-    if not manifest_path.is_file():
-        raise GovernedFreezeError(f"governed freeze manifest missing: {manifest_path}")
+    manifest_path = resolve_task052_governed_freeze_manifest(root)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if expected_content_hash is not None and manifest.get("content_hash") != expected_content_hash:
         raise GovernedFreezeError("governed freeze content hash mismatch")
-    if manifest.get("semantic_hash") != _hash_json(FREEZE_SEMANTIC_CONTRACT):
+    semantic_contract = manifest.get("semantic_contract")
+    if not isinstance(semantic_contract, dict):
+        raise GovernedFreezeError("governed freeze semantic contract missing")
+    if manifest.get("semantic_hash") != _hash_json(semantic_contract):
         raise GovernedFreezeError("governed freeze semantic hash mismatch")
     checked = 0
     for artifact in manifest.get("artifacts", []):
@@ -167,7 +195,23 @@ def validate_task052_governed_freeze(
         "content_hash": manifest.get("content_hash"),
         "semantic_hash": manifest.get("semantic_hash"),
         "checked_artifacts": checked,
+        "manifest_path": str(manifest_path),
+        "artifacts_by_name": {
+            str(item["logical_name"]): str(item["relative_path"])
+            for item in manifest.get("artifacts", [])
+        },
     }
+
+
+def resolve_task052_governed_freeze_manifest(generation_dir: str | Path) -> Path:
+    root = Path(generation_dir)
+    for filename in FREEZE_MANIFEST_FILENAMES:
+        candidate = root / filename
+        if candidate.is_file():
+            return candidate
+    raise GovernedFreezeError(
+        f"governed freeze manifest missing under {root}; expected one of {','.join(FREEZE_MANIFEST_FILENAMES)}"
+    )
 
 
 def _artifact_relative_path(logical_name: str, source: Path) -> str:

@@ -16,6 +16,7 @@ import torch
 from artifact_schema.writer import write_json_artifact, write_jsonl_artifact
 from evaluation import build_factor_report, split_trade_dates, write_factor_report
 from factor_engine import FactorGateConfig, FactorResearchPipeline
+from factor_engine.transforms import preprocess_factor_with_validity
 from factor_store import (
     ExperimentRecord,
     FactorRecord,
@@ -203,9 +204,30 @@ class FormulaBatchEvaluator:
             payload = self._cache[cache_key]
             return _result_from_cache_payload(request, payload, time.perf_counter() - started)
 
-        raw_factors = self.vm.execute(request.formula_tokens, self.loader.feat_tensor)
-        if raw_factors is None:
+        feature_validity = _loader_feature_validity(self.loader)
+        if hasattr(self.vm, "execute_with_validity"):
+            executed = self.vm.execute_with_validity(request.formula_tokens, self.loader.feat_tensor, feature_validity)
+        else:
+            legacy_values = self.vm.execute(request.formula_tokens, self.loader.feat_tensor)
+            executed = None if legacy_values is None else (legacy_values, torch.isfinite(legacy_values))
+        if executed is None:
             raise RuntimeError(f"formula execution failed: {request.name}")
+        raw_factors, formula_validity = executed
+        signal_eligible = _loader_signal_eligibility(self.loader)
+        transformed_factors, formula_validity = preprocess_factor_with_validity(
+            raw_factors,
+            formula_validity,
+            self.loader.raw_data_cache,
+            self.config.factor_transform,
+            signal_eligible,
+        )
+        target_available = _loader_target_available(self.loader)
+        metric_validity = formula_validity & target_available & torch.isfinite(self.loader.target_ret)
+        evaluation_target = torch.where(
+            metric_validity,
+            self.loader.target_ret,
+            torch.full_like(self.loader.target_ret, float("nan")),
+        )
 
         split_result = split_trade_dates(
             self.loader.trade_dates,
@@ -221,16 +243,17 @@ class FormulaBatchEvaluator:
             enable_gate=self.config.enable_gate,
             correlation_threshold=self.config.correlation_threshold,
         ).run(
-            factors=raw_factors,
+            factors=transformed_factors,
             raw_data=self.loader.raw_data_cache,
-            target_ret=self.loader.target_ret,
+            target_ret=evaluation_target,
             trade_dates=self.loader.trade_dates,
             ts_codes=self.loader.ts_codes,
             store=self.store,
-            transform_method=self.config.factor_transform,
+            transform_method="raw",
             train_ratio=self.config.train_ratio,
             valid_ratio=self.config.valid_ratio,
         )
+        research = replace(research, transform_method=self.config.factor_transform)
         gate_reasons = research.gate_decision.reasons if research.gate_decision is not None else []
         factor_id = make_factor_id(formula_hash)
         report_json_path = None
@@ -249,6 +272,8 @@ class FormulaBatchEvaluator:
                 "gate_decision": gate_payload,
                 "evaluation_lineage": self.lineage,
                 "evaluation_lineage_hash": self.lineage["lineage_hash"],
+                "formula_valid_count": int(formula_validity.sum().item()),
+                "metric_valid_count": int(metric_validity.sum().item()),
                 **(request.metadata or {}),
             }
             self.store.save_factor(
@@ -684,6 +709,33 @@ def _render_report(result: FormulaBatchEvalResult) -> str:
 def _chunks(items: list[FormulaEvalRequest], size: int):
     for idx in range(0, len(items), size):
         yield items[idx : idx + size]
+
+
+def _loader_feature_validity(loader) -> torch.Tensor:
+    validity = getattr(loader, "feature_validity", None)
+    if validity is None:
+        validity = getattr(loader, "feature_validity_tensor", None)
+    if validity is None:
+        matrix_dir = Path(getattr(loader, "matrix_cache_dir", ""))
+        if getattr(loader, "use_matrix_cache", False) and (matrix_dir / "task_052a_strict_matrix_manifest.json").is_file():
+            raise RuntimeError("strict formula evaluation requires feature validity tensor")
+        validity = torch.isfinite(loader.feat_tensor)
+    return validity.bool()
+
+
+def _loader_target_available(loader) -> torch.Tensor:
+    validity = getattr(loader, "target_available", None)
+    if validity is None:
+        validity = getattr(loader, "raw_data_cache", {}).get("target_available_mask")
+    return validity.bool() if validity is not None else torch.isfinite(loader.target_ret)
+
+
+def _loader_signal_eligibility(loader) -> torch.Tensor:
+    raw = getattr(loader, "raw_data_cache", {})
+    for name in ("signal_eligible_at_close", "signal_eligible", "pit_available_mask"):
+        if name in raw:
+            return raw[name].bool()
+    return torch.ones_like(loader.target_ret, dtype=torch.bool)
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:

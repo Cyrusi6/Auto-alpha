@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import torch
 
-from .ops import OPS_CONFIG, get_operator_spec, operator_complexity, operator_lookback
-from .validity import propagate_operator_validity
+from .ops import OPS_CONFIG, operator_complexity, operator_lookback
+from .validity import execute_operator_with_validity
 from .vocab import FORMULA_VOCAB, FormulaVocab
 
 
@@ -131,10 +131,8 @@ class StackVM:
                 inputs = stack[-arity:]; del stack[-arity:]
                 values = [item[0] for item in inputs]
                 masks = [item[1] for item in inputs]
-                result = self.op_map[token](*values)
-                name = get_operator_spec(token, self.feat_offset).name
-                valid = propagate_operator_validity(name, masks, values) & torch.isfinite(result)
-                stack.append((torch.where(valid, result, torch.zeros_like(result)), valid))
+                result, valid = execute_operator_with_validity(token, self.feat_offset, values, masks)
+                stack.append((result, valid))
         except (RuntimeError, TypeError, ValueError, KeyError):
             return None
         return stack[0] if len(stack) == 1 else None

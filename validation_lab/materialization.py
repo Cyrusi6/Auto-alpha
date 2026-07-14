@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import subprocess
 import time
 import uuid
@@ -130,9 +129,16 @@ class FactorMaterializer:
         axis_paths = {
             "trade_dates": matrix_dir / "trade_dates.json",
             "ts_codes": matrix_dir / "ts_codes.json",
-            "active_mask": _first_existing(matrix_dir / "bar_observed_mask.npy", matrix_dir / "active_mask.npy"),
-            "pit_available_mask": _first_existing(matrix_dir / "bar_observed_mask.npy", matrix_dir / "pit_available_mask.npy"),
-            "index_member_matrix": _first_existing(matrix_dir / "index_membership.npy", matrix_dir / "index_member_matrix.npy"),
+            "active_mask": _first_existing(matrix_dir / "active.npy", matrix_dir / "active_mask.npy"),
+            "pit_available_mask": _first_existing(
+                matrix_dir / "signal_eligible_at_close.npy",
+                matrix_dir / "pit_available_mask.npy",
+            ),
+            "index_member_matrix": _first_existing(
+                matrix_dir / "membership.npy",
+                matrix_dir / "index_membership.npy",
+                matrix_dir / "index_member_matrix.npy",
+            ),
             "matrix_manifest": _first_existing(matrix_dir / "task_052a_strict_matrix_manifest.json", matrix_dir / "matrix_version_manifest.json"),
             "membership_known": _first_existing(matrix_dir / "membership_known_mask.npy", matrix_dir / "membership_known.npy"),
         }
@@ -223,13 +229,19 @@ class FactorMaterializer:
         }
 
     def _load_cached(self, factor_dir: Path, fingerprint: str, context: dict[str, Any]) -> MaterializationResult | None:
-        manifest_path = factor_dir / "materialization_manifest.json"
-        values_path = factor_dir / "values.npy"
-        validity_path = factor_dir / "validity.npy"
+        generation_dir = factor_dir / "generations" / fingerprint
+        if generation_dir.is_dir():
+            manifest_path = generation_dir / "materialization_manifest.json"
+            values_path = generation_dir / "values.npy"
+            validity_path = generation_dir / "validity.npy"
+        else:
+            manifest_path, values_path, validity_path = _current_materialization_paths(factor_dir)
         if not (manifest_path.exists() and values_path.exists() and validity_path.exists()):
             return None
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
         if payload.get("input_fingerprint") != fingerprint or payload.get("materialization_status") != "success":
+            return None
+        if self.device.type == "cuda" and not _valid_cuda_formula_evidence(payload.get("cuda_formula_execution")):
             return None
         if payload.get("value_sha256") != _sha256(values_path) or payload.get("validity_sha256") != _sha256(validity_path):
             return None
@@ -241,6 +253,16 @@ class FactorMaterializer:
         if not payload.get("artifact_metadata"):
             payload = attach_artifact_metadata(payload, "factor_materialization_manifest", "validation_lab")
             _atomic_json(manifest_path, payload)
+        if manifest_path.parent == generation_dir:
+            _atomic_json(
+                factor_dir / "current_materialization.json",
+                {
+                    "generation_id": fingerprint,
+                    "generation_path": str(Path("generations") / fingerprint),
+                    "input_fingerprint": fingerprint,
+                    "manifest_sha256": _sha256(manifest_path),
+                },
+            )
         return MaterializationResult(
             factor_id=str(payload["factor_id"]), status="success", cache_hit=True,
             values_path=str(values_path), validity_path=str(validity_path), manifest_path=str(manifest_path),
@@ -249,9 +271,19 @@ class FactorMaterializer:
 
     def _compute(self, factor: FactorRecord, factor_dir: Path, context: dict[str, Any]) -> MaterializationResult:
         started = time.perf_counter()
+        cuda_formula_execution: dict[str, Any] | None = None
+        cuda_start = None
+        cuda_end = None
+        if self.device.type == "cuda":
+            torch.cuda.synchronize(self.device)
+            torch.cuda.reset_peak_memory_stats(self.device)
+            cuda_start = torch.cuda.Event(enable_timing=True)
+            cuda_end = torch.cuda.Event(enable_timing=True)
         tensor_np = context["tensor"]
         tensor = torch.tensor(np.asarray(tensor_np), dtype=torch.float32, device=self.device)
         feature_validity = torch.tensor(np.asarray(context["feature_validity"]), dtype=torch.bool, device=self.device)
+        if cuda_start is not None:
+            cuda_start.record()
         executed = context["vm"].execute_with_validity(list(factor.formula_tokens or []), tensor, feature_validity)
         if executed is None:
             raise MaterializationBlocker("stack_vm_execution_failed")
@@ -264,6 +296,26 @@ class FactorMaterializer:
             device=self.device,
         )
         transformed, propagated_validity = preprocess_factor_with_validity(raw, formula_validity, raw_data, factor.transform_method or "raw", eligible)
+        if cuda_end is not None and cuda_start is not None:
+            cuda_end.record()
+            torch.cuda.synchronize(self.device)
+            cuda_formula_execution = {
+                "evidence_version": "stackvm_cuda_formula_execution_v1",
+                "factor_id": factor.factor_id,
+                "formula_hash": factor.formula_hash,
+                "physical_gpu": _cuda_physical_device(),
+                "torch_device": str(self.device),
+                "input_tensor_device": str(tensor.device),
+                "input_validity_device": str(feature_validity.device),
+                "output_tensor_device": str(transformed.device),
+                "output_validity_device": str(propagated_validity.device),
+                "cuda_event_elapsed_ms": float(cuda_start.elapsed_time(cuda_end)),
+                "peak_allocated_bytes": int(torch.cuda.max_memory_allocated(self.device)),
+                "input_bytes": int(tensor.numel() * tensor.element_size() + feature_validity.numel() * feature_validity.element_size()),
+                "output_bytes": int(transformed.numel() * transformed.element_size() + propagated_validity.numel() * propagated_validity.element_size()),
+            }
+            if not _valid_cuda_formula_evidence(cuda_formula_execution):
+                raise MaterializationBlocker("invalid_cuda_formula_execution_evidence")
         values = transformed.detach().to("cpu", dtype=torch.float32).numpy()
         masks = context["masks"]
         validity = (
@@ -286,7 +338,10 @@ class FactorMaterializer:
             raise MaterializationBlocker("zero_variance_or_constant_factor")
         if nonzero_ratio <= 1e-8:
             raise MaterializationBlocker("all_zero_factor")
-        tmp_dir = factor_dir.with_name(f".{factor_dir.name}.tmp-{uuid.uuid4().hex}")
+        generations_dir = factor_dir / "generations"
+        generation_dir = generations_dir / context["input_fingerprint"]
+        generations_dir.mkdir(parents=True, exist_ok=True)
+        tmp_dir = generations_dir / f".{context['input_fingerprint']}.tmp-{uuid.uuid4().hex}"
         tmp_dir.mkdir(parents=True, exist_ok=False)
         values_path = tmp_dir / "values.npy"
         validity_path = tmp_dir / "validity.npy"
@@ -307,6 +362,7 @@ class FactorMaterializer:
             "feature_version": factor.feature_version,
             "transform_method": factor.transform_method,
             "materialization_status": "success",
+            "cache_hit": False,
             "shape": list(values.shape),
             "dtype": str(values.dtype),
             "validity_dtype": "bool",
@@ -316,6 +372,7 @@ class FactorMaterializer:
             "validity_sha256": _sha256(validity_path),
             "partition_sha256": {"values.npy": _sha256(values_path), "validity.npy": _sha256(validity_path)},
             "statistics": statistics,
+            "cuda_formula_execution": cuda_formula_execution,
             "validity_contract": "factor_observation_only_v2",
             "target_excluded_from_factor_validity": True,
             "lineage": {
@@ -343,13 +400,28 @@ class FactorMaterializer:
             "elapsed_seconds": float(time.perf_counter() - started),
         }
         _atomic_json(tmp_dir / "materialization_manifest.json", attach_artifact_metadata(payload, "factor_materialization_manifest", "validation_lab"))
-        if factor_dir.exists():
-            shutil.rmtree(factor_dir)
-        os.replace(tmp_dir, factor_dir)
+        if generation_dir.exists():
+            existing_manifest = generation_dir / "materialization_manifest.json"
+            if not existing_manifest.is_file() or _sha256(existing_manifest) != _sha256(tmp_dir / "materialization_manifest.json"):
+                raise MaterializationBlocker("immutable_materialization_generation_conflict")
+            for path in tmp_dir.iterdir():
+                path.unlink()
+            tmp_dir.rmdir()
+        else:
+            os.replace(tmp_dir, generation_dir)
+        _atomic_json(
+            factor_dir / "current_materialization.json",
+            {
+                "generation_id": context["input_fingerprint"],
+                "generation_path": str(Path("generations") / context["input_fingerprint"]),
+                "input_fingerprint": context["input_fingerprint"],
+                "manifest_sha256": _sha256(generation_dir / "materialization_manifest.json"),
+            },
+        )
         return MaterializationResult(
             factor_id=factor.factor_id, status="success", cache_hit=False,
-            values_path=str(factor_dir / "values.npy"), validity_path=str(factor_dir / "validity.npy"),
-            manifest_path=str(factor_dir / "materialization_manifest.json"), input_fingerprint=context["input_fingerprint"], metrics=statistics,
+            values_path=str(generation_dir / "values.npy"), validity_path=str(generation_dir / "validity.npy"),
+            manifest_path=str(generation_dir / "materialization_manifest.json"), input_fingerprint=context["input_fingerprint"], metrics=statistics,
         )
 
     def _transform_inputs(self, context: dict[str, Any]) -> dict[str, torch.Tensor]:
@@ -383,6 +455,21 @@ def load_materialized_factor(manifest_path: str | Path) -> tuple[torch.Tensor, t
     return torch.tensor(np.asarray(values), dtype=torch.float32), torch.tensor(np.asarray(validity, dtype=np.bool_), dtype=torch.bool), payload
 
 
+def _current_materialization_paths(factor_dir: Path) -> tuple[Path, Path, Path]:
+    pointer_path = factor_dir / "current_materialization.json"
+    if pointer_path.is_file():
+        pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+        generation_path = Path(str(pointer.get("generation_path") or ""))
+        if not generation_path.parts or generation_path.is_absolute() or ".." in generation_path.parts:
+            raise MaterializationBlocker("invalid_materialization_generation_pointer")
+        generation_dir = factor_dir / generation_path
+        manifest_path = generation_dir / "materialization_manifest.json"
+        if pointer.get("manifest_sha256") != _sha256(manifest_path):
+            raise MaterializationBlocker("materialization_generation_pointer_hash_mismatch")
+        return manifest_path, generation_dir / "values.npy", generation_dir / "validity.npy"
+    return factor_dir / "materialization_manifest.json", factor_dir / "values.npy", factor_dir / "validity.npy"
+
+
 def _resolve_device(device: str) -> torch.device:
     value = str(device or "cpu").lower()
     if value.startswith("cuda"):
@@ -390,6 +477,53 @@ def _resolve_device(device: str) -> torch.device:
             raise MaterializationBlocker("cuda_required_but_unavailable")
         return torch.device(value)
     return torch.device("cpu")
+
+
+def _valid_cuda_formula_evidence(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    physical = payload.get("physical_gpu") or {}
+    device_fields = (
+        payload.get("torch_device"),
+        payload.get("input_tensor_device"),
+        payload.get("input_validity_device"),
+        payload.get("output_tensor_device"),
+        payload.get("output_validity_device"),
+    )
+    return (
+        payload.get("evidence_version") == "stackvm_cuda_formula_execution_v1"
+        and bool(payload.get("factor_id"))
+        and bool(payload.get("formula_hash"))
+        and bool(physical.get("uuid"))
+        and bool(physical.get("model") or physical.get("name"))
+        and all(str(value).startswith("cuda") for value in device_fields)
+        and float(payload.get("cuda_event_elapsed_ms") or 0.0) > 0.0
+        and int(payload.get("peak_allocated_bytes") or 0) > 0
+        and int(payload.get("input_bytes") or 0) > 0
+        and int(payload.get("output_bytes") or 0) > 0
+    )
+
+
+def _cuda_physical_device() -> dict[str, Any]:
+    visible = [item.strip() for item in os.getenv("CUDA_VISIBLE_DEVICES", "").split(",") if item.strip()]
+    selected = visible[0] if len(visible) == 1 else None
+    completed = subprocess.run(
+        ["nvidia-smi", "--query-gpu=index,uuid,name", "--format=csv,noheader"],
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=5,
+    )
+    if completed.returncode != 0:
+        return {}
+    records = []
+    for line in completed.stdout.splitlines():
+        fields = [field.strip() for field in line.split(",", 2)]
+        if len(fields) == 3:
+            records.append({"physical_index": int(fields[0]), "uuid": fields[1], "model": fields[2]})
+    if selected is not None and selected.isdigit():
+        return next((row for row in records if row["physical_index"] == int(selected)), {})
+    return records[0] if len(records) == 1 else {}
 
 
 def _optional_sha(value: str | Path | None) -> str | None:

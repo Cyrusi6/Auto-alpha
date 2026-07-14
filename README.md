@@ -1744,3 +1744,13 @@ Promotion does not prove alpha quality. It only creates a traceable availability
 - Current retrospective campaigns always record `selection_data_reused=true`, `untouched_holdout=false`, and `evidence_level=retrospective_engineering_only`; certification and portfolio queues remain empty.
 - The default backtest timing contract is `signal(t close) -> execution(t+1 open/next tradable point)`. `same_day_after_close` with zero signal lag is blocked, and covariance/risk estimates use only history available at each simulation date.
 - Four-GPU validation uses four independent shard directories, exclusive CUDA leases with heartbeat, immutable input fingerprints, and fail-closed handling for unavailable GPUs, OOM, retry exhaustion, or CPU fallback.
+
+## Conservative Suspension Engineering Replay
+
+Task 053-A uses the versioned `conservative_event_day_open_exclusion_v1` policy. A covered `suspend_d` day with no event is known absent; any S/R event excludes that day's open from realized entry, exit and target endpoints even when provider timing is null. Null timing remains null and is not reclassified as a proven full-day suspension. Realized next-day execution state never enters the prior close ranking universe.
+
+`task_053_a.orchestrator` validates the governed source, immutable freeze, lagged historical universe, strict matrix, joint v3 values/validity tensor, firewall proof and optional four-GPU replay evidence in dependency order. Readiness is evidence-derived and separates engineering blockers, candidate blockers, certification blockers and quality warnings. The only successful engineering terminal state is `engineering_replay_completed_certification_blocked`; untouched holdout, certification, portfolio, paper and live remain false.
+
+The formal matrix contract is `signal close(t) -> adjusted open(t+1) entry -> adjusted open(t+2) exit`. Research signals require the t+2 endpoint to be no later than `2024-05-30`; later observations are reused diagnostics only and cannot affect ranking or replay status.
+
+Task 053-A real engineering replay completed with deterministic A/B matrix and tensor builds, four distinct RTX 4090 shards, an uncached sibling replay comparison and immutable 4/4 resume. Candidate terminal states remain explicitly retrospective (`data_blocked`, `statistically_rejected`, or `historical_replay_passed`); these results do not constitute clean OOS or certification evidence.

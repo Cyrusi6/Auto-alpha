@@ -362,6 +362,32 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         ["status", "union_count", "union_sha256", "observed_end_date", "requests_per_minute", "code_semantic_hash", "datasets", "rate_limit", "token_persisted", "old_sources_mutated"],
         ["task_052_backfill_report.json"],
     ),
+    "task_053_readiness": _definition(
+        "task_053_readiness",
+        ["status", "governed_source_ready", "conservative_tradability_policy_ready", "immutable_freeze_ready", "engineering_universe_proxy_ready", "strict_matrix_built", "strict_matrix_replay_safe", "v3_tensor_ready", "research_firewall_ready", "retrospective_replay_ready", "four_gpu_replay_completed", "engineering_blockers", "candidate_blockers", "certification_blockers", "quality_warnings", "untouched_holdout_ready", "certification_ready", "portfolio_ready", "paper_ready", "live_ready", "stages"],
+        ["task_053_readiness.json"],
+    ),
+    "task_053_orchestrator_report": _definition(
+        "task_053_orchestrator_report",
+        ["status", "run_id", "source_campaign_id", "candidate_count", "stage_order", "stages", "readiness", "output_paths"],
+        ["task_053_orchestrator_report.json"],
+    ),
+    "task_053_suspension_reconciliation": _definition(
+        "task_053_suspension_reconciliation",
+        ["policy_id", "record_count", "raw_null_timing_count", "explicit_timing_count", "classification_count", "mutually_exclusive", "cross_tabs", "legacy_source"],
+        ["task_053_suspension_reconciliation.json"],
+    ),
+    "task_053_v3_tensor_manifest": _definition(
+        "task_053_v3_tensor_manifest",
+        ["generation_id", "content_hash", "shape", "values_dtype", "validity_dtype", "stock_axis_hash", "date_axis_hash", "values_sha256", "validity_sha256", "source", "feature_summaries", "invalid_values_stored_as_zero", "feature_blockers", "candidate_blockers"],
+        ["task_053_v3_tensor_manifest.json"],
+    ),
+    "task_053a_research_firewall_sentinel": _definition(
+        "task_053a_research_firewall_sentinel",
+        ["status", "policy_version", "research_end_date", "diagnostic_start_date", "label_horizon", "paths", "proof", "actual_read_ledger", "content_hash"],
+        ["task_053a_research_firewall_sentinel.json"],
+        optional=["baseline", "post_cutoff_mutation", "inside_cutoff_mutation", "blockers"],
+    ),
     "validation_candidate_dedup_report": _definition(
         "validation_candidate_dedup_report",
         ["validation_campaign_id", "candidate_count", "duplicate_count"],

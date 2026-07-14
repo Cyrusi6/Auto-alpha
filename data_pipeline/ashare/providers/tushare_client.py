@@ -12,7 +12,10 @@ from typing import Any, Callable, Iterable
 
 from ..config import AShareDataConfig
 from ..rate_limit import RateLimitEvent, SimpleRateLimiter
-from ..request_normalization import tushare_code_semantic_hash, tushare_request_fingerprint
+from ..request_normalization import stable_json_hash, tushare_code_semantic_hash, tushare_request_fingerprint
+
+
+TUSHARE_PROVIDER_API_VERSION = "tushare_pro_http.v1"
 
 
 class TushareApiError(ValueError):
@@ -48,6 +51,9 @@ class TushareResponseEnvelope:
     duration_seconds: float
     request_fingerprint: str = ""
     code_semantic_hash: str = ""
+    endpoint: str = ""
+    provider_api_version: str = TUSHARE_PROVIDER_API_VERSION
+    response_payload_hash: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -62,6 +68,9 @@ class TushareResponseEnvelope:
             "duration_seconds": self.duration_seconds,
             "request_fingerprint": self.request_fingerprint,
             "code_semantic_hash": self.code_semantic_hash,
+            "endpoint": self.endpoint,
+            "provider_api_version": self.provider_api_version,
+            "response_payload_hash": self.response_payload_hash,
         }
 
 
@@ -122,11 +131,11 @@ class TushareHttpClient:
         if code != 0:
             raise _error_for_response(int(code), message or f"Tushare API returned code {code}")
 
-        data = response_payload.get("data") or {}
+        data = response_payload.get("data")
         if not isinstance(data, dict):
             raise TushareSchemaError("Tushare response data must be an object")
-        response_fields = data.get("fields") or []
-        items = data.get("items") or []
+        response_fields = data.get("fields")
+        items = data.get("items")
         if not isinstance(response_fields, list) or not isinstance(items, list):
             raise TushareSchemaError("Tushare response data.fields/data.items must be lists")
         if not all(isinstance(field, str) for field in response_fields):
@@ -152,6 +161,9 @@ class TushareHttpClient:
             duration_seconds=max(0.0, time.perf_counter() - started),
             request_fingerprint=tushare_request_fingerprint(api_name, params=request_params, fields=request_fields),
             code_semantic_hash=tushare_code_semantic_hash(),
+            endpoint=self.api_url,
+            provider_api_version=TUSHARE_PROVIDER_API_VERSION,
+            response_payload_hash=stable_json_hash(response_payload),
         )
 
     def _send_with_retry(self, request: urllib.request.Request) -> dict[str, Any]:

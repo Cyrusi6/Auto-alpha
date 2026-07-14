@@ -22,6 +22,8 @@ from .models import ValidationShardRecord
 from .registry import LocalValidationCampaignStore
 from .replay_evidence import (
     build_input_manifest,
+    compare_replay_evidence,
+    publish_replay_bundle,
     read_candidate_ids,
     validate_resume_evidence,
     validate_terminal_outputs,
@@ -110,7 +112,11 @@ def run_validation_shards(
     resume: bool = False,
     dry_run: bool = False,
     task_052a_replay: bool = False,
+    task_053a_replay: bool = False,
     replay_readiness_path: str | None = None,
+    replay_generation_label: str = "primary",
+    replay_reference_evidence_path: str | None = None,
+    force_uncached_replay: bool = False,
 ) -> dict[str, Any]:
     store = LocalValidationCampaignStore(store_dir)
     shards = plan_validation_shards(
@@ -123,7 +129,7 @@ def run_validation_shards(
     if dry_run:
         return {"status": "planned", "shard_count": len(shards), "paths": store.paths()}
 
-    if task_052a_replay:
+    if task_052a_replay or task_053a_replay:
         return _run_task052a_replay(
             store,
             shards,
@@ -134,6 +140,10 @@ def run_validation_shards(
             compute_state_dir=compute_state_dir,
             replay_readiness_path=replay_readiness_path,
             resume=resume,
+            task_053a_replay=task_053a_replay,
+            replay_generation_label=replay_generation_label,
+            replay_reference_evidence_path=replay_reference_evidence_path,
+            force_uncached_replay=force_uncached_replay,
             validation_kwargs={
                 "data_dir": data_dir,
                 "factor_store_dir": factor_store_dir,
@@ -369,6 +379,10 @@ def _run_task052a_replay(
     compute_state_dir: str | None,
     replay_readiness_path: str | None,
     resume: bool,
+    task_053a_replay: bool,
+    replay_generation_label: str,
+    replay_reference_evidence_path: str | None,
+    force_uncached_replay: bool,
     validation_kwargs: dict[str, Any],
 ) -> dict[str, Any]:
     if len(shards) != 4 or any(shard.shard_count != 4 or shard.candidate_count != 5 for shard in shards):
@@ -385,7 +399,7 @@ def _run_task052a_replay(
     if not compute_state_dir:
         raise RuntimeError("Task 052-A replay requires compute_state_dir")
 
-    readiness = _load_task052a_readiness(replay_readiness_path)
+    readiness = _load_task052a_readiness(replay_readiness_path, task_053a_replay=task_053a_replay)
     strict_paths = {
         "data_dir": data_dir,
         "factor_store_dir": factor_store_dir,
@@ -405,19 +419,46 @@ def _run_task052a_replay(
     if missing:
         raise RuntimeError(f"Task 052-A replay inputs missing: {','.join(missing)}")
 
+    code_paths = {
+        "scheduler_code": Path(__file__),
+        "worker_code": Path(__file__).with_name("replay_worker.py"),
+        "evidence_code": Path(__file__).with_name("replay_evidence.py"),
+        "validation_code": Path(__file__).parents[1] / "validation_lab" / "run_validation.py",
+        "materializer_code": Path(__file__).parents[1] / "validation_lab" / "materialization.py",
+        "stackvm_code": Path(__file__).parents[1] / "model_core" / "vm.py",
+        "operator_code": Path(__file__).parents[1] / "model_core" / "ops.py",
+        "operator_validity_code": Path(__file__).parents[1] / "model_core" / "validity.py",
+        "transform_code": Path(__file__).parents[1] / "factor_engine" / "transforms.py",
+        "feature_validity_code": Path(__file__).parents[1] / "feature_factory" / "validity.py",
+        "vocab_adapter_code": Path(__file__).parents[1] / "feature_factory" / "vocab_adapter.py",
+    }
+    bundle_inputs = {**strict_paths, **code_paths}
+    replay_bundle = publish_replay_bundle(
+        output_dir,
+        inputs=bundle_inputs,
+        extra={
+            "campaign_id": validation_campaign_id,
+            "candidate_ids": sorted(all_candidate_ids),
+            "candidate_identity": _candidate_identity_rows(shards),
+            "validation_policy": validation_kwargs.get("validation_policy"),
+            "train_size": validation_kwargs.get("train_size"),
+            "validation_size": validation_kwargs.get("validation_size"),
+            "test_size": validation_kwargs.get("test_size"),
+            "step_size": validation_kwargs.get("step_size"),
+            "embargo_size": validation_kwargs.get("embargo_size"),
+            "label_horizon": validation_kwargs.get("label_horizon"),
+            "research_end_date": validation_kwargs.get("research_end_date"),
+            "readiness_engineering_state": _engineering_readiness_state(readiness),
+        },
+    )
+
     jobs: list[ComputeJobSpec] = []
     input_manifests: dict[int, dict[str, Any]] = {}
     resume_checks: dict[int, dict[str, Any]] = {}
-    code_paths = [
-        Path(__file__),
-        Path(__file__).with_name("replay_worker.py"),
-        Path(__file__).with_name("replay_evidence.py"),
-        Path(__file__).parents[1] / "validation_lab" / "run_validation.py",
-    ]
     for shard in shards:
         argv = _validation_argv(shard, **validation_kwargs)
         input_manifest = build_input_manifest(
-            [*strict_paths.values(), shard.metadata["candidate_pool_path"], *code_paths],
+            [replay_bundle["manifest_path"], shard.metadata["candidate_pool_path"], *code_paths.values()],
             extra={
                 "campaign_id": validation_campaign_id,
                 "shard_index": shard.shard_index,
@@ -425,6 +466,8 @@ def _run_task052a_replay(
                 "candidate_ids": candidate_ids_by_shard[shard.shard_index],
                 "argv": argv,
                 "readiness": readiness,
+                "replay_bundle_hash": replay_bundle["bundle_hash"],
+                "replay_generation_label": replay_generation_label,
             },
         )
         input_manifests[shard.shard_index] = input_manifest
@@ -434,6 +477,9 @@ def _run_task052a_replay(
             shard_index=shard.shard_index,
             input_manifest=input_manifest,
             expected_candidate_ids=candidate_ids_by_shard[shard.shard_index],
+            bundle_hash=replay_bundle["bundle_hash"] if task_053a_replay else None,
+            require_candidate_artifacts=task_053a_replay,
+            require_cuda_formula_evidence=task_053a_replay,
         )
         resume_checks[shard.shard_index] = {"valid": valid, "reason": reason, "evidence": evidence}
 
@@ -448,6 +494,8 @@ def _run_task052a_replay(
             readiness=readiness,
             resume_checks=resume_checks,
             shard_evidence=[resume_checks[index]["evidence"] for index in sorted(resume_checks)],
+            replay_bundle=replay_bundle,
+            generation_label=replay_generation_label,
         )
         return {
             "status": "success",
@@ -458,6 +506,8 @@ def _run_task052a_replay(
             "immutable_resume_count": 4,
             "stale_history_rejected": False,
             "task_052a_replay_evidence_path": str(evidence_path),
+            "task_053a_replay_evidence_path": str(evidence_path),
+            "replay_bundle_hash": replay_bundle["bundle_hash"],
             "paths": store.paths(),
         }
 
@@ -471,6 +521,8 @@ def _run_task052a_replay(
     physical_ids = {(device.uuid, device.name) for device in cuda_devices if device.uuid and device.name}
     if not snapshot.cuda_available or len(cuda_devices) < 4 or len(physical_ids) < 4:
         raise RuntimeError("Task 052-A replay requires four distinct physical GPUs with UUID and model")
+    if task_053a_replay and any("4090" not in str(device.name) for device in cuda_devices[:4]):
+        raise RuntimeError("Task 053-A replay requires four physical RTX 4090 GPUs")
 
     generation_state_dir = Path(compute_state_dir) / f"task052a_{validation_campaign_id}_{uuid.uuid4().hex[:12]}"
     for shard in shards:
@@ -506,7 +558,9 @@ def _run_task052a_replay(
                 data_freeze_dir=str(validation_kwargs["data_freeze_dir"]),
                 metadata={
                     "task_052a_replay": True,
+                    "task_053a_replay": task_053a_replay,
                     "full_input_hash": fingerprint,
+                    "replay_bundle_hash": replay_bundle["bundle_hash"],
                     "candidate_ids": candidate_ids_by_shard[shard.shard_index],
                     "telemetry_path": str(telemetry_path),
                 },
@@ -541,7 +595,7 @@ def _run_task052a_replay(
         telemetry = json.loads(telemetry_path.read_text(encoding="utf-8"))
         if telemetry.get("exit_code") != 0 or not telemetry.get("cuda_available"):
             raise RuntimeError(f"Task 052-A replay CUDA telemetry invalid: {job.job_id}")
-        if telemetry.get("cuda_kernel_elapsed_ms") is None or telemetry.get("cuda_peak_memory_allocated_bytes") is None:
+        if not task_053a_replay and (telemetry.get("cuda_kernel_elapsed_ms") is None or telemetry.get("cuda_peak_memory_allocated_bytes") is None):
             raise RuntimeError(f"Task 052-A replay CUDA timing/allocation missing: {job.job_id}")
         selected_gpus = telemetry.get("physical_gpus") or run.get("physical_devices") or []
         if len(selected_gpus) != 1 or not selected_gpus[0].get("uuid") or not (selected_gpus[0].get("model") or selected_gpus[0].get("name")):
@@ -551,7 +605,14 @@ def _run_task052a_replay(
         job_heartbeats = [row for row in heartbeats if row.get("job_id") == job.job_id]
         if len(job_heartbeats) < 2:
             raise RuntimeError(f"Task 052-A replay heartbeat evidence missing: {job.job_id}")
-        terminal_outputs = validate_terminal_outputs(job.output_dir, list(job.metadata["candidate_ids"]))
+        terminal_outputs = validate_terminal_outputs(
+            job.output_dir,
+            list(job.metadata["candidate_ids"]),
+            require_candidate_artifacts=task_053a_replay,
+            require_cuda_formula_evidence=task_053a_replay,
+            require_uncached_materialization=task_053a_replay or force_uncached_replay,
+            expected_physical_gpu_uuid=str(selected_gpus[0].get("uuid")) if task_053a_replay else None,
+        )
         evidence_path = write_terminal_evidence(
             job.output_dir,
             campaign_id=validation_campaign_id,
@@ -561,6 +622,7 @@ def _run_task052a_replay(
             telemetry=telemetry,
             heartbeats=job_heartbeats,
             terminal_outputs=terminal_outputs,
+            bundle_hash=replay_bundle["bundle_hash"] if task_053a_replay else None,
         )
         shard_evidence.append(json.loads(evidence_path.read_text(encoding="utf-8")))
     if len(physical_gpu_ids) != 4:
@@ -574,6 +636,12 @@ def _run_task052a_replay(
     if any(row.status != "success" for row in updated):
         raise RuntimeError("Task 052-A replay shard terminal validation failed")
     store.write_shards(updated)
+    deterministic_comparison = None
+    if replay_reference_evidence_path:
+        reference_payload = json.loads(Path(replay_reference_evidence_path).read_text(encoding="utf-8"))
+        if reference_payload.get("replay_bundle_hash") != replay_bundle["bundle_hash"]:
+            raise RuntimeError("uncached sibling replay bundle hash mismatch")
+        deterministic_comparison = compare_replay_evidence(reference_payload.get("shards") or [], shard_evidence)
     campaign_evidence_path = _write_task052a_campaign_evidence(
         output_dir,
         validation_campaign_id=validation_campaign_id,
@@ -583,6 +651,9 @@ def _run_task052a_replay(
         shard_evidence=shard_evidence,
         stale_rejections=stale_rejections,
         compute_report=compute_report.to_dict(),
+        replay_bundle=replay_bundle,
+        generation_label=replay_generation_label,
+        deterministic_comparison=deterministic_comparison,
     )
     return {
         "status": "success",
@@ -595,19 +666,62 @@ def _run_task052a_replay(
         "stale_history_rejections": stale_rejections,
         "compute_report": compute_report.to_dict(),
         "task_052a_replay_evidence_path": str(campaign_evidence_path),
+        "task_053a_replay_evidence_path": str(campaign_evidence_path),
+        "replay_bundle_hash": replay_bundle["bundle_hash"],
+        "deterministic_comparison": deterministic_comparison,
         "paths": store.paths(),
     }
 
 
-def _load_task052a_readiness(path: str | None) -> dict[str, Any]:
+def _load_task052a_readiness(path: str | None, *, task_053a_replay: bool = False) -> dict[str, Any]:
     if not path or not Path(path).is_file():
         raise RuntimeError("Task 052-A replay readiness evidence is required")
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    required = ["data_foundation_ready", "retrospective_replay_ready", "research_firewall_ready", "untouched_holdout_ready"]
+    required = (
+        [
+            "governed_source_ready",
+            "conservative_tradability_policy_ready",
+            "immutable_freeze_ready",
+            "engineering_universe_proxy_ready",
+            "strict_matrix_built",
+            "strict_matrix_replay_safe",
+            "v3_tensor_ready",
+            "research_firewall_ready",
+            "retrospective_replay_ready",
+        ]
+        if task_053a_replay
+        else ["data_foundation_ready", "retrospective_replay_ready", "research_firewall_ready"]
+    )
     blockers = [name for name in required if payload.get(name) is not True]
-    if blockers or payload.get("gpu_replay_started") is True or payload.get("blockers"):
-        raise RuntimeError(f"Task 052-A replay readiness blocked: {','.join(blockers or ['declared_blockers'])}")
+    engineering_blockers = list(payload.get("engineering_blockers") or []) if task_053a_replay else list(payload.get("blockers") or [])
+    if blockers or payload.get("gpu_replay_started") is True or engineering_blockers:
+        raise RuntimeError(f"Task 052-A replay readiness blocked: {','.join(blockers or ['engineering_blockers'])}")
+    if task_053a_replay and any(payload.get(name) is not False for name in ("untouched_holdout_ready", "certification_ready", "portfolio_ready", "paper_ready", "live_ready")):
+        raise RuntimeError("Task 053-A downstream readiness must remain false")
     return payload
+
+
+def _engineering_readiness_state(payload: dict[str, Any]) -> dict[str, Any]:
+    excluded = {"certification_blockers", "quality_warnings", "candidate_blockers"}
+    return {key: value for key, value in payload.items() if key not in excluded}
+
+
+def _candidate_identity_rows(shards: list[ValidationShardRecord]) -> list[dict[str, Any]]:
+    fields = (
+        "validation_candidate_id",
+        "factor_id",
+        "formula_hash",
+        "formula_tokens",
+        "formula_names",
+        "feature_version",
+        "operator_version",
+        "transform_method",
+    )
+    rows = []
+    for shard in shards:
+        for row in _read_jsonl(Path(str(shard.metadata["candidate_pool_path"]))):
+            rows.append({name: row.get(name) for name in fields if row.get(name) is not None})
+    return sorted(rows, key=lambda row: str(row.get("validation_candidate_id") or row.get("factor_id") or ""))
 
 
 def _write_task052a_campaign_evidence(
@@ -620,6 +734,9 @@ def _write_task052a_campaign_evidence(
     shard_evidence: list[dict[str, Any]],
     stale_rejections: dict[str, str] | None = None,
     compute_report: dict[str, Any] | None = None,
+    replay_bundle: dict[str, Any] | None = None,
+    generation_label: str = "primary",
+    deterministic_comparison: dict[str, Any] | None = None,
 ) -> Path:
     payload = {
         "status": "success",
@@ -629,11 +746,16 @@ def _write_task052a_campaign_evidence(
         "first_run": mode == "first_run",
         "immutable_resume_4_of_4": mode == "resume_4_of_4",
         "readiness": readiness,
+        "replay_bundle_hash": (replay_bundle or {}).get("bundle_hash"),
+        "replay_bundle_manifest_path": (replay_bundle or {}).get("manifest_path"),
+        "generation_label": generation_label,
+        "deterministic_comparison": deterministic_comparison,
         "resume_checks": {str(index): {"valid": row["valid"], "reason": row["reason"]} for index, row in resume_checks.items()},
         "stale_history_rejections": stale_rejections or {},
         "shard_count": len(shard_evidence),
         "candidate_count": sum(len(row.get("candidate_ids") or []) for row in shard_evidence),
         "shard_evidence_hashes": [row.get("evidence_hash") for row in shard_evidence],
+        "shards": shard_evidence,
         "physical_gpu_uuids": sorted({gpu.get("uuid") for row in shard_evidence for gpu in row.get("physical_gpus", []) if gpu.get("uuid")}),
         "compute_report": compute_report,
     }

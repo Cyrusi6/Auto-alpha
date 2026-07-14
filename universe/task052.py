@@ -20,14 +20,15 @@ from artifact_schema.writer import write_json_artifact, write_jsonl_artifact
 
 DETERMINISTIC_CREATED_AT = "1970-01-01T00:00:00Z"
 UNIVERSE_SEMANTIC_CONTRACT = {
-    "task": "052-A",
+    "task": "053-A",
     "axis": "union_of_all_accepted_historical_members",
     "snapshot_effective_rule": "next_trade_day",
     "snapshot_replacement": "full",
     "unknown_before_first_effective_snapshot": True,
     "removed_member_leakage_check": "recomputed_from_effective_snapshot_transitions",
     "source_lineage": "manifest_hash_pinned",
-    "version": 1,
+    "terminal_snapshot": "retained_with_not_effective_within_axis_status",
+    "version": 2,
 }
 
 
@@ -156,7 +157,7 @@ class Task052HistoricalUniverseProofBuilder:
             "date_axis_hash": date_axis_hash,
         }
         content_hash = _hash_json(generation_inputs)
-        generation_id = f"universe_052a_{content_hash[:24]}"
+        generation_id = f"universe_053a_{content_hash[:24]}"
         target = Path(output_root) / generation_id
         if not target.exists():
             self._write_generation(
@@ -214,7 +215,12 @@ class Task052HistoricalUniverseProofBuilder:
                 {
                     "index_code": self.policy.index_code,
                     "snapshot_date": snapshot_date,
-                    "effective_trade_date": effective_dates[snapshot_date],
+                    "effective_trade_date": effective_dates.get(snapshot_date),
+                    "effective_status": (
+                        "effective_within_axis"
+                        if snapshot_date in effective_dates
+                        else "not_effective_within_axis"
+                    ),
                     "ts_code": str(row["ts_code"]),
                     "weight": float(row["weight"]),
                 }
@@ -265,6 +271,7 @@ class Task052HistoricalUniverseProofBuilder:
                 "foreign_index_row_count": foreign_index_rows,
                 "membership_lag_trade_days": self.policy.membership_lag_trade_days,
                 "snapshot_effective_dates": dict(sorted(effective_dates.items())),
+                "snapshots_not_effective_within_axis": sorted(set(accepted) - set(effective_dates)),
                 "union_member_count": len(union),
                 "stock_axis_hash": generation_inputs["stock_axis_hash"],
                 "date_axis_hash": generation_inputs["date_axis_hash"],
@@ -306,14 +313,14 @@ def _build_lagged_daily_membership(
     for snapshot_date in sorted(snapshots):
         snapshot_index = date_index[snapshot_date]
         if snapshot_index + 1 >= len(trade_dates):
-            raise Task052UniverseProofError(f"snapshot has no next trade day for conservative lag: {snapshot_date}")
+            continue
         effective_dates[snapshot_date] = trade_dates[snapshot_index + 1]
     stock_index = {code: index for index, code in enumerate(union)}
     membership = np.zeros((len(union), len(trade_dates)), dtype=np.bool_)
     weights = np.zeros((len(union), len(trade_dates)), dtype=np.float32)
     known = np.zeros(len(trade_dates), dtype=np.bool_)
     source_dates = [""] * len(trade_dates)
-    ordered_snapshots = sorted(snapshots)
+    ordered_snapshots = sorted(effective_dates)
     pointer = -1
     for date_position, trade_date in enumerate(trade_dates):
         while pointer + 1 < len(ordered_snapshots) and effective_dates[ordered_snapshots[pointer + 1]] <= trade_date:
@@ -340,7 +347,7 @@ def _removed_member_leakage(
     effective_dates: dict[str, str],
 ) -> dict[str, Any]:
     stock_index = {code: index for index, code in enumerate(union)}
-    ordered = sorted(snapshots)
+    ordered = sorted(effective_dates)
     examples: list[dict[str, str]] = []
     count = 0
     pointer = -1

@@ -2415,3 +2415,24 @@
 - Real schema/permission probes succeeded for `suspend_d`, `stock_st`, and `namechange`; no token value was logged or persisted and `.env.local` permissions were restricted.
 - The governed historical-union backfill completed with hash-validated 637/637 request coverage for suspension, stock ST, and namechange; a cache-only replay reproduced the three content-addressed generations without new provider requests. HTTP 429/307 attempts remain in the coverage ledger and were recovered through a lower global rate plus auditable exponential backoff.
 - Suspension returned 34,455 dated rows, but 34,267 lacked source `suspend_timing`. They are persisted as `unknown` rather than guessed as full-day/open/intraday evidence. This source-semantics gap, together with the absence of a published real strict matrix, v3 values/validity tensor, and real firewall sentinel, keeps data foundation and retrospective replay blocked; no GPU job was launched.
+
+## 2026-07-14 - Task 053-A
+
+### 本次变更摘要
+- 将停牌正式语义版本化为 `conservative_event_day_open_exclusion_v1`：完整覆盖下的无记录为已知无事件，任意 S/R 事件日保守排除开盘成交；保留 provider 原始 null，并把 timing 解释、事件值与 known mask 分层持久化。
+- 离线重审 637/637 suspension、stock_st、namechange 缓存证据，resume key 绑定契约、参数、响应 envelope、源码语义和股票文件 SHA；新 governed generation、freeze、lagged historical universe、strict matrix 与 v3 values/validity 均内容寻址、原子发布并双构建核对。
+- StrictEngineeringPITMatrix 统一 next-open t+1/t+2 adjusted-open 标签、生命周期、membership、ST、停牌、涨跌停、bar/adjustment validity 与局部 unexplained-gap 隔离；validation 直接消费 research eligible 连续段，不再把 diagnostic 日期误当正式长窗。
+- 新增 Task 053-A 生产编排器、Research Firewall 四路径 sentinel、readiness 分层、四卡 replay evidence、严格 schema 与 dashboard/monitoring reader。工程 replay gate 不再被 publication timing、selection reuse 或 no untouched holdout 这类 certification blocker 错误阻断。
+
+### 证据边界
+- 2024-05-31 至 2026-06-30 仅为 reused diagnostic period；旧 20 候选属于 selection-data-reused contaminated replay。
+- `source_timing_semantics_certified=false`、`constituent_publication_timing_unknown`、`no_future_untouched_holdout`、`selection_data_reused` 与 vendor revision risk 持续阻断 certification 及所有下游 queue。
+- 本任务不启动新 Alpha 搜索、不运行组合/stress/paper/live，不宣称 clean OOS、可交易收益或可实盘。
+
+### 真实工程验收结果
+- governed suspension/stock_st/namechange coverage 均为 637/637；34,455 条 suspension 全部对账，其中原始 timing null 34,267、explicit 188，null 被改写为全日停牌为 0；旧 623 条 legacy 文件 SHA 未改变。
+- 历史 universe 为 206 个完整 snapshot、637 个 union members，full-replacement lagged membership 的 removed-member leakage 为 0。freeze、matrix 与 v3 tensor A/B 独立构建的核心 content/partition SHA 一致。
+- 严格矩阵为 637×6417；target_available 1,553,209 个单元，event endpoint 与 target_available 交集为 0，局部 unexplained gap 317 个且被 signal/target 使用数均为 0。
+- v3 values/validity 为 637×95×6417，invalid nonzero 为 0；旧 20 公式与 blocked optional feature 的依赖交集为 0。Research Firewall 四路径 sentinel 越界访问 0、post-cutoff research 变化 0、diagnostic 变化 4。
+- 四张 GeForce RTX 4090 各执行 5 个候选；20/20 首轮 materialization 为 uncached CUDA，CPU fallback/OOM/retry 为 0。候选终态为 1 data_blocked、12 statistically_rejected、7 historical_replay_passed；独立 sibling replay 的四个 shard core SHA 全部一致，immutable resume 4/4 命中。
+- 最终状态为 `engineering_replay_completed_certification_blocked`；certification、portfolio、paper、live readiness 与 queue 均保持 false/0。

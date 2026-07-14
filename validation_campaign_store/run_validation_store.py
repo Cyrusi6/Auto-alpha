@@ -81,7 +81,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--require-validation-ready", action="store_true")
     parser.add_argument("--research-readiness-decision-path")
     parser.add_argument("--task-052a-replay", action="store_true")
+    parser.add_argument("--task-053a-replay", action="store_true")
     parser.add_argument("--replay-readiness-path")
+    parser.add_argument("--replay-generation-label", default="primary")
+    parser.add_argument("--replay-reference-evidence-path")
+    parser.add_argument("--force-uncached-replay", action="store_true")
     parser.add_argument("--top-k", type=int, default=100)
     parser.add_argument("--top-k-certification-queue", type=int, default=20)
     parser.add_argument("--certification-policy-profile", default="sample_lenient_certification")
@@ -196,7 +200,11 @@ def _run(args: argparse.Namespace) -> dict:
             resume=args.resume,
             dry_run=args.dry_run,
             task_052a_replay=args.task_052a_replay,
+            task_053a_replay=args.task_053a_replay,
             replay_readiness_path=args.replay_readiness_path,
+            replay_generation_label=args.replay_generation_label,
+            replay_reference_evidence_path=args.replay_reference_evidence_path,
+            force_uncached_replay=args.force_uncached_replay,
         )
         if not args.dry_run:
             run_status = payload.get("status")
@@ -372,7 +380,7 @@ def _candidate_correlation_matrix(scan_root: Path, manifests: list[dict]) -> dic
     if not factor_ids:
         return {"factor_ids": [], "matrix": [], "sample_count": 0, "approximate": True}
     by_factor = {str(row.get("factor_id")): row for row in successful}
-    first_manifest_path = next(scan_root.rglob(f"{factor_ids[0]}/materialization_manifest.json"), None)
+    first_manifest_path = _find_materialization_manifest(scan_root, factor_ids[0])
     if first_manifest_path is None:
         return {"factor_ids": factor_ids, "matrix": [], "sample_count": 0, "approximate": True, "reason": "materialization paths unavailable"}
     validity = np.load(first_manifest_path.parent / "validity.npy", mmap_mode="r").reshape(-1).astype(bool)
@@ -382,7 +390,7 @@ def _candidate_correlation_matrix(scan_root: Path, manifests: list[dict]) -> dic
         valid_indices = valid_indices[positions]
     rows = []
     for factor_id in factor_ids:
-        manifest_path = next(scan_root.rglob(f"{factor_id}/materialization_manifest.json"), None)
+        manifest_path = _find_materialization_manifest(scan_root, factor_id)
         if manifest_path is None:
             continue
         values = np.load(manifest_path.parent / "values.npy", mmap_mode="r").reshape(-1)
@@ -396,6 +404,23 @@ def _candidate_correlation_matrix(scan_root: Path, manifests: list[dict]) -> dic
         "approximate": True,
         "certification_supported": False,
     }
+
+
+def _find_materialization_manifest(scan_root: Path, factor_id: str) -> Path | None:
+    factor_dirs = sorted(path for path in scan_root.rglob(factor_id) if path.is_dir())
+    for factor_dir in factor_dirs:
+        pointer_path = factor_dir / "current_materialization.json"
+        if pointer_path.is_file():
+            pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+            generation_path = Path(str(pointer.get("generation_path") or ""))
+            if generation_path.parts and not generation_path.is_absolute() and ".." not in generation_path.parts:
+                manifest_path = factor_dir / generation_path / "materialization_manifest.json"
+                if manifest_path.is_file():
+                    return manifest_path
+        legacy_path = factor_dir / "materialization_manifest.json"
+        if legacy_path.is_file():
+            return legacy_path
+    return None
 
 
 if __name__ == "__main__":

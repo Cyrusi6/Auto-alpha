@@ -10,6 +10,10 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import torch
+
+from .builder import _coerce_manifest, _definition_from_payload, _compute_raw_feature, _infer_device, _infer_shape
+from .extended_builder import _rolling_z
 
 
 def build_feature_validity_tensor(
@@ -68,6 +72,134 @@ def build_feature_validity_tensor(
     manifest_path = output / "feature_validity_manifest.json"
     manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     return {**payload, "tensor_path": str(tensor_path), "manifest_path": str(manifest_path)}
+
+
+def build_feature_values_and_validity(
+    loader,
+    feature_manifest,
+    *,
+    eligible_mask: torch.Tensor | np.ndarray | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, list[dict[str, Any]]]:
+    """Build values and validity together so invalid cells never enter statistics."""
+    manifest = _coerce_manifest(feature_manifest)
+    definitions = [_definition_from_payload(item) for item in manifest.feature_definitions]
+    raw = loader.raw_data_cache
+    source_validity = dict(getattr(loader, "raw_validity_cache", {}) or {})
+    source_validity.update(dict(getattr(loader, "feature_source_validity", {}) or {}))
+    shape = _infer_shape(raw)
+    device = _infer_device(raw)
+    if eligible_mask is None:
+        for key in ("signal_eligible_at_close", "signal_eligible", "pit_available_mask"):
+            if key in raw:
+                eligible_mask = raw[key]
+                break
+    if eligible_mask is None:
+        raise ValueError("joint feature build requires an explicit signal-eligible mask")
+    eligible = torch.as_tensor(eligible_mask, dtype=torch.bool, device=device)
+    if tuple(eligible.shape) != tuple(shape):
+        raise ValueError("feature eligible axis mismatch")
+
+    matrices: list[torch.Tensor] = []
+    validity_matrices: list[torch.Tensor] = []
+    summaries: list[dict[str, Any]] = []
+    for definition in definitions:
+        fields = list(definition.source_fields)
+        masks: list[torch.Tensor] = []
+        missing: list[str] = []
+        sanitized = dict(raw)
+        for field in fields:
+            raw_key = _resolve_raw_key(raw, field)
+            mask = _resolve_validity(source_validity, raw, field, raw_key)
+            if raw_key is None or mask is None:
+                missing.append(field)
+                continue
+            mask = torch.as_tensor(mask, dtype=torch.bool, device=device)
+            if tuple(mask.shape) != tuple(shape):
+                raise ValueError(f"source validity axis mismatch: {definition.feature_name}:{field}")
+            masks.append(mask)
+            sanitized[raw_key] = torch.where(mask, raw[raw_key], torch.zeros_like(raw[raw_key]))
+
+        source_mask = torch.stack(masks).all(dim=0) if masks and not missing else torch.zeros(shape, dtype=torch.bool, device=device)
+        lookback = max(1, int(definition.lookback or 1))
+        valid = _rolling_all_torch(source_mask, lookback) if lookback > 1 else source_mask
+        valid &= eligible
+        base = _compute_raw_feature(sanitized, definition.feature_name)
+        if base is None:
+            base = torch.zeros(shape, dtype=torch.float32, device=device)
+            valid.zero_()
+            missing.append("computed_feature_source")
+        base = base.to(dtype=torch.float32)
+        valid &= torch.isfinite(base)
+        clean = torch.where(valid, base, torch.zeros_like(base))
+        if definition.transform == "identity":
+            values = clean
+        elif definition.transform == "time_series_zscore":
+            source_clean = torch.where(source_mask, base, torch.zeros_like(base))
+            values = _rolling_z(source_clean, max(2, lookback))
+        else:
+            values = _masked_robust_zscore(clean, valid)
+        valid &= torch.isfinite(values)
+        values = torch.where(valid, values, torch.zeros_like(values)).to(torch.float32)
+        matrices.append(values)
+        validity_matrices.append(valid)
+        denominator = int(eligible.sum().item())
+        summaries.append(
+            {
+                "feature_name": definition.feature_name,
+                "valid_count": int(valid.sum().item()),
+                "eligible_count": denominator,
+                "valid_coverage": float(valid.sum().item() / denominator) if denominator else 0.0,
+                "nonzero_coverage": float(((values != 0) & valid).sum().item() / denominator) if denominator else 0.0,
+                "max_breadth": int(valid.sum(dim=0).max().item()) if valid.numel() else 0,
+                "missing_validity_dependencies": sorted(set(missing)),
+                "blocker": "missing_validity_dependency" if missing else (None if valid.any() else "zero_valid_coverage"),
+            }
+        )
+    if not matrices:
+        raise ValueError("feature set manifest contains no feature definitions")
+    return torch.stack(matrices, dim=1), torch.stack(validity_matrices, dim=1), summaries
+
+
+def _resolve_raw_key(raw: dict[str, torch.Tensor], field: str) -> str | None:
+    candidates = (field, field.rsplit(".", 1)[-1], field.lower(), field.rsplit(".", 1)[-1].lower())
+    return next((candidate for candidate in candidates if candidate in raw), None)
+
+
+def _resolve_validity(source_validity, raw, field: str, raw_key: str | None):
+    candidates = [field, field.rsplit(".", 1)[-1]]
+    if raw_key:
+        candidates.extend([raw_key, f"{raw_key}_validity", f"{raw_key}_valid"])
+    for candidate in candidates:
+        if candidate in source_validity:
+            return source_validity[candidate]
+        if candidate in raw and str(candidate).endswith(("_validity", "_valid")):
+            return raw[candidate]
+    return None
+
+
+def _rolling_all_torch(mask: torch.Tensor, window: int) -> torch.Tensor:
+    result = torch.zeros_like(mask, dtype=torch.bool)
+    if window <= 1:
+        return mask.bool()
+    if mask.shape[1] >= window:
+        result[:, window - 1 :] = mask.to(torch.int16).unfold(1, window, 1).sum(dim=-1) == window
+    return result
+
+
+def _masked_robust_zscore(values: torch.Tensor, validity: torch.Tensor, limit: float = 5.0) -> torch.Tensor:
+    result = torch.zeros_like(values)
+    for date_index in range(values.shape[1]):
+        mask = validity[:, date_index]
+        if not mask.any():
+            continue
+        eligible = values[mask, date_index]
+        median = eligible.median()
+        centered = eligible - median
+        scale = centered.abs().median()
+        if not torch.isfinite(scale) or float(scale.item()) < 1e-6:
+            scale = torch.ones_like(scale)
+        result[mask, date_index] = torch.clamp(centered / scale, -limit, limit)
+    return result
 
 
 def _rolling_valid(mask: np.ndarray, window: int) -> np.ndarray:

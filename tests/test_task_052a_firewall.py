@@ -60,8 +60,11 @@ def test_strict_validation_uses_persisted_next_open_target_and_diagnostic_segmen
     (tmp_path / "trade_dates.json").write_text(json.dumps(dates), encoding="utf-8")
     (tmp_path / "ts_codes.json").write_text(json.dumps(stocks), encoding="utf-8")
     shape = (len(stocks), len(dates))
-    for name in ["bar_observed_mask", "index_membership", "membership_known_mask"]:
-        np.save(tmp_path / f"{name}.npy", np.ones(shape, dtype=np.bool_))
+    np.save(tmp_path / "active.npy", np.ones(shape, dtype=np.bool_))
+    np.save(tmp_path / "signal_eligible_at_close.npy", np.ones(shape, dtype=np.bool_))
+    np.save(tmp_path / "membership.npy", np.ones(shape, dtype=np.bool_))
+    np.save(tmp_path / "membership_known.npy", np.ones(len(dates), dtype=np.bool_))
+    np.save(tmp_path / "evaluable_date_mask.npy", np.ones(len(dates), dtype=np.bool_))
     target = np.arange(np.prod(shape), dtype=np.float32).reshape(shape)
     target_validity = np.ones(shape, dtype=np.bool_)
     target_validity[:, -2:] = False
@@ -84,11 +87,16 @@ def test_strict_validation_uses_persisted_next_open_target_and_diagnostic_segmen
         encoding="utf-8",
     )
     context = _load_governed_matrix_context(
-        Namespace(matrix_cache_dir=str(tmp_path), label_horizon=2, holdout_start_date="20240531")
+        Namespace(
+            matrix_cache_dir=str(tmp_path),
+            label_horizon=2,
+            research_end_date="20240530",
+            holdout_start_date="20240531",
+        )
     )
     assert torch.equal(context["target_ret"], torch.from_numpy(target))
     assert context["target_path"].endswith("next_open_t1_t2_return.npy")
-    assert context["eligibility"].eligible_mask.tolist() == [False, False, True, True, False, False]
+    assert context["eligibility"].eligible_mask.tolist() == [True, True, False, False, False, False]
 
 
 def test_screening_is_not_rejected_when_contract_changed():

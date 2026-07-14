@@ -85,6 +85,7 @@ def test_cache_envelope_negative_attestation_and_fail_closed_validation(tmp_path
         "ts_code,trade_date,suspend_timing,suspend_type",
         [],
         response_fields=["ts_code", "trade_date", "suspend_timing", "suspend_type"],
+        response_fields_observed=True,
     )
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["request_fingerprint"]
@@ -97,7 +98,14 @@ def test_cache_envelope_negative_attestation_and_fail_closed_validation(tmp_path
     with pytest.raises(TushareCacheCorruptionError, match="truncated"):
         cache.read("suspend_d", {"trade_date": "20240102"}, "ts_code,trade_date,suspend_timing,suspend_type")
 
-    cache.write("suspend_d", {"trade_date": "20240102"}, "ts_code,trade_date,suspend_timing,suspend_type", [])
+    cache.write(
+        "suspend_d",
+        {"trade_date": "20240102"},
+        "ts_code,trade_date,suspend_timing,suspend_type",
+        [],
+        response_fields=[],
+        response_fields_observed=True,
+    )
     payload = json.loads(path.read_text(encoding="utf-8"))
     payload["code_semantic_hash"] = "obsolete"
     path.write_text(json.dumps(payload), encoding="utf-8")

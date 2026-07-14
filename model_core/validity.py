@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import torch
 
+from .ops import get_operator_spec
+
 
 def propagate_operator_validity(name: str, args: list[torch.Tensor], values: list[torch.Tensor]) -> torch.Tensor:
     if not args:
@@ -30,6 +32,61 @@ def propagate_operator_validity(name: str, args: list[torch.Tensor], values: lis
         breadth_ok = args[0].sum(dim=0, keepdim=True) >= 2
         return args[0] & breadth_ok
     raise KeyError(f"missing validity rule for operator: {name}")
+
+
+def execute_operator_with_validity(
+    token: int,
+    operator_offset: int,
+    values: list[torch.Tensor],
+    masks: list[torch.Tensor],
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Execute an operator without allowing invalid inputs into its statistics."""
+    spec = get_operator_spec(token, operator_offset)
+    name = spec.name.upper()
+    valid = propagate_operator_validity(name, masks, values)
+    if name == "CS_RANK":
+        result = _masked_cs_rank(values[0], valid)
+    elif name == "CS_ZSCORE":
+        result = _masked_cs_zscore(values[0], valid)
+    else:
+        clean_values = [torch.where(mask, value, torch.zeros_like(value)) for value, mask in zip(values, masks, strict=True)]
+        result = spec.func(*clean_values)
+    valid = valid & torch.isfinite(result)
+    return torch.where(valid, result, torch.zeros_like(result)), valid
+
+
+def _masked_cs_rank(values: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    result = torch.zeros_like(values)
+    for date_index in range(values.shape[1]):
+        date_mask = mask[:, date_index]
+        count = int(date_mask.sum().item())
+        if count < 2:
+            continue
+        eligible = values[date_mask, date_index]
+        order = torch.argsort(eligible, stable=True)
+        sorted_values = eligible[order]
+        sorted_ranks = torch.empty_like(sorted_values)
+        start = 0
+        while start < count:
+            end = start + 1
+            while end < count and bool(sorted_values[end] == sorted_values[start]):
+                end += 1
+            sorted_ranks[start:end] = (start + end - 1) / 2.0
+            start = end
+        ranks = torch.empty_like(sorted_ranks)
+        ranks[order] = sorted_ranks / max(count - 1, 1)
+        result[date_mask, date_index] = ranks
+    return result
+
+
+def _masked_cs_zscore(values: torch.Tensor, mask: torch.Tensor, limit: float = 5.0) -> torch.Tensor:
+    masked = torch.where(mask, values, torch.zeros_like(values))
+    count = mask.sum(dim=0, keepdim=True).clamp_min(1).to(values.dtype)
+    mean = masked.sum(dim=0, keepdim=True) / count
+    centered = torch.where(mask, values - mean, torch.zeros_like(values))
+    variance = centered.square().sum(dim=0, keepdim=True) / count
+    scale = torch.sqrt(variance).clamp_min(1e-6)
+    return torch.clamp(centered / scale, -limit, limit)
 
 
 def _delay(mask: torch.Tensor, periods: int) -> torch.Tensor:

@@ -111,6 +111,19 @@ def test_tushare_http_client_decodes_gzip_response():
     assert client.post("daily", fields=["ts_code", "close"]) == [{"ts_code": "000001.SZ", "close": 10.5}]
 
 
+def test_tushare_http_client_preserves_observed_empty_response_fields():
+    def fake_urlopen(request, timeout):
+        return FakeResponse({"code": 0, "msg": "", "data": {"fields": [], "items": []}})
+
+    client = TushareHttpClient(AShareDataConfig(tushare_token="secret-token", tushare_retry_count=1), urlopen=fake_urlopen)
+    envelope = client.post_with_metadata("suspend_d", fields=["ts_code", "trade_date", "suspend_timing", "suspend_type"])
+
+    assert envelope.response_fields == []
+    assert envelope.records == []
+    assert envelope.item_count == 0
+    assert envelope.response_payload_hash
+
+
 def test_tushare_http_client_raises_api_error_on_nonzero_code():
     def fake_urlopen(request, timeout):
         return FakeResponse({"code": 2002, "msg": "bad token"})
