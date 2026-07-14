@@ -320,6 +320,33 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         ["status", "historical_snapshot_proof", "universe_mode", "alpha_discovery_data_ready", "research_holdout_firewall_enabled", "run_twenty_factor_validation", "snapshot_summary", "blockers", "certification_queue_count", "portfolio_queue_count", "paper_deployment_queue_count", "live_deployment_queue_count"],
         ["task_051_engineering_report.json"],
     ),
+    "task_052a_accepted_index_snapshots": _definition(
+        "task_052a_accepted_index_snapshots",
+        ["index_code", "snapshot_date", "effective_trade_date", "ts_code", "weight"],
+        ["accepted_index_snapshots.jsonl"],
+        kind="jsonl",
+        allow_empty=False,
+    ),
+    "task_052a_universe_proof_manifest": _definition(
+        "task_052a_universe_proof_manifest",
+        ["generation_id", "content_hash", "semantic_hash", "index_code", "snapshot_count", "rejected_snapshot_count", "member_count", "source_lineage", "membership_lag_trade_days", "removed_member_leakage", "proof_checks", "partition_sha256"],
+        ["task_052a_universe_proof_manifest.json"],
+    ),
+    "task_052a_governed_freeze_manifest": _definition(
+        "task_052a_governed_freeze_manifest",
+        ["generation_id", "content_hash", "semantic_hash", "source_lineage_manifest_sha256", "artifacts", "immutable", "publication"],
+        ["task_052a_governed_freeze_manifest.json"],
+    ),
+    "task_052a_matrix_readiness_report": _definition(
+        "task_052a_matrix_readiness_report",
+        ["engineering_matrix_ready", "engineering_blockers", "alpha_discovery_ready", "research_blockers", "readiness_split_enforced"],
+        ["task_052a_readiness_report.json"],
+    ),
+    "task_052a_strict_matrix_manifest": _definition(
+        "task_052a_strict_matrix_manifest",
+        ["generation_id", "content_hash", "semantic_hash", "shape", "stock_axis_hash", "date_axis_hash", "raw_fields", "validity_masks", "bar_inference_used", "adjustment_factor_fill_value", "membership_lag_trade_days", "target_contract", "readiness", "partition_sha256", "deterministic_build"],
+        ["task_052a_strict_matrix_manifest.json"],
+    ),
     "validation_candidate_dedup_report": _definition(
         "validation_candidate_dedup_report",
         ["validation_campaign_id", "candidate_count", "duplicate_count"],

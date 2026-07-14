@@ -2366,3 +2366,22 @@
 ### 测试
 - 新增 `tests/test_task_052a_ingestion.py`，覆盖规范契约、请求指纹、缓存信封/负证明、缓存损坏/截断/语义漂移、HTTP 行宽校验、停复牌与 ST 规范化、作业计数、原子发布失败保护和 resume miss。
 - 聚焦与相邻 provider/backfill/raw-index/storage/pipeline 测试共 50 项通过；扩展 backfill/monitoring 相邻测试 18 项通过，未发起真实网络请求。
+
+## 2026-07-14 - Task 052-A Historical Universe and Strict Matrix Hardening
+
+### 本次变更摘要
+- 新增 `Task052HistoricalUniverseProofBuilder`：仅接受 canonical `000300.SH`，强制每快照恰好 300 个唯一成员、权重和范围、自然月完整覆盖、零 rejected snapshot，并要求 source-lineage manifest 同时固定 index-members 与交易日历 SHA256。
+- 历史 membership 采用保守 1 个交易日滞后和完整集合替换；removed-member leakage 不再写常量，而是逐交易日重算期望集合并审计所有历史调出成员。
+- 新增 Task 052-A governed freeze：输入文件逐字节复制、内容寻址、语义哈希、临时目录构建后原子发布、禁止覆盖，并在每次消费前复算全部 partition 与 lineage hash。
+- 新增全仓唯一 `StrictEngineeringPITMatrixBuilder`：股票/日期轴严格继承 governed universe，raw field 仅按精确 `ts_code/trade_date` 对齐，逐字段 validity mask，bar observed 仅来自显式 daily-bar 行，禁止 bar inference 与 `adj_factor=1` 缺失回填。
+- 标签统一为 signal date `t` 上的 `open[t+2] / open[t+1] - 1`，entry/exit 两端都必须有真实 open 观测；工程矩阵 readiness 与 Alpha discovery readiness 分开输出，历史 ST、停牌、untouched holdout 和 firewall 证明缺失时研究就绪保持 false。
+- Universe、freeze、matrix generation 均以稳定 semantic contract + 输入内容 hash 生成地址，使用固定 artifact metadata 时间和确定性 NPY/JSON 序列化；独立输出根复放的 content hash 与 partition SHA 完全一致。
+
+### Artifact 与测试
+- Artifact schema 新增 accepted snapshots、universe proof、governed freeze、strict matrix manifest 和 readiness report 五类定义。
+- 新增 `tests/test_task_052a_matrix.py`，覆盖 300 股/权重/月度/lineage 证明、bad snapshot fail-closed、真实调出无泄漏、1 交易日滞后、冻结漂移检测、轴与 raw/mask 精确对齐、无 bar 推断、无 adj fill、next-open `t+1 -> t+2` 标签、readiness 分层和跨根确定性复放。
+- 相关回归 30 项通过；完整仓库测试 514 项通过，2 个既有风险模型 warning，无失败。
+
+### 执行边界
+- 本任务只用 pytest 临时目录中的合成数据验证生成器，没有写入或修改任何真实 lake、freeze、matrix、campaign 或 factor-store 数据。
+- 新增模块无 Solana、Jupiter、Birdeye、DexScreener、meme/token/crypto 旧逻辑；旧通用 matrix builder 保留供非 052-A 路径使用，052-A 正式工程矩阵只允许唯一严格 builder。
