@@ -94,6 +94,7 @@ class AShareDataLoader:
         self.ts_codes = sorted(str(record["ts_code"]) for record in selected_securities)
         self.trade_dates = sorted(record["trade_date"] for record in calendar if record.get("is_open", False))
         if self.date_firewall is not None:
+            self.firewall_source_trade_dates = list(self.trade_dates)
             self.trade_dates = [date for date in self.trade_dates if date <= self.date_firewall.research_end_date]
         if not self.ts_codes or not self.trade_dates:
             raise ValueError("A-share data directory does not contain aligned securities and trade dates")
@@ -659,17 +660,19 @@ class AShareDataLoader:
     def _apply_research_view(self) -> None:
         if self.date_firewall is None:
             return
-        source_dates = list(self.trade_dates)
+        value_dates = list(self.trade_dates)
+        source_dates = list(self.firewall_source_trade_dates or value_dates)
         view = ResearchDataView(self.date_firewall, tuple(source_dates))
-        self.firewall_source_trade_dates = source_dates
+        if not self.firewall_source_trade_dates:
+            self.firewall_source_trade_dates = source_dates
         indices = list(view.eligible_indices)
         self.trade_dates = list(view.eligible_dates)
         index = torch.tensor(indices, dtype=torch.long, device=self.device)
         for name, value in list(self.raw_data_cache.items()):
-            if isinstance(value, torch.Tensor) and value.ndim >= 2 and value.shape[-1] == len(source_dates):
+            if isinstance(value, torch.Tensor) and value.ndim >= 2 and value.shape[-1] == len(value_dates):
                 self.raw_data_cache[name] = value.index_select(value.ndim - 1, index)
         for name, value in list(self.raw_validity_cache.items()):
-            if isinstance(value, torch.Tensor) and value.ndim >= 2 and value.shape[-1] == len(source_dates):
+            if isinstance(value, torch.Tensor) and value.ndim >= 2 and value.shape[-1] == len(value_dates):
                 self.raw_validity_cache[name] = value.index_select(value.ndim - 1, index)
         if self.feat_tensor is not None:
             self.feat_tensor = self.feat_tensor.index_select(2, index)
@@ -677,7 +680,7 @@ class AShareDataLoader:
             self.feature_validity = self.feature_validity.index_select(2, index)
         if self.target_ret is not None:
             self.target_ret = self.target_ret.index_select(1, index)
-            if self.target_available is not None and self.target_available.shape[1] == len(source_dates):
+            if self.target_available is not None and self.target_available.shape[1] == len(value_dates):
                 self.target_available = self.target_available.index_select(1, index)
             self.date_firewall.audit_observation_access(
                 self.trade_dates,
@@ -699,6 +702,7 @@ class AShareDataLoader:
         if self.date_firewall is None:
             return
         source_dates = list(self.trade_dates)
+        self.firewall_source_trade_dates = source_dates
         selected = [index for index, date in enumerate(source_dates) if date <= self.date_firewall.research_end_date]
         bounded_dates = [source_dates[index] for index in selected]
         index = torch.tensor(selected, dtype=torch.long, device=self.device)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 from dataclasses import replace
 
@@ -17,15 +19,18 @@ def run_proxy_eval(candidates, loader, *, max_candidates: int, max_dates: int, v
     rows: list[dict] = []
     passed = 0
     attempted = 0
-    date_count = min(max_dates, len(loader.trade_dates))
+    research_indices, eligible_date_hash = _loader_research_indices(loader)
+    date_count = min(max_dates, len(research_indices))
     if date_count <= 0:
         raise RuntimeError("proxy has no eligible research dates")
     if date_count == 1:
         date_indices = [0]
     else:
-        positions = [(idx * (len(loader.trade_dates) - 1)) // (date_count - 1) for idx in range(date_count)]
-        offset = int(seed) % len(loader.trade_dates)
-        date_indices = sorted({(position + offset) % len(loader.trade_dates) for position in positions})
+        positions = [(idx * (len(research_indices) - 1)) // (date_count - 1) for idx in range(date_count)]
+        offset = int(seed) % len(research_indices)
+        date_indices = sorted({research_indices[(position + offset) % len(research_indices)] for position in positions})
+    if date_count == 1:
+        date_indices = [research_indices[0]]
     date_tensor = torch.tensor(date_indices, dtype=torch.long, device=loader.feat_tensor.device)
     lineage = build_loader_lineage(loader, stage="alpha_proxy_eval", extra={"max_dates": int(max_dates), "seed": int(seed)})
     _audit_sampled_target_reads(loader, date_indices)
@@ -95,7 +100,7 @@ def run_proxy_eval(candidates, loader, *, max_candidates: int, max_dates: int, v
         "failed": sum(1 for row in rows if row.get("status") == "failed"),
         "max_dates": date_count,
         "sampled_dates": [loader.trade_dates[index] for index in date_indices],
-        "eligible_date_hash": __import__("hashlib").sha256("\n".join(loader.trade_dates).encode()).hexdigest(),
+        "eligible_date_hash": eligible_date_hash,
         "seed": int(seed),
         "lineage": lineage,
         "lineage_hash": lineage["lineage_hash"],
@@ -187,3 +192,16 @@ def _loader_signal_eligibility(loader) -> torch.Tensor:
         if name in raw:
             return raw[name].bool()
     return torch.ones_like(loader.target_ret, dtype=torch.bool)
+
+
+def _loader_research_indices(loader) -> tuple[list[int], str]:
+    dates = tuple(str(value) for value in loader.trade_dates)
+    firewall = getattr(loader, "date_firewall", None)
+    if firewall is None:
+        payload = {"trade_dates": dates, "contract": "unbounded"}
+        return list(range(len(dates))), hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    source_dates = tuple(getattr(loader, "firewall_source_trade_dates", ()) or dates)
+    source_eligible = firewall.contract.eligible_dates(source_dates)
+    if dates == source_eligible:
+        return list(range(len(dates))), firewall.contract.eligible_date_hash(source_dates)
+    return list(firewall.contract.eligible_indices(dates)), firewall.contract.eligible_date_hash(dates)

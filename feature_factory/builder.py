@@ -172,14 +172,10 @@ def _compute_raw_feature(raw: dict[str, torch.Tensor], name: str) -> torch.Tenso
     close = raw.get("close")
     if close is None:
         return None
-    direct = raw.get(name.lower())
-    if direct is not None:
-        if direct.ndim == 1:
-            direct = direct.unsqueeze(1).expand(-1, close.shape[1])
-        return direct
     if name.startswith("RET_") and name.endswith("D"):
         days = int(name.removeprefix("RET_").removesuffix("D"))
-        return _log_return(close, days)
+        adjusted_close = raw.get("adjusted_close")
+        return None if adjusted_close is None else _log_return(adjusted_close, days)
     if name == "AMPLITUDE":
         return (raw.get("high", close) - raw.get("low", close)) / torch.clamp(raw.get("pre_close", close), min=1e-6)
     if name == "INTRADAY_RETURN":
@@ -193,12 +189,22 @@ def _compute_raw_feature(raw: dict[str, torch.Tensor], name: str) -> torch.Tenso
     if name == "TURNOVER_Z20":
         return _rolling_z(raw.get("turnover_rate", torch.zeros_like(close)), 20)
     if name == "VOLATILITY_5D":
-        return _rolling_std(_log_return(close, 1), 5)
+        adjusted_close = raw.get("adjusted_close")
+        return None if adjusted_close is None else _rolling_std(_log_return(adjusted_close, 1), 5)
     if name == "VOLATILITY_20D":
-        return _rolling_std(_log_return(close, 1), 20)
+        adjusted_close = raw.get("adjusted_close")
+        return None if adjusted_close is None else _rolling_std(_log_return(adjusted_close, 1), 20)
     if name == "DOWNSIDE_VOL_20D":
-        ret = torch.minimum(_log_return(close, 1), torch.zeros_like(close))
+        adjusted_close = raw.get("adjusted_close")
+        if adjusted_close is None:
+            return None
+        ret = torch.minimum(_log_return(adjusted_close, 1), torch.zeros_like(adjusted_close))
         return _rolling_std(ret, 20)
+    direct = raw.get(name.lower())
+    if direct is not None:
+        if direct.ndim == 1:
+            direct = direct.unsqueeze(1).expand(-1, close.shape[1])
+        return direct
     mapping = {
         "TURNOVER_RATE": "turnover_rate",
         "VOLUME_RATIO": "volume_ratio",
@@ -292,6 +298,11 @@ def _definition_from_payload(payload: dict[str, Any]) -> FeatureDefinition:
         used_for_risk=bool(payload.get("used_for_risk", False)),
         description=str(payload.get("description", "")),
         metadata=dict(payload.get("metadata", {})),
+        dependency_graph=dict(payload.get("dependency_graph", {})),
+        effective_lookback=int(payload.get("effective_lookback", payload.get("lookback", 1)) or 1),
+        price_basis=str(payload.get("price_basis", "not_applicable")),
+        pit_availability=str(payload.get("pit_availability", "same_trade_date")),
+        validity_rule=str(payload.get("validity_rule", "all_sources_valid_for_required_history")),
     )
 
 

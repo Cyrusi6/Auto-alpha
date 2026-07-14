@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import time
@@ -23,6 +24,7 @@ from alpha_experiment_store.leaderboard import load_candidate_pool
 from feature_promotion import load_promotion_gate
 from model_core.data_loader import AShareDataLoader
 from model_core.backtest import AShareFactorEvaluator
+from research_firewall import ResearchEligibilityContract
 
 from .materialization import FactorMaterializer, MaterializationInputs, load_materialized_factor
 from .eligibility import build_common_eligibility, eligible_date_segments
@@ -267,6 +269,8 @@ def _run_single(
     if factor_record is None:
         raise RuntimeError(f"factor metadata missing: {factor_id}")
     policy = load_validation_policy(args.validation_policy)
+    policy.validate_window_parameters(args.train_size, args.validation_size, args.test_size, args.step_size)
+    research_contract = ResearchEligibilityContract(args.research_end_date, int(args.label_horizon)) if args.research_end_date else None
     manifest_path: str | None = None
     if args.strict_materialization:
         matrix = _load_governed_matrix_context(args)
@@ -289,6 +293,12 @@ def _run_single(
                     snapshot_proof_manifest_path=args.snapshot_proof_manifest_path,
                     promotion_allowlist_path=args.feature_promotion_allowlist_path,
                     promotion_denylist_path=args.feature_promotion_denylist_path,
+                    research_end_date=args.research_end_date,
+                    label_horizon=int(args.label_horizon),
+                    research_eligible_date_mask_path=str(Path(args.matrix_cache_dir) / "research_eligible_date_mask.npy") if args.research_end_date else None,
+                    eligibility_contract_hash=research_contract.eligible_date_hash(matrix["trade_dates"]) if research_contract else None,
+                    validation_policy_hash=policy.policy_hash,
+                    requested_embargo_size=int(args.embargo_size),
                 ),
                 args.materialization_dir,
                 device=args.device,
@@ -327,7 +337,28 @@ def _run_single(
             "index_member_matrix": raw_data_cache.get("index_member_matrix"),
             "firewall_proof": loader.date_firewall.proof(loader.firewall_source_trade_dates or loader.trade_dates, raw_truncated_before_compute=True) if loader.date_firewall else {},
         }
-    effective_embargo = max(int(args.embargo_size), int(factor_record.lookback_days or 1) + int(args.label_horizon))
+    recursive_lookback = int(
+        (materialization_manifest.get("factor_identity") or {}).get("effective_lookback")
+        or materialization_manifest.get("lookback_days")
+        or factor_record.lookback_days
+        or 1
+    )
+    minimum_embargo = recursive_lookback + int(args.label_horizon)
+    effective_embargo = max(int(args.embargo_size), minimum_embargo)
+    eligibility_contract = research_contract or ResearchEligibilityContract(trade_dates[-1], int(args.label_horizon))
+    eligibility_lineage = eligibility_contract.lineage(trade_dates)
+    policy_lineage = {
+        "policy": policy.to_dict(),
+        "base_policy_hash": policy.policy_hash,
+        "recursive_lookback": recursive_lookback,
+        "label_horizon": int(args.label_horizon),
+        "minimum_embargo": minimum_embargo,
+        "effective_embargo": effective_embargo,
+        "eligibility_contract": eligibility_lineage,
+    }
+    policy_lineage["policy_hash"] = hashlib.sha256(
+        json.dumps(policy_lineage, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
     eligibility = matrix.get("eligibility")
     if eligibility is not None:
         segments = eligible_date_segments(trade_dates, eligibility)
@@ -444,6 +475,8 @@ def _run_single(
             "freeze_status": freeze_report.status,
             "candidate_pool_row": candidate_pool_row or {},
             "validation_policy": policy.to_dict(),
+            "validation_policy_hash": policy_lineage["policy_hash"],
+            "validation_policy_lineage": policy_lineage,
             "effective_embargo_size": effective_embargo,
             "label_horizon": args.label_horizon,
             "selection_data_reused": True,
@@ -562,15 +595,14 @@ def _load_governed_matrix_context(args: argparse.Namespace) -> dict[str, Any]:
         if evaluable_path.exists()
         else np.ones(len(trade_dates), dtype=np.bool_)
     )
-    research_boundary = np.ones(len(trade_dates), dtype=np.bool_)
-    if args.research_end_date:
-        research_boundary = np.asarray([date <= args.research_end_date for date in trade_dates], dtype=np.bool_)
+    research_contract = ResearchEligibilityContract(args.research_end_date, int(args.label_horizon)) if args.research_end_date else None
     eligibility = build_common_eligibility(
         trade_dates,
         membership_known=membership_by_date,
         snapshot_valid=membership_by_date,
-        target_data_valid=target_valid.any(axis=0) & research_boundary,
+        target_data_valid=target_valid.any(axis=0),
         structural_gap_free=structural_gap_free,
+        research_contract=research_contract,
     )
     index_np = masks["index_member_matrix"].numpy()
     has_pit_constituent_proof = bool(
@@ -603,6 +635,7 @@ def _load_governed_matrix_context(args: argparse.Namespace) -> dict[str, Any]:
             "holdout_start_date": manifest.get("holdout_start_date") or (manifest.get("firewall") or {}).get("diagnostic_period_start"),
             "label_horizon": manifest.get("label_horizon") or (manifest.get("firewall") or {}).get("target_endpoint_horizon_trade_days"),
             "eligible_date_hash": manifest.get("eligible_date_hash"),
+            "research_eligibility_contract": eligibility.research_contract,
             "raw_truncated_before_compute": bool(manifest.get("raw_truncated_before_compute", False)),
             "out_of_bounds_access_count": int(manifest.get("firewall_out_of_bounds_access_count", 0) or 0),
         },
@@ -704,12 +737,14 @@ def _first_existing_matrix_path(matrix_dir: Path, candidates: list[Any], error: 
 
 def _validation_contract(matrix: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
     eligibility = matrix.get("eligibility")
+    research_contract = ResearchEligibilityContract(args.research_end_date, int(args.label_horizon))
     return {
         "target_return_mode": matrix.get("target_return_mode"),
         "label_horizon": int(args.label_horizon),
         "eligible_date_hash": eligibility.eligible_date_hash if eligibility is not None else None,
         "target_contract": matrix.get("target_contract") or {},
         "matrix_semantic_hash": matrix.get("matrix_semantic_hash"),
+        "research_eligibility_contract": research_contract.lineage(matrix.get("trade_dates") or []),
     }
 
 

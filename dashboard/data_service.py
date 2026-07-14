@@ -431,6 +431,15 @@ class AshareDashboardService:
     def load_task_053_suspension_reconciliation(self) -> dict[str, Any]:
         return self._read_first_json(self._validation_campaign_artifact_candidates("task_053_suspension_reconciliation.json"))
 
+    def load_task_054_production_dag_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_campaign_artifact_candidates("task_054a_production_dag_report.json"))
+
+    def load_task_054_firewall_sentinel(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_campaign_artifact_candidates("task_054a_production_firewall_sentinel.json"))
+
+    def load_task_054_scrubbed_evidence(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_campaign_artifact_candidates("task_054a_scrubbed_evidence_package.json"))
+
     def load_future_untouched_holdout_plan(self) -> dict[str, Any]:
         return self._read_first_json(self._validation_campaign_artifact_candidates("future_untouched_holdout_plan.json"))
 

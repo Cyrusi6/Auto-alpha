@@ -388,6 +388,38 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         ["task_053a_research_firewall_sentinel.json"],
         optional=["baseline", "post_cutoff_mutation", "inside_cutoff_mutation", "blockers"],
     ),
+    "task_054a_production_firewall_sentinel": _definition(
+        "task_054a_production_firewall_sentinel",
+        ["status", "executions", "proof", "content_hash", "research_firewall_ready"],
+        ["task_054a_production_firewall_sentinel.json"],
+        optional=["blockers", "research_end_date", "label_horizon"],
+    ),
+    "task_054a_production_dag_report": _definition(
+        "task_054a_production_dag_report",
+        ["status", "stages", "engineering_blockers", "content_hash", "task053_baseline_status"],
+        ["task_054a_production_dag_report.json"],
+    ),
+    "task_054a_stage_manifest": _definition(
+        "task_054a_stage_manifest",
+        ["stage", "status", "source_manifest_sha256", "source_content_hash"],
+        ["task_054a_stage_manifest.json"],
+        optional=["artifact_type", "schema_version", "producer", "created_at", "artifact_metadata", "source_artifact_type"],
+    ),
+    "task_054a_scrubbed_evidence_package": _definition(
+        "task_054a_scrubbed_evidence_package",
+        ["status", "candidate_count", "package_hash"],
+        ["task_054a_scrubbed_evidence_package.json"],
+        optional=[
+            "artifact_type", "schema_version", "producer", "created_at", "artifact_metadata",
+            "contract_version", "verifier_version", "candidates", "candidate_identities",
+            "candidate_identity_root", "status_counts", "artifact_merkle_roots", "gpu_shards",
+            "lineage_hashes", "eligible_date_hash", "max_legal_signal_date", "max_legal_endpoint_date",
+            "policy_hash", "code_hash", "replay_hashes", "sentinel", "replay_executed",
+            "engineering_blockers", "task053_baseline_status", "public_verification_scope",
+            "certification_ready", "portfolio_ready", "paper_ready", "live_ready",
+            "certification_queue_count", "portfolio_queue_count", "paper_queue_count", "live_queue_count",
+        ],
+    ),
     "validation_candidate_dedup_report": _definition(
         "validation_candidate_dedup_report",
         ["validation_campaign_id", "candidate_count", "duplicate_count"],

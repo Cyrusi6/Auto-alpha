@@ -2436,3 +2436,11 @@
 - v3 values/validity 为 637×95×6417，invalid nonzero 为 0；旧 20 公式与 blocked optional feature 的依赖交集为 0。Research Firewall 四路径 sentinel 越界访问 0、post-cutoff research 变化 0、diagnostic 变化 4。
 - 四张 GeForce RTX 4090 各执行 5 个候选；20/20 首轮 materialization 为 uncached CUDA，CPU fallback/OOM/retry 为 0。候选终态为 1 data_blocked、12 statistically_rejected、7 historical_replay_passed；独立 sibling replay 的四个 shard core SHA 全部一致，immutable resume 4/4 命中。
 - 最终状态为 `engineering_replay_completed_certification_blocked`；certification、portfolio、paper、live readiness 与 queue 均保持 false/0。
+
+## Task 054-A — Production truth correction and black-box research firewall
+
+- Introduced one `ResearchEligibilityContract` for the next-trade-day-open `t+1 -> t+2` target. The eligible-date hash binds the complete trading-day axis, cutoff, endpoint horizon, and execution contract; quality metrics and validation windows use only mature research dates.
+- Reworked v3 feature contracts to carry source fields, offsets, price basis, effective lookback, PIT availability, and recursive validity. Adjusted-price return features are separated from raw intraday features, and missing expanded dependencies fail closed.
+- Hardened tensor/materialization lineage with actual partition SHA256, semantic source hashes, axes, target/time contracts, canonical formula identity, recursive lookback, and locked production validation windows.
+- Added Task 054 production DAG, four-path subprocess sentinel protocol, strict replay-evidence validator, scrubbed Git-safe evidence package, and independent verifier. Certification, portfolio, paper, and live readiness remain false by contract.
+- Task 053's `7/12/1` replay remains provisional until a new Task 054 evidence package passes full server-artifact verification; a blocked Task 054 run does not supersede it.

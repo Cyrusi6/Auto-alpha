@@ -9,6 +9,7 @@ from typing import Iterable
 
 from model_core.vocab import FEATURE_NAMES
 
+from .contracts import build_feature_contract
 from .models import FeatureDefinition, FeatureFamily, FeatureSetManifest
 
 
@@ -132,6 +133,16 @@ def _definition(
     used_for_risk: bool = False,
     description: str = "",
 ) -> FeatureDefinition:
+    source_fields = tuple(source_fields)
+    contract = build_feature_contract(
+        name,
+        source_fields,
+        lookback=lookback,
+        transform=transform,
+        availability_field=availability_field,
+        pit_safety=pit_safety or ("pit_safe" if pit_safe else "weak_pit"),
+        feature_version=feature_version,
+    )
     return FeatureDefinition(
         feature_name=name,
         feature_version=feature_version,
@@ -152,6 +163,11 @@ def _definition(
         used_for_risk=used_for_risk,
         default_enabled=default_enabled,
         description=description,
+        dependency_graph=contract.to_dict(),
+        effective_lookback=contract.effective_lookback,
+        price_basis=contract.price_basis,
+        pit_availability=contract.pit_availability,
+        validity_rule=contract.validity_rule,
     )
 
 
@@ -170,8 +186,8 @@ def _v1_definitions() -> list[FeatureDefinition]:
         "REVENUE_YOY": FeatureFamily.growth,
     }
     sources = {
-        "RET_1D": ["close"],
-        "RET_5D": ["close"],
+        "RET_1D": ["adjusted_close"],
+        "RET_5D": ["adjusted_close"],
         "AMPLITUDE": ["high", "low", "pre_close"],
         "TURNOVER_RATE": ["turnover_rate"],
         "VOLUME_RATIO": ["volume_ratio"],
@@ -189,7 +205,7 @@ def _v1_definitions() -> list[FeatureDefinition]:
             sources[name],
             feature_version=FEATURE_SET_V1,
             tensor_key=name.lower(),
-            lookback=5 if name == "RET_5D" else 1,
+            lookback=6 if name == "RET_5D" else (2 if name == "RET_1D" else 1),
         )
         for name in FEATURE_NAMES
     ]
@@ -197,16 +213,16 @@ def _v1_definitions() -> list[FeatureDefinition]:
 
 def _v2_extra_definitions(*, corporate_action_aware: bool) -> list[FeatureDefinition]:
     definitions = [
-        _definition("RET_3D", FeatureFamily.price_return, ["close"], lookback=3),
-        _definition("RET_10D", FeatureFamily.price_return, ["close"], lookback=10),
-        _definition("RET_20D", FeatureFamily.price_return, ["close"], lookback=20),
+        _definition("RET_3D", FeatureFamily.price_return, ["adjusted_close"], lookback=4),
+        _definition("RET_10D", FeatureFamily.price_return, ["adjusted_close"], lookback=11),
+        _definition("RET_20D", FeatureFamily.price_return, ["adjusted_close"], lookback=21),
         _definition("INTRADAY_RETURN", FeatureFamily.price_return, ["open", "close"]),
         _definition("GAP_RETURN", FeatureFamily.price_return, ["open", "pre_close"]),
         _definition("AMOUNT_Z20", FeatureFamily.liquidity, ["amount"], lookback=20),
         _definition("TURNOVER_Z20", FeatureFamily.liquidity, ["turnover_rate"], lookback=20),
-        _definition("VOLATILITY_5D", FeatureFamily.volatility, ["close"], lookback=5),
-        _definition("VOLATILITY_20D", FeatureFamily.volatility, ["close"], lookback=20),
-        _definition("DOWNSIDE_VOL_20D", FeatureFamily.volatility, ["close"], lookback=20),
+        _definition("VOLATILITY_5D", FeatureFamily.volatility, ["adjusted_close"], lookback=6),
+        _definition("VOLATILITY_20D", FeatureFamily.volatility, ["adjusted_close"], lookback=21),
+        _definition("DOWNSIDE_VOL_20D", FeatureFamily.volatility, ["adjusted_close"], lookback=21),
         _definition("PS_TTM", FeatureFamily.valuation, ["ps_ttm"]),
         _definition("LIMIT_UP_FLAG", FeatureFamily.limit_suspension, ["limit_up_flag"], transform="identity"),
         _definition("LIMIT_DOWN_FLAG", FeatureFamily.limit_suspension, ["limit_down_flag"], transform="identity"),

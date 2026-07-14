@@ -13,6 +13,7 @@ import numpy as np
 import torch
 
 from .builder import _coerce_manifest, _definition_from_payload, _compute_raw_feature, _infer_device, _infer_shape
+from .contracts import contract_from_definition
 from .extended_builder import _rolling_z
 
 
@@ -32,29 +33,27 @@ def build_feature_validity_tensor(
     if len(definitions) != shape[1]:
         raise ValueError("feature definition count mismatch")
     for feature_index, definition in enumerate(definitions):
-        fields = list(definition.get("source_fields") or [])
-        missing_fields = [field for field in fields if field not in source_validity]
-        masks = [np.asarray(source_validity[field], dtype=np.bool_) for field in fields if field in source_validity]
-        if any(mask.shape != eligible_mask.shape for mask in masks):
-            raise ValueError(f"source validity axis mismatch: {definition.get('feature_name')}")
-        base = np.logical_and.reduce(masks) if masks and not missing_fields else np.zeros_like(eligible_mask, dtype=np.bool_)
-        lookback = max(1, int(definition.get("lookback") or 1))
-        valid = _rolling_valid(base, lookback) if lookback > 1 else base.copy()
+        contract = contract_from_definition(definition)
+        valid, missing_fields = _contract_validity_numpy(contract, source_validity, eligible_mask.shape)
         valid &= eligible_mask
         valid &= np.isfinite(feature_tensor[:, feature_index, :])
         validity[:, feature_index, :] = valid
+        valid_values = feature_tensor[:, feature_index, :][valid]
+        standard_deviation = float(np.std(valid_values, dtype=np.float64)) if valid_values.size else 0.0
+        blocker = _feature_blocker(missing_fields, int(valid.sum()), standard_deviation)
         denominator = int(eligible_mask.sum())
         summaries.append({
             "feature_name": definition.get("feature_name"),
-            "lookback": lookback,
+            "lookback": contract.effective_lookback,
             "valid_count": int(valid.sum()),
             "eligible_count": denominator,
             "valid_coverage": float(valid.sum() / denominator) if denominator else 0.0,
             "nonzero_coverage": float(((feature_tensor[:, feature_index, :] != 0) & valid).sum() / denominator) if denominator else 0.0,
             "max_breadth": int(valid.sum(axis=0).max(initial=0)),
-            "validity_dependencies": fields,
+            "standard_deviation": standard_deviation,
+            "validity_dependencies": [item.to_dict() for item in contract.dependencies],
             "missing_validity_dependencies": missing_fields,
-            "blocker": "missing_validity_dependency" if missing_fields else (None if valid.any() else "zero_valid_coverage"),
+            "blocker": blocker,
         })
     output = Path(output_dir); output.mkdir(parents=True, exist_ok=True)
     tensor_path = output / "feature_validity_tensor.npy"
@@ -103,25 +102,30 @@ def build_feature_values_and_validity(
     validity_matrices: list[torch.Tensor] = []
     summaries: list[dict[str, Any]] = []
     for definition in definitions:
-        fields = list(definition.source_fields)
-        masks: list[torch.Tensor] = []
+        contract = contract_from_definition(definition)
         missing: list[str] = []
         sanitized = dict(raw)
-        for field in fields:
+        dependency_masks: list[torch.Tensor] = []
+        for dependency in contract.dependencies:
+            field = dependency.field
             raw_key = _resolve_raw_key(raw, field)
             mask = _resolve_validity(source_validity, raw, field, raw_key)
+            if field == "adjusted_close" and mask is None:
+                mask = _combined_validity(source_validity, raw, ("close", "adj_factor"), shape, device)
             if raw_key is None or mask is None:
                 missing.append(field)
                 continue
             mask = torch.as_tensor(mask, dtype=torch.bool, device=device)
             if tuple(mask.shape) != tuple(shape):
                 raise ValueError(f"source validity axis mismatch: {definition.feature_name}:{field}")
-            masks.append(mask)
+            if dependency.price_basis != "not_applicable":
+                source_values = raw[raw_key]
+                mask = mask & torch.isfinite(source_values) & (source_values > 0)
+            dependency_masks.append(_dependency_validity_torch(mask, dependency.offsets, dependency.history))
             sanitized[raw_key] = torch.where(mask, raw[raw_key], torch.zeros_like(raw[raw_key]))
 
-        source_mask = torch.stack(masks).all(dim=0) if masks and not missing else torch.zeros(shape, dtype=torch.bool, device=device)
-        lookback = max(1, int(definition.lookback or 1))
-        valid = _rolling_all_torch(source_mask, lookback) if lookback > 1 else source_mask
+        source_mask = torch.stack(dependency_masks).all(dim=0) if dependency_masks and not missing else torch.zeros(shape, dtype=torch.bool, device=device)
+        valid = source_mask.clone()
         valid &= eligible
         base = _compute_raw_feature(sanitized, definition.feature_name)
         if base is None:
@@ -135,11 +139,14 @@ def build_feature_values_and_validity(
             values = clean
         elif definition.transform == "time_series_zscore":
             source_clean = torch.where(source_mask, base, torch.zeros_like(base))
-            values = _rolling_z(source_clean, max(2, lookback))
+            values = _rolling_z(source_clean, max(2, int(definition.lookback or 1)))
         else:
             values = _masked_robust_zscore(clean, valid)
         valid &= torch.isfinite(values)
         values = torch.where(valid, values, torch.zeros_like(values)).to(torch.float32)
+        valid_values = values[valid]
+        standard_deviation = float(valid_values.std(unbiased=False).item()) if valid_values.numel() else 0.0
+        blocker = _feature_blocker(missing, int(valid.sum().item()), standard_deviation)
         matrices.append(values)
         validity_matrices.append(valid)
         denominator = int(eligible.sum().item())
@@ -151,8 +158,15 @@ def build_feature_values_and_validity(
                 "valid_coverage": float(valid.sum().item() / denominator) if denominator else 0.0,
                 "nonzero_coverage": float(((values != 0) & valid).sum().item() / denominator) if denominator else 0.0,
                 "max_breadth": int(valid.sum(dim=0).max().item()) if valid.numel() else 0,
+                "standard_deviation": standard_deviation,
+                "source_fields": list(contract.source_fields),
+                "dependency_graph": contract.to_dict(),
+                "effective_lookback": contract.effective_lookback,
+                "price_basis": contract.price_basis,
+                "pit_availability": contract.pit_availability,
+                "validity_rule": contract.validity_rule,
                 "missing_validity_dependencies": sorted(set(missing)),
-                "blocker": "missing_validity_dependency" if missing else (None if valid.any() else "zero_valid_coverage"),
+                "blocker": blocker,
             }
         )
     if not matrices:
@@ -163,6 +177,90 @@ def build_feature_values_and_validity(
 def _resolve_raw_key(raw: dict[str, torch.Tensor], field: str) -> str | None:
     candidates = (field, field.rsplit(".", 1)[-1], field.lower(), field.rsplit(".", 1)[-1].lower())
     return next((candidate for candidate in candidates if candidate in raw), None)
+
+
+def _feature_blocker(missing: list[str], valid_count: int, standard_deviation: float) -> str | None:
+    if missing:
+        return "missing_validity_dependency"
+    if valid_count <= 0:
+        return "zero_valid_coverage"
+    if not np.isfinite(standard_deviation) or standard_deviation <= 1e-12:
+        return "zero_variance"
+    return None
+
+
+def _combined_validity(source_validity, raw, fields, shape, device):
+    masks = []
+    for field in fields:
+        raw_key = _resolve_raw_key(raw, field)
+        mask = _resolve_validity(source_validity, raw, field, raw_key)
+        if raw_key is None or mask is None:
+            return None
+        tensor = torch.as_tensor(mask, dtype=torch.bool, device=device)
+        if tuple(tensor.shape) != tuple(shape):
+            raise ValueError(f"source validity axis mismatch: {field}")
+        masks.append(tensor)
+    return torch.stack(masks).all(dim=0)
+
+
+def _dependency_validity_torch(mask: torch.Tensor, offsets: tuple[int, ...], history: int) -> torch.Tensor:
+    if offsets:
+        shifted = [_shift_validity_torch(mask, offset) for offset in offsets]
+        return torch.stack(shifted).all(dim=0)
+    return _rolling_all_torch(mask, max(1, int(history)))
+
+
+def _shift_validity_torch(mask: torch.Tensor, offset: int) -> torch.Tensor:
+    result = torch.zeros_like(mask, dtype=torch.bool)
+    if offset == 0:
+        return mask.bool()
+    if offset < 0:
+        periods = -offset
+        if mask.shape[1] > periods:
+            result[:, periods:] = mask[:, :-periods]
+        return result
+    if mask.shape[1] > offset:
+        result[:, :-offset] = mask[:, offset:]
+    return result
+
+
+def _contract_validity_numpy(contract, source_validity, shape):
+    dependency_masks = []
+    missing = []
+    for dependency in contract.dependencies:
+        mask = source_validity.get(dependency.field)
+        if mask is None and dependency.field == "adjusted_close":
+            close_mask = source_validity.get("close")
+            adjustment_mask = source_validity.get("adj_factor")
+            if close_mask is not None and adjustment_mask is not None:
+                mask = np.asarray(close_mask, dtype=np.bool_) & np.asarray(adjustment_mask, dtype=np.bool_)
+        if mask is None:
+            missing.append(dependency.field)
+            continue
+        mask = np.asarray(mask, dtype=np.bool_)
+        if mask.shape != shape:
+            raise ValueError(f"source validity axis mismatch: {contract.feature_name}:{dependency.field}")
+        if dependency.offsets:
+            parts = [_shift_validity_numpy(mask, offset) for offset in dependency.offsets]
+            dependency_masks.append(np.logical_and.reduce(parts))
+        else:
+            dependency_masks.append(_rolling_valid(mask, dependency.history))
+    valid = np.logical_and.reduce(dependency_masks) if dependency_masks and not missing else np.zeros(shape, dtype=np.bool_)
+    return valid, missing
+
+
+def _shift_validity_numpy(mask: np.ndarray, offset: int) -> np.ndarray:
+    result = np.zeros_like(mask, dtype=np.bool_)
+    if offset == 0:
+        return mask.copy()
+    if offset < 0:
+        periods = -offset
+        if mask.shape[1] > periods:
+            result[:, periods:] = mask[:, :-periods]
+        return result
+    if mask.shape[1] > offset:
+        result[:, :-offset] = mask[:, offset:]
+    return result
 
 
 def _resolve_validity(source_validity, raw, field: str, raw_key: str | None):

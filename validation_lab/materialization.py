@@ -17,6 +17,7 @@ import torch
 
 from artifact_schema.writer import attach_artifact_metadata
 from factor_engine.transforms import preprocess_factor_with_validity
+from factor_store.hash import make_factor_id, stable_formula_hash
 from factor_store.models import FactorRecord
 from feature_factory.builder import load_feature_manifest
 from feature_factory.vocab_adapter import make_formula_vocab_from_manifest
@@ -45,6 +46,12 @@ class MaterializationInputs:
     snapshot_proof_manifest_path: str | None = None
     promotion_allowlist_path: str | None = None
     promotion_denylist_path: str | None = None
+    research_end_date: str | None = None
+    label_horizon: int = 2
+    research_eligible_date_mask_path: str | None = None
+    eligibility_contract_hash: str | None = None
+    validation_policy_hash: str | None = None
+    requested_embargo_size: int = 0
 
 
 @dataclass(frozen=True)
@@ -144,6 +151,13 @@ class FactorMaterializer:
         }
         validity_path = Path(self.inputs.feature_validity_tensor_path) if self.inputs.feature_validity_tensor_path else required["feature_tensor_path"].with_name("feature_validity_tensor.npy")
         axis_paths["feature_validity"] = validity_path
+        eligibility_path = (
+            Path(self.inputs.research_eligible_date_mask_path)
+            if self.inputs.research_eligible_date_mask_path
+            else matrix_dir / "research_eligible_date_mask.npy"
+        )
+        if self.inputs.research_end_date:
+            axis_paths["research_eligibility"] = eligibility_path
         missing_axes = [name for name, path in axis_paths.items() if not path.exists()]
         if missing_axes:
             raise MaterializationBlocker(f"missing_matrix_artifact:{','.join(missing_axes)}")
@@ -154,13 +168,11 @@ class FactorMaterializer:
             raise MaterializationBlocker("operator_version_mismatch")
         vocab = make_formula_vocab_from_manifest(feature_manifest)
         vm = StackVM(vocab)
-        valid, reason = vm.validate_with_reason(list(factor.formula_tokens or []))
+        feature_lookbacks = _feature_lookbacks(feature_manifest)
+        identity = _validate_factor_identity(factor, vm, feature_lookbacks)
+        valid, reason = vm.validate_with_reason(identity["formula_tokens"])
         if not valid:
             raise MaterializationBlocker(f"invalid_formula:{reason}")
-        if list(factor.formula or []) != vm.describe(list(factor.formula_tokens or [])):
-            raise MaterializationBlocker("formula_names_tokens_mismatch")
-        if int(factor.lookback_days) != int(vm.formula_lookback(list(factor.formula_tokens or []))):
-            raise MaterializationBlocker("formula_lookback_mismatch")
         tensor = np.load(required["feature_tensor_path"], mmap_mode="r")
         trade_dates = _read_list(axis_paths["trade_dates"])
         ts_codes = _read_list(axis_paths["ts_codes"])
@@ -176,6 +188,11 @@ class FactorMaterializer:
         for name, matrix in masks.items():
             if tuple(matrix.shape) != (len(ts_codes), len(trade_dates)):
                 raise MaterializationBlocker(f"{name}_shape_mismatch:{matrix.shape}")
+        research_eligibility = np.ones(len(trade_dates), dtype=np.bool_)
+        if self.inputs.research_end_date:
+            research_eligibility = np.asarray(np.load(eligibility_path, mmap_mode="r"), dtype=np.bool_)
+            if research_eligibility.shape != (len(trade_dates),):
+                raise MaterializationBlocker("research_eligibility_shape_mismatch")
         freeze_manifest = _first_existing(required["data_freeze_dir"] / "freeze_manifest.json", required["data_freeze_dir"] / "dataset_version_manifest.json")
         freeze_payload = json.loads(freeze_manifest.read_text(encoding="utf-8"))
         matrix_payload = json.loads(axis_paths["matrix_manifest"].read_text(encoding="utf-8"))
@@ -184,12 +201,13 @@ class FactorMaterializer:
         fingerprint_payload = {
             "factor_id": factor.factor_id,
             "formula_hash": factor.formula_hash,
-            "formula_tokens": list(factor.formula_tokens or []),
+            "formula_tokens": identity["formula_tokens"],
             "operator_version": factor.operator_version,
             "transform_method": factor.transform_method,
-            "formula_names": list(factor.formula or []),
+            "formula_names": identity["formula_names"],
             "feature_version": factor.feature_version,
-            "lookback_days": factor.lookback_days,
+            "lookback_days": identity["effective_lookback"],
+            "formula_complexity": identity["complexity"],
             "feature_manifest_sha256": _sha256(required["feature_manifest_path"]),
             "feature_tensor_sha256": _sha256(required["feature_tensor_path"]),
             "matrix_manifest_sha256": _sha256(axis_paths["matrix_manifest"]),
@@ -211,7 +229,28 @@ class FactorMaterializer:
             "code_semantic_hash": _code_semantic_hash(),
             "feature_cutoff_mode": self.inputs.feature_cutoff_mode,
             "point_in_time": self.inputs.point_in_time,
+            "research_end_date": self.inputs.research_end_date,
+            "label_horizon": int(self.inputs.label_horizon),
+            "research_eligibility_sha256": _sha256(eligibility_path) if self.inputs.research_end_date else None,
+            "eligibility_contract_hash": self.inputs.eligibility_contract_hash,
+            "validation_policy_hash": self.inputs.validation_policy_hash,
+            "requested_embargo_size": int(self.inputs.requested_embargo_size),
+            "effective_embargo_size": max(
+                int(self.inputs.requested_embargo_size),
+                int(identity["effective_lookback"]) + int(self.inputs.label_horizon),
+            ),
         }
+        research_fingerprint_payload = {
+            key: value
+            for key, value in fingerprint_payload.items()
+            if key not in {"feature_tensor_sha256", "feature_validity_sha256"}
+        }
+        research_fingerprint_payload.update(
+            {
+                "research_feature_tensor_sha256": _hash_npy_date_view(required["feature_tensor_path"], research_eligibility),
+                "research_feature_validity_sha256": _hash_npy_date_view(validity_path, research_eligibility),
+            }
+        )
         return {
             "feature_manifest": feature_manifest,
             "vm": vm,
@@ -223,9 +262,13 @@ class FactorMaterializer:
             "axis_paths": axis_paths,
             "fingerprint_payload": fingerprint_payload,
             "input_fingerprint": _hash_json(fingerprint_payload),
+            "research_fingerprint_payload": research_fingerprint_payload,
+            "research_cache_key": _hash_json(research_fingerprint_payload),
             "freeze_payload": freeze_payload,
             "matrix_payload": matrix_payload,
             "promotion_payload": promotion_payload,
+            "factor_identity": identity,
+            "research_eligibility": research_eligibility,
         }
 
     def _load_cached(self, factor_dir: Path, fingerprint: str, context: dict[str, Any]) -> MaterializationResult | None:
@@ -284,7 +327,7 @@ class FactorMaterializer:
         feature_validity = torch.tensor(np.asarray(context["feature_validity"]), dtype=torch.bool, device=self.device)
         if cuda_start is not None:
             cuda_start.record()
-        executed = context["vm"].execute_with_validity(list(factor.formula_tokens or []), tensor, feature_validity)
+        executed = context["vm"].execute_with_validity(context["factor_identity"]["formula_tokens"], tensor, feature_validity)
         if executed is None:
             raise MaterializationBlocker("stack_vm_execution_failed")
         raw, formula_validity = executed
@@ -326,10 +369,12 @@ class FactorMaterializer:
             & np.asarray(masks["index_member_matrix"], dtype=bool)
         )
         values = np.nan_to_num(values, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32, copy=False)
-        valid_values = values[validity]
+        research_validity = validity & np.broadcast_to(context["research_eligibility"], validity.shape)
+        valid_values = values[research_validity]
         if valid_values.size == 0:
             raise MaterializationBlocker("no_valid_values")
-        coverage = float(validity.mean())
+        eligible_cell_count = int(context["research_eligibility"].sum()) * int(validity.shape[0])
+        coverage = float(research_validity.sum() / eligible_cell_count) if eligible_cell_count else 0.0
         std = float(valid_values.std())
         nonzero_ratio = float(np.count_nonzero(valid_values) / valid_values.size)
         if coverage < self.min_coverage or coverage > self.max_coverage:
@@ -348,16 +393,20 @@ class FactorMaterializer:
         np.save(values_path, values, allow_pickle=False)
         np.save(validity_path, validity.astype(np.bool_), allow_pickle=False)
         statistics = {
-            "valid_count": int(validity.sum()),
+            "valid_count": int(research_validity.sum()),
             "coverage": coverage,
             "nonzero_ratio": nonzero_ratio,
             "standard_deviation": std,
+            "eligible_date_count": int(context["research_eligibility"].sum()),
+            "eligibility_contract_hash": self.inputs.eligibility_contract_hash,
+            "quality_scope": "research_eligibility_only",
         }
         payload = {
             "factor_id": factor.factor_id,
             "formula": list(factor.formula or []),
-            "formula_tokens": list(factor.formula_tokens or []),
+            "formula_tokens": context["factor_identity"]["formula_tokens"],
             "formula_hash": factor.formula_hash,
+            "factor_identity": context["factor_identity"],
             "operator_version": factor.operator_version,
             "feature_version": factor.feature_version,
             "transform_method": factor.transform_method,
@@ -395,6 +444,8 @@ class FactorMaterializer:
             },
             "cache_input_fingerprint": context["fingerprint_payload"],
             "input_fingerprint": context["input_fingerprint"],
+            "research_cache_key": context["research_cache_key"],
+            "research_input_fingerprint": context["research_fingerprint_payload"],
             "device": str(self.device),
             "cuda_visible_devices": os.getenv("CUDA_VISIBLE_DEVICES", ""),
             "elapsed_seconds": float(time.perf_counter() - started),
@@ -468,6 +519,61 @@ def _current_materialization_paths(factor_dir: Path) -> tuple[Path, Path, Path]:
             raise MaterializationBlocker("materialization_generation_pointer_hash_mismatch")
         return manifest_path, generation_dir / "values.npy", generation_dir / "validity.npy"
     return factor_dir / "materialization_manifest.json", factor_dir / "values.npy", factor_dir / "validity.npy"
+
+
+def _validate_factor_identity(factor: FactorRecord, vm: StackVM, feature_lookbacks: dict[str, int] | None = None) -> dict[str, Any]:
+    formula_names = [str(name) for name in (factor.formula or [])]
+    try:
+        canonical_tokens = [int(vm.vocab.encode_name(name)) for name in formula_names]
+    except ValueError as exc:
+        raise MaterializationBlocker(f"formula_name_not_in_manifest_vocab:{exc}") from exc
+    stored_tokens = [int(token) for token in (factor.formula_tokens or [])]
+    if stored_tokens != canonical_tokens:
+        raise MaterializationBlocker("formula_tokens_canonical_mismatch")
+    canonical_names = vm.describe(canonical_tokens)
+    if formula_names != canonical_names:
+        raise MaterializationBlocker("formula_names_canonical_mismatch")
+    formula_hash = stable_formula_hash(
+        formula_tokens=canonical_tokens,
+        formula_names=canonical_names,
+        feature_version=str(factor.feature_version),
+        operator_version=str(factor.operator_version),
+    )
+    if str(factor.formula_hash) != formula_hash:
+        raise MaterializationBlocker("formula_hash_mismatch")
+    factor_id = make_factor_id(formula_hash)
+    if str(factor.factor_id) != factor_id:
+        raise MaterializationBlocker("factor_id_mismatch")
+    effective_lookback = int(vm.formula_lookback(canonical_tokens, feature_lookbacks))
+    if int(factor.lookback_days) != effective_lookback:
+        raise MaterializationBlocker("formula_lookback_mismatch")
+    complexity = int(vm.formula_complexity(canonical_tokens))
+    declared_complexity = (factor.metadata or {}).get("complexity")
+    if declared_complexity is not None and int(declared_complexity) != complexity:
+        raise MaterializationBlocker("formula_complexity_mismatch")
+    return {
+        "factor_id": factor_id,
+        "formula_hash": formula_hash,
+        "formula_names": canonical_names,
+        "formula_tokens": canonical_tokens,
+        "feature_version": str(factor.feature_version),
+        "operator_version": str(factor.operator_version),
+        "complexity": complexity,
+        "effective_lookback": effective_lookback,
+    }
+
+
+def _feature_lookbacks(feature_manifest: Any) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for definition in feature_manifest.feature_definitions:
+        payload = definition.to_dict() if hasattr(definition, "to_dict") else dict(definition)
+        contract = payload.get("dependency_graph") or payload.get("feature_contract") or {}
+        if contract:
+            lookback = max(1, int(contract.get("effective_lookback", 1)) - 1)
+        else:
+            lookback = max(1, int(payload.get("lookback", 1) or 1))
+        result[str(payload.get("feature_name"))] = lookback
+    return result
 
 
 def _resolve_device(device: str) -> torch.device:
@@ -579,6 +685,19 @@ def _sha256(path: Path | None) -> str:
     value = digest.hexdigest()
     _FILE_HASH_CACHE[key] = value
     return value
+
+
+def _hash_npy_date_view(path: Path, eligible_dates: np.ndarray) -> str:
+    values = np.load(path, mmap_mode="r")
+    if values.shape[-1] != eligible_dates.shape[0]:
+        raise MaterializationBlocker("research_view_date_axis_mismatch")
+    digest = hashlib.sha256()
+    digest.update(str(values.dtype).encode("utf-8"))
+    digest.update(json.dumps(list(values.shape), separators=(",", ":")).encode("utf-8"))
+    digest.update(np.ascontiguousarray(eligible_dates, dtype=np.bool_).tobytes())
+    selected = np.ascontiguousarray(values[..., eligible_dates])
+    digest.update(selected.tobytes(order="C"))
+    return digest.hexdigest()
 
 
 def _atomic_json(path: Path, payload: dict[str, Any]) -> None:

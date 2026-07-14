@@ -19,6 +19,7 @@ from data_lake.task052_freeze import (
     resolve_task052_governed_freeze_manifest,
     validate_task052_governed_freeze,
 )
+from research_firewall import ResearchEligibilityContract
 
 
 DETERMINISTIC_CREATED_AT = "1970-01-01T00:00:00Z"
@@ -239,6 +240,16 @@ class StrictEngineeringPITMatrixBuilder:
             suspension["conservative_open_excluded"],
             unexplained_data_gap,
         )
+        research_contract = ResearchEligibilityContract(
+            self.config.research_observable_cutoff,
+            self.config.target_endpoint_horizon_trade_days,
+        )
+        research_endpoint_eligible = np.asarray(research_contract.eligible_mask(trade_dates), dtype=np.bool_)
+        target_available &= signal_eligible_at_close
+        target_available &= membership
+        target_available &= membership_known
+        target_available &= np.broadcast_to(research_endpoint_eligible, shape)
+        target[~target_available] = 0.0
 
         arrays: dict[str, np.ndarray] = {}
         for field_name, values in raw.items():
@@ -294,12 +305,20 @@ class StrictEngineeringPITMatrixBuilder:
                 "bar_observed_mask": bar_observed,
                 "target_available_mask": target_available,
                 "next_open_t1_t2_return": target,
+                "research_eligible_date_mask": research_endpoint_eligible,
             }
         )
         invariant_counts = _validate_invariants(arrays)
         signal_breadth = signal_eligible_at_close.sum(axis=0)
         target_breadth = target_available.sum(axis=0)
-        evaluable_dates = membership_known_1d & (target_breadth >= self.config.min_cross_section_breadth)
+        evaluable_dates = research_endpoint_eligible & membership_known_1d & (target_breadth >= self.config.min_cross_section_breadth)
+        eligibility_lineage = research_contract.lineage(trade_dates)
+        common_eligible_hash = _hash_json(
+            {
+                "research_eligibility_contract": eligibility_lineage,
+                "evaluable_date_mask": evaluable_dates.tolist(),
+            }
+        )
         engineering_blockers = _engineering_blockers(
             ts_codes,
             suspension_source_covered,
@@ -413,6 +432,17 @@ class StrictEngineeringPITMatrixBuilder:
         content_hash: str,
         universe_manifest: dict[str, Any],
     ) -> None:
+        research_contract = ResearchEligibilityContract(
+            self.config.research_observable_cutoff,
+            self.config.target_endpoint_horizon_trade_days,
+        )
+        eligibility_lineage = research_contract.lineage(trade_dates)
+        common_eligible_hash = _hash_json(
+            {
+                "research_eligibility_contract": eligibility_lineage,
+                "evaluable_date_mask": evaluable_dates.tolist(),
+            }
+        )
         target_dir.parent.mkdir(parents=True, exist_ok=True)
         temporary = Path(tempfile.mkdtemp(prefix=f".{target_dir.name}.", dir=target_dir.parent))
         try:
@@ -453,13 +483,10 @@ class StrictEngineeringPITMatrixBuilder:
                 "research_end_date": self.config.research_observable_cutoff,
                 "holdout_start_date": "20240531",
                 "label_horizon": self.config.target_endpoint_horizon_trade_days,
-                "eligible_date_hash": _hash_lines(
-                    [
-                        trade_date
-                        for trade_date, eligible in zip(trade_dates, arrays["signal_eligible_at_close"].any(axis=0), strict=True)
-                        if eligible and trade_date <= self.config.research_observable_cutoff
-                    ]
-                ),
+                "eligible_date_hash": common_eligible_hash,
+                "research_eligibility_contract": eligibility_lineage,
+                "max_legal_signal_date": eligibility_lineage.get("max_eligible_signal_date"),
+                "max_legal_endpoint_date": eligibility_lineage.get("max_eligible_endpoint_date"),
                 "firewall_out_of_bounds_access_count": 0,
                 "firewall": {
                     "research_observable_cutoff": self.config.research_observable_cutoff,

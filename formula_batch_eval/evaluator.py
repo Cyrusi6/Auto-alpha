@@ -32,6 +32,7 @@ from model_core.data_loader import AShareDataLoader
 from model_core.vm import StackVM
 from model_core.vocab import FORMULA_VOCAB
 from research.models import FactorCandidate
+from research_firewall import ResearchEligibilityContract
 from research_firewall.lineage import build_loader_lineage
 
 from .models import (
@@ -373,6 +374,9 @@ class FormulaBatchEvaluator:
         return replace(request, formula_tokens=tokens, formula_hash="")
 
     def _cache_key(self, request: FormulaEvalRequest) -> str:
+        eligible_date_hash = _loader_eligible_date_hash(self.loader, self.config.label_horizon, self.config.research_end_date)
+        if self.config.eligible_date_hash and self.config.eligible_date_hash != eligible_date_hash:
+            raise RuntimeError("configured eligible_date_hash does not match ResearchEligibilityContract")
         payload = {
             "formula_hash": request.formula_hash,
             "transform": self.config.factor_transform,
@@ -383,7 +387,7 @@ class FormulaBatchEvaluator:
             "research_end_date": self.config.research_end_date,
             "holdout_start_date": self.config.holdout_start_date,
             "label_horizon": self.config.label_horizon,
-            "eligible_date_hash": self.config.eligible_date_hash or hashlib.sha256("\n".join(self.loader.trade_dates).encode()).hexdigest(),
+            "eligible_date_hash": eligible_date_hash,
             "evaluation_lineage_hash": self.lineage["lineage_hash"],
         }
         return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
@@ -721,6 +725,17 @@ def _loader_feature_validity(loader) -> torch.Tensor:
             raise RuntimeError("strict formula evaluation requires feature validity tensor")
         validity = torch.isfinite(loader.feat_tensor)
     return validity.bool()
+
+
+def _loader_eligible_date_hash(loader, label_horizon: int, research_end_date: str | None) -> str:
+    dates = tuple(str(value) for value in loader.trade_dates)
+    firewall = getattr(loader, "date_firewall", None)
+    if firewall is not None:
+        source_dates = tuple(getattr(loader, "firewall_source_trade_dates", ()) or dates)
+        return firewall.contract.eligible_date_hash(source_dates)
+    if research_end_date:
+        return ResearchEligibilityContract(research_end_date, int(label_horizon)).eligible_date_hash(dates)
+    return hashlib.sha256(json.dumps({"trade_dates": dates, "contract": "unbounded"}, sort_keys=True).encode()).hexdigest()
 
 
 def _loader_target_available(loader) -> torch.Tensor:

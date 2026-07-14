@@ -16,6 +16,7 @@ from artifact_schema.writer import write_json_artifact
 from compute_cluster.models import ComputeDeviceType, ComputeJobKind, ComputeJobSpec, ComputeSchedulerConfig
 from compute_cluster.gpu_probe import probe_compute_resources
 from compute_cluster.scheduler import LocalComputeScheduler
+from validation_lab.policy import load_validation_policy
 from validation_lab.run_validation import main as validation_lab_main
 
 from .models import ValidationShardRecord
@@ -113,11 +114,23 @@ def run_validation_shards(
     dry_run: bool = False,
     task_052a_replay: bool = False,
     task_053a_replay: bool = False,
+    task_054a_replay: bool = False,
     replay_readiness_path: str | None = None,
     replay_generation_label: str = "primary",
     replay_reference_evidence_path: str | None = None,
     force_uncached_replay: bool = False,
 ) -> dict[str, Any]:
+    policy = load_validation_policy(validation_policy)
+    policy.validate_window_parameters(train_size, validation_size, test_size, step_size)
+    if task_054a_replay:
+        if validation_policy != "task054_production_engineering_v1":
+            raise RuntimeError("task054_requires_locked_production_policy")
+        if shard_count != 4 or max_candidates_per_shard != 5:
+            raise RuntimeError("task054_requires_exact_four_by_five_shards")
+        if label_horizon != 2 or research_end_date != "20240530":
+            raise RuntimeError("task054_research_contract_mismatch")
+        if not str(device).startswith("cuda"):
+            raise RuntimeError("task054_requires_cuda")
     store = LocalValidationCampaignStore(store_dir)
     shards = plan_validation_shards(
         store_dir,
@@ -129,7 +142,7 @@ def run_validation_shards(
     if dry_run:
         return {"status": "planned", "shard_count": len(shards), "paths": store.paths()}
 
-    if task_052a_replay or task_053a_replay:
+    if task_052a_replay or task_053a_replay or task_054a_replay:
         return _run_task052a_replay(
             store,
             shards,
@@ -140,7 +153,7 @@ def run_validation_shards(
             compute_state_dir=compute_state_dir,
             replay_readiness_path=replay_readiness_path,
             resume=resume,
-            task_053a_replay=task_053a_replay,
+            task_053a_replay=task_053a_replay or task_054a_replay,
             replay_generation_label=replay_generation_label,
             replay_reference_evidence_path=replay_reference_evidence_path,
             force_uncached_replay=force_uncached_replay,

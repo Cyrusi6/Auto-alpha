@@ -1,20 +1,23 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 
 from backtest.run_backtest import apply_signal_lag
 from artifact_schema.validator import validate_artifact
+from factor_store.hash import make_factor_id, stable_formula_hash
 from factor_store.models import FactorRecord
 from feature_factory import FEATURE_SET_V1, build_feature_set_manifest
 from risk_model.covariance import estimate_return_covariance
 from validation_lab.materialization import FactorMaterializer, MaterializationInputs, load_materialized_factor
 from validation_lab.metrics import evaluate_factor_splits
 from validation_lab.models import ValidationSplit
-from validation_lab.policy import EngineeringRobustnessPolicy
+from validation_lab.policy import EngineeringRobustnessPolicy, load_validation_policy
 from validation_campaign_store.ingest import ingest_candidate_pool
 from validation_campaign_store.scheduler import run_validation_shards
 
@@ -45,11 +48,12 @@ def _materialization_fixture(tmp_path: Path, *, zero: bool = False):
     np.save(matrix / "membership_known.npy", np.ones(dates, dtype=np.bool_))
     np.save(matrix / "adjusted_close.npy", np.full((stocks, dates), 10.0, dtype=np.float32))
     (matrix / "matrix_version_manifest.json").write_text(json.dumps({"target_return_mode": "adjusted_close", "feature_cutoff_mode": "next_open"}), encoding="utf-8")
+    formula_hash = stable_formula_hash([0], ["RET_1D"], manifest.feature_version, manifest.operator_version)
     factor = FactorRecord(
-        factor_id="factor_test",
+        factor_id=make_factor_id(formula_hash),
         formula=["RET_1D"],
         formula_tokens=[0],
-        formula_hash="hash_test",
+        formula_hash=formula_hash,
         feature_version=manifest.feature_version,
         operator_version=manifest.operator_version,
         lookback_days=1,
@@ -82,7 +86,7 @@ def test_lineage_or_transform_drift_causes_cache_miss(tmp_path):
     materializer = FactorMaterializer(inputs, tmp_path / "materialized", min_coverage=0.01)
     original = materializer.materialize(factor)
     assert original.cache_hit is False
-    changed = FactorRecord(**{**factor.__dict__, "formula_hash": "changed", "transform_method": "zscore"})
+    changed = FactorRecord(**{**factor.__dict__, "transform_method": "zscore"})
     rerun = materializer.materialize(changed)
     assert rerun.status == "success"
     assert rerun.cache_hit is False
@@ -93,6 +97,40 @@ def test_lineage_or_transform_drift_causes_cache_miss(tmp_path):
     matrix_manifest.write_text(json.dumps({"target_return_mode": "adjusted_close", "feature_cutoff_mode": "next_open", "cache_hash": "changed"}), encoding="utf-8")
     drifted = materializer.materialize(changed)
     assert drifted.cache_hit is False
+
+
+def test_forged_formula_hash_or_factor_id_is_blocked(tmp_path):
+    factor, inputs, _ = _materialization_fixture(tmp_path)
+    materializer = FactorMaterializer(inputs, tmp_path / "materialized", min_coverage=0.01)
+    forged_hash = FactorRecord(**{**factor.__dict__, "formula_hash": "0" * 64})
+    assert materializer.materialize(forged_hash).blocker == "formula_hash_mismatch"
+    forged_id = FactorRecord(**{**factor.__dict__, "factor_id": "factor_deadbeefdeadbeef"})
+    assert materializer.materialize(forged_id).blocker == "factor_id_mismatch"
+
+
+def test_materialization_quality_and_research_key_use_eligibility_only(tmp_path):
+    factor, inputs, tensor = _materialization_fixture(tmp_path)
+    eligible_path = Path(inputs.matrix_cache_dir) / "research_eligible_date_mask.npy"
+    np.save(eligible_path, np.asarray([True] * 6 + [False, False], dtype=np.bool_))
+    governed_inputs = replace(
+        inputs,
+        research_end_date="20200106",
+        label_horizon=2,
+        research_eligible_date_mask_path=str(eligible_path),
+        eligibility_contract_hash="eligibility-v1",
+        validation_policy_hash="policy-v1",
+    )
+    materializer = FactorMaterializer(governed_inputs, tmp_path / "materialized", min_coverage=0.01)
+    first = materializer.materialize(factor)
+    first_manifest = json.loads(Path(first.manifest_path).read_text(encoding="utf-8"))
+    changed = tensor.copy()
+    changed[:, :, -2:] = 1e20
+    np.save(inputs.feature_tensor_path, changed)
+    second = materializer.materialize(factor)
+    second_manifest = json.loads(Path(second.manifest_path).read_text(encoding="utf-8"))
+    assert second.cache_hit is False
+    assert first_manifest["research_cache_key"] == second_manifest["research_cache_key"]
+    assert first_manifest["statistics"] == second_manifest["statistics"]
 
 
 def test_missing_or_zero_metadata_only_factor_never_zero_passes(tmp_path):
@@ -133,6 +171,13 @@ def test_covariance_only_reads_history_available_as_of_date():
     changed_future.target_ret = Loader.target_ret.clone()
     changed_future.target_ret[:, 2] = torch.tensor([999.0, -999.0])
     assert torch.equal(historical, estimate_return_covariance(changed_future, as_of_index=2, shrinkage=0.0))
+
+
+def test_task054_production_policy_parameters_cannot_be_overridden():
+    policy = load_validation_policy("task054_production_engineering_v1")
+    policy.validate_window_parameters(756, 126, 126, 126)
+    with pytest.raises(ValueError, match="production_policy_parameter_override"):
+        policy.validate_window_parameters(755, 126, 126, 126)
 
 
 def test_validation_scheduler_flag_creates_four_cuda_shards(tmp_path, monkeypatch):

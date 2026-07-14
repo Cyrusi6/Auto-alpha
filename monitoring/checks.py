@@ -1887,6 +1887,8 @@ def check_validation_campaign_store(
     task_052 = _read_json(task_052_path) if task_052_path and task_052_path.exists() else {}
     task_053_path = Path(report_path).parent / "task_053_readiness.json" if report_path else None
     task_053 = _read_json(task_053_path) if task_053_path and task_053_path.exists() else {}
+    task_054_path = Path(report_path).parent / "task_054a_production_dag_report.json" if report_path else None
+    task_054 = _read_json(task_054_path) if task_054_path and task_054_path.exists() else {}
     registry = _read_json(Path(registry_path)) if registry_path else {}
     payload = report or registry
     status = str(payload.get("status", "missing") if payload else "missing")
@@ -1927,6 +1929,31 @@ def check_validation_campaign_store(
         "task_053_certification_ready": bool(task_053.get("certification_ready", False)),
         "task_053_engineering_blocker_count": len(task_053.get("engineering_blockers", []) or []),
         "task_053_certification_blocker_count": len(task_053.get("certification_blockers", []) or []),
+        "task_054_status": task_054.get("status", "missing") if task_054 else "missing",
+        "task_054_baseline_verified": task_054.get("status") == "task054_engineering_baseline_verified_certification_blocked",
+        "task_054_engineering_blocker_count": len(task_054.get("engineering_blockers", []) or []),
+        "task_054_task053_baseline_status": task_054.get("task053_baseline_status", "provisional") if task_054 else "provisional",
+    }, alerts
+
+
+def check_task054_engineering_baseline(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    status = str(payload.get("status") or "missing")
+    blockers = payload.get("engineering_blockers") if isinstance(payload.get("engineering_blockers"), list) else []
+    verified = status == "task054_engineering_baseline_verified_certification_blocked" and not blockers
+    alerts = []
+    if payload and not verified:
+        alerts.append(MonitoringAlert("error", "task054_engineering_baseline", "Task 054 engineering baseline is blocked", {"blocker_count": len(blockers)}))
+    return {
+        "exists": bool(payload),
+        "status": status,
+        "engineering_baseline_verified": verified,
+        "engineering_blocker_count": len(blockers),
+        "task053_baseline_status": payload.get("task053_baseline_status", "provisional") if payload else "provisional",
+        "certification_ready": False,
+        "portfolio_ready": False,
+        "paper_ready": False,
+        "live_ready": False,
     }, alerts
 
 

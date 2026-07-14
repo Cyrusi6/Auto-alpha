@@ -55,6 +55,11 @@ class FeatureDefinition:
     used_for_risk: bool = False
     description: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    dependency_graph: dict[str, Any] = field(default_factory=dict)
+    effective_lookback: int = 1
+    price_basis: str = "not_applicable"
+    pit_availability: str = "same_trade_date"
+    validity_rule: str = "all_sources_valid_for_required_history"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

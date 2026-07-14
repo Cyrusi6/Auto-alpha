@@ -150,7 +150,9 @@ def test_terminal_snapshot_is_retained_but_not_effective(tmp_path):
 
 def test_conservative_event_day_masks_target_and_preserves_signal_separation(tmp_path):
     dates, codes, universe, freeze, _, _ = _fixture(tmp_path)
-    builder = StrictEngineeringPITMatrixBuilder(StrictEngineeringPITMatrixConfig(min_cross_section_breadth=30))
+    builder = StrictEngineeringPITMatrixBuilder(
+        StrictEngineeringPITMatrixConfig(min_cross_section_breadth=30, research_observable_cutoff=dates[-1])
+    )
     result = builder.build(
         governed_freeze_dir=freeze.generation_dir,
         historical_universe_dir=universe.generation_dir,
@@ -191,7 +193,9 @@ def test_conservative_event_day_masks_target_and_preserves_signal_separation(tmp
 
 def test_adjusted_target_and_content_hash_are_deterministic(tmp_path):
     dates, codes, universe, freeze, artifacts, lineage = _fixture(tmp_path)
-    builder = StrictEngineeringPITMatrixBuilder(StrictEngineeringPITMatrixConfig(min_cross_section_breadth=30))
+    builder = StrictEngineeringPITMatrixBuilder(
+        StrictEngineeringPITMatrixConfig(min_cross_section_breadth=30, research_observable_cutoff=dates[-1])
+    )
     first = builder.build(
         governed_freeze_dir=freeze.generation_dir,
         historical_universe_dir=universe.generation_dir,
@@ -211,9 +215,9 @@ def test_adjusted_target_and_content_hash_are_deterministic(tmp_path):
     target = np.load(first_root / "target_open_t1_t2.npy", allow_pickle=False)
     target_available = np.load(first_root / "target_available.npy", allow_pickle=False)
     adjusted = np.load(first_root / "adjusted_open.npy", allow_pickle=False)
-    expected = adjusted[stock, 2] / adjusted[stock, 1] - 1.0
-    assert target_available[stock, 0]
-    assert target[stock, 0] == np.float32(expected)
+    expected = adjusted[stock, 3] / adjusted[stock, 2] - 1.0
+    assert target_available[stock, 1]
+    assert target[stock, 1] == np.float32(expected)
     assert first.content_hash == second.content_hash
     first_manifest = json.loads(Path(first.manifest_path).read_text(encoding="utf-8"))
     second_manifest = json.loads(Path(second.manifest_path).read_text(encoding="utf-8"))

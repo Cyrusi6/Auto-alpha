@@ -226,6 +226,117 @@ def compare_replay_evidence(primary: Iterable[dict[str, Any]], sibling: Iterable
     return {"deterministic": True, "shard_core_hashes": {str(key): value for key, value in sorted(first.items())}}
 
 
+def validate_task054_replay_evidence(
+    evidence_paths: Iterable[str | Path],
+    expected_candidate_ids: Iterable[str],
+    *,
+    require_uncached_materialization: bool,
+    expected_bundle_hash: str | None = None,
+) -> dict[str, Any]:
+    """Recompute Task 054 four-shard truth from terminal artifacts.
+
+    This deliberately ignores campaign summaries. Every shard evidence hash,
+    process/GPU record, candidate artifact, and exact-set invariant is checked
+    again from disk.
+    """
+    expected = sorted(str(item) for item in expected_candidate_ids)
+    if len(expected) != 20 or len(set(expected)) != 20:
+        raise RuntimeError("Task 054 requires an exact set of 20 candidates")
+    paths = [Path(path) for path in evidence_paths]
+    if len(paths) != 4:
+        raise RuntimeError("Task 054 requires exactly four replay shards")
+    shards: dict[int, dict[str, Any]] = {}
+    physical_uuids: set[str] = set()
+    observed_candidates: list[str] = []
+    candidate_artifacts: dict[str, Any] = {}
+    for path in paths:
+        if not path.is_file():
+            raise RuntimeError(f"replay shard evidence missing:{path}")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        claimed_hash = str(payload.pop("evidence_hash", ""))
+        if not claimed_hash or claimed_hash != _canonical_hash(payload):
+            raise RuntimeError(f"forged replay evidence hash:{path}")
+        payload["evidence_hash"] = claimed_hash
+        shard_index = int(payload.get("shard_index", -1))
+        if shard_index not in range(4) or shard_index in shards:
+            raise RuntimeError(f"duplicate or invalid replay shard:{shard_index}")
+        if expected_bundle_hash is not None and payload.get("bundle_hash") != expected_bundle_hash:
+            raise RuntimeError(f"replay bundle hash mismatch:{shard_index}")
+        if (
+            payload.get("terminal_status") != "complete"
+            or int(payload.get("exit_code", -1)) != 0
+            or payload.get("fallback_to_cpu") is not False
+            or payload.get("oom") is not False
+            or int(payload.get("attempt", 0)) != 1
+            or int(payload.get("heartbeat_count", 0)) <= 0
+        ):
+            raise RuntimeError(f"partial scheduler or fallback evidence:{shard_index}")
+        gpu_records = payload.get("physical_gpus")
+        gpu_uuid = _single_gpu_uuid(gpu_records)
+        gpu_record = gpu_records[0]
+        if "4090" not in str(gpu_record.get("model") or gpu_record.get("name") or ""):
+            raise RuntimeError(f"non-RTX4090 replay shard:{shard_index}")
+        if gpu_uuid in physical_uuids:
+            raise RuntimeError(f"duplicate physical GPU UUID:{gpu_uuid}")
+        physical_uuids.add(gpu_uuid)
+        candidate_ids = sorted(str(item) for item in payload.get("candidate_ids") or [])
+        if len(candidate_ids) != 5 or len(set(candidate_ids)) != 5:
+            raise RuntimeError(f"shard candidate cardinality mismatch:{shard_index}")
+        terminal = validate_terminal_outputs(
+            path.parent,
+            candidate_ids,
+            require_candidate_artifacts=True,
+            require_cuda_formula_evidence=True,
+            require_uncached_materialization=require_uncached_materialization,
+            expected_physical_gpu_uuid=gpu_uuid,
+        )
+        if payload.get("terminal_outputs") != terminal:
+            raise RuntimeError(f"terminal output summary mismatch:{shard_index}")
+        for candidate_id, candidate in terminal["candidate_artifacts"].items():
+            if candidate_id in candidate_artifacts:
+                raise RuntimeError(f"candidate repeated across shards:{candidate_id}")
+            candidate_artifacts[candidate_id] = candidate
+        observed_candidates.extend(candidate_ids)
+        shards[shard_index] = {
+            "evidence_path": str(path.resolve()),
+            "evidence_sha256": sha256_file(path),
+            "evidence_hash": claimed_hash,
+            "candidate_ids": candidate_ids,
+            "physical_gpu": dict(gpu_record),
+            "heartbeat_count": int(payload["heartbeat_count"]),
+            "run_id": payload.get("run_id"),
+            "job_id": payload.get("job_id"),
+            "terminal_outputs": terminal,
+        }
+    if sorted(observed_candidates) != expected:
+        raise RuntimeError("four-shard candidate exact set mismatch")
+    status_counts = {status: 0 for status in sorted(ALLOWED_TERMINAL_STATUSES)}
+    for candidate in candidate_artifacts.values():
+        status_counts[candidate["status"]] += 1
+    semantic = {
+        "expected_candidate_ids": expected,
+        "candidate_core_hashes": {
+            candidate_id: candidate_artifacts[candidate_id]["candidate_core_hash"]
+            for candidate_id in sorted(candidate_artifacts)
+        },
+        "shard_core_hashes": {
+            str(index): shards[index]["terminal_outputs"]["replay_core_hash"]
+            for index in sorted(shards)
+        },
+        "status_counts": status_counts,
+    }
+    return {
+        "verified": True,
+        "shard_count": 4,
+        "physical_gpu_uuid_count": len(physical_uuids),
+        "candidate_count": len(candidate_artifacts),
+        "status_counts": status_counts,
+        "candidate_artifacts": candidate_artifacts,
+        "shards": [shards[index] for index in sorted(shards)],
+        "replay_truth_hash": _canonical_hash(semantic),
+    }
+
+
 def read_candidate_ids(path: str | Path) -> list[str]:
     records = []
     for line in Path(path).read_text(encoding="utf-8").splitlines():
@@ -266,7 +377,47 @@ def _validate_candidate_artifacts(
     validation = json.loads(validation_path.read_text(encoding="utf-8"))
     if str(materialization.get("factor_id") or "") != candidate_id:
         raise RuntimeError(f"materialization factor mismatch:{candidate_id}")
-    if materialization.get("materialization_status") != "success":
+    materialization_status = str(materialization.get("materialization_status") or "")
+    if materialization_status == "blocked":
+        blocker = str(materialization.get("blocker") or "")
+        if status != "data_blocked":
+            raise RuntimeError(f"blocked materialization must be data_blocked:{candidate_id}")
+        if not blocker.startswith(
+            (
+                "formula_tokens_canonical_mismatch",
+                "formula_names_canonical_mismatch",
+                "formula_hash_mismatch",
+                "factor_id_mismatch",
+                "formula_lookback_mismatch",
+                "formula_complexity_mismatch",
+                "formula_name_not_in_manifest_vocab",
+                "feature_version_mismatch",
+                "operator_version_mismatch",
+            )
+        ):
+            raise RuntimeError(f"unrecognized identity blocker:{candidate_id}:{blocker}")
+        if require_uncached_materialization and materialization.get("cache_hit") not in {None, False}:
+            raise RuntimeError(f"blocked materialization cache evidence invalid:{candidate_id}")
+        validation_sha = sha256_file(validation_path)
+        core = {
+            "candidate_id": candidate_id,
+            "status": status,
+            "formula_hash": materialization.get("formula_hash"),
+            "input_fingerprint": None,
+            "value_sha256": None,
+            "validity_sha256": None,
+            "materialization_status": "blocked",
+            "materialization_blocker": blocker,
+            "validation_summary": row.get("validation_summary") or validation.get("validation_summary") or {},
+        }
+        return {
+            **core,
+            "materialization_manifest_sha256": sha256_file(materialization_path),
+            "validation_report_sha256": validation_sha,
+            "cuda_formula_execution": None,
+            "candidate_core_hash": _canonical_hash(core),
+        }
+    if materialization_status != "success":
         raise RuntimeError(f"materialization unsuccessful:{candidate_id}")
     if require_uncached_materialization and materialization.get("cache_hit") is not False:
         raise RuntimeError(f"uncached materialization evidence missing:{candidate_id}")
@@ -290,6 +441,8 @@ def _validate_candidate_artifacts(
         "input_fingerprint": materialization.get("input_fingerprint"),
         "value_sha256": value_sha,
         "validity_sha256": validity_sha,
+        "materialization_status": "success",
+        "materialization_blocker": None,
         "validation_summary": row.get("validation_summary") or validation.get("validation_summary") or {},
     }
     return {

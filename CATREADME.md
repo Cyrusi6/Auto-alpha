@@ -477,3 +477,7 @@ The platform is local-first and deterministic by default. Production sync now ha
 正式日频政策为 `conservative_event_day_open_exclusion_v1`：已覆盖且无事件表示事件已知不存在；任意 S/R 事件日均禁止作为 next-open 入口或出口，但原始空 `suspend_timing` 保持空值，绝不冒充“已证明全日停牌”。验证状态严格区分受污染历史工程重放与未来 untouched holdout，后者及 certification/portfolio/paper/live 本轮始终为 false。
 
 唯一编排入口按 governed source → immutable freeze → lagged historical universe → strict matrix → v3 values/validity → Research Firewall → conditional four-GPU replay 的顺序验证不可变证据。工程完成状态只能命名为 `engineering_replay_completed_certification_blocked`，存在真实工程 blocker 时为 `engineering_chain_built_replay_blocked`。
+
+## Task 054 evidence boundary
+
+The Task 054 baseline is contaminated retrospective engineering evidence. The production verifier binds candidate identity, research eligibility, matrix/tensor/policy/code lineage, shard completeness, CUDA evidence, and replay hashes. `certification_ready`, `portfolio_ready`, `paper_ready`, and `live_ready` remain false even when an engineering replay completes.

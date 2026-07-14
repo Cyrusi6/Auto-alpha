@@ -5,10 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 import torch
 
@@ -25,6 +27,71 @@ REQUIRED_SENTINEL_PATHS = (
     "matrix_local",
     "matrix_scheduler",
 )
+
+TASK054_PATH_RESULT = "task_054a_blackbox_path_result.json"
+TASK054_ACCESS_LEDGER = "task_054a_actual_read_ledger.jsonl"
+TASK054_REQUIRED_COMPONENTS = frozenset(
+    {
+        "loader",
+        "stackvm_validity",
+        "alpha_proxy",
+        "formula_batch_evaluator",
+        "factor_materializer",
+        "validation_lab",
+        "consolidation_cache",
+    }
+)
+
+
+@dataclass(frozen=True)
+class ProductionSentinelCommand:
+    """One isolated production-path invocation used by the Task 054 sentinel."""
+
+    path_name: str
+    source_kind: str
+    execution_kind: str
+    mutation_kind: str
+    command: tuple[str, ...]
+    output_dir: str
+    environment: Mapping[str, str] | None = None
+    timeout_seconds: int = 900
+
+    def validate(self) -> None:
+        if self.path_name not in REQUIRED_SENTINEL_PATHS:
+            raise ValueError(f"unknown sentinel path:{self.path_name}")
+        expected_source, expected_execution = self.path_name.split("_", 1)
+        if self.source_kind != expected_source or self.execution_kind != expected_execution:
+            raise ValueError(f"sentinel path semantics mismatch:{self.path_name}")
+        if self.mutation_kind not in {"baseline", "post_cutoff", "inside_cutoff"}:
+            raise ValueError(f"unknown sentinel mutation:{self.mutation_kind}")
+        if not self.command:
+            raise ValueError(f"sentinel command missing:{self.path_name}:{self.mutation_kind}")
+
+
+@dataclass(frozen=True)
+class ProductionSentinelPlan:
+    commands: tuple[ProductionSentinelCommand, ...]
+    research_end_date: str
+    label_horizon: int = 2
+    allow_synthetic_test_fixture: bool = False
+
+    def validate(self) -> None:
+        keys: set[tuple[str, str]] = set()
+        for command in self.commands:
+            command.validate()
+            key = (command.mutation_kind, command.path_name)
+            if key in keys:
+                raise ValueError(f"duplicate sentinel command:{key}")
+            keys.add(key)
+        expected = {
+            (mutation, path_name)
+            for mutation in ("baseline", "post_cutoff", "inside_cutoff")
+            for path_name in REQUIRED_SENTINEL_PATHS
+        }
+        if keys != expected:
+            missing = sorted(expected - keys)
+            extra = sorted(keys - expected)
+            raise ValueError(f"sentinel command matrix incomplete:missing={missing}:extra={extra}")
 
 
 @dataclass(frozen=True)
@@ -343,6 +410,235 @@ def _blockers(post_changes, diagnostic_changes, inside_misses, consistent, viola
     if violations:
         blockers.append(f"firewall_access_violation:{len(violations)}")
     return blockers
+
+
+def run_production_firewall_sentinel(
+    plan: ProductionSentinelPlan,
+    output_dir: str | Path,
+) -> dict[str, Any]:
+    """Execute twelve isolated black-box jobs and verify the four real paths.
+
+    Each command must write a production result plus a loader-produced access
+    ledger. Scheduler paths additionally carry scheduler job evidence; changing
+    an execution label without launching a separate command cannot satisfy this
+    contract.
+    """
+    plan.validate()
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    executions: dict[str, dict[str, dict[str, Any]]] = {
+        mutation: {} for mutation in ("baseline", "post_cutoff", "inside_cutoff")
+    }
+    for command in sorted(plan.commands, key=lambda item: (item.mutation_kind, item.path_name)):
+            executions[command.mutation_kind][command.path_name] = _execute_production_command(
+                command,
+                allow_synthetic_test_fixture=plan.allow_synthetic_test_fixture,
+            )
+
+    research_fields = (
+        "research_tensor_hash",
+        "factor_hash",
+        "proxy_hash",
+        "full_eval_hash",
+        "materialization_quality_hash",
+        "validation_status_hash",
+        "cache_key",
+        "consolidation_hash",
+    )
+    baseline = executions["baseline"]
+    post_cutoff = executions["post_cutoff"]
+    inside_cutoff = executions["inside_cutoff"]
+    post_changes = {
+        path_name: [field for field in research_fields if baseline[path_name][field] != post_cutoff[path_name][field]]
+        for path_name in REQUIRED_SENTINEL_PATHS
+    }
+    inside_changes = {
+        path_name: [field for field in research_fields if baseline[path_name][field] != inside_cutoff[path_name][field]]
+        for path_name in REQUIRED_SENTINEL_PATHS
+    }
+    diagnostic_changed = {
+        path_name: baseline[path_name]["diagnostic_hash"] != post_cutoff[path_name]["diagnostic_hash"]
+        for path_name in REQUIRED_SENTINEL_PATHS
+    }
+    baseline_core_hashes = {row["research_result_hash"] for row in baseline.values()}
+    post_core_hashes = {row["research_result_hash"] for row in post_cutoff.values()}
+    inside_cache_misses = {
+        path_name: baseline[path_name]["cache_key"] != inside_cutoff[path_name]["cache_key"]
+        for path_name in REQUIRED_SENTINEL_PATHS
+    }
+    access_violations = [
+        row
+        for mutation_rows in executions.values()
+        for result in mutation_rows.values()
+        for row in result["access_ledger"]
+        if row.get("allowed") is not True
+    ]
+    blockers: list[str] = []
+    for path_name, fields in post_changes.items():
+        if fields:
+            blockers.append(f"post_cutoff_research_changed:{path_name}:{','.join(fields)}")
+    for path_name, changed in diagnostic_changed.items():
+        if not changed:
+            blockers.append(f"diagnostic_mutation_not_observed:{path_name}")
+    for path_name, missed in inside_cache_misses.items():
+        if not missed:
+            blockers.append(f"inside_cutoff_cache_not_invalidated:{path_name}")
+        if not inside_changes[path_name]:
+            blockers.append(f"inside_cutoff_output_not_changed:{path_name}")
+    if len(baseline_core_hashes) != 1 or len(post_core_hashes) != 1:
+        blockers.append("raw_matrix_local_scheduler_research_mismatch")
+    if access_violations:
+        blockers.append(f"actual_read_access_violation:{len(access_violations)}")
+
+    semantic = {
+        "schema_version": "1.0",
+        "contract_version": "task_054a_production_firewall_sentinel_v1",
+        "research_end_date": plan.research_end_date,
+        "label_horizon": plan.label_horizon,
+        "executions": executions,
+        "proof": {
+            "post_cutoff_research_changes": post_changes,
+            "inside_cutoff_research_changes": inside_changes,
+            "inside_cutoff_cache_misses": inside_cache_misses,
+            "diagnostic_changed": diagnostic_changed,
+            "raw_matrix_local_scheduler_consistent": len(baseline_core_hashes) == 1,
+            "access_violation_count": len(access_violations),
+        },
+        "blockers": blockers,
+    }
+    semantic["content_hash"] = _hash_json(semantic)
+    payload = attach_artifact_metadata(
+        {
+            **semantic,
+            "status": "passed" if not blockers else "blocked",
+            "research_firewall_ready": not blockers,
+        },
+        "task_054a_production_firewall_sentinel",
+        "research_firewall",
+    )
+    _atomic_json(target / "task_054a_production_firewall_sentinel.json", payload)
+    return payload
+
+
+def _execute_production_command(
+    spec: ProductionSentinelCommand,
+    *,
+    allow_synthetic_test_fixture: bool,
+) -> dict[str, Any]:
+    output_dir = Path(spec.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    log_path = output_dir / "process.log"
+    environment = os.environ.copy()
+    environment.update(dict(spec.environment or {}))
+    started = time.monotonic()
+    with log_path.open("wb") as log_handle:
+        process = subprocess.Popen(
+            list(spec.command),
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            env=environment,
+            start_new_session=True,
+        )
+        try:
+            exit_code = process.wait(timeout=spec.timeout_seconds)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            raise RuntimeError(f"sentinel subprocess timed out:{spec.path_name}:{spec.mutation_kind}")
+    elapsed = time.monotonic() - started
+    if exit_code != 0:
+        raise RuntimeError(
+            f"sentinel subprocess failed:{spec.path_name}:{spec.mutation_kind}:exit={exit_code}:log={log_path}"
+        )
+    result_path = output_dir / TASK054_PATH_RESULT
+    ledger_path = output_dir / TASK054_ACCESS_LEDGER
+    if not result_path.is_file() or not ledger_path.is_file():
+        raise RuntimeError(f"sentinel production artifacts missing:{spec.path_name}:{spec.mutation_kind}")
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    ledger = [json.loads(line) for line in ledger_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    _validate_production_path_result(
+        spec,
+        result,
+        ledger,
+        allow_synthetic_test_fixture=allow_synthetic_test_fixture,
+    )
+    result_core = dict(result)
+    result_core.pop("process_evidence", None)
+    return {
+        **result,
+        "access_ledger": ledger,
+        "access_ledger_sha256": _sha256_file(ledger_path),
+        "result_artifact_sha256": _sha256_file(result_path),
+        "process_log_sha256": _sha256_file(log_path),
+        "launcher_evidence": {
+            "command": list(spec.command),
+            "pid": process.pid,
+            "exit_code": exit_code,
+            "elapsed_seconds": elapsed,
+        },
+        "verified_result_hash": _hash_json(result_core),
+    }
+
+
+def _validate_production_path_result(
+    spec: ProductionSentinelCommand,
+    result: Mapping[str, Any],
+    ledger: Sequence[Mapping[str, Any]],
+    *,
+    allow_synthetic_test_fixture: bool,
+) -> None:
+    if result.get("evidence_scope") == "synthetic_test_fixture" and not allow_synthetic_test_fixture:
+        raise RuntimeError(f"synthetic sentinel evidence forbidden in production:{spec.path_name}")
+    if result.get("status") != "success":
+        raise RuntimeError(f"sentinel path did not succeed:{spec.path_name}:{spec.mutation_kind}")
+    if result.get("path_name") != spec.path_name or result.get("mutation_kind") != spec.mutation_kind:
+        raise RuntimeError(f"sentinel path identity mismatch:{spec.path_name}:{spec.mutation_kind}")
+    if result.get("source_kind") != spec.source_kind or result.get("execution_kind") != spec.execution_kind:
+        raise RuntimeError(f"sentinel path source/execution mismatch:{spec.path_name}")
+    component_names = {str(row.get("component")) for row in result.get("component_evidence", []) if isinstance(row, dict)}
+    if component_names != TASK054_REQUIRED_COMPONENTS:
+        raise RuntimeError(f"sentinel component evidence incomplete:{spec.path_name}:{sorted(component_names)}")
+    for component in result.get("component_evidence", []):
+        if not component.get("source_hash") or component.get("invoked") is not True:
+            raise RuntimeError(f"sentinel component invocation unproved:{spec.path_name}:{component.get('component')}")
+    required_hashes = {
+        "research_tensor_hash",
+        "factor_hash",
+        "proxy_hash",
+        "full_eval_hash",
+        "materialization_quality_hash",
+        "validation_status_hash",
+        "cache_key",
+        "consolidation_hash",
+        "diagnostic_hash",
+        "research_result_hash",
+    }
+    if any(not result.get(field) for field in required_hashes):
+        raise RuntimeError(f"sentinel result hashes incomplete:{spec.path_name}:{spec.mutation_kind}")
+    if not ledger or any(not row.get("component") or not row.get("path") or not row.get("date_range") for row in ledger):
+        raise RuntimeError(f"sentinel actual-read ledger incomplete:{spec.path_name}:{spec.mutation_kind}")
+    process_evidence = result.get("process_evidence") or {}
+    if int(process_evidence.get("pid") or 0) <= 0 or int(process_evidence.get("exit_code", -1)) != 0:
+        raise RuntimeError(f"sentinel worker process evidence invalid:{spec.path_name}")
+    if spec.execution_kind == "scheduler":
+        scheduler = result.get("scheduler_evidence") or {}
+        if (
+            not scheduler.get("job_id")
+            or int(scheduler.get("worker_pid") or 0) <= 0
+            or int(scheduler.get("exit_code", -1)) != 0
+            or not scheduler.get("heartbeat_sha256")
+            or not scheduler.get("artifact_sha256")
+            or not scheduler.get("command")
+        ):
+            raise RuntimeError(f"sentinel scheduler evidence invalid:{spec.path_name}:{spec.mutation_kind}")
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _atomic_json(path: Path, payload: dict[str, Any]) -> None:

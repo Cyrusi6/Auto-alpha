@@ -96,7 +96,11 @@ def test_strict_validation_uses_persisted_next_open_target_and_diagnostic_segmen
     )
     assert torch.equal(context["target_ret"], torch.from_numpy(target))
     assert context["target_path"].endswith("next_open_t1_t2_return.npy")
-    assert context["eligibility"].eligible_mask.tolist() == [True, True, False, False, False, False]
+    assert context["eligibility"].eligible_mask.tolist() == [False, False, False, False, False, False]
+    assert all(
+        "research_target_endpoint_unobservable" in reasons
+        for reasons in context["eligibility"].reasons_by_date
+    )
 
 
 def test_screening_is_not_rejected_when_contract_changed():

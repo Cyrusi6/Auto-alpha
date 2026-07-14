@@ -15,6 +15,11 @@ import numpy as np
 
 from artifact_schema.writer import attach_artifact_metadata
 from data_lake.task052_freeze import validate_task052_governed_freeze
+from feature_factory import (
+    build_tensor_content_fingerprint,
+    feature_semantic_source_hash,
+    intersect_candidate_feature_blockers,
+)
 from model_core.data_loader import AShareDataLoader
 
 from .readiness import derive_task053_readiness
@@ -37,6 +42,7 @@ def build_v3_tensor_generation(
     matrix_dir: str | Path,
     feature_manifest_path: str | Path,
     output_root: str | Path,
+    candidate_pool_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Build values and validity jointly, then publish a content-addressed generation."""
     matrix_root = Path(matrix_dir)
@@ -60,52 +66,83 @@ def build_v3_tensor_generation(
     stored_values = np.where(validity, values, 0.0).astype(np.float32, copy=False)
     if np.count_nonzero(stored_values[~validity]):
         raise RuntimeError("invalid tensor cells must be stored as zero")
+    root = Path(output_root)
+    root.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".v3_tensor_build.", dir=root))
+    _atomic_npy(staging / "feature_tensor.npy", stored_values)
+    _atomic_npy(staging / "feature_validity_tensor.npy", validity)
+    values_sha256 = _sha256(staging / "feature_tensor.npy")
+    validity_sha256 = _sha256(staging / "feature_validity_tensor.npy")
     source = {
         "matrix_content_hash": matrix_manifest.get("content_hash"),
         "matrix_semantic_hash": matrix_manifest.get("semantic_hash"),
         "matrix_manifest_sha256": _sha256(matrix_root / "task_052a_strict_matrix_manifest.json"),
         "feature_manifest_sha256": _sha256(feature_manifest),
-        "builder_source_sha256": _sha256(Path(__file__)),
+        "freeze_content_hash": (matrix_manifest.get("generation_inputs") or {}).get("governed_freeze_content_hash") or (matrix_manifest.get("source") or {}).get("freeze_content_hash"),
+        "universe_content_hash": (matrix_manifest.get("generation_inputs") or {}).get("historical_universe_content_hash") or (matrix_manifest.get("source") or {}).get("universe_content_hash"),
+        "semantic_source_hash": feature_semantic_source_hash(extra_sources=(Path(__file__),)),
     }
+    feature_blockers = sorted(
+        str(item["feature_name"])
+        for item in (loader.feature_validity_summary or [])
+        if item.get("blocker")
+    )
+    candidates = _read_jsonl(candidate_pool_path) if candidate_pool_path else []
+    candidate_blockers = intersect_candidate_feature_blockers(candidates, loader.feature_validity_summary or [])
     core = {
-        "schema_version": "task_053a_v3_tensor_v1",
+        "schema_version": "task_054a_v3_tensor_v2",
         "shape": list(stored_values.shape),
         "values_dtype": "float32",
         "validity_dtype": "bool",
         "stock_axis_hash": matrix_manifest.get("stock_axis_hash"),
         "date_axis_hash": matrix_manifest.get("date_axis_hash"),
         "feature_count": int(stored_values.shape[1]),
+        "feature_axis_hash": _hash_json([
+            str(item.get("feature_name"))
+            for item in (_load_json(feature_manifest).get("feature_definitions") or [])
+            if isinstance(item, dict) and item.get("feature_name")
+        ]),
+        "values_sha256": values_sha256,
+        "validity_sha256": validity_sha256,
         "source": source,
         "feature_summaries": list(loader.feature_validity_summary or []),
+        "feature_blockers": feature_blockers,
+        "candidate_blockers": candidate_blockers,
         "invalid_values_stored_as_zero": True,
+        "target_contract": matrix_manifest.get("target_contract") or {},
+        "time_contract": matrix_manifest.get("time_contract") or matrix_manifest.get("firewall") or {},
     }
-    content_hash = _hash_json(core)
-    generation_id = f"v3_tensor_053a_{content_hash[:24]}"
-    root = Path(output_root)
+    content_hash = build_tensor_content_fingerprint(
+        values_sha256=values_sha256,
+        validity_sha256=validity_sha256,
+        matrix_sha256=source["matrix_manifest_sha256"],
+        freeze_sha256=str((matrix_manifest.get("generation_inputs") or {}).get("governed_freeze_content_hash") or source.get("freeze_content_hash") or ""),
+        universe_sha256=str((matrix_manifest.get("generation_inputs") or {}).get("historical_universe_content_hash") or source.get("universe_content_hash") or ""),
+        feature_manifest_sha256=source["feature_manifest_sha256"],
+        stock_axis_hash=str(core["stock_axis_hash"] or ""),
+        date_axis_hash=str(core["date_axis_hash"] or ""),
+        feature_axis_hash=str(core["feature_axis_hash"]),
+        target_contract_hash=_hash_json(core["target_contract"]),
+        time_contract_hash=_hash_json(core["time_contract"]),
+        semantic_source_hash=source["semantic_source_hash"],
+    )
+    generation_id = f"v3_tensor_054a_{content_hash[:24]}"
     generation = root / generation_id
     if generation.exists():
         manifest = _load_json(generation / "task_053_v3_tensor_manifest.json")
         _validate_tensor_generation(generation, manifest)
+        if manifest.get("content_hash") != content_hash or any(manifest.get(key) != core.get(key) for key in core):
+            raise RuntimeError("existing v3 tensor generation semantic mismatch")
+        _remove_tree(staging)
+        _atomic_json(root / "current_v3_tensor.json", {"generation_id": generation_id, "content_hash": content_hash})
         return manifest | {"generation_dir": str(generation), "cache_hit": True}
-    root.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=f".{generation_id}.", dir=root))
     try:
-        _atomic_npy(staging / "feature_tensor.npy", stored_values)
-        _atomic_npy(staging / "feature_validity_tensor.npy", validity)
         manifest = attach_artifact_metadata(
             {
                 **core,
                 "artifact_type": "task_053_v3_tensor_manifest",
                 "generation_id": generation_id,
                 "content_hash": content_hash,
-                "values_sha256": _sha256(staging / "feature_tensor.npy"),
-                "validity_sha256": _sha256(staging / "feature_validity_tensor.npy"),
-                "feature_blockers": sorted(
-                    str(item["feature_name"])
-                    for item in (loader.feature_validity_summary or [])
-                    if item.get("blocker")
-                ),
-                "candidate_blockers": [],
             },
             "task_053_v3_tensor_manifest",
             "task_053_a",
@@ -114,9 +151,7 @@ def build_v3_tensor_generation(
         os.replace(staging, generation)
     finally:
         if staging.exists():
-            import shutil
-
-            shutil.rmtree(staging)
+            _remove_tree(staging)
     _atomic_json(root / "current_v3_tensor.json", {"generation_id": generation_id, "content_hash": content_hash})
     return manifest | {"generation_dir": str(generation), "cache_hit": False}
 
@@ -213,6 +248,36 @@ def _validate_tensor_generation(root: Path, manifest: Mapping[str, Any]) -> None
         raise RuntimeError("v3 tensor generation shape mismatch")
     if values.dtype != np.float32 or validity.dtype != np.bool_:
         raise RuntimeError("v3 tensor generation dtype mismatch")
+    source = manifest.get("source") or {}
+    expected_content_hash = build_tensor_content_fingerprint(
+        values_sha256=str(manifest.get("values_sha256") or ""),
+        validity_sha256=str(manifest.get("validity_sha256") or ""),
+        matrix_sha256=str(source.get("matrix_manifest_sha256") or ""),
+        freeze_sha256=str(source.get("freeze_content_hash") or ""),
+        universe_sha256=str(source.get("universe_content_hash") or ""),
+        feature_manifest_sha256=str(source.get("feature_manifest_sha256") or ""),
+        stock_axis_hash=str(manifest.get("stock_axis_hash") or ""),
+        date_axis_hash=str(manifest.get("date_axis_hash") or ""),
+        feature_axis_hash=str(manifest.get("feature_axis_hash") or ""),
+        target_contract_hash=_hash_json(manifest.get("target_contract") or {}),
+        time_contract_hash=_hash_json(manifest.get("time_contract") or {}),
+        semantic_source_hash=str(source.get("semantic_source_hash") or ""),
+    )
+    if manifest.get("content_hash") != expected_content_hash:
+        raise RuntimeError("v3 tensor generation content hash mismatch")
+
+
+def _read_jsonl(path: str | Path) -> list[dict[str, Any]]:
+    target = Path(path)
+    if not target.is_file():
+        raise FileNotFoundError(target)
+    return [json.loads(line) for line in target.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _remove_tree(path: Path) -> None:
+    import shutil
+
+    shutil.rmtree(path, ignore_errors=True)
 
 
 def _load_json(path: str | Path) -> dict[str, Any]:

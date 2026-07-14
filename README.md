@@ -1754,3 +1754,7 @@ Task 053-A uses the versioned `conservative_event_day_open_exclusion_v1` policy.
 The formal matrix contract is `signal close(t) -> adjusted open(t+1) entry -> adjusted open(t+2) exit`. Research signals require the t+2 endpoint to be no later than `2024-05-30`; later observations are reused diagnostics only and cannot affect ranking or replay status.
 
 Task 053-A real engineering replay completed with deterministic A/B matrix and tensor builds, four distinct RTX 4090 shards, an uncached sibling replay comparison and immutable 4/4 resume. Candidate terminal states remain explicitly retrospective (`data_blocked`, `statistically_rejected`, or `historical_replay_passed`); these results do not constitute clean OOS or certification evidence.
+
+### Task 054 engineering baseline
+
+Task 054 uses a single research eligibility contract for `signal close(t) -> open(t+1) -> open(t+2)` and computes research evidence only where the `t+2` endpoint is no later than the configured cutoff. Its replay states are limited to `data_blocked`, `statistically_rejected`, and `historical_replay_passed`; none imply clean OOS or certification. Git may contain only a scrubbed evidence package, verifiable with `python -m task_054_a.verify_evidence <package.json>`; raw arrays and server paths remain outside the repository.

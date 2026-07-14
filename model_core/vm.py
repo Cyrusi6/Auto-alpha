@@ -49,13 +49,27 @@ class StackVM:
                 complexity += operator_complexity(token, self.feat_offset)
         return int(complexity)
 
-    def formula_lookback(self, formula_tokens: list[int]) -> int:
-        lookback = 1
+    def formula_lookback(self, formula_tokens: list[int], feature_lookbacks: dict[str, int] | None = None) -> int:
+        stack: list[int] = []
+        feature_lookbacks = feature_lookbacks or {}
         for token in formula_tokens:
             token = int(token)
-            if token in self.arity_map:
-                lookback = max(lookback, operator_lookback(token, self.feat_offset))
-        return int(lookback)
+            if 0 <= token < self.feat_offset:
+                stack.append(max(1, int(feature_lookbacks.get(self.vocab.token_name(token), 1))))
+                continue
+            if token not in self.arity_map or len(stack) < self.arity_map[token]:
+                return 1
+            arity = self.arity_map[token]
+            inputs = stack[-arity:]
+            del stack[-arity:]
+            operator_name = self.vocab.token_name(token)
+            operator_window = int(operator_lookback(token, self.feat_offset))
+            if operator_name.startswith(("DELAY", "DELTA")):
+                incremental = operator_window
+            else:
+                incremental = max(0, operator_window - 1)
+            stack.append(max(inputs) + incremental)
+        return int(stack[0]) if len(stack) == 1 else 1
 
     def canonical_formula(self, formula_tokens: list[int]) -> list[str]:
         names: list[str] = []
@@ -121,7 +135,7 @@ class StackVM:
                         return None
                     values = feat_tensor[:, token, :]
                     validity = feature_validity[:, token, :].bool() & torch.isfinite(values)
-                    stack.append((values, validity))
+                    stack.append((torch.where(validity, values, torch.zeros_like(values)), validity))
                     continue
                 if token not in self.op_map:
                     return None
