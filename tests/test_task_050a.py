@@ -45,6 +45,8 @@ def _materialization_fixture(tmp_path: Path, *, zero: bool = False):
     (matrix / "ts_codes.json").write_text(json.dumps([f"00000{i}.SZ" for i in range(stocks)]), encoding="utf-8")
     for name in ["active_mask", "pit_available_mask", "index_member_matrix"]:
         np.save(matrix / f"{name}.npy", np.ones((stocks, dates), dtype=np.float32))
+    np.save(matrix / "signal_candidate_cells.npy", np.ones((stocks, dates), dtype=np.bool_))
+    np.save(matrix / "validation_common_cells.npy", np.ones((stocks, dates), dtype=np.bool_))
     np.save(matrix / "membership_known.npy", np.ones(dates, dtype=np.bool_))
     np.save(matrix / "adjusted_close.npy", np.full((stocks, dates), 10.0, dtype=np.float32))
     (matrix / "matrix_version_manifest.json").write_text(json.dumps({"target_return_mode": "adjusted_close", "feature_cutoff_mode": "next_open"}), encoding="utf-8")

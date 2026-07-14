@@ -271,6 +271,8 @@ class AShareDataLoader:
             "signal_eligible_at_close": "signal_eligible_at_close.npy",
             "bar_observed_mask": "bar_observed.npy",
             "membership_known": "membership_known.npy",
+            "signal_candidate_cells": "signal_candidate_cells.npy",
+            "validation_common_cells": "validation_common_cells.npy",
         }
         for name, filename in aliases.items():
             path = self.matrix_cache_dir / filename

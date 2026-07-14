@@ -7,17 +7,24 @@ import random
 from model_core.ops import get_operator_spec
 from model_core.vm import StackVM
 from model_core.vocab import FORMULA_VOCAB
+from feature_factory.semantics import FeatureSemantics
 
 from .generator import _make_candidate
 from .models import FormulaCandidate, FormulaSearchConfig
 
 
-def mutate_formula(candidate: FormulaCandidate, rng: random.Random, config: FormulaSearchConfig) -> FormulaCandidate:
+def mutate_formula(
+    candidate: FormulaCandidate,
+    rng: random.Random,
+    config: FormulaSearchConfig,
+    *,
+    feature_semantics: dict[str, FeatureSemantics] | None = None,
+) -> FormulaCandidate:
     strategies = [_replace_feature, _replace_operator_same_arity, _insert_unary, _combine_with_feature]
     for _ in range(100):
         tokens = rng.choice(strategies)(candidate.formula_tokens, rng)
         tokens = simplify_formula(tokens)
-        result = _make_candidate(tokens, "mutation", [candidate.formula_hash], candidate.generation + 1)
+        result = _make_candidate(tokens, "mutation", [candidate.formula_hash], candidate.generation + 1, feature_semantics=feature_semantics)
         if _valid_candidate(result, config):
             return result
     return candidate
@@ -28,6 +35,8 @@ def crossover_formula(
     parent_b: FormulaCandidate,
     rng: random.Random,
     config: FormulaSearchConfig,
+    *,
+    feature_semantics: dict[str, FeatureSemantics] | None = None,
 ) -> FormulaCandidate:
     binary_ops = _operator_tokens(arity=2, max_lookback=config.max_lookback)
     for _ in range(100):
@@ -38,6 +47,7 @@ def crossover_formula(
             "crossover",
             [parent_a.formula_hash, parent_b.formula_hash],
             max(parent_a.generation, parent_b.generation) + 1,
+            feature_semantics=feature_semantics,
         )
         if _valid_candidate(result, config):
             return result

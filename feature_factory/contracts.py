@@ -9,6 +9,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+from .semantics import build_feature_semantics
+
 
 CONTRACT_VERSION = "ashare_v3_feature_contract_v1"
 
@@ -39,11 +41,22 @@ class FeatureComputationContract:
     validity_rule: str
     computation: str
     transform: str
+    max_raw_lag: int
+    required_observations: int
+    inner_operations: tuple[dict[str, Any], ...]
+    outer_transforms: tuple[dict[str, Any], ...]
+    longest_dependency_path: tuple[dict[str, Any], ...]
+    feature_implementation_source_hash: str
+    operator_implementation_source_hash: str
+    semantics_hash: str
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["source_fields"] = list(self.source_fields)
         payload["dependencies"] = [item.to_dict() for item in self.dependencies]
+        payload["inner_operations"] = [dict(item) for item in self.inner_operations]
+        payload["outer_transforms"] = [dict(item) for item in self.outer_transforms]
+        payload["longest_dependency_path"] = [dict(item) for item in self.longest_dependency_path]
         return payload
 
 
@@ -60,78 +73,60 @@ def build_feature_contract(
     name = str(feature_name).upper()
     fields = tuple(str(field) for field in source_fields)
     lookback = max(1, int(lookback or 1))
-    pit_availability = _pit_availability(availability_field, pit_safety)
-
-    if name.startswith("RET_") and name.endswith("D"):
-        horizon = int(name.removeprefix("RET_").removesuffix("D"))
-        return _contract(
-            name,
-            ("adjusted_close",),
-            (FeatureInputDependency("adjusted_close", (0, -horizon), horizon + 1, "adjusted_close", pit_availability),),
-            horizon + 1,
-            "adjusted_close",
-            pit_availability,
-            "all_explicit_endpoints_valid",
-            "log_return",
-            transform,
+    semantics = build_feature_semantics(
+        {
+            "feature_name": name,
+            "source_fields": fields,
+            "lookback": lookback,
+            "transform": transform,
+            "availability_field": availability_field,
+            "pit_safety": pit_safety,
+            "feature_version": feature_version,
+        }
+    )
+    expanded_precomputed = feature_version == "ashare_features_v3"
+    if expanded_precomputed:
+        dependencies = (
+            FeatureInputDependency(
+                field=name.lower(),
+                offsets=(0,),
+                history=1,
+                price_basis=semantics.price_basis,
+                pit_availability=semantics.pit_availability,
+            ),
         )
-    if name in {"VOLATILITY_5D", "VOLATILITY_20D", "DOWNSIDE_VOL_20D"}:
-        horizon = int(name.split("_")[-1].removesuffix("D"))
-        return _contract(
-            name,
-            ("adjusted_close",),
-            (FeatureInputDependency("adjusted_close", (), horizon + 1, "adjusted_close", pit_availability),),
-            horizon + 1,
-            "adjusted_close",
-            pit_availability,
-            "all_contiguous_price_endpoints_valid",
-            "rolling_one_day_log_return_std",
-            transform,
-        )
-    if name == "INTRADAY_RETURN":
-        return _point_contract(name, ("open", "close"), "raw_intraday_ohlc", pit_availability, transform, "raw_close_over_raw_open")
-    if name == "GAP_RETURN":
-        return _point_contract(name, ("open", "pre_close"), "raw_gap_ohlc", pit_availability, transform, "raw_open_over_raw_pre_close")
-    if name == "AMPLITUDE":
-        return _point_contract(name, ("high", "low", "pre_close"), "raw_intraday_ohlc", pit_availability, transform, "raw_range_over_raw_pre_close")
-    if name.startswith("INDEX_RETURN_") and name.endswith("D"):
-        horizon = int(name.removeprefix("INDEX_RETURN_").removesuffix("D"))
-        history = lookback + horizon if transform == "time_series_zscore" else horizon + 1
-        return _contract(
-            name,
-            ("index_daily_bars.close",),
-            (FeatureInputDependency("index_daily_bars.close", (), history, "index_raw_close", pit_availability),),
-            history,
-            "index_raw_close",
-            pit_availability,
-            "all_contiguous_price_endpoints_valid",
-            "index_log_return",
-            transform,
-        )
-
-    expanded = feature_version == "ashare_features_v3"
-    if expanded:
-        tensor_field = name.lower()
-        dependencies = (FeatureInputDependency(tensor_field, (), lookback, "not_applicable", pit_availability),)
-        validity_rule = "precomputed_feature_validity_required"
-        computation = "expanded_precomputed"
     else:
+        contiguous = "contiguous" in semantics.validity_rule or "rolling" in semantics.validity_rule
         dependencies = tuple(
-            FeatureInputDependency(field, (), lookback, "not_applicable", pit_availability)
-            for field in fields
+            FeatureInputDependency(
+                field=field,
+                offsets=() if contiguous else ((0, -semantics.max_raw_lag) if semantics.max_raw_lag else (0,)),
+                history=semantics.required_observations,
+                price_basis=semantics.price_basis,
+                pit_availability=semantics.pit_availability,
+            )
+            for field in semantics.raw_dependencies
         )
-        validity_rule = "all_sources_valid_for_required_history"
-        computation = "direct_or_derived"
-    return _contract(
-        name,
-        fields,
-        dependencies,
-        lookback,
-        "not_applicable",
-        pit_availability,
-        validity_rule,
-        computation,
-        transform,
+    computation = "+".join(str(item["name"]) for item in semantics.inner_operations) or "direct_observation"
+    return FeatureComputationContract(
+        version=CONTRACT_VERSION,
+        feature_name=name,
+        source_fields=semantics.raw_dependencies,
+        dependencies=dependencies,
+        effective_lookback=semantics.required_observations,
+        price_basis=semantics.price_basis,
+        pit_availability=semantics.pit_availability,
+        validity_rule=semantics.validity_rule,
+        computation=computation,
+        transform=transform,
+        max_raw_lag=semantics.max_raw_lag,
+        required_observations=semantics.required_observations,
+        inner_operations=semantics.inner_operations,
+        outer_transforms=semantics.outer_transforms,
+        longest_dependency_path=tuple(item.to_dict() for item in semantics.longest_dependency_path),
+        feature_implementation_source_hash=semantics.feature_implementation_source_hash,
+        operator_implementation_source_hash=semantics.operator_implementation_source_hash,
+        semantics_hash=semantics.semantics_hash,
     )
 
 
@@ -228,36 +223,8 @@ def build_tensor_content_fingerprint(
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
-def _point_contract(name, fields, basis, pit, transform, computation):
-    return _contract(
-        name,
-        fields,
-        tuple(FeatureInputDependency(field, (0,), 1, basis, pit) for field in fields),
-        1,
-        basis,
-        pit,
-        "all_same_day_sources_valid",
-        computation,
-        transform,
-    )
-
-
-def _contract(name, fields, dependencies, lookback, basis, pit, rule, computation, transform):
-    return FeatureComputationContract(
-        version=CONTRACT_VERSION,
-        feature_name=name,
-        source_fields=tuple(fields),
-        dependencies=tuple(dependencies),
-        effective_lookback=int(lookback),
-        price_basis=basis,
-        pit_availability=pit,
-        validity_rule=rule,
-        computation=computation,
-        transform=transform,
-    )
-
-
 def _contract_from_payload(payload: dict[str, Any]) -> FeatureComputationContract:
+    semantics = build_feature_semantics(payload)
     return FeatureComputationContract(
         version=str(payload.get("version", CONTRACT_VERSION)),
         feature_name=str(payload["feature_name"]),
@@ -278,12 +245,12 @@ def _contract_from_payload(payload: dict[str, Any]) -> FeatureComputationContrac
         validity_rule=str(payload.get("validity_rule", "all_sources_valid_for_required_history")),
         computation=str(payload.get("computation", "direct_or_derived")),
         transform=str(payload.get("transform", "identity")),
+        max_raw_lag=int(payload.get("max_raw_lag", semantics.max_raw_lag)),
+        required_observations=int(payload.get("required_observations", semantics.required_observations)),
+        inner_operations=tuple(dict(item) for item in payload.get("inner_operations", semantics.inner_operations)),
+        outer_transforms=tuple(dict(item) for item in payload.get("outer_transforms", semantics.outer_transforms)),
+        longest_dependency_path=tuple(dict(item) for item in payload.get("longest_dependency_path", [item.to_dict() for item in semantics.longest_dependency_path])),
+        feature_implementation_source_hash=str(payload.get("feature_implementation_source_hash", semantics.feature_implementation_source_hash)),
+        operator_implementation_source_hash=str(payload.get("operator_implementation_source_hash", semantics.operator_implementation_source_hash)),
+        semantics_hash=str(payload.get("semantics_hash", semantics.semantics_hash)),
     )
-
-
-def _pit_availability(availability_field: str | None, pit_safety: str) -> str:
-    if availability_field:
-        return f"available_on_or_after:{availability_field}"
-    if pit_safety == "pit_safe":
-        return "same_trade_date"
-    return f"{pit_safety}:availability_proof_required"

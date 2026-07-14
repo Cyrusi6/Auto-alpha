@@ -23,6 +23,7 @@ def evaluate_factor_splits(
     target_available_mask: torch.Tensor | None = None,
     index_member_mask: torch.Tensor | None = None,
     eligible_date_mask: torch.Tensor | None = None,
+    validation_common_mask: torch.Tensor | None = None,
     policy: EngineeringRobustnessPolicy | None = None,
 ) -> tuple[list[FactorValidationWindowResult], FactorValidationSummary, list[ValidationIssue]]:
     policy = policy or EngineeringRobustnessPolicy(
@@ -45,7 +46,10 @@ def evaluate_factor_splits(
     daily_cache: dict[int, dict | None] = {}
     for split in splits:
         split_test_dates = [date for date in split.test_dates if eligible_date_mask is None or bool(eligible_date_mask[date_index[date]].item())]
-        metric_args = (factors, target_ret, date_index, validity, active_mask, target_available_mask, index_member_mask, policy.min_cross_section_breadth, daily_cache)
+        metric_args = (
+            factors, target_ret, date_index, validity, active_mask, target_available_mask,
+            index_member_mask, validation_common_mask, policy.min_cross_section_breadth, daily_cache,
+        )
         train = _metrics_for_dates(*metric_args[:2], split.train_dates, *metric_args[2:])
         valid = _metrics_for_dates(*metric_args[:2], split.validation_dates, *metric_args[2:])
         test = _metrics_for_dates(*metric_args[:2], split_test_dates, *metric_args[2:])
@@ -77,7 +81,14 @@ def evaluate_factor_splits(
                 warnings=warnings,
             )
         )
-    finite_valid = factors[validity.bool()] if validity is not None and validity.shape == factors.shape else factors[torch.isfinite(factors)]
+    factor_quality_mask = torch.isfinite(factors)
+    if validity is not None and validity.shape == factors.shape:
+        factor_quality_mask &= validity.bool()
+    if validation_common_mask is not None and validation_common_mask.shape == factors.shape:
+        factor_quality_mask &= validation_common_mask.bool()
+    if eligible_date_mask is not None and eligible_date_mask.numel() == factors.shape[1]:
+        factor_quality_mask &= eligible_date_mask.bool().reshape(1, -1).expand_as(factors)
+    finite_valid = factors[factor_quality_mask]
     if finite_valid.numel() == 0:
         issues.append(ValidationIssue("blocker", "no_valid_factor_values", "factor has no valid values"))
     else:
@@ -191,6 +202,7 @@ def _metrics_for_dates(
     active_mask: torch.Tensor | None = None,
     target_available_mask: torch.Tensor | None = None,
     index_member_mask: torch.Tensor | None = None,
+    validation_common_mask: torch.Tensor | None = None,
     min_breadth: int = 2,
     daily_cache: dict[int, dict | None] | None = None,
 ) -> dict[str, float]:
@@ -214,7 +226,7 @@ def _metrics_for_dates(
             x = factors[:, idx].detach().float().cpu()
             y = target_ret[:, idx].detach().float().cpu()
             mask = torch.isfinite(x) & torch.isfinite(y)
-            for governed_mask in (validity, active_mask, target_available_mask, index_member_mask):
+            for governed_mask in (validity, active_mask, target_available_mask, index_member_mask, validation_common_mask):
                 if governed_mask is not None:
                     mask &= governed_mask[:, idx].detach().bool().cpu()
             breadth = int(mask.sum().item())
@@ -225,9 +237,15 @@ def _metrics_for_dates(
             xv = x[mask]
             yv = y[mask]
             spread, selected = _top_bottom_spread(xv, yv, mask.nonzero().flatten().tolist())
+            denominator_mask = (
+                validation_common_mask[:, idx].detach().bool().cpu()
+                if validation_common_mask is not None
+                else torch.ones_like(mask, dtype=torch.bool)
+            )
+            denominator = int(denominator_mask.sum().item())
             cached = {
                 "observations": breadth,
-                "coverage": float(mask.float().mean().item()),
+                "coverage": float(breadth / denominator) if denominator else 0.0,
                 "rank_ic": _pearson(_rank(xv), _rank(yv)),
                 "spread": spread,
                 "selected": selected,

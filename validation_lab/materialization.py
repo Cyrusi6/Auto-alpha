@@ -148,6 +148,8 @@ class FactorMaterializer:
             ),
             "matrix_manifest": _first_existing(matrix_dir / "task_052a_strict_matrix_manifest.json", matrix_dir / "matrix_version_manifest.json"),
             "membership_known": _first_existing(matrix_dir / "membership_known_mask.npy", matrix_dir / "membership_known.npy"),
+            "signal_candidate_cells": matrix_dir / "signal_candidate_cells.npy",
+            "validation_common_cells": matrix_dir / "validation_common_cells.npy",
         }
         validity_path = Path(self.inputs.feature_validity_tensor_path) if self.inputs.feature_validity_tensor_path else required["feature_tensor_path"].with_name("feature_validity_tensor.npy")
         axis_paths["feature_validity"] = validity_path
@@ -184,7 +186,14 @@ class FactorMaterializer:
         feature_validity = np.load(validity_path, mmap_mode="r")
         if tuple(feature_validity.shape) != expected_shape or str(feature_validity.dtype) != "bool":
             raise MaterializationBlocker("feature_validity_tensor_mismatch")
-        masks = {name: np.load(path, mmap_mode="r") for name, path in axis_paths.items() if name in {"active_mask", "pit_available_mask", "index_member_matrix"}}
+        masks = {
+            name: np.load(path, mmap_mode="r")
+            for name, path in axis_paths.items()
+            if name in {
+                "active_mask", "pit_available_mask", "index_member_matrix",
+                "signal_candidate_cells", "validation_common_cells",
+            }
+        }
         for name, matrix in masks.items():
             if tuple(matrix.shape) != (len(ts_codes), len(trade_dates)):
                 raise MaterializationBlocker(f"{name}_shape_mismatch:{matrix.shape}")
@@ -218,6 +227,8 @@ class FactorMaterializer:
             "active_mask_sha256": _sha256(axis_paths["active_mask"]),
             "pit_available_mask_sha256": _sha256(axis_paths["pit_available_mask"]),
             "index_member_matrix_sha256": _sha256(axis_paths["index_member_matrix"]),
+            "signal_candidate_cells_sha256": _sha256(axis_paths["signal_candidate_cells"]),
+            "validation_common_cells_sha256": _sha256(axis_paths["validation_common_cells"]),
             "feature_validity_sha256": _sha256(validity_path),
             "membership_known_sha256": _sha256(axis_paths["membership_known"]),
             "campaign_manifest_sha256": _optional_sha(self.inputs.campaign_manifest_path),
@@ -364,16 +375,18 @@ class FactorMaterializer:
         validity = (
             propagated_validity.detach().cpu().numpy()
             & np.isfinite(values)
-            & np.asarray(masks["active_mask"], dtype=bool)
-            & np.asarray(masks["pit_available_mask"], dtype=bool)
-            & np.asarray(masks["index_member_matrix"], dtype=bool)
+            & np.asarray(masks["signal_candidate_cells"], dtype=bool)
         )
         values = np.nan_to_num(values, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32, copy=False)
-        research_validity = validity & np.broadcast_to(context["research_eligibility"], validity.shape)
+        research_cells = (
+            np.asarray(masks["signal_candidate_cells"], dtype=bool)
+            & np.broadcast_to(context["research_eligibility"], validity.shape)
+        )
+        research_validity = validity & research_cells
         valid_values = values[research_validity]
         if valid_values.size == 0:
             raise MaterializationBlocker("no_valid_values")
-        eligible_cell_count = int(context["research_eligibility"].sum()) * int(validity.shape[0])
+        eligible_cell_count = int(np.count_nonzero(research_cells))
         coverage = float(research_validity.sum() / eligible_cell_count) if eligible_cell_count else 0.0
         std = float(valid_values.std())
         nonzero_ratio = float(np.count_nonzero(valid_values) / valid_values.size)
@@ -398,8 +411,10 @@ class FactorMaterializer:
             "nonzero_ratio": nonzero_ratio,
             "standard_deviation": std,
             "eligible_date_count": int(context["research_eligibility"].sum()),
+            "signal_candidate_cell_count": eligible_cell_count,
+            "factor_valid_cell_count": int(np.count_nonzero(research_validity)),
             "eligibility_contract_hash": self.inputs.eligibility_contract_hash,
-            "quality_scope": "research_eligibility_only",
+            "quality_scope": "research_signal_candidate_cells_only",
         }
         payload = {
             "factor_id": factor.factor_id,

@@ -43,7 +43,11 @@ STRICT_MATRIX_SEMANTIC_CONTRACT = {
     "target": "adjusted_open_t_plus_2_over_adjusted_open_t_plus_1_minus_one",
     "suspension_policy": SUSPENSION_POLICY,
     "publication": "content_addressed_atomic_directory_rename",
-    "version": 2,
+    "cell_semantics": {
+        "signal_candidate_cells": "membership_and_lifecycle_and_signal_eligibility",
+        "validation_common_cells": "signal_candidate_cells_and_target_available_and_research_endpoint_maturity",
+    },
+    "version": 3,
 }
 
 
@@ -58,7 +62,7 @@ class StrictEngineeringPITMatrixConfig:
     research_observable_cutoff: str = "20240530"
     target_endpoint_horizon_trade_days: int = 2
     research_readiness_requirements: Mapping[str, bool] = field(default_factory=dict)
-    config_version: str = "task_053a_strict_engineering_matrix_v2"
+    config_version: str = "task_054b_strict_engineering_matrix_v3"
 
     def __post_init__(self) -> None:
         if self.min_cross_section_breadth <= 0:
@@ -245,11 +249,16 @@ class StrictEngineeringPITMatrixBuilder:
             self.config.target_endpoint_horizon_trade_days,
         )
         research_endpoint_eligible = np.asarray(research_contract.eligible_mask(trade_dates), dtype=np.bool_)
+        signal_candidate_cells = signal_eligible_at_close.copy()
         target_available &= signal_eligible_at_close
         target_available &= membership
         target_available &= membership_known
-        target_available &= np.broadcast_to(research_endpoint_eligible, shape)
         target[~target_available] = 0.0
+        validation_common_cells = (
+            signal_candidate_cells
+            & target_available
+            & np.broadcast_to(research_endpoint_eligible, shape)
+        )
 
         arrays: dict[str, np.ndarray] = {}
         for field_name, values in raw.items():
@@ -306,11 +315,13 @@ class StrictEngineeringPITMatrixBuilder:
                 "target_available_mask": target_available,
                 "next_open_t1_t2_return": target,
                 "research_eligible_date_mask": research_endpoint_eligible,
+                "signal_candidate_cells": signal_candidate_cells,
+                "validation_common_cells": validation_common_cells,
             }
         )
         invariant_counts = _validate_invariants(arrays)
-        signal_breadth = signal_eligible_at_close.sum(axis=0)
-        target_breadth = target_available.sum(axis=0)
+        signal_breadth = signal_candidate_cells.sum(axis=0)
+        target_breadth = validation_common_cells.sum(axis=0)
         evaluable_dates = research_endpoint_eligible & membership_known_1d & (target_breadth >= self.config.min_cross_section_breadth)
         eligibility_lineage = research_contract.lineage(trade_dates)
         common_eligible_hash = _hash_json(
@@ -369,6 +380,8 @@ class StrictEngineeringPITMatrixBuilder:
             "signal_eligible_date_count": int(np.count_nonzero(signal_breadth >= self.config.min_cross_section_breadth)),
             "evaluable_date_count": int(np.count_nonzero(evaluable_dates)),
             "target_available_count": int(np.count_nonzero(target_available)),
+            "signal_candidate_cell_count": int(np.count_nonzero(signal_candidate_cells)),
+            "validation_common_cell_count": int(np.count_nonzero(validation_common_cells)),
             "min_cross_section_breadth": self.config.min_cross_section_breadth,
         }
 
@@ -479,7 +492,8 @@ class StrictEngineeringPITMatrixBuilder:
                 "source_timing_semantics_certified": False,
                 "intraday_simulation_supported": False,
                 "raw_truncated_before_compute": True,
-                "research_holdout_firewall_enabled": True,
+                "research_eligibility_contract_applied": True,
+                "research_firewall_attestation_required": True,
                 "research_end_date": self.config.research_observable_cutoff,
                 "holdout_start_date": "20240531",
                 "label_horizon": self.config.target_endpoint_horizon_trade_days,
@@ -487,7 +501,6 @@ class StrictEngineeringPITMatrixBuilder:
                 "research_eligibility_contract": eligibility_lineage,
                 "max_legal_signal_date": eligibility_lineage.get("max_eligible_signal_date"),
                 "max_legal_endpoint_date": eligibility_lineage.get("max_eligible_endpoint_date"),
-                "firewall_out_of_bounds_access_count": 0,
                 "firewall": {
                     "research_observable_cutoff": self.config.research_observable_cutoff,
                     "diagnostic_period_start": "20240531",

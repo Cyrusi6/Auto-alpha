@@ -19,6 +19,8 @@ from factor_store import (
     make_factor_id,
     stable_formula_hash,
 )
+from feature_factory.catalog import get_feature_definitions
+from feature_factory.semantics import build_feature_semantics_map, feature_semantics_contract_hash
 from neural_search.models import NeuralSearchConfig
 from neural_search.trainer import NeuralFormulaTrainer
 
@@ -200,6 +202,8 @@ class FactorMiningEngine:
         )
         factor_id = make_factor_id(formula_hash)
         experiment_id = make_experiment_id(factor_id, created_at)
+        feature_semantics = build_feature_semantics_map(get_feature_definitions(self.feature_version))
+        formula_semantics = self.vm.formula_semantics(formula_tokens, feature_semantics)
 
         factor_store_path = Path(factor_store_dir) if factor_store_dir is not None else Path("artifacts/factor_store")
         report_path = Path(report_dir) if report_dir is not None else Path("artifacts/reports")
@@ -235,7 +239,7 @@ class FactorMiningEngine:
             formula_hash=formula_hash,
             feature_version=self.feature_version,
             operator_version=self.operator_version,
-            lookback_days=self._estimate_lookback_days(formula_names),
+            lookback_days=formula_semantics.required_observations,
             created_at=created_at,
             status=research.status,
             metrics=metrics_by_split["all"],
@@ -248,6 +252,10 @@ class FactorMiningEngine:
                 "gate_decision": gate_decision_payload,
                 "universe_name": self.universe_name,
                 "universe_file": str(self.universe_file) if self.universe_file is not None else None,
+                "canonical_semantics_hash": formula_semantics.semantics_hash,
+                "feature_semantics_contract_hash": feature_semantics_contract_hash(feature_semantics),
+                "canonical_max_raw_lag": formula_semantics.max_raw_lag,
+                "required_observations": formula_semantics.required_observations,
             },
             factor_type="single",
         )
@@ -321,14 +329,6 @@ class FactorMiningEngine:
             "universe_name": self.universe_name,
             "universe_file": str(self.universe_file) if self.universe_file is not None else None,
         }
-
-    @staticmethod
-    def _estimate_lookback_days(formula_names: list[str]) -> int:
-        if "RET_5D" in formula_names:
-            return 5
-        if any(name in formula_names for name in {"TS_MEAN3", "TS_STD3", "TS_ZSCORE3"}):
-            return 3
-        return 1
 
     @staticmethod
     def _candidate_formulas() -> list[list[int]]:

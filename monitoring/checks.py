@@ -1957,6 +1957,56 @@ def check_task054_engineering_baseline(report_path: str | Path | None) -> tuple[
     }, alerts
 
 
+def check_task054b_engineering_baseline(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    status = str(payload.get("status") or "missing")
+    stages = payload.get("stages") if isinstance(payload.get("stages"), dict) else {}
+    blockers = payload.get("engineering_blockers") if isinstance(payload.get("engineering_blockers"), list) else []
+    expected = {
+        "governed_source",
+        "strict_matrix",
+        "v3_tensor",
+        "production_firewall_sentinel",
+        "identity_forensic",
+        "four_gpu_replay",
+    }
+    stage_verified = set(stages) == expected and all(bool(stages[name].get("verified")) for name in expected)
+    queues_empty = all(int(payload.get(name, -1)) == 0 for name in (
+        "certification_queue_count",
+        "portfolio_queue_count",
+        "paper_queue_count",
+        "live_queue_count",
+    ))
+    downstream_blocked = all(payload.get(name) is False for name in (
+        "certification_ready",
+        "portfolio_ready",
+        "paper_ready",
+        "live_ready",
+    ))
+    verified = (
+        status == "task054b_engineering_baseline_completed_historical_selection_contaminated_certification_blocked"
+        and stage_verified
+        and not blockers
+        and queues_empty
+        and downstream_blocked
+    )
+    alerts = []
+    if payload and not verified:
+        alerts.append(MonitoringAlert("error", "task054b_engineering_baseline", "Task 054-B production evidence is blocked", {"blocker_count": len(blockers)}))
+    return {
+        "exists": bool(payload),
+        "status": status,
+        "engineering_baseline_verified": verified,
+        "verified_stage_count": sum(bool(row.get("verified")) for row in stages.values()),
+        "engineering_blocker_count": len(blockers),
+        "downstream_queues_empty": queues_empty,
+        "certification_ready": False,
+        "portfolio_ready": False,
+        "paper_ready": False,
+        "live_ready": False,
+    }, alerts
+
+
 def check_validation_campaign_leaderboard(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     rows = _read_jsonl(Path(path)) if path else []
     ready = sum(1 for row in rows if row.get("certification_ready") is True)

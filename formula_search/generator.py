@@ -6,6 +6,7 @@ import random
 from collections.abc import Sequence
 
 from factor_store import stable_formula_hash
+from feature_factory.semantics import FeatureSemantics
 from model_core.ops import get_operator_spec
 from model_core.vm import StackVM
 from model_core.vocab import FORMULA_VOCAB
@@ -17,7 +18,7 @@ FEATURE_VERSION = "ashare_features_v1"
 OPERATOR_VERSION = "ashare_ops_v1"
 
 
-def generate_seed_formulas() -> list[FormulaCandidate]:
+def generate_seed_formulas(feature_semantics: dict[str, FeatureSemantics] | None = None) -> list[FormulaCandidate]:
     names = [
         ["RET_1D", "CS_ZSCORE"],
         ["RET_5D", "TS_RANK5"],
@@ -28,14 +29,18 @@ def generate_seed_formulas() -> list[FormulaCandidate]:
         ["PB", "NEG", "CS_RANK"],
         ["RET_5D", "PB", "SUB"],
     ]
-    return [_make_candidate([FORMULA_VOCAB.encode_name(name) for name in formula], "seed", [], 0) for formula in names]
+    return [_make_candidate([FORMULA_VOCAB.encode_name(name) for name in formula], "seed", [], 0, feature_semantics=feature_semantics) for formula in names]
 
 
-def generate_initial_population(config: FormulaSearchConfig) -> list[FormulaCandidate]:
+def generate_initial_population(
+    config: FormulaSearchConfig,
+    *,
+    feature_semantics: dict[str, FeatureSemantics] | None = None,
+) -> list[FormulaCandidate]:
     rng = random.Random(config.seed)
     population: list[FormulaCandidate] = []
     seen: set[tuple[str, ...]] = set()
-    for candidate in generate_seed_formulas():
+    for candidate in generate_seed_formulas(feature_semantics):
         if _within_limits(candidate, config):
             _append_unique(population, seen, candidate)
         if len(population) >= config.population_size:
@@ -49,6 +54,7 @@ def generate_initial_population(config: FormulaSearchConfig) -> list[FormulaCand
             config.max_formula_len,
             config.max_complexity,
             config.max_lookback,
+            feature_semantics=feature_semantics,
         )
         _append_unique(population, seen, candidate)
     return population
@@ -60,6 +66,8 @@ def generate_random_formula(
     max_len: int,
     max_complexity: int,
     max_lookback: int,
+    *,
+    feature_semantics: dict[str, FeatureSemantics] | None = None,
 ) -> FormulaCandidate:
     vm = StackVM()
     features = list(range(vocab.feature_count))
@@ -77,24 +85,32 @@ def generate_random_formula(
         valid, reason = vm.validate_with_reason(tokens)
         if not valid:
             continue
-        candidate = _make_candidate(tokens, "random", [], 0)
+        candidate = _make_candidate(tokens, "random", [], 0, feature_semantics=feature_semantics)
         if len(candidate.formula_tokens) <= max_len and candidate.complexity <= max_complexity and candidate.lookback <= max_lookback:
             return candidate
-    return _make_candidate([rng.choice(features), rng.choice(unary_ops)], "random", [], 0)
+    return _make_candidate([rng.choice(features), rng.choice(unary_ops)], "random", [], 0, feature_semantics=feature_semantics)
 
 
-def _make_candidate(tokens: Sequence[int], source: str, parent_hashes: list[str], generation: int) -> FormulaCandidate:
+def _make_candidate(
+    tokens: Sequence[int],
+    source: str,
+    parent_hashes: list[str],
+    generation: int,
+    *,
+    feature_semantics: dict[str, FeatureSemantics] | None = None,
+) -> FormulaCandidate:
     vm = StackVM()
     formula_tokens = [int(token) for token in tokens]
     names = vm.canonical_formula(formula_tokens)
     valid, reason = vm.validate_with_reason(formula_tokens)
     formula_hash = stable_formula_hash(formula_tokens, names, FEATURE_VERSION, OPERATOR_VERSION)
+    lookback = vm.formula_semantics(formula_tokens, feature_semantics).required_observations if feature_semantics else vm.formula_lookback(formula_tokens)
     return FormulaCandidate(
         formula_tokens=formula_tokens,
         formula_names=names,
         formula_hash=formula_hash,
         complexity=vm.formula_complexity(formula_tokens),
-        lookback=vm.formula_lookback(formula_tokens),
+        lookback=lookback,
         source=source,
         parent_hashes=list(parent_hashes),
         generation=int(generation),

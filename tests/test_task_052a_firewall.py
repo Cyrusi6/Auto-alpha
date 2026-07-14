@@ -51,7 +51,7 @@ def test_v3_validity_requires_every_declared_dependency(tmp_path: Path):
     assert not validity.any()
     summary = payload["feature_summaries"][0]
     assert summary["blocker"] == "missing_validity_dependency"
-    assert summary["missing_validity_dependencies"] == ["index_daily_bars.close"]
+    assert summary["missing_validity_dependencies"] == ["adjusted_close", "index_daily_bars.close"]
 
 
 def test_strict_validation_uses_persisted_next_open_target_and_diagnostic_segments(tmp_path: Path):
@@ -65,11 +65,13 @@ def test_strict_validation_uses_persisted_next_open_target_and_diagnostic_segmen
     np.save(tmp_path / "membership.npy", np.ones(shape, dtype=np.bool_))
     np.save(tmp_path / "membership_known.npy", np.ones(len(dates), dtype=np.bool_))
     np.save(tmp_path / "evaluable_date_mask.npy", np.ones(len(dates), dtype=np.bool_))
+    np.save(tmp_path / "signal_candidate_cells.npy", np.ones(shape, dtype=np.bool_))
     target = np.arange(np.prod(shape), dtype=np.float32).reshape(shape)
     target_validity = np.ones(shape, dtype=np.bool_)
     target_validity[:, -2:] = False
     np.save(tmp_path / "next_open_t1_t2_return.npy", target)
     np.save(tmp_path / "target_available_mask.npy", target_validity)
+    np.save(tmp_path / "validation_common_cells.npy", target_validity)
     (tmp_path / "task_052a_strict_matrix_manifest.json").write_text(
         json.dumps(
             {

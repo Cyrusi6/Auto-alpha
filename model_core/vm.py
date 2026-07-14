@@ -71,6 +71,31 @@ class StackVM:
             stack.append(max(inputs) + incremental)
         return int(stack[0]) if len(stack) == 1 else 1
 
+    def formula_semantics(
+        self,
+        formula_tokens: list[int],
+        feature_semantics: dict[str, object],
+    ) -> object:
+        from feature_factory.semantics import calculate_formula_semantics
+
+        valid, reason = self.validate_with_reason(formula_tokens)
+        if not valid:
+            raise ValueError(reason)
+        operator_arities = {
+            self.vocab.token_name(token): int(arity)
+            for token, arity in self.arity_map.items()
+        }
+        operator_windows = {
+            self.vocab.token_name(token): int(operator_lookback(token, self.feat_offset))
+            for token in self.arity_map
+        }
+        return calculate_formula_semantics(
+            self.canonical_formula(formula_tokens),
+            feature_semantics,
+            operator_arities=operator_arities,
+            operator_windows=operator_windows,
+        )
+
     def canonical_formula(self, formula_tokens: list[int]) -> list[str]:
         names: list[str] = []
         for token in formula_tokens:

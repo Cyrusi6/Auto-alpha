@@ -17,7 +17,13 @@ from factor_store import FactorRecord, LocalFactorStore, make_factor_id
 from formula_batch_eval import FormulaBatchEvalConfig, FormulaBatchEvaluator, FormulaEvalRequest, merge_shard_outputs
 from model_core.data_loader import AShareDataLoader
 
-from feature_factory import build_feature_set_manifest, build_feature_tensor_artifacts, load_feature_manifest, make_formula_vocab_from_manifest
+from feature_factory import (
+    build_feature_semantics_map,
+    build_feature_set_manifest,
+    build_feature_tensor_artifacts,
+    load_feature_manifest,
+    make_formula_vocab_from_manifest,
+)
 from feature_promotion import load_promotion_gate
 
 from .diversity import select_shortlist, write_diversity_outputs
@@ -80,6 +86,7 @@ class AlphaFactoryRunner:
             vocab=make_formula_vocab_from_manifest(manifest),
             promotion_gate=promotion_gate,
             feature_meta=_feature_meta(manifest),
+            feature_semantics=build_feature_semantics_map(manifest),
         )
         self.paths["alpha_static_checks_path"] = str(
             write_jsonl_artifact(self.output_dir / "alpha_static_checks.jsonl", static_rows, "alpha_static_checks", "alpha_factory")
@@ -700,6 +707,10 @@ class AlphaFactoryRunner:
                 "max_abs_correlation": float(row.get("max_abs_correlation", 0.0) or 0.0),
                 "factor_values_materialized": False,
                 "registration_mode": "shortlist_metadata_only",
+                "canonical_semantics_hash": candidate.metadata.get("canonical_semantics_hash"),
+                "feature_semantics_contract_hash": candidate.metadata.get("feature_semantics_contract_hash"),
+                "canonical_max_raw_lag": candidate.metadata.get("canonical_max_raw_lag"),
+                "required_observations": candidate.metadata.get("required_observations"),
             }
             status = str(row.get("status") or "candidate")
             self.store.save_factor(

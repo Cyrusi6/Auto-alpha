@@ -396,6 +396,7 @@ def _run_single(
         target_available_mask=matrix.get("target_available_mask") if matrix.get("target_available_mask") is not None else matrix.get("pit_available_mask"),
         index_member_mask=matrix.get("index_member_matrix"),
         eligible_date_mask=torch.from_numpy(eligibility.eligible_mask) if eligibility is not None else None,
+        validation_common_mask=matrix.get("validation_common_cells"),
         policy=policy,
     )
     screening_reproduction = _screening_reproduction(
@@ -488,7 +489,8 @@ def _run_single(
             "screening_reproduction": screening_reproduction,
             "research_end_date": args.research_end_date,
             "holdout_start_date": args.holdout_start_date,
-            "research_holdout_firewall_enabled": bool(firewall_proof.get("research_holdout_firewall_enabled", False)),
+            "research_eligibility_contract_applied": bool(firewall_proof.get("research_eligibility_contract_applied", False)),
+            "research_firewall_attested": bool(firewall_proof.get("research_firewall_attested", False)),
             "research_holdout_firewall_proof": firewall_proof,
             "universe_mode": matrix.get("universe_mode", "unknown"),
             "survivorship_bias_blocker": bool(matrix.get("survivorship_bias_blocker", False)),
@@ -528,6 +530,24 @@ def _run_single(
         stress_results,
         issues,
     )
+    mask_root = Path(output_dir_override or args.output_dir) / "cell_masks"
+    mask_root.mkdir(parents=True, exist_ok=True)
+    factor_valid_cells = validity.detach().bool().cpu().numpy()
+    validation_common = matrix.get("validation_common_cells")
+    validation_valid_cells = factor_valid_cells.copy()
+    if validation_common is not None:
+        validation_valid_cells &= validation_common.detach().bool().cpu().numpy()
+    validation_valid_cells &= np.isfinite(target_ret.detach().cpu().numpy())
+    factor_valid_path = mask_root / "factor_valid_cells.npy"
+    validation_valid_path = mask_root / "validation_valid_cells.npy"
+    np.save(factor_valid_path, factor_valid_cells.astype(np.bool_), allow_pickle=False)
+    np.save(validation_valid_path, validation_valid_cells.astype(np.bool_), allow_pickle=False)
+    paths.update(
+        {
+            "factor_valid_cells_path": str(factor_valid_path),
+            "validation_valid_cells_path": str(validation_valid_path),
+        }
+    )
     if manifest_path:
         paths["materialization_manifest_path"] = str(manifest_path)
     return {
@@ -545,6 +565,12 @@ def _run_single(
         "sensitivity_pass_ratio": float(sensitivity_surface.get("sensitivity_pass_ratio", 0.0) or 0.0),
         "stress_backtest_pass_ratio": float(stress_summary.get("stress_backtest_pass_ratio", 0.0) or 0.0),
         "validation_summary": validation_summary.to_dict(),
+        "cell_counts": {
+            "signal_candidate_cells": int(matrix.get("signal_candidate_cells").sum().item()) if matrix.get("signal_candidate_cells") is not None else None,
+            "validation_common_cells": int(matrix.get("validation_common_cells").sum().item()) if matrix.get("validation_common_cells") is not None else None,
+            "factor_valid_cells": int(factor_valid_cells.sum()),
+            "validation_valid_cells": int(validation_valid_cells.sum()),
+        },
         "multiple_testing_summary": multiple_testing.to_dict(),
         "overfit_risk_summary": overfit.to_dict(),
         "selection_data_reused": True,
@@ -577,6 +603,8 @@ def _load_governed_matrix_context(args: argparse.Namespace) -> dict[str, Any]:
             "index_membership_missing",
         ),
         "membership_known": _first_existing_matrix_path(matrix_dir, ["membership_known_mask.npy", "membership_known.npy"], "membership_known_missing"),
+        "signal_candidate_cells": _first_existing_matrix_path(matrix_dir, ["signal_candidate_cells.npy"], "signal_candidate_cells_missing"),
+        "validation_common_cells": _first_existing_matrix_path(matrix_dir, ["validation_common_cells.npy"], "validation_common_cells_missing"),
         "manifest": _first_existing_matrix_path(matrix_dir, ["task_052a_strict_matrix_manifest.json", "matrix_version_manifest.json"], "matrix_manifest_missing"),
     }
     missing = [name for name in ("trade_dates", "ts_codes") if not paths[name].exists()]
@@ -586,7 +614,13 @@ def _load_governed_matrix_context(args: argparse.Namespace) -> dict[str, Any]:
     manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
     target_mode = str(manifest.get("target_return_mode") or (manifest.get("target_contract") or {}).get("name") or "unknown")
     target, target_valid, target_path, target_validity_path = _load_persisted_target(matrix_dir, manifest, int(args.label_horizon))
-    masks = {name: torch.tensor(np.asarray(np.load(paths[name], mmap_mode="r"), dtype=np.float32), dtype=torch.bool) for name in ["active_mask", "pit_available_mask", "index_member_matrix"]}
+    masks = {
+        name: torch.tensor(np.asarray(np.load(paths[name], mmap_mode="r"), dtype=np.float32), dtype=torch.bool)
+        for name in [
+            "active_mask", "pit_available_mask", "index_member_matrix",
+            "signal_candidate_cells", "validation_common_cells",
+        ]
+    }
     membership_known = np.asarray(np.load(paths["membership_known"], mmap_mode="r"), dtype=np.bool_)
     membership_by_date = membership_known.reshape(-1) if membership_known.ndim == 1 else membership_known.any(axis=0)
     evaluable_path = matrix_dir / "evaluable_date_mask.npy"
@@ -618,6 +652,8 @@ def _load_governed_matrix_context(args: argparse.Namespace) -> dict[str, Any]:
         "pit_available_mask": masks["pit_available_mask"],
         "target_available_mask": torch.from_numpy(np.array(target_valid, copy=True)),
         "index_member_matrix": masks["index_member_matrix"],
+        "signal_candidate_cells": masks["signal_candidate_cells"],
+        "validation_common_cells": masks["validation_common_cells"],
         "eligibility": eligibility,
         "target_path": str(target_path),
         "target_validity_path": str(target_validity_path),
@@ -630,14 +666,14 @@ def _load_governed_matrix_context(args: argparse.Namespace) -> dict[str, Any]:
         "universe_mode": "fixed_asof_constituents" if fixed_asof else str(manifest.get("universe_mode")),
         "survivorship_bias_blocker": fixed_asof,
         "firewall_proof": {
-            "research_holdout_firewall_enabled": bool(manifest.get("research_holdout_firewall_enabled", False)),
+            "research_eligibility_contract_applied": bool(manifest.get("research_eligibility_contract_applied", False)),
+            "research_firewall_attested": False,
             "research_end_date": manifest.get("research_end_date") or (manifest.get("firewall") or {}).get("research_observable_cutoff"),
             "holdout_start_date": manifest.get("holdout_start_date") or (manifest.get("firewall") or {}).get("diagnostic_period_start"),
             "label_horizon": manifest.get("label_horizon") or (manifest.get("firewall") or {}).get("target_endpoint_horizon_trade_days"),
             "eligible_date_hash": manifest.get("eligible_date_hash"),
             "research_eligibility_contract": eligibility.research_contract,
             "raw_truncated_before_compute": bool(manifest.get("raw_truncated_before_compute", False)),
-            "out_of_bounds_access_count": int(manifest.get("firewall_out_of_bounds_access_count", 0) or 0),
         },
     }
 

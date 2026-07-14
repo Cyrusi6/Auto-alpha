@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Iterable
 
 from factor_store import stable_formula_hash
-from feature_factory import make_formula_vocab_from_manifest
+from feature_factory import build_feature_semantics_map, feature_semantics_contract_hash, make_formula_vocab_from_manifest
 from feature_promotion import load_promotion_gate
 from formula_search.generator import generate_initial_population
 from formula_search.models import FormulaSearchConfig
@@ -32,6 +32,8 @@ def generate_alpha_candidates(config, manifest) -> tuple[list[AlphaCandidateReco
     candidates: list[AlphaCandidateRecord] = []
     warnings: list[str] = []
     feature_meta = _feature_meta(manifest)
+    feature_semantics = build_feature_semantics_map(manifest)
+    semantics_contract_hash = feature_semantics_contract_hash(feature_semantics)
     required_families = _parse_csv_set(config.require_feature_family_ready)
     family_budget = _parse_family_budget(config.feature_family_budget)
     promotion_gate = load_promotion_gate(
@@ -63,7 +65,8 @@ def generate_alpha_candidates(config, manifest) -> tuple[list[AlphaCandidateReco
         try:
             valid, reason = vm.validate_with_reason(formula_tokens)
             complexity = vm.formula_complexity(formula_tokens)
-            lookback = vm.formula_lookback(formula_tokens)
+            formula_semantics = vm.formula_semantics(formula_tokens, feature_semantics)
+            lookback = formula_semantics.required_observations
         except Exception as exc:
             valid, reason, complexity, lookback = False, str(exc), len(formula_tokens), 0
         formula_hash = stable_formula_hash(formula_tokens, formula_names, manifest.feature_version, manifest.operator_version)
@@ -85,7 +88,12 @@ def generate_alpha_candidates(config, manifest) -> tuple[list[AlphaCandidateReco
                 validation_status="valid" if valid else "invalid",
                 status="generated" if valid else "rejected",
                 reject_reason=None if valid else reason,
-                metadata=metadata or {"name": name},
+                metadata=(metadata or {"name": name}) | {
+                    "canonical_semantics_hash": formula_semantics.semantics_hash if valid else None,
+                    "feature_semantics_contract_hash": semantics_contract_hash,
+                    "canonical_max_raw_lag": formula_semantics.max_raw_lag if valid else None,
+                    "required_observations": formula_semantics.required_observations if valid else None,
+                },
             )
         )
 
@@ -120,16 +128,16 @@ def generate_alpha_candidates(config, manifest) -> tuple[list[AlphaCandidateReco
             max_complexity=config.max_complexity,
             max_lookback=config.max_lookback,
         )
-        generated = generate_initial_population(search_config)
+        generated = generate_initial_population(search_config, feature_semantics=feature_semantics)
         for candidate in generated[: max(0, config.random_budget)]:
             add(candidate.formula_hash, candidate.formula_tokens, candidate.formula_names, AlphaCandidateSource.random, _family_tags(candidate.formula_names), metadata={"source_generation": candidate.generation})
         parents = generated or []
         for parent in parents[: max(0, config.mutation_budget)]:
-            child = mutate_formula(parent, rng, search_config)
+            child = mutate_formula(parent, rng, search_config, feature_semantics=feature_semantics)
             add(child.formula_hash, child.formula_tokens, child.formula_names, AlphaCandidateSource.mutation, _family_tags(child.formula_names), refs=[parent.formula_hash])
         for _idx in range(max(0, min(config.crossover_budget, len(parents) // 2))):
             left, right = rng.sample(parents, 2)
-            child = crossover_formula(left, right, rng, search_config)
+            child = crossover_formula(left, right, rng, search_config, feature_semantics=feature_semantics)
             add(child.formula_hash, child.formula_tokens, child.formula_names, AlphaCandidateSource.crossover, _family_tags(child.formula_names), refs=[left.formula_hash, right.formula_hash])
     except Exception as exc:
         warnings.append(f"random/mutation/crossover generation failed: {exc}")

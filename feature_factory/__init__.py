@@ -11,6 +11,14 @@ from .contracts import (
 )
 from .models import FeatureDefinition, FeatureFamily, FeatureSetManifest, FeatureTensorBuildResult
 from .readiness import FEATURE_FAMILY_POLICIES, build_feature_readiness_catalog
+from .semantics import (
+    FeatureSemantics,
+    FormulaSemantics,
+    build_feature_semantics,
+    build_feature_semantics_map,
+    calculate_formula_semantics,
+    feature_semantics_contract_hash,
+)
 from .vocab_adapter import FeatureSetFormulaVocab, make_formula_vocab, make_formula_vocab_from_manifest
 from .validity import build_feature_values_and_validity
 
@@ -22,20 +30,26 @@ __all__ = [
     "FeatureFamily",
     "FeatureSetFormulaVocab",
     "FeatureSetManifest",
+    "FeatureSemantics",
+    "FormulaSemantics",
     "FeatureTensorBuildResult",
     "FEATURE_FAMILY_POLICIES",
     "build_feature_readiness_catalog",
     "build_feature_contract",
     "build_feature_set_manifest",
+    "build_feature_semantics",
+    "build_feature_semantics_map",
     "build_feature_tensor",
     "build_feature_tensor_artifacts",
     "build_feature_values_and_validity",
     "build_tensor_content_fingerprint",
     "contract_from_definition",
     "feature_semantic_source_hash",
+    "feature_semantics_contract_hash",
     "get_feature_definitions",
     "load_feature_manifest",
     "intersect_candidate_feature_blockers",
+    "calculate_formula_semantics",
     "make_formula_vocab",
     "make_formula_vocab_from_manifest",
 ]

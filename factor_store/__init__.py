@@ -2,6 +2,7 @@
 
 from .hash import make_experiment_id, make_factor_id, stable_formula_hash
 from .models import ExperimentRecord, FactorRecord, FactorValueRecord, StorageResult
+from .normalized_overlay import publish_normalized_factor_overlay
 from .storage import LocalFactorStore
 
 __all__ = [
@@ -13,4 +14,5 @@ __all__ = [
     "make_experiment_id",
     "make_factor_id",
     "stable_formula_hash",
+    "publish_normalized_factor_overlay",
 ]
