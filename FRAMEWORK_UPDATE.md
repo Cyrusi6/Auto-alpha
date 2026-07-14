@@ -2444,3 +2444,17 @@
 - Hardened tensor/materialization lineage with actual partition SHA256, semantic source hashes, axes, target/time contracts, canonical formula identity, recursive lookback, and locked production validation windows.
 - Added Task 054 production DAG, four-path subprocess sentinel protocol, strict replay-evidence validator, scrubbed Git-safe evidence package, and independent verifier. Certification, portfolio, paper, and live readiness remain false by contract.
 - Task 053's `7/12/1` replay remains provisional until a new Task 054 evidence package passes full server-artifact verification; a blocked Task 054 run does not supersede it.
+
+## 2026-07-14 - Task 054-B canonical semantics and production evidence gate
+
+### 本次变更摘要
+- 为 `ashare_features_v3` 全部 95 个特征建立 canonical machine-readable recursive semantics，统一记录 raw dependency、内部/外层变换、price basis、PIT availability、validity/min-period、实现源码哈希、最长依赖路径、`max_raw_lag` 与 `required_observations`；公式语义递归组合 feature 与 operator window，修正 nested rolling/delay/delta 的端点和 off-by-one 风险。
+- 新增完整 frozen candidate pool 的 selection-impact forensic：按 formula hash 去重并强制 expected unique count，逐候选核验公式身份与 factor 身份，重算 canonical lookback、静态 eligibility、lookback penalty、score、rank、family cap 和 shortlist membership；结果发布到 immutable normalized overlay，不修改历史 factor record，不读取 target/outcome，也不启动新搜索。
+- 将生产防火墙证据固定为 `evidence_scope=real_production` 的 12-path matrix，即 3 种 mutation（baseline/post-cutoff/inside-cutoff）× 4 条路径（raw/matrix × local/scheduler）。验证 audited read、公共生产入口 receipt、source generation、scheduler job/run/heartbeat/device state、post-cutoff invariance、inside-cutoff cache miss/output change 及各路径一致性。
+- Task 054-B production DAG 使用六个 stage-specific validator：governed source、strict matrix、v3 tensor、production firewall sentinel、identity forensic、four-GPU replay。每阶段 fail closed 校验 complete status、artifact schema、文件 SHA256、content hash 和完整上游 lineage；四卡 replay 只能在前置 gate 全部通过后执行，并要求精确 20 候选、四份 scheduler state、CUDA evidence、uncached sibling hash 一致及 immutable resume `4/4`。
+
+### 证据与发布边界
+- 本次记录的是 Task 054-B 代码契约与验收边界，不代表真实服务器证据包已经通过，也不继承或重命名 Task 053 的 `7/12/1` 为新结果。
+- 即使六阶段全部验证，唯一工程完成状态仍为 `task054b_engineering_baseline_completed_historical_selection_contaminated_certification_blocked`；certification、portfolio、paper、live readiness 始终为 false，四类 queue 始终为 0。
+- 不宣称 clean OOS、可认证、可组合、可 paper 或可 live；四卡不得在 gate 前执行。
+- 仓库不得提交真实服务器路径、NPY、原始物理 GPU UUID 或可反推出这些信息的未脱敏清单；只允许 scrubbed 相对身份、内容哈希、计数、状态和验证摘要。

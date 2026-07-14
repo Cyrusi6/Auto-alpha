@@ -481,3 +481,12 @@ The platform is local-first and deterministic by default. Production sync now ha
 ## Task 054 evidence boundary
 
 The Task 054 baseline is contaminated retrospective engineering evidence. The production verifier binds candidate identity, research eligibility, matrix/tensor/policy/code lineage, shard completeness, CUDA evidence, and replay hashes. `certification_ready`, `portfolio_ready`, `paper_ready`, and `live_ready` remain false even when an engineering replay completes.
+
+## Task 054-B：95 特征语义、selection forensic 与生产门控
+
+- `feature_factory.semantics` 为 `ashare_features_v3` 全部 95 个特征提供唯一 canonical 递归语义：原始依赖、内部运算、外层变换、价格口径、PIT 可得性、有效性/min-period、实现源码哈希、最长依赖路径、`max_raw_lag` 与 `required_observations=max_raw_lag+1` 均可机器校验；公式窗口继续递归叠加算子 lookback，不接受旧存量 lookback 作为真值。
+- `task_054_b.forensics` 对冻结 campaign 的完整候选池做 selection-impact 取证，而不是只检查历史 shortlist。流程按 formula hash 去重并核对预期唯一候选数，逐候选验证 tokens/names/formula hash/factor id，重算 canonical lookback、静态资格、lookback penalty、分数、排名及 shortlist membership，并以内容寻址 normalized overlay 保存修正后的工程元数据，不改写历史记录。取证仅使用冻结 selection artifacts，明确 `target_or_outcome_read=false`。
+- `real_production` sentinel 固定执行 3 种 mutation × 4 条生产路径的 12 次运行：`baseline`、`post_cutoff`、`inside_cutoff` × `raw_local`、`raw_scheduler`、`matrix_local`、`matrix_scheduler`。它必须核验 audited-read ledger、公共生产入口 receipt、source generation、scheduler job/run/heartbeat/device state、cutoff 外研究输出不变、cutoff 内 cache miss 且研究输出变化，以及 raw/matrix、local/scheduler 结果一致。
+- Task 054-B DAG 使用分阶段 validator，顺序固定为 governed source → strict matrix → v3 tensor → production firewall sentinel → identity forensic → four-GPU replay。每一阶段都必须通过状态、schema、文件 SHA256、content hash 和上游 lineage 校验；四卡只能在前五阶段 gate 全部通过后执行，并继续要求精确 20 候选、四份 scheduler state、真实 CUDA replay evidence、uncached sibling 一致和 immutable resume `4/4`。
+- 即使工程链全部验证，终态仍为 `task054b_engineering_baseline_completed_historical_selection_contaminated_certification_blocked`；certification/portfolio/paper/live readiness 始终为 false，queue 始终为 0，不得宣称 clean OOS。
+- Git 仅允许提交 scrubbed 相对身份、哈希、计数、状态与验证摘要；不得提交真实服务器路径、NPY 或原始物理 GPU UUID。
