@@ -158,6 +158,9 @@ class ComputeJobRun:
     output_paths: dict[str, str] = field(default_factory=dict)
     redacted_env_count: int = 0
     fallback_to_cpu: bool = False
+    physical_devices: list[dict[str, Any]] = field(default_factory=list)
+    telemetry: dict[str, Any] = field(default_factory=dict)
+    heartbeat_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

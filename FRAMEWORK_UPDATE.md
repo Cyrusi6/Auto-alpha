@@ -2402,3 +2402,16 @@
 - 新增 `tests/test_task_052a_firewall.py`，覆盖 cutoff/diagnostic/t+2、实际读取审计、v3 validity 缺失依赖、严格持久化目标、eligible diagnostics、contract-change screening 和 lineage-before-skip 哨兵。
 - `uv run python -m pytest -q --basetemp=.pytest-tmp-task052-suite tests/test_task_052a_firewall.py tests/test_task_052a_ingestion.py tests/test_task_052a_matrix.py tests/test_task_051a.py tests/test_task_050a.py tests/test_formula_batch_eval.py tests/test_alpha_factory.py tests/test_data_loader_matrix_cache.py tests/test_model_core_data_loader.py tests/test_feature_factory.py tests/test_validation_lab.py`：74 项通过。
 - 未执行真实数据回放、网络请求、GPU 作业、campaign、factor-store 写入或端到端实盘命令。
+
+## 2026-07-14 - Task 052-A Governed Repair and Conditional GPU Replay Closure
+
+### Engineering changes
+- Added `task_052_a.audit` and a bounded `task_052_a.backfill` workflow that re-hashes real server inputs, preserves legacy suspension data as read-only evidence, scopes all Tushare requests to the 637-stock historical union through 2026-06-30, records per-stock slices/negative attestations/content hashes, recursively splits capped date ranges, and publishes content-addressed sibling generations.
+- Corrected the canonical `suspend_d` primary key to include normalized `suspend_timing`; retained explicit `stock_st` and per-security `namechange` contracts. Provider cache/resume identities include normalized parameters, fields, contract and code semantic hashes; corrupt or incompatible entries fail closed.
+- Added Task 052 artifact schemas plus dashboard/monitoring readers for split readiness. `untouched_holdout_ready`, certification, portfolio, paper and live readiness are independent from retrospective engineering replay and remain false for the old observed candidates.
+- Added strict four-shard replay gating and immutable terminal evidence. Formal scheduling requires 20 unique candidates, four 5-candidate shards, complete strict inputs/readiness, four distinct physical GPU UUIDs, positive first-run CUDA evidence, zero CPU fallback/OOM/retry, and 4/4 hash-validated resume.
+
+### Real execution boundary
+- Real schema/permission probes succeeded for `suspend_d`, `stock_st`, and `namechange`; no token value was logged or persisted and `.env.local` permissions were restricted.
+- The governed historical-union backfill completed with hash-validated 637/637 request coverage for suspension, stock ST, and namechange; a cache-only replay reproduced the three content-addressed generations without new provider requests. HTTP 429/307 attempts remain in the coverage ledger and were recovered through a lower global rate plus auditable exponential backoff.
+- Suspension returned 34,455 dated rows, but 34,267 lacked source `suspend_timing`. They are persisted as `unknown` rather than guessed as full-day/open/intraday evidence. This source-semantics gap, together with the absence of a published real strict matrix, v3 values/validity tensor, and real firewall sentinel, keeps data foundation and retrospective replay blocked; no GPU job was launched.

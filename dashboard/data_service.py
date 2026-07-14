@@ -413,6 +413,15 @@ class AshareDashboardService:
     def load_task_051_engineering_report(self) -> dict[str, Any]:
         return self._read_first_json(self._validation_campaign_artifact_candidates("task_051_engineering_report.json"))
 
+    def load_task_052_preflight_audit(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_campaign_artifact_candidates("task_052_preflight_audit.json"))
+
+    def load_task_052_readiness(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_campaign_artifact_candidates("task_052_readiness.json"))
+
+    def load_task_052_backfill_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_campaign_artifact_candidates("task_052_backfill_report.json"))
+
     def load_future_untouched_holdout_plan(self) -> dict[str, Any]:
         return self._read_first_json(self._validation_campaign_artifact_candidates("future_untouched_holdout_plan.json"))
 

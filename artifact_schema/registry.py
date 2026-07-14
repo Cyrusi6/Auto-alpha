@@ -347,6 +347,21 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         ["generation_id", "content_hash", "semantic_hash", "shape", "stock_axis_hash", "date_axis_hash", "raw_fields", "validity_masks", "bar_inference_used", "adjustment_factor_fill_value", "membership_lag_trade_days", "target_contract", "readiness", "partition_sha256", "deterministic_build"],
         ["task_052a_strict_matrix_manifest.json"],
     ),
+    "task_052_preflight_audit": _definition(
+        "task_052_preflight_audit",
+        ["status", "raw_index", "freeze", "datasets", "historical_universe", "candidate_pool", "legacy_suspension_status", "proven_root_causes"],
+        ["task_052_preflight_audit.json"],
+    ),
+    "task_052_readiness": _definition(
+        "task_052_readiness",
+        ["status", "data_foundation_ready", "retrospective_replay_ready", "research_firewall_ready", "feature_family_ready", "untouched_holdout_ready", "certification_ready", "portfolio_ready", "paper_ready", "live_ready", "blockers"],
+        ["task_052_readiness.json"],
+    ),
+    "task_052_backfill_report": _definition(
+        "task_052_backfill_report",
+        ["status", "union_count", "union_sha256", "observed_end_date", "requests_per_minute", "code_semantic_hash", "datasets", "rate_limit", "token_persisted", "old_sources_mutated"],
+        ["task_052_backfill_report.json"],
+    ),
     "validation_candidate_dedup_report": _definition(
         "validation_candidate_dedup_report",
         ["validation_campaign_id", "candidate_count", "duplicate_count"],

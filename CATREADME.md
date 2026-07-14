@@ -2,6 +2,8 @@
 
 This repository is now organized as a local A-share factor research platform. The main workflow is:
 
+`task_052_a/` audits real Task 049/050/051 lineage and runs bounded, resumable historical-union repairs without mutating prior generations. `universe/task052.py`, `data_lake/task052_freeze.py`, and `matrix_store/strict_engineering.py` provide the proof/freeze/matrix path; `research_firewall/` supplies the shared `2024-05-30` observable cutoff and t+2 endpoint contract. Four-GPU replay is conditional on all gates and never promotes the contaminated old 20 candidates to certification.
+
 1. Prepare A-share data artifacts.
 2. Build feature tensors and evaluate formula factors.
 3. Register factors and experiments.

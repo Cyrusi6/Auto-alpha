@@ -80,6 +80,8 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--require-validation-ready", action="store_true")
     parser.add_argument("--research-readiness-decision-path")
+    parser.add_argument("--task-052a-replay", action="store_true")
+    parser.add_argument("--replay-readiness-path")
     parser.add_argument("--top-k", type=int, default=100)
     parser.add_argument("--top-k-certification-queue", type=int, default=20)
     parser.add_argument("--certification-policy-profile", default="sample_lenient_certification")
@@ -193,6 +195,8 @@ def _run(args: argparse.Namespace) -> dict:
             run_stress_backtest=args.run_stress_backtest,
             resume=args.resume,
             dry_run=args.dry_run,
+            task_052a_replay=args.task_052a_replay,
+            replay_readiness_path=args.replay_readiness_path,
         )
         if not args.dry_run:
             run_status = payload.get("status")

@@ -6,6 +6,7 @@ from .ingest import ingest_candidate_pool
 from .leaderboard import build_validation_leaderboard
 from .registry import LocalValidationCampaignStore
 from .scheduler import plan_validation_shards, run_validation_shards
+from .replay_evidence import validate_resume_evidence, validate_terminal_outputs
 
 __all__ = [
     "LocalValidationCampaignStore",
@@ -15,4 +16,6 @@ __all__ = [
     "ingest_candidate_pool",
     "plan_validation_shards",
     "run_validation_shards",
+    "validate_resume_evidence",
+    "validate_terminal_outputs",
 ]

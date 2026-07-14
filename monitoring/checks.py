@@ -1883,6 +1883,8 @@ def check_validation_campaign_store(
     engineering = _read_json(engineering_path) if engineering_path and engineering_path.exists() else {}
     task_051_path = Path(report_path).parent / "task_051_engineering_report.json" if report_path else None
     task_051 = _read_json(task_051_path) if task_051_path and task_051_path.exists() else {}
+    task_052_path = Path(report_path).parent / "task_052_readiness.json" if report_path else None
+    task_052 = _read_json(task_052_path) if task_052_path and task_052_path.exists() else {}
     registry = _read_json(Path(registry_path)) if registry_path else {}
     payload = report or registry
     status = str(payload.get("status", "missing") if payload else "missing")
@@ -1911,6 +1913,12 @@ def check_validation_campaign_store(
         "alpha_discovery_data_ready": bool(task_051.get("alpha_discovery_data_ready", False)),
         "research_holdout_firewall_enabled": bool(task_051.get("research_holdout_firewall_enabled", False)),
         "task_051_blocker_count": len(task_051.get("blockers", []) or []),
+        "task_052_status": task_052.get("status", "missing") if task_052 else "missing",
+        "task_052_data_foundation_ready": bool(task_052.get("data_foundation_ready", False)),
+        "task_052_retrospective_replay_ready": bool(task_052.get("retrospective_replay_ready", False)),
+        "task_052_research_firewall_ready": bool(task_052.get("research_firewall_ready", False)),
+        "task_052_untouched_holdout_ready": bool(task_052.get("untouched_holdout_ready", False)),
+        "task_052_blocker_count": len(task_052.get("blockers", []) or []),
     }, alerts
 
 

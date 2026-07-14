@@ -4,6 +4,8 @@ Auto-alpha is an A-share quantitative factor research platform. It provides a lo
 
 The current implementation is local-first. It uses deterministic sample data and JSON/JSONL artifacts so the full research loop can run without external services, while the Tushare HTTP provider can be enabled with a valid token.
 
+Task 052-A adds governed historical-union repairs for `suspend_d`, `stock_st`, and per-security `namechange`, content-addressed immutable freeze and strict engineering PIT matrix builders, a shared research cutoff firewall, and conditional four-GPU retrospective replay evidence. This path is fail-closed and remains `retrospective_pit_proxy`; untouched holdout, certification, portfolio, paper, and live readiness stay false.
+
 ## Modules
 
 - `data_pipeline/`: A-share data configuration, sample and Tushare HTTP providers, market constraint datasets, sync planning, response cache, request audit, local JSONL storage, data quality checks, sync state, and data sync CLI.

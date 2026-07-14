@@ -53,7 +53,7 @@ def test_task_052a_registry_uses_canonical_status_contracts():
     suspensions = DATASET_DEFINITIONS["suspensions"]
     assert suspensions.api_name == "suspend_d"
     assert suspensions.fields == ("ts_code", "trade_date", "suspend_timing", "suspend_type")
-    assert suspensions.primary_key == ("ts_code", "trade_date", "suspend_type")
+    assert suspensions.primary_key == ("ts_code", "trade_date", "suspend_type", "suspend_timing")
     assert suspensions.single_date_param == "trade_date"
 
     stock_st = DATASET_DEFINITIONS["st_status_daily"]
@@ -193,7 +193,7 @@ def test_atomic_publish_preserves_existing_dataset_when_replace_fails(monkeypatc
     staging_path, _, _ = write_staging_records(
         tmp_path / "staging",
         job,
-        [{"ts_code": "000002.SZ", "trade_date": "20240103", "suspend_timing": None, "suspend_type": "R"}],
+        [{"ts_code": "000002.SZ", "trade_date": "20240103", "suspend_timing": "unknown", "suspend_type": "R"}],
     )
     monkeypatch.setattr("data_backfill.staging.os.replace", lambda *args: (_ for _ in ()).throw(OSError("publish failed")))
     with pytest.raises(OSError, match="publish failed"):

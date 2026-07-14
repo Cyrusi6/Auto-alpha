@@ -14,6 +14,7 @@ from typing import Any
 from artifact_schema.writer import write_json_artifact
 
 from .heartbeat import write_heartbeat
+from .gpu_probe import probe_compute_resources
 from .job_store import LocalComputeJobStore
 from .lease import GpuLeaseManager
 from .models import ComputeDeviceType, ComputeJobRun, ComputeJobSpec, ComputeJobStatus, ComputeLease
@@ -43,6 +44,7 @@ def run_job(
     return_code = 0
     status = ComputeJobStatus.SUCCESS
     env, redacted_env_count, fallback_to_cpu = _build_env(job, lease)
+    physical_devices = _leased_device_records(lease)
     command = list(job.command) + list(job.args)
     try:
         if dry_run:
@@ -91,6 +93,8 @@ def run_job(
     duration = float(time.perf_counter() - start)
     (job_output / "stdout_tail.txt").write_text(stdout_tail, encoding="utf-8")
     (job_output / "stderr_tail.txt").write_text(stderr_tail, encoding="utf-8")
+    telemetry = _read_telemetry(job)
+    heartbeat_count = sum(1 for row in _read_jsonl(store.heartbeats_path) if row.get("job_id") == job.job_id)
     run = ComputeJobRun(
         run_id=f"run_{uuid.uuid4().hex[:16]}",
         job_id=job.job_id,
@@ -112,6 +116,9 @@ def run_job(
         },
         redacted_env_count=redacted_env_count,
         fallback_to_cpu=fallback_to_cpu,
+        physical_devices=physical_devices,
+        telemetry=telemetry,
+        heartbeat_count=heartbeat_count + 1,
     )
     write_json_artifact(job_output / f"compute_job_run_{job.job_id}.json", run.to_dict(), "compute_job_run", "compute_cluster")
     store.append_run(run.to_dict())
@@ -143,6 +150,33 @@ def _build_env(job: ComputeJobSpec, lease: ComputeLease | None) -> tuple[dict[st
 
 def _tail(text: str, max_chars: int = 4000) -> str:
     return text[-max_chars:] if len(text) > max_chars else text
+
+
+def _leased_device_records(lease: ComputeLease | None) -> list[dict[str, Any]]:
+    if lease is None:
+        return []
+    selected = set(lease.device_indices)
+    return [
+        device.to_dict()
+        for device in probe_compute_resources().devices
+        if device.device_type == ComputeDeviceType.CUDA and device.index in selected
+    ]
+
+
+def _read_telemetry(job: ComputeJobSpec) -> dict[str, Any]:
+    path = Path(str(job.metadata.get("telemetry_path") or ""))
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def _utc_now() -> str:

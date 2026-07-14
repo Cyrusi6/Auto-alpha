@@ -78,7 +78,7 @@ def probe_compute_resources() -> ComputeResourceSnapshot:
     if shutil.which("nvidia-smi"):
         try:
             out = subprocess.run(
-                ["nvidia-smi", "--query-gpu=uuid,driver_version", "--format=csv,noheader"],
+                ["nvidia-smi", "--query-gpu=uuid,name,driver_version", "--format=csv,noheader"],
                 text=True,
                 capture_output=True,
                 check=False,
@@ -90,7 +90,8 @@ def probe_compute_resources() -> ComputeResourceSnapshot:
                     if idx < len(devices) and devices[idx].device_type == ComputeDeviceType.CUDA:
                         payload = devices[idx].to_dict()
                         payload["uuid"] = row[0].strip() if row else None
-                        payload["driver_version"] = row[1].strip() if len(row) > 1 else None
+                        payload["name"] = row[1].strip() if len(row) > 1 else payload["name"]
+                        payload["driver_version"] = row[2].strip() if len(row) > 2 else None
                         devices[idx] = ComputeDeviceRecord(**payload)
             else:
                 warnings.append("nvidia_smi_returned_nonzero")
