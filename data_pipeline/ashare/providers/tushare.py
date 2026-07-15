@@ -660,13 +660,6 @@ def _parse_daily_limit_values(row: dict[str, Any]) -> tuple[dict[str, float] | N
     return parsed, None
 
 
-def _float_or_zero(value: Any) -> float:
-    """Legacy helper for non-bar datasets; daily OHLCV must never use it."""
-
-    parsed = _optional_float(value)
-    return 0.0 if parsed is None else parsed
-
-
 def _increment_reason(reasons: dict[str, int], reason: str) -> None:
     reasons[reason] = reasons.get(reason, 0) + 1
 

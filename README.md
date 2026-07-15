@@ -1813,3 +1813,7 @@ python -m task_055_b.run --config /path/to/task055b_run_config.json
 ```
 
 The only success state is the explicit historical-selection-contaminated, modeled-execution, certification-blocked state. Any unresolved security-date, corporate-action break, missing fee evidence, or NAV closure failure produces `task055b_security_date_evidence_remediation_blocked`; certification, portfolio, paper, and live queues remain physically empty.
+
+### Task 055-C evidence remediation
+
+`python -m task_055_c.run --config <server-config.json>` rebuilds the security-date truth table, bounded request cascade, full-axis valuation marks, fee evidence gate, physical queue inspection, and conditional native simulator replay. It never accepts caller-supplied replay-success booleans. Vendor daily no-trade evidence remains modeled engineering evidence and cannot clear certification blockers.

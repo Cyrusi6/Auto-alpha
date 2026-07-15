@@ -60,7 +60,7 @@ def test_runner_publishes_blocked_native_evidence_and_keeps_queues_zero(tmp_path
     assert all(value == 0 for value in result["queues"].values())
     assert {row["code"] for row in result["blockers"]} >= {
         "security_date_evidence_unresolved", "valuation_reporting_points_unresolved",
-        "governed_backfill_not_executed", "simulation_replay_not_started_preflight_blocked",
+        "governed_backfill_requests_remaining", "simulation_replay_not_started_preflight_blocked",
     }
     assert Path(result["manifest_path"]).is_file()
     assert module.validate_task055b_final_report(result["manifest_path"])["content_hash"] == result["content_hash"]
@@ -83,7 +83,7 @@ def test_runner_rejects_forged_replay_before_closure(tmp_path, monkeypatch):
         "truth_hash_match": True,
         "independent_verifier_passed": True,
     }
-    with pytest.raises(module.Task055BOrchestrationError, match="replay_evidence_present_before_closure_gate"):
+    with pytest.raises(module.Task055BOrchestrationError, match="injected_simulation_replay_evidence_forbidden"):
         module.run_task055b(config)
 
 

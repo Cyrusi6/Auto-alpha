@@ -14,7 +14,7 @@ from task_055_a.bundle import validate_simulation_bundle
 from task_055_a.observation import validate_observation_boundary_seal
 from task_055_a.run import PHYSICAL_STATE_NAMES, inspect_physical_states
 
-from .evidence import canonical_hash, validate_evidence_overlay
+from .evidence import canonical_hash, sha256_file, validate_evidence_overlay
 from .fees import validate_fee_schedule
 from .inventory import validate_gap_inventory
 from .preflight import validate_preflight_report
@@ -73,14 +73,10 @@ def run_task055b(config: Mapping[str, Any]) -> dict[str, Any]:
         bool(preflight["readiness"].get(name))
         for name in ("continuous_portfolio_valuation_ready", "future_research_data_ready")
     )
-    runs = dict(config.get("simulation_replay_evidence") or {})
-    replay_complete = (
-        int(runs.get("primary_terminal_count", 0)) == 100
-        and int(runs.get("sibling_terminal_count", 0)) == 100
-        and int(runs.get("resume_hit_count", 0)) == 100
-        and bool(runs.get("truth_hash_match"))
-        and bool(runs.get("independent_verifier_passed"))
-    )
+    if config.get("simulation_replay_evidence") is not None:
+        raise Task055BOrchestrationError("task055b_injected_simulation_replay_evidence_forbidden")
+    runs = _verify_physical_replay_tree(config.get("simulation_run_root"))
+    replay_complete = bool(runs.get("verified"))
     if replay_complete and not closure_ready:
         raise Task055BOrchestrationError("task055b_replay_evidence_present_before_closure_gate")
 
@@ -192,13 +188,39 @@ def _blockers(
     metrics = dict(preflight.get("metrics") or {})
     if int(metrics.get("unresolved", 0)):
         result.append({"code": "valuation_reporting_points_unresolved", "count": int(metrics["unresolved"])})
-    if int(request_plan.get("request_count", 0)):
-        result.append({"code": "governed_backfill_not_executed", "planned_request_count": int(request_plan["request_count"])})
+    request_execution = dict(request_plan.get("execution") or {})
+    remaining = int(request_execution.get("cache_miss_count", request_plan.get("request_count", 0)))
+    if remaining and unresolved:
+        result.append({"code": "governed_backfill_requests_remaining", "request_count": remaining})
     if fee_schedule is None:
         result.append({"code": "governed_fee_schedule_not_published"})
     if not replay_complete:
         result.append({"code": "simulation_replay_not_started_preflight_blocked"})
     return result
+
+
+def _verify_physical_replay_tree(path: Any) -> dict[str, Any]:
+    if path in (None, ""):
+        return {"verified": False, "reason": "simulation_run_tree_missing"}
+    root = Path(str(path))
+    manifest_path = root / "task055b_replay_manifest.json"
+    if not manifest_path.is_file():
+        return {"verified": False, "reason": "simulation_replay_manifest_missing"}
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if payload.get("schema_version") != "task055b_native_replay_tree_v1":
+        raise Task055BOrchestrationError("task055b_simulation_replay_schema_invalid")
+    runs = list(payload.get("runs") or [])
+    identities = {(str(row.get("factor_id")), str(row.get("scenario_id"))) for row in runs}
+    if len(runs) != 100 or len(identities) != 100:
+        raise Task055BOrchestrationError("task055b_simulation_replay_cartesian_set_invalid")
+    for row in runs:
+        artifact = root / str(row.get("manifest") or "")
+        if not artifact.is_file() or sha256_file(artifact) != row.get("sha256"):
+            raise Task055BOrchestrationError("task055b_simulation_replay_artifact_invalid")
+    semantic = {key: value for key, value in payload.items() if key != "content_hash"}
+    if canonical_hash(semantic) != payload.get("content_hash"):
+        raise Task055BOrchestrationError("task055b_simulation_replay_content_hash_invalid")
+    return {"verified": True, "run_count": 100, "content_hash": payload.get("content_hash")}
 
 
 def _summary(payload: Mapping[str, Any] | None, keys: Sequence[str]) -> dict[str, Any] | None:

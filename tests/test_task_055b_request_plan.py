@@ -120,6 +120,8 @@ def test_budget_interrupt_is_recoverable_and_corrupt_cache_fails_closed(tmp_path
     )
     assert partial["status"] == "budget_exhausted"
     assert partial["completed_request_count"] == 3
+    assert partial["cache_miss_count"] == 7
+    assert len(partial["missing_requests"]) == 7
 
     completed = execute_request_plan(
         plan["manifest_path"], tmp_path / "evidence", _requester(calls), request_budget=7

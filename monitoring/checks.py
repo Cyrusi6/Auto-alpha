@@ -2133,6 +2133,21 @@ def check_task055b_security_date_remediation(report_path: str | Path | None) -> 
     }, alerts
 
 
+def check_task055c_security_date_closure(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    if not payload:
+        return {"exists": False, "status": "", "valuation_closure_blocked": False, "factor_replay_ready": False, "continuous_portfolio_valuation_ready": False, "simulator_engineering_ready": False, "future_research_data_ready": False, "downstream_queues_physically_empty": False, "certification_ready": False, "portfolio_ready": False, "paper_ready": False, "live_ready": False}, []
+    status = str(payload.get("status") or "")
+    readiness = dict(payload.get("readiness") or {})
+    queues = dict(payload.get("queues") or {})
+    blocked = status == "task055c_evidence_acquisition_or_valuation_closure_blocked"
+    queues_empty = bool(queues) and all(int(value) == 0 for value in queues.values())
+    downstream_blocked = all(readiness.get(name) is False for name in ("certification_ready", "portfolio_ready", "paper_ready", "live_ready"))
+    valid = bool(payload) and (blocked or readiness.get("simulator_engineering_ready") is True) and queues_empty and downstream_blocked
+    alerts = [] if valid else [MonitoringAlert("error", "task055c_security_date_closure", "Task 055-C evidence or downstream boundary is invalid", {"status": status, "queues": queues})]
+    return {"exists": bool(payload), "status": status, "valuation_closure_blocked": blocked and valid, "factor_replay_ready": bool(readiness.get("factor_replay_ready")), "continuous_portfolio_valuation_ready": bool(readiness.get("continuous_portfolio_valuation_ready")), "simulator_engineering_ready": bool(readiness.get("simulator_engineering_ready")), "future_research_data_ready": bool(readiness.get("future_research_data_ready")), "downstream_queues_physically_empty": queues_empty, "certification_ready": False, "portfolio_ready": False, "paper_ready": False, "live_ready": False}, alerts
+
+
 def check_validation_campaign_leaderboard(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     rows = _read_jsonl(Path(path)) if path else []
     ready = sum(1 for row in rows if row.get("certification_ready") is True)

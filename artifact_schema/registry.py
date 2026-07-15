@@ -758,6 +758,41 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         ["task055b_final_report.json"],
         optional=["fee_schedule", "simulation_replay", "parent_observation_seal_content_hash", "parent_task055a_bundle_content_hash"],
     ),
+    "task055c_security_date_truth": _definition(
+        "task055c_security_date_truth",
+        ["schema_version", "status", "review_version", "record_count", "episode_count", "key_hash", "state_counts", "reconciliation", "valuation_domain_count", "inventory_content_hash", "partitions", "content_hash", "generation_id"],
+        ["truth_manifest.json"],
+    ),
+    "task055c_cascade_plan": _definition(
+        "task055c_cascade_plan",
+        ["schema_version", "status", "truth_content_hash", "max_date", "max_transport_misses", "valuation_required_unresolved", "l1_stock_count", "l2_stock_count", "transport_request_count", "requests", "l3_authority_cases", "document_download_budget", "prospective_holdout_access_allowed", "content_hash", "generation_id"],
+        ["cascade_plan.json"],
+    ),
+    "task055c_l0_cache_scan": _definition(
+        "task055c_l0_cache_scan",
+        ["schema_version", "status", "plan_content_hash", "planned", "cache_hits", "transport_misses", "hits", "misses", "invalid_cache_entries", "all_planned_items_scanned", "content_hash", "generation_id"],
+        ["l0_cache_scan.json"],
+    ),
+    "task055c_vendor_attestation": _definition(
+        "task055c_vendor_attestation",
+        ["schema_version", "status", "documents", "suspension_timing_semantics_uncertified", "vendor_daily_no_trade_is_modeled_only", "content_hash"],
+        ["vendor_attestation_*.json"],
+    ),
+    "task055c_fee_evidence": _definition(
+        "task055c_fee_evidence",
+        ["schema_version", "status", "simulation_start", "simulation_end", "documents", "required_rule_cells", "proven_rule_cells", "missing_rule_cells", "modeled_components", "certification_supported", "content_hash"],
+        ["fee_evidence_*.json"],
+    ),
+    "task055c_valuation_manifest": _definition(
+        "task055c_valuation_manifest",
+        ["schema_version", "status", "truth_content_hash", "matrix_content_hash", "stock_axis_hash", "date_axis_hash", "valuation_domain_cells", "reporting_points", "covered_reporting_points", "unresolved_reporting_points", "illegal_carry_count", "max_stale_age_trade_days", "method_codes", "partitions", "content_hash", "generation_id"],
+        ["valuation_manifest.json"],
+    ),
+    "task055c_final_report": _definition(
+        "task055c_final_report",
+        ["schema_version", "status", "truth", "cascade", "cache_scan", "valuation", "fee_evidence", "replay", "readiness", "queues", "prospective_holdout_accessed", "historical_selection_contaminated", "execution_evidence_level", "blockers", "content_hash", "generation_id"],
+        ["task055c_final_report.json"],
+    ),
     "validation_candidate_dedup_report": _definition(
         "validation_candidate_dedup_report",
         ["validation_campaign_id", "candidate_count", "duplicate_count"],

@@ -186,16 +186,22 @@ def execute_request_plan(
     response_dir.mkdir(parents=True, exist_ok=True)
     executions: list[dict[str, Any]] = []
     network_requests = 0
-    stopped = False
+    missing_requests: list[dict[str, Any]] = []
     for request in plan["requests"]:
-        cache_path = response_dir / f"{request['request_hash']}.json"
+        cache_path = response_dir / f"{request['transport_hash']}.json"
         if resume and cache_path.exists():
             envelope = _load_cached_envelope(cache_path, request, plan)
             cache_hit = True
         else:
             if network_requests >= request_budget:
-                stopped = True
-                break
+                missing_requests.append({
+                    "transport_hash": request["transport_hash"],
+                    "evidence_use_hash": request["evidence_use_hash"],
+                    "api_name": request["api_name"],
+                    "geometry": request["geometry"],
+                    "episode_id": request.get("episode_id"),
+                })
+                continue
             raw_envelope = requester(request["api_name"], request["normalized_params"], tuple(request["fields"]))
             envelope = _validate_response_envelope(raw_envelope, request, plan)
             _atomic_json(cache_path, envelope)
@@ -203,7 +209,9 @@ def execute_request_plan(
             cache_hit = False
         executions.append(
             {
-                "request_hash": request["request_hash"],
+                "request_hash": request["transport_hash"],
+                "transport_hash": request["transport_hash"],
+                "evidence_use_hash": request["evidence_use_hash"],
                 "api_name": request["api_name"],
                 "geometry": request["geometry"],
                 "episode_id": request.get("episode_id"),
@@ -215,7 +223,7 @@ def execute_request_plan(
                 "negative_response_proves_trading_state": False,
             }
         )
-    status = "budget_exhausted" if stopped else "complete"
+    status = "budget_exhausted" if missing_requests else "complete"
     reconciliation = _reconcile(plan, executions)
     semantic = {
         "schema_version": EVIDENCE_RUN_SCHEMA,
@@ -225,6 +233,8 @@ def execute_request_plan(
         "completed_request_count": len(executions),
         "network_request_count": network_requests,
         "cache_hit_count": sum(int(item["cache_hit"]) for item in executions),
+        "cache_miss_count": len(missing_requests),
+        "missing_requests": missing_requests,
         "request_budget": request_budget,
         "executions": executions,
         "reconciliation": reconciliation,
@@ -278,14 +288,26 @@ def _request(
     episode_id: str | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_tushare_request(api_name, params=dict(params), fields=fields)
-    item = {
+    transport_semantic = {
         "api_name": api_name,
-        "geometry": geometry,
         "normalized_params": normalized["params"],
         "fields": normalized["fields"],
-        "request_hash": stable_json_hash(
-            {"api_name": api_name, "geometry": geometry, "request": normalized, "episode_id": episode_id}
-        ),
+        "provider_api_version": "tushare_pro_http.v1",
+    }
+    transport_hash = stable_json_hash(transport_semantic)
+    evidence_use_semantic = {
+        "task": "task_055_b",
+        "stage": "security_date_evidence",
+        "geometry": geometry,
+        "episode_id": episode_id,
+        "transport_hash": transport_hash,
+    }
+    item = {
+        **transport_semantic,
+        "geometry": geometry,
+        "transport_hash": transport_hash,
+        "evidence_use_hash": stable_json_hash(evidence_use_semantic),
+        "request_hash": transport_hash,
     }
     if episode_id is not None:
         item["episode_id"] = episode_id

@@ -2520,3 +2520,11 @@
 - evidence overlay 的 35,844 个单元全部保持 `DATA_SOURCE_GAP`；valuation closure domain 为 14,015 个单元、28,030 个 reporting points，covered=0、unresolved=28,030、DATA_SOURCE_GAP carry=0、stale mark fill=0。`factor_replay_ready=true`，但 continuous valuation 和 future research data 均未闭合。
 - 因 preflight 未通过，本轮没有发布新 Simulation Bundle，没有执行 exact-20×5 primary/sibling/resume。官方 transfer-fee 历史文档未形成可验证本地 document hash，因此 fee schedule 保持未发布 blocker，未把 modeled 数字伪装为官方费率。
 - 最终状态为 `task055b_security_date_evidence_remediation_blocked`；物理扫描 certification、certified pool、portfolio campaign、production candidate、optimizer activation、paper 和 live registry 均为 0。
+
+## 2026-07-15 — Task 055-C Security-Date evidence closure baseline
+
+- Added `task_055_c` as the single governed remediation path for the immutable Task 055-B inventory. It reconstructs all 35,844 security-date rows from suspension records, raw cache envelopes, coverage ledgers, matrix bars, lifecycle evidence, and valuation-domain membership rather than trusting stored booleans.
+- Split request identity into transport and evidence-use hashes, made zero-budget execution scan every planned cache item, and rejected injected `100/100/100` replay summaries. Task 055-C native replay can only be recognized from a physical exact-20 × five-scenario run tree.
+- Replaced the 9,898-request Cartesian plan with a cache-first cascade. The current real plan contains 113 bounded `daily` stock windows and at most 113 `suspend_d` windows, with a hard 2,500 transport-miss and 20-document ceiling.
+- Added a full-trading-axis valuation state machine with chunked values/method/source-date/evidence arrays. Normal observed closes refresh the authoritative mark between gap episodes; modeled stale marks require verified positive daily `S` evidence and remain explicitly uncertified.
+- Added governed vendor/fee document attestations, strict artifact schemas, and dashboard loading. The real Task 055-C run is correctly blocked: 20,554/28,030 reporting points covered, 7,476 unresolved, 226 transport misses, three authority-source probes unresolved, and historical fee-rule coverage incomplete. No simulator replay or downstream queue was started.
