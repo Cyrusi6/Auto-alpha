@@ -284,3 +284,32 @@ def test_compute_and_experiment_artifacts_are_registered(tmp_path):
     assert {"compute_run_report", "compute_jobs", "experiment_plan", "experiment_run_report"} <= {
         entry.artifact_type for entry in manifest.entries
     }
+
+
+def test_task055b_native_manifest_schemas(tmp_path):
+    inventory = tmp_path / "inventory_manifest.json"
+    inventory.write_text(json.dumps({
+        "schema_version": "task055b_security_date_gap_inventory_v1", "status": "blocked",
+        "content_hash": "a" * 64, "generation_id": "inventory", "cell_count": 1,
+        "episode_count": 1, "first_blocker_count": 1,
+        "first_blocker_semantics": "censored_first_failure_samples_not_inventory_total",
+        "state_counts": {"DATA_SOURCE_GAP": 1}, "probe_results": [], "readiness": {}, "partitions": {},
+    }), encoding="utf-8")
+    preflight = tmp_path / "valuation_closure_preflight.json"
+    preflight.write_text(json.dumps({
+        "schema_version": "task055b_valuation_closure_preflight_v1", "status": "blocked",
+        "evidence_content_hash": "b" * 64, "valuation_content_hash": "c" * 64,
+        "readiness": {}, "metrics": {}, "blockers": [], "policy": {}, "content_hash": "d" * 64,
+    }), encoding="utf-8")
+    report = tmp_path / "task055b_final_report.json"
+    report.write_text(json.dumps({
+        "schema_version": "task055b_final_report_v1", "status": "task055b_security_date_evidence_remediation_blocked",
+        "historical_selection_contaminated": True, "execution_evidence_level": "modeled_daily_bar_proxy",
+        "prospective_holdout_opened": False, "inventory": {}, "request_plan": {}, "network_execution": {},
+        "evidence_overlay": {}, "valuation_overlay": {}, "valuation_preflight": {}, "readiness": {},
+        "physical_state_inventory": {}, "queues": {}, "blockers": [], "certification_blockers": [],
+        "content_hash": "e" * 64, "generation_id": "result",
+    }), encoding="utf-8")
+    assert validate_artifact(inventory, strict=True).valid is True
+    assert validate_artifact(preflight, strict=True).valid is True
+    assert validate_artifact(report, strict=True).valid is True

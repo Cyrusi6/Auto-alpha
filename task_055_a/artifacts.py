@@ -108,6 +108,8 @@ def publish_simulation_run(
     market: Mapping[str, Any],
     benchmark: Mapping[str, Any] | None = None,
     initial_positions: Mapping[str, int] | None = None,
+    valuation_marks: Sequence[Mapping[str, Any]] | None = None,
+    fee_schedule_manifest: Mapping[str, Any] | str | Path | None = None,
     allow_resume: bool = False,
 ) -> dict[str, Any]:
     """Publish one immutable run and atomically advance its current pointer.
@@ -138,8 +140,23 @@ def publish_simulation_run(
         raise SimulationArtifactError("simulation_axes_empty")
     open_prices = _market_array(market, ("open", "open_price", "open_prices"), dates, assets)
     close_prices = _market_array(market, ("close", "close_price", "close_prices"), dates, assets)
-    valuation_open = _market_array(market, ("valuation_open", "open", "open_price", "open_prices"), dates, assets)
-    valuation_close = _market_array(market, ("valuation_close", "close", "close_price", "close_prices"), dates, assets)
+    if valuation_marks is None:
+        from task_055_b.verifier import make_official_mark_rows
+
+        valuation_marks = make_official_mark_rows(
+            dates=dates,
+            assets=assets,
+            open_prices=open_prices,
+            close_prices=close_prices,
+            raw_quote_evidence={
+                (date, asset): {
+                    "source": "legacy_task055a_implicit_raw_quote",
+                    "evidence_scope": "legacy_compatibility_not_task055b_valuation_proof",
+                }
+                for date in dates for asset in assets
+            },
+        )
+    fee_schedule = _load_json_mapping(fee_schedule_manifest) if fee_schedule_manifest is not None else None
     benchmark_dates, benchmark_open = _benchmark_view(benchmark, dates)
 
     staging = Path(tempfile.mkdtemp(prefix=".task055a_run.", dir=root))
@@ -152,6 +169,9 @@ def publish_simulation_run(
             "final_positions": payload.get("final_positions") or {},
             "initial_positions": {str(key): int(value) for key, value in (initial_positions or {}).items()},
         })
+        _write_jsonl(staging / "valuation_marks.jsonl", valuation_marks)
+        if fee_schedule is not None:
+            _write_json(staging / "fee_schedule_manifest.json", fee_schedule)
         table_names = (
             "orders",
             "fills",
@@ -178,8 +198,6 @@ def publish_simulation_run(
             staging / "verification_view.npz",
             open=open_prices.astype(np.float64, copy=False),
             close=close_prices.astype(np.float64, copy=False),
-            valuation_open=valuation_open.astype(np.float64, copy=False),
-            valuation_close=valuation_close.astype(np.float64, copy=False),
             benchmark_dates=np.asarray(benchmark_dates, dtype="U16"),
             benchmark_open=benchmark_open.astype(np.float64, copy=False),
         )
@@ -385,8 +403,6 @@ def _market_array(
     market: Mapping[str, Any], keys: Sequence[str], dates: Sequence[str], assets: Sequence[str]
 ) -> np.ndarray:
     value = next((market[key] for key in keys if key in market), None)
-    if value is None and "close" in keys:
-        value = next((market[key] for key in ("open", "open_price", "open_prices") if key in market), None)
     if value is None:
         raise SimulationArtifactError(f"verification_market_field_missing:{keys[0]}")
     array = np.asarray(value, dtype=float)
@@ -394,6 +410,18 @@ def _market_array(
     if array.shape != expected:
         raise SimulationArtifactError(f"verification_market_shape_mismatch:{keys[0]}:{array.shape}:{expected}")
     return array
+
+
+def _load_json_mapping(value: Mapping[str, Any] | str | Path) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return _jsonable(dict(value))
+    path = Path(value)
+    if not path.is_file():
+        raise SimulationArtifactError("fee_schedule_manifest_not_found")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise SimulationArtifactError("fee_schedule_manifest_invalid")
+    return payload
 
 
 def _benchmark_view(

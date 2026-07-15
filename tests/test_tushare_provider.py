@@ -173,6 +173,67 @@ def test_tushare_provider_maps_all_dataset_types():
     assert actions[0].source == "tushare"
 
 
+def test_tushare_daily_bar_rejects_null_instead_of_silently_zero_filling():
+    client = FakeTushareClient()
+    client.responses["daily"] = [
+        {
+            "ts_code": "000001.SZ",
+            "trade_date": "20240102",
+            "open": None,
+            "high": "9.58",
+            "low": "9.32",
+            "close": "9.50",
+            "pre_close": "9.39",
+            "vol": "123456.7",
+            "amount": "837451.2",
+        }
+    ]
+    provider = TushareAShareDataProvider(client=client)
+
+    records = provider.fetch_daily_bars(
+        AShareDataConfig(provider="tushare", start_date="20240102", end_date="20240102")
+    )
+
+    assert records == []
+    assert provider.last_job_metrics["rejected"] == 1
+    assert provider.last_job_metrics["rejection_reasons"] == {"missing_or_non_numeric_open": 1}
+    assert provider.last_job_metrics["raw_nulls_preserved_in_response_envelope"] is True
+
+
+def test_tushare_daily_bar_rejects_non_finite_and_non_positive_prices():
+    client = FakeTushareClient()
+    rows = [dict(client.responses["daily"][0]), dict(client.responses["daily"][0])]
+    rows[0]["close"] = "nan"
+    rows[1]["open"] = "0"
+    rows[1]["ts_code"] = "000002.SZ"
+    client.responses["daily"] = rows
+    provider = TushareAShareDataProvider(client=client)
+
+    records = provider.fetch_daily_bars(
+        AShareDataConfig(provider="tushare", start_date="20240102", end_date="20240102")
+    )
+
+    assert records == []
+    assert provider.last_job_metrics["rejection_reasons"] == {
+        "non_finite_close": 1,
+        "non_positive_open": 1,
+    }
+
+
+def test_tushare_daily_limits_reject_null_instead_of_zero_filling():
+    client = FakeTushareClient()
+    client.responses["stk_limit"] = [{
+        "ts_code": "000001.SZ", "trade_date": "20240102", "up_limit": None,
+        "down_limit": "8.50", "pre_close": "9.50",
+    }]
+    provider = TushareAShareDataProvider(client=client)
+    records = provider.fetch_daily_limits(
+        AShareDataConfig(provider="tushare", start_date="20240102", end_date="20240102")
+    )
+    assert records == []
+    assert provider.last_job_metrics["rejection_reasons"] == {"missing_or_non_finite_up_limit": 1}
+
+
 def test_tushare_provider_uses_expected_api_names_and_params():
     client = FakeTushareClient()
     provider = TushareAShareDataProvider(client=client)

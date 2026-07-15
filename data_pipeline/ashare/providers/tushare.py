@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -131,24 +132,35 @@ class TushareAShareDataProvider:
             fields="ts_code,trade_date,open,high,low,close,pre_close,vol,amount",
         )
         records: list[DailyBar] = []
+        rejection_reasons: dict[str, int] = {}
         for row in rows:
             ts_code = _text(row.get("ts_code"))
             trade_date = _text(row.get("trade_date"))
             if not is_valid_ts_code(ts_code) or not is_valid_yyyymmdd(trade_date):
+                _increment_reason(rejection_reasons, "invalid_primary_key")
+                continue
+            parsed, rejection_reason = _parse_daily_bar_values(row)
+            if parsed is None:
+                _increment_reason(rejection_reasons, rejection_reason or "invalid_required_field")
                 continue
             records.append(
                 DailyBar(
                     trade_date=trade_date,
                     ts_code=ts_code,
-                    open=_float_or_zero(row.get("open")),
-                    high=_float_or_zero(row.get("high")),
-                    low=_float_or_zero(row.get("low")),
-                    close=_float_or_zero(row.get("close")),
-                    pre_close=_float_or_zero(row.get("pre_close")),
-                    volume=_float_or_zero(row.get("vol")),
-                    amount=_float_or_zero(row.get("amount")),
+                    open=parsed["open"],
+                    high=parsed["high"],
+                    low=parsed["low"],
+                    close=parsed["close"],
+                    pre_close=parsed["pre_close"],
+                    volume=parsed["vol"],
+                    amount=parsed["amount"],
                 )
             )
+        self.last_job_metrics = {
+            "rejected": sum(rejection_reasons.values()),
+            "rejection_reasons": dict(sorted(rejection_reasons.items())),
+            "raw_nulls_preserved_in_response_envelope": True,
+        }
         return records
 
     def fetch_daily_basic(self, config: AShareDataConfig) -> list[DailyBasic]:
@@ -232,20 +244,31 @@ class TushareAShareDataProvider:
             fields="trade_date,ts_code,up_limit,down_limit,pre_close",
         )
         records: list[DailyLimit] = []
+        rejection_reasons: dict[str, int] = {}
         for row in rows:
             ts_code = _text(row.get("ts_code"))
             trade_date = _text(row.get("trade_date"))
             if not is_valid_ts_code(ts_code) or not is_valid_yyyymmdd(trade_date):
                 continue
+            parsed, rejection_reason = _parse_daily_limit_values(row)
+            if parsed is None:
+                _increment_reason(rejection_reasons, rejection_reason or "invalid_daily_limit")
+                continue
             records.append(
                 DailyLimit(
                     trade_date=trade_date,
                     ts_code=ts_code,
-                    up_limit=_float_or_zero(row.get("up_limit")),
-                    down_limit=_float_or_zero(row.get("down_limit")),
-                    pre_close=_float_or_zero(row.get("pre_close")),
+                    up_limit=parsed["up_limit"],
+                    down_limit=parsed["down_limit"],
+                    pre_close=parsed["pre_close"],
                 )
             )
+        if rejection_reasons:
+            self.last_job_metrics = {
+                "rejected": sum(rejection_reasons.values()),
+                "rejection_reasons": dict(sorted(rejection_reasons.items())),
+                "raw_nulls_preserved_in_response_envelope": True,
+            }
         return records
 
     def fetch_adjustment_factors(self, config: AShareDataConfig) -> list[AdjustmentFactor]:
@@ -602,9 +625,50 @@ def _optional_float(value: Any) -> float | None:
         return None
 
 
+def _parse_daily_bar_values(row: dict[str, Any]) -> tuple[dict[str, float] | None, str | None]:
+    required_fields = ("open", "high", "low", "close", "pre_close", "vol", "amount")
+    parsed: dict[str, float] = {}
+    for field in required_fields:
+        value = _optional_float(row.get(field))
+        if value is None:
+            return None, f"missing_or_non_numeric_{field}"
+        if not math.isfinite(value):
+            return None, f"non_finite_{field}"
+        parsed[field] = value
+    for field in ("open", "high", "low", "close", "pre_close"):
+        if parsed[field] <= 0.0:
+            return None, f"non_positive_{field}"
+    for field in ("vol", "amount"):
+        if parsed[field] < 0.0:
+            return None, f"negative_{field}"
+    if parsed["high"] < parsed["low"]:
+        return None, "high_below_low"
+    return parsed, None
+
+
+def _parse_daily_limit_values(row: dict[str, Any]) -> tuple[dict[str, float] | None, str | None]:
+    parsed: dict[str, float] = {}
+    for field in ("up_limit", "down_limit", "pre_close"):
+        value = _optional_float(row.get(field))
+        if value is None or not math.isfinite(value):
+            return None, f"missing_or_non_finite_{field}"
+        if value <= 0.0:
+            return None, f"non_positive_{field}"
+        parsed[field] = value
+    if parsed["up_limit"] < parsed["down_limit"]:
+        return None, "up_limit_below_down_limit"
+    return parsed, None
+
+
 def _float_or_zero(value: Any) -> float:
+    """Legacy helper for non-bar datasets; daily OHLCV must never use it."""
+
     parsed = _optional_float(value)
     return 0.0 if parsed is None else parsed
+
+
+def _increment_reason(reasons: dict[str, int], reason: str) -> None:
+    reasons[reason] = reasons.get(reason, 0) + 1
 
 
 def _to_bool(value: Any) -> bool:

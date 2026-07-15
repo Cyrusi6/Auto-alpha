@@ -674,6 +674,90 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         ],
         ["task055a_final_report.json"],
     ),
+    "task055b_gap_inventory_manifest": _definition(
+        "task055b_gap_inventory_manifest",
+        [
+            "schema_version", "status", "content_hash", "generation_id", "cell_count",
+            "episode_count", "first_blocker_count", "first_blocker_semantics", "state_counts",
+            "probe_results", "readiness", "partitions",
+        ],
+        ["inventory_manifest.json"],
+        optional=[
+            "artifact_type", "producer", "created_at", "artifact_metadata", "validator_version",
+            "parent_observation_seal_sha256", "matrix_source_sha256", "simulation_bundle_sha256",
+            "max_repair_date", "evidence_record_count",
+        ],
+    ),
+    "task055b_request_plan": _definition(
+        "task055b_request_plan",
+        [
+            "schema_version", "content_hash", "gap_cell_count", "gap_cell_hash", "unique_gap_dates",
+            "affected_ts_codes", "episodes", "requests", "request_count", "max_network_requests",
+            "prospective_holdout_access_allowed",
+        ],
+        ["request_plan.json"],
+        optional=[
+            "artifact_type", "producer", "created_at", "artifact_metadata", "endpoint",
+            "provider_api_version", "request_timeout_seconds", "query_geometries", "pagination_policy",
+            "split_policy", "cache_policy", "resume_policy", "stop_conditions", "source_semantic_hash",
+            "request_plan_is_immutable", "observed_end_date",
+        ],
+    ),
+    "task055b_request_evidence_run": _definition(
+        "task055b_request_evidence_run",
+        [
+            "schema_version", "request_plan_hash", "status", "planned_request_count",
+            "completed_request_count", "network_request_count", "cache_hit_count", "request_budget",
+            "executions", "reconciliation", "prospective_holdout_accessed", "content_hash",
+        ],
+        ["evidence_run.json"],
+        optional=["artifact_type", "producer", "created_at", "artifact_metadata"],
+    ),
+    "task055b_security_date_evidence_manifest": _definition(
+        "task055b_security_date_evidence_manifest",
+        [
+            "schema_version", "review_version", "record_count", "key_hash", "state_counts",
+            "source_lineage_hash", "partitions", "content_hash", "generation_id", "status",
+        ],
+        ["security_date_evidence_manifest.json"],
+    ),
+    "task055b_valuation_evidence_manifest": _definition(
+        "task055b_valuation_evidence_manifest",
+        [
+            "schema_version", "evidence_content_hash", "inputs_hash", "record_count", "mark_key_hash",
+            "method_counts", "partitions", "content_hash", "generation_id", "status",
+        ],
+        ["valuation_evidence_manifest.json"],
+    ),
+    "task055b_fee_schedule": _definition(
+        "task055b_fee_schedule",
+        [
+            "schema_version", "policy_id", "currency", "rate_unit", "money_rounding",
+            "governed_fee_types", "modeled_fee_types", "rules", "acquired_at", "content_hash",
+            "generation_id",
+        ],
+        ["fee_schedule_manifest.json"],
+    ),
+    "task055b_valuation_preflight": _definition(
+        "task055b_valuation_preflight",
+        [
+            "schema_version", "status", "evidence_content_hash", "valuation_content_hash",
+            "readiness", "metrics", "blockers", "policy", "content_hash",
+        ],
+        ["valuation_closure_preflight.json"],
+    ),
+    "task055b_final_report": _definition(
+        "task055b_final_report",
+        [
+            "schema_version", "status", "historical_selection_contaminated", "execution_evidence_level",
+            "prospective_holdout_opened", "inventory", "request_plan", "network_execution",
+            "evidence_overlay", "valuation_overlay", "valuation_preflight", "readiness",
+            "physical_state_inventory", "queues", "blockers", "certification_blockers",
+            "content_hash", "generation_id",
+        ],
+        ["task055b_final_report.json"],
+        optional=["fee_schedule", "simulation_replay", "parent_observation_seal_content_hash", "parent_task055a_bundle_content_hash"],
+    ),
     "validation_candidate_dedup_report": _definition(
         "validation_candidate_dedup_report",
         ["validation_campaign_id", "candidate_count", "duplicate_count"],

@@ -346,13 +346,17 @@ def _prepare_simulation_inputs(bundle: Mapping[str, Any]) -> dict[str, Any]:
     sell = _execution_mask(execution_masks, "sellable_at_open", len(dates), len(assets))
     common_execution = np.ones((len(dates), len(assets)), dtype=bool)
     for name in (
-        "membership", "membership_known", "active", "listed", "open_execution_known",
+        "active", "listed", "open_execution_known",
         "open_execution_value", "suspension_source_covered", "corporate_action_validity",
     ):
         common_execution &= _execution_mask(execution_masks, name, len(dates), len(assets))
+    buy_membership = (
+        _execution_mask(execution_masks, "membership", len(dates), len(assets))
+        & _execution_mask(execution_masks, "membership_known", len(dates), len(assets))
+    )
     excluded = _execution_mask(execution_masks, "conservative_open_excluded", len(dates), len(assets))
     gaps = _execution_mask(execution_masks, "unexplained_data_gap", len(dates), len(assets))
-    buy &= common_execution & ~excluded & ~gaps & open_valid
+    buy &= common_execution & buy_membership & ~excluded & ~gaps & open_valid
     sell &= common_execution & ~excluded & ~gaps & open_valid
     signal_common = np.ones((len(signal_dates), len(assets)), dtype=bool)
     for name in (
@@ -363,15 +367,8 @@ def _prepare_simulation_inputs(bundle: Mapping[str, Any]) -> dict[str, Any]:
     signal_common &= ~_signal_mask(signal_masks, "st_effective", len(signal_dates), len(assets))
     signal_common &= ~_signal_mask(signal_masks, "unexplained_data_gap", len(signal_dates), len(assets))
     signal_common &= close_valid[: len(signal_dates)]
-    suspension_carry = (
-        _execution_mask(execution_masks, "suspension_source_covered", len(dates), len(assets))
-        & _execution_mask(execution_masks, "suspension_event_present", len(dates), len(assets))
-        & _execution_mask(execution_masks, "suspension_associated_bar_absence", len(dates), len(assets))
-        & ~gaps
-    )
-    valuation_open, valuation_close = _valuation_prices(
-        open_values, close_values, open_valid, close_valid, suspension_carry
-    )
+    valuation_open = np.where(open_valid, open_values, np.nan)
+    valuation_close = np.where(close_valid, close_values, np.nan)
     eligible_indices = np.flatnonzero(signal_common.any(axis=1))
     if eligible_indices.size == 0:
         raise Task055AOrchestrationError("task055a_no_signal_eligible_dates")
@@ -691,22 +688,6 @@ def _lagged_adv_source(volume: np.ndarray, valid: np.ndarray, window: int = 20) 
         total = np.where(window_valid, window_values, 0.0).sum(axis=0)
         result[index] = np.divide(total, count, out=np.full(volume.shape[1], np.nan), where=count > 0)
     return result
-
-
-def _valuation_prices(
-    open_values: np.ndarray,
-    close_values: np.ndarray,
-    open_valid: np.ndarray,
-    close_valid: np.ndarray,
-    suspension_carry: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    valuation_open = np.where(open_valid & np.isfinite(open_values) & (open_values > 0), open_values, np.nan)
-    valuation_close = np.where(close_valid & np.isfinite(close_values) & (close_values > 0), close_values, np.nan)
-    for index in range(1, open_values.shape[0]):
-        carry = suspension_carry[index] & np.isfinite(valuation_close[index - 1])
-        valuation_open[index, carry & ~np.isfinite(valuation_open[index])] = valuation_close[index - 1, carry & ~np.isfinite(valuation_open[index])]
-        valuation_close[index, carry & ~np.isfinite(valuation_close[index])] = valuation_close[index - 1, carry & ~np.isfinite(valuation_close[index])]
-    return valuation_open, valuation_close
 
 
 def _benchmark_view(rows: Sequence[Mapping[str, Any]], dates: Sequence[str]) -> dict[str, Any]:

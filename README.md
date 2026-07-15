@@ -1793,3 +1793,23 @@ python -m task_055_a.run --config /path/to/task055a_run_config.json
 ```
 
 The policy seal is published before factor/execution arrays are mapped. A missing price may be carried only for valuation during a proven suspension-associated absence; unexplained gaps create immutable `data_blocked` run artifacts. A blocked factor/scenario is never converted to zero return, and certification/portfolio/paper/live queues remain outside this workflow.
+
+## Task 055-B: Security-date evidence remediation
+
+`task_055_b` is the fail-closed historical repair and valuation-closure layer after Task 055-A. It revalidates the prospective observation seal, inventories every relevant security-date rather than only first failures, publishes an immutable dual-geometry request plan before network access, and classifies each cell with mutually exclusive traded/non-trading/conflict/gap states.
+
+Key production rules:
+
+- Daily OHLCV null, non-finite, or non-positive price fields are rejected; they are never normalized to zero or treated as observed bars.
+- Index membership limits selection and new buys, but does not erase an existing holding or prevent a legal sell after constituent removal.
+- A suspension row alone does not authorize stale valuation. Carry requires governed official no-trade evidence or the stricter exact-date plus security-window modeled evidence contract.
+- Task 055-B valuation marks are explicit immutable evidence. Artifact verification reconstructs marks and fees from raw quote evidence, corporate actions, and an immutable fee schedule; it does not fall back to raw open/close arrays.
+- `factor_replay_ready`, `continuous_portfolio_valuation_ready`, and `future_research_data_ready` are separate gates. The 100-run simulator replay is not created until valuation closure has zero unresolved/conflicting cells.
+
+Run the final native evidence gate with:
+
+```bash
+python -m task_055_b.run --config /path/to/task055b_run_config.json
+```
+
+The only success state is the explicit historical-selection-contaminated, modeled-execution, certification-blocked state. Any unresolved security-date, corporate-action break, missing fee evidence, or NAV closure failure produces `task055b_security_date_evidence_remediation_blocked`; certification, portfolio, paper, and live queues remain physically empty.

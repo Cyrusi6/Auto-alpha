@@ -498,3 +498,9 @@ The Task 054 baseline is contaminated retrospective engineering evidence. The pr
 ## Task 055-A：前瞻封存与事件账本模拟
 
 `task_055_a` 先封存项目级 observation boundary，再从 Task 054-C 只读证据发布物理隔离的 Simulation Bundle。正式模拟以订单、成交、现金桶、整数 lot、T+1、结算、公司行动和 open-to-open NAV 为真值；成交 open 与停牌估值 carry 分离。真实重放若遇到 active/member 持仓的 unexplained bar gap，会为每个因子/场景发布可验证的 `data_blocked` artifact，绝不以前值、复权价或零收益补齐。
+
+## Task 055-B：全量 Security-Date 证据与估值闭环
+
+`task_055_b/` 对 Task 055-A 的 first-blocker 删失样本做全量扩展：从只读 seal、freeze、strict matrix、Simulation Bundle 和 blocked run 重建 security-date inventory，按交易日轴合并 episode，并在任何请求前发布内容寻址的 exact-date × security-window 双几何计划。行情 null/零价不再 silent-zero；停牌事件本身不再授权 carry；membership 只限制选股/买入，不限制调出后持仓估值与合法卖出。
+
+估值使用独立 evidence overlay，状态严格区分官方成交、受治理无交易、来源冲突、生命周期终止和数据缺口。Verifier 从 quote、状态证据、公司行动和 immutable fee schedule 重建 mark、费用与账本，禁止回退 raw open/close。只有 valuation closure unresolved/conflict 为 0 才允许新 Simulation Bundle 和 exact-20×5 重放；否则终态为 `task055b_security_date_evidence_remediation_blocked`，所有认证与部署 readiness/queue 继续为 false/0。

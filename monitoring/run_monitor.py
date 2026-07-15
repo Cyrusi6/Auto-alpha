@@ -159,6 +159,7 @@ from .checks import (
     check_stress_backtest_validation,
     check_task054c_engineering_baseline,
     check_task055a_simulator_baseline,
+    check_task055b_security_date_remediation,
     check_uncertified_production_candidate,
     check_validation_lab,
     check_validation_campaign_leaderboard,
@@ -390,6 +391,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--validation-large-campaign-plan-path")
     parser.add_argument("--task054c-final-verification-path")
     parser.add_argument("--task055a-final-report-path")
+    parser.add_argument("--task055b-final-report-path")
     parser.add_argument("--factor-certification-campaign-report-path")
     parser.add_argument("--factor-certification-campaign-registry-path")
     parser.add_argument("--certified-factor-pool-path")
@@ -582,6 +584,7 @@ def main(argv: list[str] | None = None) -> int:
         ("stress_backtest_validation", lambda: check_stress_backtest_validation(args.stress_backtest_report_path)),
         ("task054c_engineering_baseline", lambda: check_task054c_engineering_baseline(args.task054c_final_verification_path)),
         ("task055a_simulator_baseline", lambda: check_task055a_simulator_baseline(args.task055a_final_report_path)),
+        ("task055b_security_date_remediation", lambda: check_task055b_security_date_remediation(args.task055b_final_report_path)),
         (
             "factor_certification",
             lambda: check_factor_certification(args.factor_certification_decision_path, args.factor_certification_scorecard_path),

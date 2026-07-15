@@ -2497,3 +2497,26 @@
 - Primary and independent sibling runs both produced 100/100 explicit `data_blocked` terminal artifacts. All were blocked by held-security valuation dates where the strict matrix reports an unexplained missing bar without a suspension event; the simulator correctly refused to use adjusted prices, forward fill, or zero value. The dominant first blockers include `600170.SH/2016-03-23`, `601018.SH/2016-05-17`, and other precise security-dates recorded in immutable blocker artifacts.
 - Primary/sibling truth roots are identical (`bfcdab9c...9013d`), immutable resume validated all 100 primary artifacts, and the independent final verifier rechecked 200 run artifacts plus queue state. Top status is therefore `task055a_simulator_engineering_baseline_blocked`, not the completed status.
 - Strict artifact schema validation covered the observation seal, Simulation Bundle, policy seal, final report, and independent verification with `0` errors, `0` warnings, and `0` unknown artifacts. Certification/portfolio/paper/live readiness remain false; historical selection contamination, modeled daily-bar execution, missing microstructure/auction data, uncalibrated impact/broker fees, PIT Barra, suspension timing semantics, constituent publication timing, vendor revision risk, and absent future untouched data remain blockers.
+
+## 2026-07-15 - Task 055-B security-date evidence and valuation closure
+
+### 生产修复
+- 新增 `task_055_b` 全量 security-date inventory、连续 episode、append-only historical-repair child ledger 和内容寻址双查询几何 request plan。Task 055-A 的 first blocker 明确标记为删失样本；blocker 文本中的日期索引不再误当股票索引，资产身份从明确 `ts_code` 重算。
+- Tushare daily ingestion 对 OHLC/pre-close/vol/amount 的 null、非有限值、非正价格 fail closed，原始 null 保留在 response/cache envelope，禁止 `_float_or_zero` 产生伪 observed bar。
+- 建立互斥 evidence state、market/execution/valuation 三层合同、独立 valuation overlay 和 closure preflight。停牌 S/R/null timing 不再自动授权整日 stale carry；DATA_SOURCE_GAP、CONFLICT 和无 provenance 事件保持阻断。
+- Task 055-A 正式输入不再把 membership 加入 sell gate，也不再用任意 suspension event 生成 valuation carry。调出成分禁止新买，但已有持仓必须继续估值并在首个合法 open 卖出。
+- 法定税费与 modeled commission/slippage/impact 的 immutable fee-schedule、独立费用重算和 mark/fee 篡改检测已接入；Task 055-B 不接受缺失 fee manifest 的正式模拟证据。
+- 新增 Task 055-B native runner、artifact schemas、monitoring/dashboard reader。runner 重验原生 SHA/lineage、物理扫描 certification/portfolio/paper/live 状态，并在 closure 未通过时禁止创建 100-run replay evidence。
+
+### 真实审计边界
+- Task 054-C/055-A 输入保持只读；prospective holdout seal 未改变，未读取 2026-06-30 之后市场数据。
+- 本轮全量 inventory 及 valuation preflight 的服务器证据以内容寻址 sibling generation 发布，不提交原始记录、NPY、缓存、凭据或绝对机器路径。
+- 若 security-date evidence、公司行动或估值 reporting point 仍 unresolved，顶层只能是 `task055b_security_date_evidence_remediation_blocked`。历史选择污染、停牌时段认证、成分公告时点、vendor revision、分钟/竞价/盘口、冲击校准、broker-specific commission、PIT Barra 和未来 holdout 未到达继续作为 blocker。
+
+### Task 055-B 本轮真实结果
+- 重验 observation seal 后，严格 inventory 为 35,844 个 security-date、2,159 个 episode；其中 32,754 个为 suspension event + missing bar，317 个为 active/member 且无 suspension 证据的 unexplained gap。Task 055-A 的 100 个 first blockers 仅作为删失样本，修正 date-index/asset 解析后不再制造 15 个假 security key。
+- 三个回归 probe `600170.SH/2016-03-23`、`601018.SH/2016-05-17`、`600019.SH/2016-08-23` 均分类为 `DATA_SOURCE_GAP`，没有用空 API、相邻行情或停牌事件推导正常交易/整日停牌。
+- freeze daily bars 与生命周期过滤前备份均对 317 个 unexplained key 命中 0；旧源 SHA 未改变。全量限界 request plan 为 9,898 个调用、2,790 个 exact gap dates、2,159 个 security windows；cache-only 重审命中 0、网络请求 0，并以 `budget_exhausted` 明确阻断，未进行等价于全历史重下载的大规模请求。
+- evidence overlay 的 35,844 个单元全部保持 `DATA_SOURCE_GAP`；valuation closure domain 为 14,015 个单元、28,030 个 reporting points，covered=0、unresolved=28,030、DATA_SOURCE_GAP carry=0、stale mark fill=0。`factor_replay_ready=true`，但 continuous valuation 和 future research data 均未闭合。
+- 因 preflight 未通过，本轮没有发布新 Simulation Bundle，没有执行 exact-20×5 primary/sibling/resume。官方 transfer-fee 历史文档未形成可验证本地 document hash，因此 fee schedule 保持未发布 blocker，未把 modeled 数字伪装为官方费率。
+- 最终状态为 `task055b_security_date_evidence_remediation_blocked`；物理扫描 certification、certified pool、portfolio campaign、production candidate、optimizer activation、paper 和 live registry 均为 0。

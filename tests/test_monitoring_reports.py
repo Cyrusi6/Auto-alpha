@@ -8,7 +8,11 @@ from model_core.data_loader import AShareDataLoader
 from model_registry import LocalModelRegistry
 from model_registry.report import write_model_registry_report
 from monitoring import run_monitor
-from monitoring.checks import check_quality_report, check_task055a_simulator_baseline
+from monitoring.checks import (
+    check_quality_report,
+    check_task055a_simulator_baseline,
+    check_task055b_security_date_remediation,
+)
 from paper_account import LocalPaperAccount
 
 
@@ -501,3 +505,24 @@ def test_monitoring_reads_data_source_smoke_artifacts(tmp_path, capsys):
     assert payload["checks"]["field_coverage"]["empty_dataset_count"] == 1
     assert payload["checks"]["data_source_audit"]["data_source_cache_hit_rate"] == 0.5
     assert payload["checks"]["baseline_compare"]["baseline_diff_count"] == 1
+
+
+def test_task055b_monitoring_accepts_blocked_remediation_with_empty_physical_queues(tmp_path):
+    report = tmp_path / "task055b_final_report.json"
+    report.write_text(json.dumps({
+        "status": "task055b_security_date_evidence_remediation_blocked",
+        "readiness": {
+            "factor_replay_ready": True,
+            "continuous_portfolio_valuation_ready": False,
+            "future_research_data_ready": False,
+            "certification_ready": False,
+            "portfolio_ready": False,
+            "paper_ready": False,
+            "live_ready": False,
+        },
+        "queues": {"certification_queue": 0, "portfolio_campaign": 0, "paper_registry": 0, "live_registry": 0},
+    }), encoding="utf-8")
+    payload, alerts = check_task055b_security_date_remediation(report)
+    assert payload["remediation_blocked"] is True
+    assert payload["factor_replay_ready"] is True
+    assert alerts == []

@@ -36,8 +36,16 @@ def recompute_run_truth(root: str | Path) -> dict[str, Any]:
     view = np.load(generation / "verification_view.npz", allow_pickle=False)
     open_prices = np.asarray(view["open"], dtype=float)
     close_prices = np.asarray(view["close"], dtype=float)
-    valuation_open = np.asarray(view["valuation_open"] if "valuation_open" in view.files else open_prices, dtype=float)
-    valuation_close = np.asarray(view["valuation_close"] if "valuation_close" in view.files else close_prices, dtype=float)
+    mark_rows = _read_jsonl(generation / "valuation_marks.jsonl")
+    from task_055_b.verifier import build_mark_matrices
+
+    valuation_open, valuation_close, mark_issues = build_mark_matrices(
+        mark_rows,
+        dates=dates,
+        assets=assets,
+        raw_open=open_prices,
+        raw_close=close_prices,
+    )
     expected_shape = (len(dates), len(assets))
     if any(array.shape != expected_shape for array in (open_prices, close_prices, valuation_open, valuation_close)):
         raise SimulationVerificationError("verification_view_shape_mismatch")
@@ -51,7 +59,7 @@ def recompute_run_truth(root: str | Path) -> dict[str, Any]:
     events = _read_jsonl(generation / "event_ledger.jsonl")
     stored_positions = _read_jsonl(generation / "positions.jsonl")
     _read_jsonl(generation / "lots.jsonl")
-    issues: list[str] = []
+    issues: list[str] = list(mark_issues)
 
     _verify_unique_ids(orders, "order_id", "duplicate_order_id", issues)
     _verify_unique_ids(fills, "fill_id", "duplicate_fill_id", issues)
