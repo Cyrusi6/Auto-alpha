@@ -84,6 +84,15 @@ def test_metadata_only_scan_recomputes_endpoints_lineage_and_physical_counts(tmp
     }
 
 
+def test_explicit_versioned_artifact_without_filename_marker_is_allowed(tmp_path: Path):
+    artifact = tmp_path / "task055a_final_verification.json"
+    _write_json(artifact, {"max_observed_target_endpoint": "20260630"})
+
+    observation = recompute_observation_boundary(observation_files=[artifact])
+
+    assert observation["max_observed_target_endpoint"] == "20260630"
+
+
 def test_content_addressed_seal_uses_first_provable_post_seal_trade_date(tmp_path: Path):
     metadata, state = _fixture(tmp_path, trading_dates=["20260630", "20260715", "20260716", "20260717"])
     observation = recompute_observation_boundary(roots=[metadata], state_roots=[state])

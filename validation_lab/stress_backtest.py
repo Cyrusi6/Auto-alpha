@@ -1,8 +1,24 @@
-"""Validation-aware backtest stress bundle."""
+"""Fail-closed bridge for validation stress reruns.
+
+Validation Lab must not synthesize returns, fill rates, drawdowns, or costs from
+an existing metric summary.  Callers that need stress evidence must provide an
+actual simulator rerun callback which returns one independently computed result
+per scenario.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 from .models import StressBacktestResult
+
+
+class UnsupportedStressBacktestError(RuntimeError):
+    """Raised when the formal path has no real simulator rerun implementation."""
+
+
+SimulatorRerun = Callable[[str, dict[str, Any]], StressBacktestResult]
 
 
 def run_stress_backtest_bundle(
@@ -12,47 +28,55 @@ def run_stress_backtest_bundle(
     settlement_profiles: list[str] | None = None,
     top_n_values: list[int] | None = None,
     max_weight_values: list[float] | None = None,
-) -> tuple[list[StressBacktestResult], dict]:
-    base_return = float(base_metrics.get("total_return", base_metrics.get("score", 0.0)) or 0.0)
-    base_fill = float(base_metrics.get("fill_rate", base_metrics.get("execution_fill_rate", 1.0)) or 1.0)
-    scenarios: list[tuple[str, dict]] = [("base", {})]
-    for value in cost_multipliers or [2.0]:
-        scenarios.append(("high_cost", {"cost_multiplier": float(value)}))
-    for value in participations or [0.05]:
-        scenarios.append(("low_capacity", {"max_participation": float(value)}))
-    for profile in settlement_profiles or ["conservative_t_plus_one_cash"]:
-        scenarios.append(("settlement_conservative", {"settlement_profile": profile}))
-    for value in top_n_values or []:
-        scenarios.append(("top_n", {"top_n": int(value)}))
-    for value in max_weight_values or []:
-        scenarios.append(("max_weight", {"max_weight": float(value)}))
-    results = []
-    for idx, (name, params) in enumerate(scenarios):
-        penalty = 0.0
-        if "cost_multiplier" in params:
-            penalty += 0.002 * max(float(params["cost_multiplier"]) - 1.0, 0.0)
-        if "max_participation" in params:
-            penalty += 0.01 * max(0.1 - float(params["max_participation"]), 0.0)
-        if "settlement_profile" in params:
-            penalty += 0.001
-        score = float(base_return - penalty)
-        fill_rate = max(0.0, base_fill - penalty)
-        results.append(
-            StressBacktestResult(
-                scenario_id=f"{name}_{idx}",
-                parameters=params,
-                metrics={"total_return": score, "score": score, "fill_rate": fill_rate},
-                passed=fill_rate >= 0.0 and score >= base_return - 0.50,
-                reason="" if score >= base_return - 0.50 else "stress_degraded",
-            )
+    *,
+    simulator_rerun: SimulatorRerun | None = None,
+) -> tuple[list[StressBacktestResult], dict[str, Any]]:
+    """Run independent simulator scenarios or fail closed.
+
+    ``base_metrics`` remains in the signature for API compatibility, but is
+    deliberately not read.  It cannot be used to manufacture scenario returns.
+    """
+
+    del base_metrics
+    if simulator_rerun is None:
+        raise UnsupportedStressBacktestError(
+            "stress_backtest_unsupported_without_actual_simulator_rerun"
         )
-    pass_ratio = sum(item.passed for item in results) / len(results) if results else 0.0
-    return (
-        results,
-        {
-            "stress_scenario_count": len(results),
-            "stress_backtest_pass_ratio": float(pass_ratio),
-            "worst_total_return": min((item.metrics["total_return"] for item in results), default=0.0),
-            "base_total_return": base_return,
-        },
+
+    scenarios: list[tuple[str, dict[str, Any]]] = [("base", {})]
+    scenarios.extend(
+        ("modeled_cost", {"cost_multiplier": float(value)})
+        for value in (cost_multipliers or [2.0])
     )
+    scenarios.extend(
+        ("participation", {"max_participation": float(value)})
+        for value in (participations or [0.05])
+    )
+    scenarios.extend(
+        ("settlement", {"settlement_profile": str(profile)})
+        for profile in (settlement_profiles or ["conservative_t_plus_one_cash"])
+    )
+    scenarios.extend(("top_n", {"top_n": int(value)}) for value in (top_n_values or []))
+    scenarios.extend(
+        ("max_weight", {"max_weight": float(value)})
+        for value in (max_weight_values or [])
+    )
+
+    results: list[StressBacktestResult] = []
+    for index, (name, parameters) in enumerate(scenarios):
+        scenario_id = f"{name}_{index}"
+        result = simulator_rerun(scenario_id, dict(parameters))
+        if not isinstance(result, StressBacktestResult):
+            raise TypeError("simulator_rerun_must_return_stress_backtest_result")
+        if result.scenario_id != scenario_id or result.parameters != parameters:
+            raise RuntimeError("simulator_rerun_scenario_identity_mismatch")
+        results.append(result)
+
+    pass_ratio = sum(item.passed for item in results) / len(results) if results else 0.0
+    return results, {
+        "status": "completed_from_actual_simulator_reruns",
+        "evidence_level": "simulator_rerun",
+        "stress_scenario_count": len(results),
+        "stress_backtest_pass_ratio": float(pass_ratio),
+        "synthetic_metric_adjustment_used": False,
+    }

@@ -492,3 +492,9 @@ The Task 054 baseline is contaminated retrospective engineering evidence. The pr
 - Git 仅允许提交 scrubbed 相对身份、哈希、计数、状态与验证摘要；不得提交真实服务器路径、NPY 或原始物理 GPU UUID。
 
 `task_054_c/` 是 Task 054-C 的唯一生产合同：原生 matrix/tensor/overlay validator、exact-20 normalized factor store、content-addressed canonical engineering bundle、受治理 mutation generation、物理 research/diagnostic projection、连续 receipt/read-ledger、固定 12 路 runner、pre-GPU seal 和独立 final verifier。研究进程只能映射 cutoff 边界内的 projection；证据威胁模型明确为 supervisor-attested/tamper-evident，历史选择污染和全部认证/部署 blocker 继续保留。
+
+`task_055_a/` 建立 prospective holdout 封存和真实事件账本组合模拟基线：先以 append-only observation-boundary seal 固定项目已观察范围，再从只读 Task 054-C canonical bundle 发布严格 Simulation Bundle。正式模拟状态由订单、成交、现金桶、整数 lot、T+1 结算、公司行动和 open-to-open NAV 驱动；容量与冲击只能标记为日线代理模型。Validation Lab 的旧 synthetic stress 正式路径已 fail closed，只有真实 simulator 独立重跑才能产生 stress 指标。该任务不构造新组合、不挑选因子，certification、portfolio、paper、live 始终阻断且 queue 必须通过物理扫描为空。
+
+## Task 055-A：前瞻封存与事件账本模拟
+
+`task_055_a` 先封存项目级 observation boundary，再从 Task 054-C 只读证据发布物理隔离的 Simulation Bundle。正式模拟以订单、成交、现金桶、整数 lot、T+1、结算、公司行动和 open-to-open NAV 为真值；成交 open 与停牌估值 carry 分离。真实重放若遇到 active/member 持仓的 unexplained bar gap，会为每个因子/场景发布可验证的 `data_blocked` artifact，绝不以前值、复权价或零收益补齐。

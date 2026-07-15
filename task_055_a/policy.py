@@ -10,7 +10,9 @@ import numpy as np
 @dataclass(frozen=True)
 class ScenarioPolicy:
     name: str
+    initial_aum: float = 1_000_000.0
     top_n: int = 20
+    max_weight: float = 0.10
     lot_size: int = 100
     adv_participation: float = 0.10
     commission_rate: float = 0.0003
@@ -19,12 +21,19 @@ class ScenarioPolicy:
     transfer_fee_rate: float = 0.00001
     slippage_bps: float = 5.0
     impact_bps: float = 5.0
+    modeled_cost_multiplier: float = 1.0
+    zero_all_costs: bool = False
+    fee_schedule_id: str = "cn_ashare_historical_fees_modeled_execution_v1"
     sell_cash_lag: int = 1
     buy_share_lag: int = 1
 
     def __post_init__(self) -> None:
+        if self.initial_aum <= 0 or not np.isfinite(self.initial_aum):
+            raise ValueError("initial_aum must be positive and finite")
         if self.top_n < 0:
             raise ValueError("top_n must be non-negative")
+        if not 0.0 < self.max_weight <= 1.0:
+            raise ValueError("max_weight must be in (0, 1]")
         if self.lot_size <= 0:
             raise ValueError("lot_size must be positive")
         if not 0.0 <= self.adv_participation <= 1.0:
@@ -47,28 +56,14 @@ class ScenarioPolicy:
 
 
 BASELINE = ScenarioPolicy(name="baseline")
-LOW_COST = replace(
-    BASELINE,
-    name="low_cost",
-    commission_rate=0.00015,
-    minimum_commission=1.0,
-    slippage_bps=2.5,
-    impact_bps=2.5,
-)
-HIGH_COST = replace(
-    BASELINE,
-    name="high_cost",
-    commission_rate=0.0005,
-    minimum_commission=5.0,
-    slippage_bps=10.0,
-    impact_bps=10.0,
-)
-LOW_CAPACITY = replace(BASELINE, name="low_capacity", adv_participation=0.05)
-HIGH_CAPACITY = replace(BASELINE, name="high_capacity", adv_participation=0.20)
+ZERO_COST = replace(BASELINE, name="zero_cost_accounting", zero_all_costs=True)
+DOUBLE_MODELED_COST = replace(BASELINE, name="double_modeled_cost", modeled_cost_multiplier=2.0)
+PARTICIPATION_5_PERCENT = replace(BASELINE, name="participation_5_percent", adv_participation=0.05)
+AUM_10_MILLION = replace(BASELINE, name="aum_10_million", initial_aum=10_000_000.0)
 
 PREREGISTERED_SCENARIOS: dict[str, ScenarioPolicy] = {
     policy.name: policy
-    for policy in (BASELINE, LOW_COST, HIGH_COST, LOW_CAPACITY, HIGH_CAPACITY)
+    for policy in (BASELINE, ZERO_COST, DOUBLE_MODELED_COST, PARTICIPATION_5_PERCENT, AUM_10_MILLION)
 }
 SCENARIO_POLICIES = PREREGISTERED_SCENARIOS
 PREREGISTERED_SCENARIO_POLICIES = PREREGISTERED_SCENARIOS
@@ -77,10 +72,10 @@ PREREGISTERED_SCENARIO_POLICIES = PREREGISTERED_SCENARIOS
 def get_scenario_policy(name: str) -> ScenarioPolicy:
     aliases = {
         "base": "baseline",
-        "cost_low": "low_cost",
-        "cost_high": "high_cost",
-        "capacity_low": "low_capacity",
-        "capacity_high": "high_capacity",
+        "zero_cost": "zero_cost_accounting",
+        "2x_cost": "double_modeled_cost",
+        "5pct_participation": "participation_5_percent",
+        "10m_aum": "aum_10_million",
     }
     canonical = aliases.get(str(name), str(name))
     try:

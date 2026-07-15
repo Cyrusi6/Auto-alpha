@@ -60,6 +60,7 @@ htmlcov/
 /campaigns/
 /checkpoints/
 /validation_runs/
+/simulation_runs/
 *.npy
 *.npz
 *.memmap

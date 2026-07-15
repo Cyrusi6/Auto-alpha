@@ -1,12 +1,14 @@
 import json
 import math
 
+import pytest
 import torch
 
 from data_pipeline.ashare import AShareDataConfig, AShareDataManager
 from factor_store import FactorRecord, LocalFactorStore, stable_formula_hash
 from model_core.data_loader import AShareDataLoader
 from validation_lab.metrics import evaluate_factor_splits
+from validation_lab.models import StressBacktestResult
 from validation_lab.multiple_testing import analyze_multiple_testing
 from validation_lab.overfit import estimate_overfit_risk
 from validation_lab.placebo import run_placebo_tests
@@ -18,7 +20,7 @@ from validation_lab.splits import (
     build_purged_embargo_splits,
     build_simple_walk_forward_splits,
 )
-from validation_lab.stress_backtest import run_stress_backtest_bundle
+from validation_lab.stress_backtest import UnsupportedStressBacktestError, run_stress_backtest_bundle
 
 
 def _prepare_factor(tmp_path, status="approved"):
@@ -91,12 +93,21 @@ def test_validation_metrics_multiple_testing_and_null_diagnostics_are_serializab
     placebo, placebo_rows = run_placebo_tests(factor_id, factors, loader.target_ret, loader.trade_dates, summary.out_of_sample_score, n_trials=4)
     regimes, regime_summary = run_regime_validation(factors, loader.target_ret, loader.trade_dates, loader.raw_data_cache)
     sensitivity, surface = run_sensitivity_tests(summary.out_of_sample_score, [1, 2], [0.05], [1.0], [0.1])
+    def rerun(scenario_id, parameters):
+        return StressBacktestResult(
+            scenario_id=scenario_id,
+            parameters=parameters,
+            metrics={"total_return": 0.0, "fill_rate": 1.0},
+            passed=True,
+        )
+
     stress, stress_summary = run_stress_backtest_bundle(
         {"score": summary.out_of_sample_score},
         cost_multipliers=[1.0],
         participations=[0.1],
         top_n_values=[1],
         max_weight_values=[0.1],
+        simulator_rerun=rerun,
     )
 
     payload = {
@@ -117,6 +128,11 @@ def test_validation_metrics_multiple_testing_and_null_diagnostics_are_serializab
     assert 0.0 <= overfit.pbo_estimate <= 1.0
     assert 0.0 <= placebo.candidate_vs_placebo_percentile <= 1.0
     assert all(math.isfinite(float(value)) for value in summary.metrics.values())
+
+
+def test_stress_backtest_without_real_rerun_fails_closed():
+    with pytest.raises(UnsupportedStressBacktestError, match="actual_simulator_rerun"):
+        run_stress_backtest_bundle({"total_return": 1.0, "fill_rate": 1.0})
 
 
 def test_validation_lab_cli_writes_report_artifacts(tmp_path, capsys):

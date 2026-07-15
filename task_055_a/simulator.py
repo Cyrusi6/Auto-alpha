@@ -22,6 +22,10 @@ from .models import (
 from .policy import BASELINE, ScenarioPolicy, get_scenario_policy, stable_top_n_equal_weight, strict_true_mask
 
 
+class SimulationDataBlocker(RuntimeError):
+    """Raised when a real security-date cannot be valued or executed safely."""
+
+
 def _matrix(values: Any, shape: tuple[int, int], name: str) -> np.ndarray:
     matrix = np.asarray(values, dtype=float)
     if matrix.shape != shape:
@@ -46,7 +50,7 @@ class EventLedgerSimulator:
         self,
         policy: ScenarioPolicy | Mapping[str, Any] | str = BASELINE,
         *,
-        initial_cash: float = 1_000_000.0,
+        initial_cash: float | None = None,
     ) -> None:
         if isinstance(policy, str):
             self.policy = get_scenario_policy(policy)
@@ -54,7 +58,7 @@ class EventLedgerSimulator:
             self.policy = ScenarioPolicy(**dict(policy))
         else:
             self.policy = policy
-        self.initial_cash = float(initial_cash)
+        self.initial_cash = float(self.policy.initial_aum if initial_cash is None else initial_cash)
         if self.initial_cash < 0 or not math.isfinite(self.initial_cash):
             raise ValueError("initial_cash must be finite and non-negative")
 
@@ -73,6 +77,8 @@ class EventLedgerSimulator:
         open_price = _matrix(self._market_value(market, "open", "open_price", "open_prices"), shape, "open")
         close_source = market.get("close", market.get("close_price", market.get("close_prices", open_price)))
         close_price = _matrix(close_source, shape, "close")
+        valuation_open = _matrix(market.get("valuation_open", open_price), shape, "valuation_open")
+        valuation_close = _matrix(market.get("valuation_close", close_price), shape, "valuation_close")
         score_matrix = _matrix(scores, shape, "scores")
         adv = _matrix(
             self._market_value(market, "adv", "lagged_adv", "average_daily_volume"),
@@ -107,7 +113,10 @@ class EventLedgerSimulator:
         for index, date in enumerate(dates):
             self._settle(index, state, settlements, ledger)
             self._apply_actions(index, actions_by_index.get(index, ()), state, settlements, ledger)
-            positions_open = self._position_value(state, assets, open_price[index])
+            try:
+                positions_open = self._position_value(state, assets, valuation_open[index])
+            except ValueError as error:
+                raise SimulationDataBlocker(f"valuation_open_blocked:{date}:{index}:{error}") from error
             open_pre = state.cash.total + positions_open
             day_cost = 0.0
 
@@ -115,6 +124,7 @@ class EventLedgerSimulator:
                 fill, rejection = self._execute_order(
                     order,
                     index,
+                    date,
                     assets,
                     open_price[index],
                     adv[index - 1],
@@ -130,9 +140,12 @@ class EventLedgerSimulator:
                 if rejection is not None:
                     rejections.append(rejection)
 
-            positions_open_post = self._position_value(state, assets, open_price[index])
+            positions_open_post = self._position_value(state, assets, valuation_open[index])
             open_post = state.cash.total + positions_open_post
-            positions_close = self._position_value(state, assets, close_price[index])
+            try:
+                positions_close = self._position_value(state, assets, valuation_close[index])
+            except ValueError as error:
+                raise SimulationDataBlocker(f"valuation_close_blocked:{date}:{index}:{error}") from error
             close_nav = state.cash.total + positions_close
             open_return = None if last_open_post in (None, 0.0) else open_pre / last_open_post - 1.0
             nav_records.append(
@@ -169,7 +182,7 @@ class EventLedgerSimulator:
                 new_orders = self._decide_orders(
                     index,
                     assets,
-                    close_price[index],
+                    valuation_close[index],
                     score_matrix[index],
                     selection_mask[index],
                     state,
@@ -273,6 +286,7 @@ class EventLedgerSimulator:
         self,
         order: Order,
         index: int,
+        trade_date: str,
         assets: list[str],
         open_prices: np.ndarray,
         lagged_adv_row: np.ndarray,
@@ -301,7 +315,7 @@ class EventLedgerSimulator:
         if order.side == "SELL":
             executable = min(executable, state.available_shares(order.asset, index))
         else:
-            executable = min(executable, self._cash_affordable_shares(state.cash.available, price))
+            executable = min(executable, self._cash_affordable_shares(state.cash.available, price, trade_date))
         executable = _lot_round(executable, self.policy.lot_size)
         if executable <= 0:
             if capacity <= 0:
@@ -314,7 +328,7 @@ class EventLedgerSimulator:
 
         status = "FILLED" if executable == order.requested_shares else "PARTIAL"
         notional = price * executable
-        costs = self._costs(order.side, notional)
+        costs = self._costs(order.side, notional, trade_date)
         fill = Fill(
             fill_id=f"fill:{index}:{order.asset}:{order.side}",
             order_id=order.order_id,
@@ -392,21 +406,30 @@ class EventLedgerSimulator:
             )
         return fill, None
 
-    def _cash_affordable_shares(self, cash: float, price: float) -> int:
+    def _cash_affordable_shares(self, cash: float, price: float, trade_date: str) -> int:
         max_lots = int(max(cash, 0.0) // (price * self.policy.lot_size))
         while max_lots > 0:
             shares = max_lots * self.policy.lot_size
-            if price * shares + self._costs("BUY", price * shares)["total"] <= cash + 1e-9:
+            if price * shares + self._costs("BUY", price * shares, trade_date)["total"] <= cash + 1e-9:
                 return shares
             max_lots -= 1
         return 0
 
-    def _costs(self, side: str, notional: float) -> dict[str, float]:
-        commission = max(notional * self.policy.commission_rate, self.policy.minimum_commission)
-        stamp = notional * self.policy.stamp_duty_rate if side == "SELL" else 0.0
-        transfer = notional * self.policy.transfer_fee_rate
-        slippage = notional * self.policy.slippage_bps / 10_000.0
-        impact = notional * self.policy.impact_bps / 10_000.0
+    def _costs(self, side: str, notional: float, trade_date: str) -> dict[str, float]:
+        if self.policy.zero_all_costs:
+            return {key: 0.0 for key in ("commission", "stamp_duty", "transfer_fee", "slippage", "impact", "total")}
+        multiplier = self.policy.modeled_cost_multiplier
+        commission = max(notional * self.policy.commission_rate, self.policy.minimum_commission) * multiplier
+        if self.policy.fee_schedule_id == "cn_ashare_historical_fees_modeled_execution_v1":
+            stamp_rate = 0.0005 if trade_date >= "20230828" else 0.001
+            transfer_rate = 0.00001 if trade_date >= "20220429" else 0.00002
+        else:
+            stamp_rate = self.policy.stamp_duty_rate
+            transfer_rate = self.policy.transfer_fee_rate
+        stamp = notional * stamp_rate if side == "SELL" else 0.0
+        transfer = notional * transfer_rate
+        slippage = notional * self.policy.slippage_bps * multiplier / 10_000.0
+        impact = notional * self.policy.impact_bps * multiplier / 10_000.0
         total = commission + stamp + transfer + slippage + impact
         return {
             "commission": float(commission),
@@ -496,10 +519,15 @@ class EventLedgerSimulator:
                 raise ValueError(f"unknown corporate-action asset: {asset}")
             effective_raw = raw.get("effective_index", raw.get("ex_index", raw.get("ex_date")))
             effective = date_index[str(effective_raw)] if str(effective_raw) in date_index else int(effective_raw)
-            pay_raw = raw.get("pay_index", raw.get("pay_date", effective))
+            pay_raw = raw.get("pay_index") or raw.get("pay_date") or effective
             pay_index = date_index[str(pay_raw)] if str(pay_raw) in date_index else int(pay_raw)
             share_ratio = float(raw.get("share_ratio", raw.get("split_ratio", 1.0)))
-            share_ratio += float(raw.get("stock_dividend_ratio", 0.0))
+            share_ratio += float(
+                raw.get(
+                    "stock_dividend_ratio",
+                    (raw.get("stk_bo_rate") or 0.0) + (raw.get("stk_co_rate") or 0.0),
+                )
+            )
             if share_ratio <= 0 or not math.isfinite(share_ratio):
                 raise ValueError("corporate-action share_ratio must be positive and finite")
             result.append(
@@ -507,7 +535,9 @@ class EventLedgerSimulator:
                     action_id=str(raw.get("action_id", f"action:{effective}:{asset}:{offset}")),
                     effective_index=effective,
                     asset=asset,
-                    cash_dividend_per_share=float(raw.get("cash_dividend_per_share", 0.0)),
+                    cash_dividend_per_share=float(
+                        raw.get("cash_dividend_per_share", raw.get("cash_div") or 0.0)
+                    ),
                     share_ratio=share_ratio,
                     pay_index=pay_index,
                 )
@@ -575,7 +605,7 @@ def simulate_event_ledger(
     *,
     masks: Mapping[str, Any] | None = None,
     corporate_actions: Sequence[Mapping[str, Any]] = (),
-    initial_cash: float = 1_000_000.0,
+    initial_cash: float | None = None,
     initial_positions: Mapping[str, int] | None = None,
     policy: ScenarioPolicy | Mapping[str, Any] | str = BASELINE,
 ) -> SimulationResult:

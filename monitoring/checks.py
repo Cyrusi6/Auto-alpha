@@ -2039,6 +2039,59 @@ def check_task054c_engineering_baseline(report_path: str | Path | None) -> tuple
     }, alerts
 
 
+def check_task055a_simulator_baseline(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    status = str(payload.get("status") or "missing")
+    readiness = payload.get("readiness") if isinstance(payload.get("readiness"), dict) else {}
+    physical_queues = payload.get("queues") if isinstance(payload.get("queues"), dict) else {}
+    queue_key_map = {
+        "certification_queue_count": "certification_queue",
+        "portfolio_queue_count": "portfolio_campaign",
+        "paper_queue_count": "paper_registry",
+        "live_queue_count": "live_registry",
+    }
+    queue_counts = {
+        name: payload.get(name, physical_queues.get(queue_key, readiness.get(name, -1)))
+        for name, queue_key in queue_key_map.items()
+    }
+    queues_physically_empty = all(int(value) == 0 for value in queue_counts.values())
+    downstream_blocked = all(
+        payload.get(name, readiness.get(name)) is False
+        for name in ("certification_ready", "portfolio_ready", "paper_ready", "live_ready")
+    )
+    completed = (
+        status
+        == "task055a_retrospective_pit_portfolio_simulator_completed_historical_selection_contaminated_execution_modeled_future_holdout_sealed_certification_blocked"
+    )
+    recognized_blocked = status == "task055a_simulator_engineering_baseline_blocked"
+    valid_boundary = bool(payload) and (completed or recognized_blocked) and queues_physically_empty and downstream_blocked
+    alerts: list[MonitoringAlert] = []
+    if payload and not valid_boundary:
+        alerts.append(
+            MonitoringAlert(
+                "error",
+                "task055a_simulator_baseline",
+                "Task 055-A simulator evidence or downstream queue boundary is invalid",
+                {"status": status, "queue_counts": queue_counts},
+            )
+        )
+    return {
+        "exists": bool(payload),
+        "status": status,
+        "simulator_baseline_completed": completed and valid_boundary,
+        "engineering_blocked": recognized_blocked and valid_boundary,
+        "future_holdout_sealed": readiness.get("prospective_holdout_data_opened") is False,
+        "historical_selection_contaminated": bool(payload.get("historical_selection_contaminated", True)),
+        "execution_evidence_level": payload.get("execution_evidence_level", "modeled_daily_bar_proxy"),
+        "downstream_queues_physically_empty": queues_physically_empty,
+        **queue_counts,
+        "certification_ready": False,
+        "portfolio_ready": False,
+        "paper_ready": False,
+        "live_ready": False,
+    }, alerts
+
+
 def check_validation_campaign_leaderboard(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     rows = _read_jsonl(Path(path)) if path else []
     ready = sum(1 for row in rows if row.get("certification_ready") is True)

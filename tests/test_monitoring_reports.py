@@ -8,7 +8,7 @@ from model_core.data_loader import AShareDataLoader
 from model_registry import LocalModelRegistry
 from model_registry.report import write_model_registry_report
 from monitoring import run_monitor
-from monitoring.checks import check_quality_report
+from monitoring.checks import check_quality_report, check_task055a_simulator_baseline
 from paper_account import LocalPaperAccount
 
 
@@ -405,6 +405,36 @@ def test_monitoring_quality_error_produces_error_alert(tmp_path):
     payload, alerts = check_quality_report(data_dir)
 
     assert payload["ok"] is False
+    assert alerts[0].severity == "error"
+
+
+def test_task055a_monitoring_requires_physical_empty_queues(tmp_path):
+    report = tmp_path / "task055a_final_report.json"
+    data = {
+        "status": "task055a_retrospective_pit_portfolio_simulator_completed_historical_selection_contaminated_execution_modeled_future_holdout_sealed_certification_blocked",
+        "historical_selection_contaminated": True,
+        "execution_evidence_level": "modeled_daily_bar_proxy",
+        "certification_ready": False,
+        "portfolio_ready": False,
+        "paper_ready": False,
+        "live_ready": False,
+        "certification_queue_count": 0,
+        "portfolio_queue_count": 0,
+        "paper_queue_count": 0,
+        "live_queue_count": 0,
+        "readiness": {"future_holdout_sealed": True},
+    }
+    report.write_text(json.dumps(data), encoding="utf-8")
+
+    payload, alerts = check_task055a_simulator_baseline(report)
+    assert payload["simulator_baseline_completed"] is True
+    assert payload["downstream_queues_physically_empty"] is True
+    assert alerts == []
+
+    data["portfolio_queue_count"] = 1
+    report.write_text(json.dumps(data), encoding="utf-8")
+    payload, alerts = check_task055a_simulator_baseline(report)
+    assert payload["simulator_baseline_completed"] is False
     assert alerts[0].severity == "error"
 
 

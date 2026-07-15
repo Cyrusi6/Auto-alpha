@@ -628,6 +628,52 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         ["pre_registered_before_outcome_read", "probe_formula_dependency", "cells", "generations", "content_hash"],
         ["task054c_mutation_generations.json"],
     ),
+    "task055a_observation_boundary_seal": _definition(
+        "task055a_observation_boundary_seal",
+        [
+            "schema_version", "status", "effective_at", "effective_timezone",
+            "observation", "prospective_holdout", "contaminated_period", "append_only", "content_hash",
+        ],
+        ["task055a_observation_boundary_seal.json", "observation_boundary_seal.json"],
+    ),
+    "task055a_simulation_bundle_manifest": _definition(
+        "task055a_simulation_bundle_manifest",
+        [
+            "schema_version", "status", "signal_cutoff", "execution_cutoff",
+            "exact20_ids", "axes", "source_identity", "artifacts", "blockers",
+            "generation_id", "content_hash",
+        ],
+        ["simulation_bundle_manifest.json"],
+        optional=["valuation_cutoff", "physical_signal_view", "fallback_allowed"],
+    ),
+    "task055a_policy_seal": _definition(
+        "task055a_policy_seal",
+        [
+            "schema_version", "observation_boundary_hash", "simulation_bundle_hash", "exact20_ids",
+            "candidate_identity_root", "signal_cutoff", "execution_endpoint", "evidence_level",
+            "selection_data_reused", "untouched_holdout", "portfolio_construction", "scenarios",
+            "physical_state_evidence", "code_semantic_hash", "immutable", "content_hash", "generation_id",
+        ],
+        ["policy_seal.json", "task055a_policy_seal.json", "simulation_policy_seal.json"],
+    ),
+    "task055a_simulation_verification": _definition(
+        "task055a_simulation_verification",
+        [
+            "schema_version", "status", "top_status", "final_result_hash", "primary", "sibling",
+            "immutable_resume_hit", "queues_verified_empty", "certification_blocked", "verification_hash",
+        ],
+        ["task055a_simulation_verification.json", "simulation_verification.json"],
+    ),
+    "task055a_final_report": _definition(
+        "task055a_final_report",
+        [
+            "schema_version", "status", "spec_hash", "observation_seal", "simulation_bundle",
+            "policy_seal_hash", "primary_truth_hash", "sibling_truth_hash", "resume_truth_hash",
+            "immutable_resume_hit", "terminal_count", "expected_terminal_count", "physical_state_inventory",
+            "readiness", "queues", "blockers", "result_hash",
+        ],
+        ["task055a_final_report.json"],
+    ),
     "validation_candidate_dedup_report": _definition(
         "validation_candidate_dedup_report",
         ["validation_campaign_id", "candidate_count", "duplicate_count"],

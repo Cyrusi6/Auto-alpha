@@ -1771,7 +1771,25 @@ Task 054 uses a single research eligibility contract for `signal close(t) -> ope
 ## Task 054-C production engineering baseline
 
 - `python -m task_054_c.run --config <config.json>` is the only Task 054-C production runner. It validates the canonical engineering bundle, publishes physically bounded research projections, and executes the fixed 12-path sentinel in baseline → post-cutoff → inside-cutoff order.
+
+## Task 055-A prospective holdout and ledger simulator
+
+- Task 055-A seals a project-wide observation boundary before any newly available market records are opened. Dates already observed by historical campaigns remain research/development data; they cannot be renamed as an untouched holdout.
+- The formal simulation input is a validated, content-addressed Simulation Bundle derived from the read-only Task 054-C canonical bundle, exact-20 normalized factor store, physical research view, independent factor validity, strict execution masks, benchmark, corporate actions, and governed unit contracts. Bare data directories, ad-hoc factor stores, readiness booleans, and compatibility fallbacks are rejected.
+- The production simulator uses an event ledger for orders, fills, cash buckets, integer lots, T+1 settlement, rejections, partial fills, costs, corporate actions, positions, and open-to-open NAV. Capacity remains a `modeled_daily_bar_proxy` based only on close-time lagged evidence; it is not auction, queue, or calibrated market-impact evidence.
+- Validation Lab stress output is fail-closed unless an actual simulator rerun callback supplies independently computed scenario results. It no longer fabricates total return, fill rate, drawdown, or cost by subtracting fixed penalties from prior metrics.
+- Task 055-A runs every fixed Task 054-C probe independently across the preregistered scenarios. It does not generate factors, select a portfolio, certify alpha, or enable paper/live execution. Certification, portfolio, paper, and live readiness remain false and their physical queues must remain empty.
 - Native validators recompute matrix/tensor partitions, axes, normalized-store identity, receipt/read-ledger chains, scheduler state, and cache invariants. Callers cannot inject empty dependencies, naked matrix/tensor paths, factor-store overrides, or readiness booleans.
 - Formula lookback is expressed only as `max_raw_lag`; `required_observations=max_raw_lag+1` remains a separate field. A semantic-source change creates a new content-addressed tensor generation even when values and validity bytes remain unchanged.
 - Research workers only map physical cutoff-bounded projections. Diagnostic projections and reads are separate. Server evidence is supervisor-attested and tamper-evident, not externally unforgeable.
 - Historical selection remains contaminated. Certification, portfolio, paper, and live readiness remain false and all downstream queues remain zero.
+
+### Task 055-A runtime boundary
+
+Run the formal retrospective ledger simulator only from an authoritative Task 055-A Simulation Bundle:
+
+```bash
+python -m task_055_a.run --config /path/to/task055a_run_config.json
+```
+
+The policy seal is published before factor/execution arrays are mapped. A missing price may be carried only for valuation during a proven suspension-associated absence; unexplained gaps create immutable `data_blocked` run artifacts. A blocked factor/scenario is never converted to zero return, and certification/portfolio/paper/live queues remain outside this workflow.

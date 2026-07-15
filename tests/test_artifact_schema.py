@@ -47,6 +47,51 @@ def test_filename_inferred_versioned_json_is_strict(tmp_path):
     assert not any(issue.code == "legacy_artifact" for issue in result.issues)
 
 
+def test_task055a_native_manifest_schemas(tmp_path):
+    seal = tmp_path / "task055a_observation_boundary_seal.json"
+    seal.write_text(
+        json.dumps(
+            {
+                "schema_version": "task055a_observation_boundary_seal_v1",
+                "status": "sealed_waiting_for_future_data",
+                "effective_at": "2026-07-15T00:00:00+08:00",
+                "effective_timezone": "Asia/Shanghai",
+                "observation": {},
+                "prospective_holdout": {},
+                "contaminated_period": {},
+                "append_only": True,
+                "content_hash": "a" * 64,
+            }
+        ),
+        encoding="utf-8",
+    )
+    bundle = tmp_path / "simulation_bundle_manifest.json"
+    bundle.write_text(
+        json.dumps(
+            {
+                "schema_version": "task055a_simulation_bundle_v1",
+                "status": "blocked",
+                "signal_cutoff": "20240528",
+                "execution_cutoff": "20240530",
+                "valuation_cutoff": "20240530",
+                "physical_signal_view": True,
+                "fallback_allowed": False,
+                "exact20_ids": [],
+                "axes": {},
+                "source_identity": {},
+                "artifacts": {},
+                "blockers": [{"code": "fixture"}],
+                "generation_id": "simulation_bundle_fixture",
+                "content_hash": "b" * 64,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert validate_artifact(seal, strict=True).valid is True
+    assert validate_artifact(bundle, strict=True).valid is True
+
+
 def test_jsonl_sidecar_manifest_and_malformed_errors(tmp_path):
     orders_path = tmp_path / "orders.jsonl"
     write_jsonl_artifact(

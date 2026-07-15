@@ -452,6 +452,17 @@ class AshareDashboardService:
     def load_task_054c_final_verification(self) -> dict[str, Any]:
         return self._read_first_json(self._validation_campaign_artifact_candidates("task054c_final_verification.json"))
 
+    def load_task_055a_observation_boundary_seal(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_campaign_artifact_candidates("task055a_observation_boundary_seal.json"))
+
+    def load_task_055a_simulation_bundle(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_campaign_artifact_candidates("simulation_bundle_manifest.json"))
+
+    def load_task_055a_final_report(self) -> dict[str, Any]:
+        candidates = self._validation_campaign_artifact_candidates("task055a_final_report.json")
+        candidates.extend(self._validation_campaign_artifact_candidates("task055a_result.json"))
+        return self._read_first_json(candidates)
+
     def load_task_054_scrubbed_evidence(self) -> dict[str, Any]:
         return self._read_first_json(self._validation_campaign_artifact_candidates("task_054a_scrubbed_evidence_package.json"))
 

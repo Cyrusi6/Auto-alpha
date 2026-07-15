@@ -35,6 +35,8 @@ def test_hand_calculated_buy_cost_cash_and_open_nav():
         commission_rate=0.001,
         minimum_commission=0.0,
         transfer_fee_rate=0.0,
+        stamp_duty_rate=0.0,
+        fee_schedule_id="explicit_fixture_rates_v1",
         slippage_bps=10.0,
         impact_bps=20.0,
     )
@@ -59,7 +61,9 @@ def test_hand_calculated_buy_cost_cash_and_open_nav():
 
 def test_close_decides_shares_and_cheaper_next_open_never_scales_up():
     policy = replace(BASELINE, top_n=1, minimum_commission=0.0, commission_rate=0.0,
-                     transfer_fee_rate=0.0, slippage_bps=0.0, impact_bps=0.0)
+                     transfer_fee_rate=0.0, stamp_duty_rate=0.0,
+                     fee_schedule_id="explicit_fixture_rates_v1",
+                     slippage_bps=0.0, impact_bps=0.0)
     market = _market([[10.0], [1.0]], close_price=[[10.0], [1.0]])
     result = EventLedgerSimulator(policy, initial_cash=10_000.0).run(
         market, np.ones((2, 1)), masks=_all_true((2, 1))
@@ -72,6 +76,7 @@ def test_close_decides_shares_and_cheaper_next_open_never_scales_up():
 def test_t_plus_one_lots_block_same_day_sell_and_settle_next_day():
     policy = replace(BASELINE, top_n=1, minimum_commission=0.0, commission_rate=0.0,
                      transfer_fee_rate=0.0, stamp_duty_rate=0.0,
+                     fee_schedule_id="explicit_fixture_rates_v1",
                      slippage_bps=0.0, impact_bps=0.0)
     market = _market([[10.0], [10.0], [10.0]])
     scores = np.array([[1.0], [np.nan], [np.nan]])
@@ -142,7 +147,11 @@ def test_stable_top20_equal_weight_ties_and_five_scenarios():
     assert selected == {f"s{index:02d}" for index in range(20)}
     assert np.allclose(weights[weights > 0], 0.05)
     assert tuple(PREREGISTERED_SCENARIOS) == (
-        "baseline", "low_cost", "high_cost", "low_capacity", "high_capacity"
+        "baseline",
+        "zero_cost_accounting",
+        "double_modeled_cost",
+        "participation_5_percent",
+        "aum_10_million",
     )
 
 

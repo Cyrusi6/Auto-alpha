@@ -100,7 +100,7 @@ def _discover_files(
     discovered: set[Path] = set()
     for explicit in explicit_files:
         path = explicit.resolve()
-        if not predicate(path):
+        if not path.is_file() or not _is_json_path(path) or _is_forbidden(path):
             raise RuntimeError(f"task055a_{label}_file_not_allowed:{path}")
         discovered.add(path)
     for root_value in roots:
@@ -539,7 +539,11 @@ def _validate_source_files(observation: Mapping[str, Any]) -> None:
     for section in ("metadata_files", "physical_state_inventory"):
         for row in observation.get(section, []):
             path = Path(row["path"])
-            predicate = _observation_file_allowed if section == "metadata_files" else _state_file_allowed
+            predicate = (
+                (lambda value: value.is_file() and _is_json_path(value) and not _is_forbidden(value))
+                if section == "metadata_files"
+                else _state_file_allowed
+            )
             if not predicate(path) or sha256_file(path) != row.get("sha256") or path.stat().st_size != row.get("bytes"):
                 raise RuntimeError(f"task055a_source_file_changed:{path}")
             if section == "physical_state_inventory" and _physical_record_count(path) != row.get("nonempty_record_count"):
