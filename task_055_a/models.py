@@ -103,6 +103,8 @@ class Fill:
     status: str
     capacity_shares: int
     lagged_adv: float
+    handling_fee: float = 0.0
+    securities_management_fee: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

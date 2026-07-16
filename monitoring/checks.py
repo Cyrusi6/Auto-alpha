@@ -2194,6 +2194,48 @@ def check_task055e_offline_source_salvage(report_path: str | Path | None) -> tup
     return details, alerts
 
 
+def check_task055f_engineering_baseline(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    if not payload:
+        return {"exists": False, "status": "", "task055f_boundary_valid": False}, []
+    status = str(payload.get("status") or "")
+    recognized = status in {
+        "task055f_governed_evidence_or_fee_or_dynamic_simulation_closure_blocked",
+        "task055f_native_simulator_engineering_completed_future_research_data_blocked_historical_selection_contaminated_execution_modeled_certification_blocked",
+    }
+    readiness = dict(payload.get("readiness") or {})
+    downstream_false = all(
+        readiness.get(name) is False
+        for name in ("certification_ready", "portfolio_ready", "paper_ready", "live_ready")
+    )
+    boundary_valid = (
+        recognized
+        and payload.get("prospective_holdout_accessed") is False
+        and int(payload.get("network_request_count") or 0) == 0
+        and downstream_false
+        and ((payload.get("truth_v2") or {}).get("stale_marks_authorized_by_truth") == 0)
+    )
+    details = {
+        "exists": True,
+        "status": status,
+        "task055f_boundary_valid": boundary_valid,
+        "truth_v2_record_count": int((payload.get("truth_v2") or {}).get("record_count") or 0),
+        "round_one_frontier_count": int((payload.get("causal_frontier") or {}).get("round_one_frontier_count") or 0),
+        "credential_present": bool((payload.get("credential") or {}).get("credential_present")),
+        "simulator_engineering_ready": readiness.get("simulator_engineering_ready"),
+        "engineering_blocker_count": len(payload.get("engineering_blockers") or ()),
+    }
+    alerts = [] if boundary_valid else [
+        MonitoringAlert(
+            "error",
+            "task055f_engineering_baseline",
+            "Task 055-F evidence, holdout, or downstream boundary is invalid",
+            details,
+        )
+    ]
+    return details, alerts
+
+
 def check_validation_campaign_leaderboard(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     rows = _read_jsonl(Path(path)) if path else []
     ready = sum(1 for row in rows if row.get("certification_ready") is True)

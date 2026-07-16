@@ -2546,3 +2546,19 @@
 - 直接从 strict matrix 向过去重算 648 个 modeled-but-unmarked cells，全部存在历史 authoritative close，真实原因均为 `stale_age_gt_250`；旧 `source_date=-1 -> no_prior` 推断被纠正。三域拆分后，完整历史 remediation=3,738，`20160104–20240530` static simulator axis remediation=2,750，其中非终态 evidence keys=2,102。
 - exact-20×五场景使用原生事件账本和只读 factor/mask 执行 causal-prefix trace。共观察 217,430 个 held reporting-point observations、31,146 个唯一 held reporting points；100/100 run 在首个真实 mark 缺口 fail closed，最终收敛为 16 个唯一 simulator-held security-date。最小后续计划为 16 个 exact daily + 16 个 exact suspend_d 请求、16 stocks/16 dates/16 episodes；三个固定 probe 均在这 16 个因果缺口内，现有本地证据只能证明完整范围无 matching row，不能证明全天停牌或正常交易。
 - 最终 offline report hash 为 `202d84acc3ad245ad2b7c0b24e3e5eedafa5138a2e2f9b3d296086ea1f03b676`，domain hash 为 `6122e282081d1a36e9a3b42314519f1f8c59f50a5cfe85c73c3cca44ffb64482`。顶层保持 `task055e_governed_acquisition_or_dynamic_simulation_closure_blocked`；`offline_source_salvage_ready=true`，但 continuous valuation、simulator、future research、certification、portfolio、optimizer、paper、live 均为 false，且未创建伪 Simulator 成功证据。
+
+## 2026-07-16 — Task 055-F 证据真值硬化与动态闭环
+
+- 新增独立 `truth_v2`：只从原始 daily/suspend envelope、Task 055-E provenance、strict matrix 和 inventory 重建，不再让 Task 055-C truth 直接授权 stale mark。`S`、`R`、`S+R`、盘中 timing、空 timing、生命周期终止和 matrix/source 冲突均使用互斥状态；`stale_mark_authorized` 固定为 false，合法价格必须由后续因果持仓估值层证明。
+- 新增 append-only actual-read ledger。正式路径只读取 sealed coverage/provenance catalog 指向的 cache，不再 `rglob` 打开未知 cache body；每次读取记录相对路径、文件 SHA、request key、声明范围和实际最大日期，`prospective_holdout_accessed` 从 ledger 重算。
+- Fee Schedule v2 的生产输入改为官方 HTTPS 获取器生成的原生 acquisition manifest；caller 不能自报 receipt。证据绑定 TLS/hostname、同主机 redirect、HTTP 状态、peer certificate SHA、response headers、原始 bytes SHA、条款文本与代码语义 hash。法定费用和 modeled commission/slippage/impact 分层，2× 场景只倍乘 modeled 部分。
+- 新增共享紧凑 valuation projection，避免 100 个 run 重复写巨型逐股票 JSON。原生 simulator producer 强制显式 valuation/fee reference，执行 exact-20×五场景 primary、独立 sibling 与 immutable resume；独立 verifier 逐 fill 重算所有费用组件并逐 held reporting point 核对 mark/source-date/stale-age/evidence。
+- 网络流程拆为 canary、canary verifier、L1 resume 独立命令。canary 只允许一次物理 POST；全局 hash-chain spend ledger 对 started/failed/completed attempts 计费，L1 固定 exact security-date，L2 只能在 L1 apply 后重新构建 truth/causal frontier 才能发布。总上限保持 64 keys、128 logical requests、160 physical attempts。
+- artifact schema、dashboard、monitoring、package metadata 和 focused golden E2E 接入 Task 055-F。小型真实账本轴已验证完整 20×5 primary/sibling/resume 成功路径，不依赖 caller 汇总布尔值；真实服务器运行仍以实际 Fee、operational proof、held-mark frontier 和 credential 状态决定是否启动网络或 simulator。
+
+### 真实离线 hardening 结果
+- 最终 sibling run 的 report/truth/semantic-verifier content hash 分别为 `922e74e3aa26c9069956ece53ec588e47e39bea8cbb190a9ed927ec4dab5139c`、`e5f02b451a417fbc9ff4f9b5d937b28ab3e3866943943eca6a29686d4b7f8eb5`、`453889c7e604378346f6859951a6933b71043d396c6a9efa1f884333ce64dfe5`。生产 read ledger 与独立 verifier read ledger 的最大实际日期均为 `2026-06-30`，`prospective_holdout_accessed=false`，网络请求为 0；严格 artifact schema 为 8 个 artifacts、0 error、0 warning、0 unknown。
+- `truth_v2` 对 35,844 个 security-date 完整守恒：32,752 个 `VENDOR_DAILY_NON_TRADING_MODELED_CANDIDATE`、2,744 个 `LIFECYCLE_TERMINATED`、346 个 `DATA_SOURCE_GAP`、1 个同日 S/R 冲突、1 个盘中 timing blocker。`R` 从未作为正向停牌证据，truth 自身授权 stale mark 的数量为 0。
+- 独立 verifier 从 2,820 个实际源文件 bytes、严格矩阵分区和原始 envelope 重建相同状态；32,752 个 modeled candidate 中，31,974 个存在 250 交易日政策内的历史 authoritative close，778 个超过固定 stale 上限。该计数是全量 anchor 取证，不是实际持仓使用量，也不是 round-1 frontier。
+- 三个固定 probe `600170.SH/2016-03-23`、`601018.SH/2016-05-17`、`600019.SH/2016-08-23` 均保持 `DATA_SOURCE_GAP`。由于尚无覆盖完整模拟期的真实官方 Fee Schedule v2，未用旧 embedded fee 计算 frontier；因此没有封存 16 或其他数量为“总缺口”，也没有执行 Tushare canary、L1/L2 或 Simulator。
+- 当前工程 blocker 为：官方 Fee Schedule v2 未闭合、Fee v2 下的 round-1 frontier 尚未封存、canonical operational root 七类目录未形成可验证空状态，以及 credential 不可用。顶层状态为 `task055f_governed_evidence_or_fee_or_dynamic_simulation_closure_blocked`；全部 certification/deployment blocker 继续保留。

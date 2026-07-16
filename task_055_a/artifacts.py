@@ -109,6 +109,8 @@ def publish_simulation_run(
     benchmark: Mapping[str, Any] | None = None,
     initial_positions: Mapping[str, int] | None = None,
     valuation_marks: Sequence[Mapping[str, Any]] | None = None,
+    valuation_projection_manifest: Mapping[str, Any] | str | Path | None = None,
+    held_marks: Sequence[Mapping[str, Any]] | None = None,
     fee_schedule_manifest: Mapping[str, Any] | str | Path | None = None,
     allow_resume: bool = False,
 ) -> dict[str, Any]:
@@ -140,7 +142,16 @@ def publish_simulation_run(
         raise SimulationArtifactError("simulation_axes_empty")
     open_prices = _market_array(market, ("open", "open_price", "open_prices"), dates, assets)
     close_prices = _market_array(market, ("close", "close_price", "close_prices"), dates, assets)
-    if valuation_marks is None:
+    projection = None
+    if valuation_projection_manifest is not None:
+        from task_055_f.valuation import validate_valuation_projection
+
+        projection = validate_valuation_projection(valuation_projection_manifest)
+        if projection.get("status") != "ready":
+            raise SimulationArtifactError("valuation_projection_not_ready")
+        if list(projection.get("dates") or ()) != dates or list(projection.get("assets") or ()) != assets:
+            raise SimulationArtifactError("valuation_projection_axis_mismatch")
+    elif valuation_marks is None:
         from task_055_b.verifier import make_official_mark_rows
 
         valuation_marks = make_official_mark_rows(
@@ -156,7 +167,28 @@ def publish_simulation_run(
                 for date in dates for asset in assets
             },
         )
-    fee_schedule = _load_json_mapping(fee_schedule_manifest) if fee_schedule_manifest is not None else None
+    fee_schedule = None
+    fee_schedule_reference = None
+    if fee_schedule_manifest is not None:
+        candidate = Path(fee_schedule_manifest) if isinstance(fee_schedule_manifest, (str, Path)) else None
+        if candidate is not None:
+            try:
+                from task_055_f.fees import validate_fee_schedule_v2
+
+                validated_fee = validate_fee_schedule_v2(candidate)
+            except (ImportError, ValueError, RuntimeError, OSError):
+                validated_fee = None
+            if validated_fee is not None:
+                fee_schedule_reference = {
+                    "schema_version": "task055f_fee_schedule_reference_v1",
+                    "generation_id": validated_fee["generation_id"],
+                    "content_hash": validated_fee["content_hash"],
+                    "manifest_name": "fee_schedule_v2_manifest.json",
+                }
+            else:
+                fee_schedule = _load_json_mapping(fee_schedule_manifest)
+        else:
+            fee_schedule = _load_json_mapping(fee_schedule_manifest)
     benchmark_dates, benchmark_open = _benchmark_view(benchmark, dates)
 
     staging = Path(tempfile.mkdtemp(prefix=".task055a_run.", dir=root))
@@ -169,9 +201,23 @@ def publish_simulation_run(
             "final_positions": payload.get("final_positions") or {},
             "initial_positions": {str(key): int(value) for key, value in (initial_positions or {}).items()},
         })
-        _write_jsonl(staging / "valuation_marks.jsonl", valuation_marks)
+        if projection is None:
+            _write_jsonl(staging / "valuation_marks.jsonl", valuation_marks)
+        else:
+            _write_json(
+                staging / "valuation_projection_reference.json",
+                {
+                    "schema_version": "task055f_valuation_projection_reference_v1",
+                    "generation_id": projection["generation_id"],
+                    "content_hash": projection["content_hash"],
+                    "manifest_name": "valuation_projection_manifest.json",
+                },
+            )
+            _write_jsonl(staging / "held_marks.jsonl", held_marks or ())
         if fee_schedule is not None:
             _write_json(staging / "fee_schedule_manifest.json", fee_schedule)
+        if fee_schedule_reference is not None:
+            _write_json(staging / "fee_schedule_reference.json", fee_schedule_reference)
         table_names = (
             "orders",
             "fills",
@@ -204,7 +250,10 @@ def publish_simulation_run(
 
         from .verifier import recompute_run_truth
 
-        summary = recompute_run_truth(staging)
+        summary = recompute_run_truth(
+            staging,
+            valuation_projection_manifest=None if projection is None else projection["manifest_path"],
+        )
         _write_json(staging / "summary.json", summary)
         partitions = {
             path.name: {

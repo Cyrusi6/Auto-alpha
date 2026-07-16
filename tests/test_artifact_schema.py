@@ -346,3 +346,39 @@ def test_task055e_offline_native_manifest_schemas(tmp_path):
     assert validate_artifact(provenance, strict=True).valid is True
     assert validate_artifact(domains, strict=True).valid is True
     assert validate_artifact(report, strict=True).valid is True
+
+
+def test_task055f_native_manifest_schemas(tmp_path):
+    truth = tmp_path / "truth_v2_manifest.json"
+    truth.write_text(json.dumps({
+        "schema_version": "task055f_security_date_truth_v2", "status": "published",
+        "record_count": 1, "key_root": "k", "state_counts": {}, "suspend_type_counts": {},
+        "daily_empty_response_counts": [], "suspend_empty_response_counts": [],
+        "valuation_domain_count": 1, "modeled_candidate_count": 0, "lineage": {},
+        "partitions": {}, "content_hash": "c", "generation_id": "g",
+    }), encoding="utf-8")
+    projection = tmp_path / "valuation_projection_manifest.json"
+    projection.write_text(json.dumps({
+        "schema_version": "task055f_compact_valuation_projection_v1", "status": "blocked",
+        "shape": [1, 1, 2], "dates": ["20240530"], "assets": ["000001.SZ"],
+        "date_axis_hash": "d", "stock_axis_hash": "s", "truth_v2_content_hash": "t",
+        "matrix_content_hash": "m", "builder_code_hash": "b", "method_codes": {},
+        "unresolved_reporting_point_count": 1, "blocker_root": "r", "partitions": {},
+        "content_hash": "c", "generation_id": "g",
+    }), encoding="utf-8")
+    report = tmp_path / "task055f_report.json"
+    report.write_text(json.dumps({
+        "schema_version": "task055f_engineering_report_v1",
+        "status": "task055f_governed_evidence_or_fee_or_dynamic_simulation_closure_blocked",
+        "stage": "offline_truth_hardening_completed", "network_accessed": False,
+        "network_request_count": 0, "prospective_holdout_accessed": False,
+        "max_read_date": "20260630", "git": {}, "observation_boundary": {},
+        "parent_lineage": {}, "truth_v2": {}, "fee_schedule_v2": None,
+        "causal_frontier": None, "credential": {}, "operational_state": {},
+        "native_replay": None, "ready_for_canary": False, "artifacts": {},
+        "readiness": {}, "engineering_blockers": [], "certification_blockers": [],
+        "blockers": [], "content_hash": "c", "generation_id": "g",
+    }), encoding="utf-8")
+    assert validate_artifact(truth, strict=True).valid is True
+    assert validate_artifact(projection, strict=True).valid is True
+    assert validate_artifact(report, strict=True).valid is True

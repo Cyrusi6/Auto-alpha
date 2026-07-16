@@ -13,7 +13,13 @@ from task_055_a.verifier import SimulationVerificationError, verify_simulation_r
 from .fees import validate_fee_schedule, verify_fill_fees
 
 MARK_EVIDENCE_SCHEMA = "task055b_security_date_mark_evidence_v1"
-MARK_METHODS = {"OFFICIAL_OPEN", "OFFICIAL_CLOSE", "STALE_OFFICIAL_NON_TRADING"}
+MARK_METHODS = {
+    "OFFICIAL_OPEN",
+    "OFFICIAL_CLOSE",
+    "STALE_OFFICIAL_NON_TRADING",
+    "STALE_VENDOR_DAILY_NON_TRADING_MODELED",
+    "LIFECYCLE_SETTLEMENT",
+}
 NO_TRADE_STATES = {"OFFICIAL_NON_TRADING", "VENDOR_DAILY_NON_TRADING_MODELED", "LIFECYCLE_TERMINATED"}
 BLOCKED_MARK_STATES = {
     "TRADED_SOURCE_CONFLICT", "CALENDAR_OR_MEMBERSHIP_ERROR", "RAW_BAR_REQUIRED_FIELD_INVALID",
@@ -125,10 +131,12 @@ def build_mark_matrices(
                 issues.append(f"official_mark_contract_invalid:{asset}:{date}:{point}")
             if not np.isfinite(raw) or raw <= 0 or abs(price - raw) > MONEY_TOLERANCE_CNY:
                 issues.append(f"official_mark_quote_mismatch:{asset}:{date}:{point}")
-        else:
+        elif method in {"STALE_OFFICIAL_NON_TRADING", "STALE_VENDOR_DAILY_NON_TRADING_MODELED"}:
             source_date = str(row.get("mark_source_date") or "")
             if state not in NO_TRADE_STATES or source_date not in date_index or date_index[source_date] >= row_index:
                 issues.append(f"stale_mark_provenance_invalid:{asset}:{date}:{point}")
+            if method == "STALE_VENDOR_DAILY_NON_TRADING_MODELED" and state != "VENDOR_DAILY_NON_TRADING_MODELED":
+                issues.append(f"modeled_stale_state_invalid:{asset}:{date}:{point}")
             if bool(row.get("execution_allowed")):
                 issues.append(f"stale_mark_execution_allowed:{asset}:{date}:{point}")
             transform = row.get("corporate_action_transform")
@@ -142,6 +150,9 @@ def build_mark_matrices(
                     expected_price = float(source["mark_price"]) * float(transform["price_multiplier"])
                     if abs(price - expected_price) > MONEY_TOLERANCE_CNY:
                         issues.append(f"stale_mark_transform_mismatch:{asset}:{date}:{point}")
+        else:
+            if state != "LIFECYCLE_TERMINATED" or bool(row.get("execution_allowed")):
+                issues.append(f"lifecycle_settlement_contract_invalid:{asset}:{date}:{point}")
         target = mark_open if point == "open" else mark_close
         target[row_index, column_index] = price
     for date in dates:

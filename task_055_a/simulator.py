@@ -51,6 +51,9 @@ class EventLedgerSimulator:
         policy: ScenarioPolicy | Mapping[str, Any] | str = BASELINE,
         *,
         initial_cash: float | None = None,
+        fee_calculator: Any | None = None,
+        require_external_fee_schedule: bool = False,
+        require_explicit_valuation_marks: bool = False,
     ) -> None:
         if isinstance(policy, str):
             self.policy = get_scenario_policy(policy)
@@ -59,6 +62,9 @@ class EventLedgerSimulator:
         else:
             self.policy = policy
         self.initial_cash = float(self.policy.initial_aum if initial_cash is None else initial_cash)
+        self.fee_calculator = fee_calculator
+        self.require_external_fee_schedule = bool(require_external_fee_schedule)
+        self.require_explicit_valuation_marks = bool(require_explicit_valuation_marks)
         if self.initial_cash < 0 or not math.isfinite(self.initial_cash):
             raise ValueError("initial_cash must be finite and non-negative")
 
@@ -71,6 +77,7 @@ class EventLedgerSimulator:
         corporate_actions: Sequence[Mapping[str, Any]] = (),
         initial_positions: Mapping[str, int] | None = None,
         diagnostic_mark_observer: Callable[[int, str, str, Mapping[str, int], np.ndarray], None] | None = None,
+        diagnostic_mark_observer_v2: Callable[[int, str, str, Sequence[Mapping[str, Any]]], None] | None = None,
     ) -> SimulationResult:
         dates = [str(item) for item in self._market_value(market, "dates", "trade_dates")]
         assets = [str(item) for item in self._market_value(market, "assets", "ts_codes")]
@@ -80,6 +87,7 @@ class EventLedgerSimulator:
         close_price = _matrix(close_source, shape, "close")
         valuation_open = _matrix(market.get("valuation_open", open_price), shape, "valuation_open")
         valuation_close = _matrix(market.get("valuation_close", close_price), shape, "valuation_close")
+        valuation_metadata = self._valuation_metadata(market, shape)
         score_matrix = _matrix(scores, shape, "scores")
         adv = _matrix(
             self._market_value(market, "adv", "lagged_adv", "average_daily_volume"),
@@ -123,6 +131,16 @@ class EventLedgerSimulator:
                 assets,
                 valuation_open[index],
             )
+            self._notify_mark_observer_v2(
+                diagnostic_mark_observer_v2,
+                index,
+                date,
+                "open_pretrade",
+                state,
+                assets,
+                valuation_open[index],
+                valuation_metadata["open"],
+            )
             try:
                 positions_open = self._position_value(state, assets, valuation_open[index])
             except ValueError as error:
@@ -160,6 +178,16 @@ class EventLedgerSimulator:
                 state,
                 assets,
                 valuation_close[index],
+            )
+            self._notify_mark_observer_v2(
+                diagnostic_mark_observer_v2,
+                index,
+                date,
+                "close",
+                state,
+                assets,
+                valuation_close[index],
+                valuation_metadata["close"],
             )
             try:
                 positions_close = self._position_value(state, assets, valuation_close[index])
@@ -334,7 +362,10 @@ class EventLedgerSimulator:
         if order.side == "SELL":
             executable = min(executable, state.available_shares(order.asset, index))
         else:
-            executable = min(executable, self._cash_affordable_shares(state.cash.available, price, trade_date))
+            executable = min(
+                executable,
+                self._cash_affordable_shares(state.cash.available, price, trade_date, order.asset),
+            )
         executable = _lot_round(executable, self.policy.lot_size)
         if executable <= 0:
             if capacity <= 0:
@@ -347,7 +378,7 @@ class EventLedgerSimulator:
 
         status = "FILLED" if executable == order.requested_shares else "PARTIAL"
         notional = price * executable
-        costs = self._costs(order.side, notional, trade_date)
+        costs = self._costs(order.side, notional, trade_date, asset=order.asset, shares=executable)
         fill = Fill(
             fill_id=f"fill:{index}:{order.asset}:{order.side}",
             order_id=order.order_id,
@@ -367,6 +398,8 @@ class EventLedgerSimulator:
             status=status,
             capacity_shares=capacity,
             lagged_adv=lagged_adv,
+            handling_fee=costs["handling_fee"],
+            securities_management_fee=costs["securities_management_fee"],
         )
         if order.side == "BUY":
             required = notional + costs["total"]
@@ -425,18 +458,66 @@ class EventLedgerSimulator:
             )
         return fill, None
 
-    def _cash_affordable_shares(self, cash: float, price: float, trade_date: str) -> int:
+    def _cash_affordable_shares(self, cash: float, price: float, trade_date: str, asset: str = "") -> int:
         max_lots = int(max(cash, 0.0) // (price * self.policy.lot_size))
         while max_lots > 0:
             shares = max_lots * self.policy.lot_size
-            if price * shares + self._costs("BUY", price * shares, trade_date)["total"] <= cash + 1e-9:
+            if price * shares + self._costs(
+                "BUY", price * shares, trade_date, asset=asset, shares=shares
+            )["total"] <= cash + 1e-9:
                 return shares
             max_lots -= 1
         return 0
 
-    def _costs(self, side: str, notional: float, trade_date: str) -> dict[str, float]:
+    def _costs(
+        self,
+        side: str,
+        notional: float,
+        trade_date: str,
+        *,
+        asset: str = "",
+        shares: int = 0,
+    ) -> dict[str, float]:
+        if self.fee_calculator is not None:
+            calculator = self.fee_calculator.calculate if hasattr(self.fee_calculator, "calculate") else self.fee_calculator
+            result = calculator(
+                date=str(trade_date),
+                market=self._market_for_asset(asset),
+                side=str(side).upper(),
+                notional=float(notional),
+                shares=int(shares),
+                zero_all_costs=bool(self.policy.zero_all_costs),
+                modeled_multiplier=float(self.policy.modeled_cost_multiplier),
+            )
+            required = {
+                "commission",
+                "stamp_duty",
+                "transfer_fee",
+                "handling_fee",
+                "securities_management_fee",
+                "slippage",
+                "impact",
+                "total",
+            }
+            if set(result) != required:
+                raise SimulationDataBlocker("external_fee_schedule_components_invalid")
+            return {key: float(result[key]) for key in required}
+        if self.require_external_fee_schedule:
+            raise SimulationDataBlocker("external_fee_schedule_required")
         if self.policy.zero_all_costs:
-            return {key: 0.0 for key in ("commission", "stamp_duty", "transfer_fee", "slippage", "impact", "total")}
+            return {
+                key: 0.0
+                for key in (
+                    "commission",
+                    "stamp_duty",
+                    "transfer_fee",
+                    "handling_fee",
+                    "securities_management_fee",
+                    "slippage",
+                    "impact",
+                    "total",
+                )
+            }
         multiplier = self.policy.modeled_cost_multiplier
         commission = max(notional * self.policy.commission_rate, self.policy.minimum_commission) * multiplier
         if self.policy.fee_schedule_id == "cn_ashare_historical_fees_modeled_execution_v1":
@@ -454,10 +535,45 @@ class EventLedgerSimulator:
             "commission": float(commission),
             "stamp_duty": float(stamp),
             "transfer_fee": float(transfer),
+            "handling_fee": 0.0,
+            "securities_management_fee": 0.0,
             "slippage": float(slippage),
             "impact": float(impact),
             "total": float(total),
         }
+
+    @staticmethod
+    def _market_for_asset(asset: str) -> str:
+        if str(asset).endswith(".SH"):
+            return "SSE"
+        if str(asset).endswith(".SZ"):
+            return "SZSE"
+        if asset:
+            raise SimulationDataBlocker(f"asset_market_unknown:{asset}")
+        return "SSE"
+
+    def _valuation_metadata(self, market: Mapping[str, Any], shape: tuple[int, int]) -> dict[str, dict[str, np.ndarray]]:
+        result: dict[str, dict[str, np.ndarray]] = {}
+        for point in ("open", "close"):
+            fields: dict[str, np.ndarray] = {}
+            for name, dtype, default in (
+                ("method", object, ""),
+                ("source_date", object, ""),
+                ("stale_age", np.int32, -1),
+                ("evidence_id", object, ""),
+            ):
+                key = f"valuation_{point}_{name}"
+                if key not in market:
+                    if self.require_explicit_valuation_marks:
+                        raise SimulationDataBlocker(f"explicit_valuation_metadata_missing:{key}")
+                    fields[name] = np.full(shape, default, dtype=dtype)
+                    continue
+                value = np.asarray(market[key], dtype=dtype)
+                if value.shape != shape:
+                    raise SimulationDataBlocker(f"explicit_valuation_metadata_shape_mismatch:{key}")
+                fields[name] = value
+            result[point] = fields
+        return result
 
     @staticmethod
     def _consume_available_lots(state: LedgerState, asset: str, shares: int, index: int) -> None:
@@ -505,6 +621,51 @@ class EventLedgerSimulator:
         observed_prices = np.array(prices, dtype=float, copy=True)
         observed_prices.setflags(write=False)
         observer(index, date, reporting_point, held, observed_prices)
+
+    def _notify_mark_observer_v2(
+        self,
+        observer: Callable[[int, str, str, Sequence[Mapping[str, Any]]], None] | None,
+        index: int,
+        date: str,
+        reporting_point: str,
+        state: LedgerState,
+        assets: list[str],
+        prices: np.ndarray,
+        metadata: Mapping[str, np.ndarray],
+    ) -> None:
+        if observer is None and not self.require_explicit_valuation_marks:
+            return
+        records: list[dict[str, Any]] = []
+        for asset_index, asset in enumerate(assets):
+            shares = state.total_shares(asset)
+            if shares <= 0:
+                continue
+            price = float(prices[asset_index])
+            method = str(metadata["method"][index, asset_index])
+            source_date = str(metadata["source_date"][index, asset_index])
+            stale_age = int(metadata["stale_age"][index, asset_index])
+            evidence_id = str(metadata["evidence_id"][index, asset_index])
+            if self.require_explicit_valuation_marks and (
+                not method or not source_date or not evidence_id or not math.isfinite(price) or price <= 0
+            ):
+                raise SimulationDataBlocker(
+                    f"explicit_valuation_mark_blocked:{date}:{asset}:{reporting_point}:{method or 'missing_method'}"
+                )
+            records.append(
+                {
+                    "ts_code": asset,
+                    "trade_date": date,
+                    "reporting_point": reporting_point,
+                    "shares": int(shares),
+                    "mark_price": price,
+                    "method": method,
+                    "source_date": source_date,
+                    "stale_age_trade_days": stale_age,
+                    "evidence_id": evidence_id,
+                }
+            )
+        if observer is not None:
+            observer(index, date, reporting_point, tuple(records))
 
     @staticmethod
     def _reject(order: Order, index: int, reason: str, ledger: list[dict[str, Any]]) -> Rejection:
@@ -649,14 +810,25 @@ def simulate_event_ledger(
     initial_positions: Mapping[str, int] | None = None,
     policy: ScenarioPolicy | Mapping[str, Any] | str = BASELINE,
     diagnostic_mark_observer: Callable[[int, str, str, Mapping[str, int], np.ndarray], None] | None = None,
+    diagnostic_mark_observer_v2: Callable[[int, str, str, Sequence[Mapping[str, Any]]], None] | None = None,
+    fee_calculator: Any | None = None,
+    require_external_fee_schedule: bool = False,
+    require_explicit_valuation_marks: bool = False,
 ) -> SimulationResult:
-    return EventLedgerSimulator(policy, initial_cash=initial_cash).run(
+    return EventLedgerSimulator(
+        policy,
+        initial_cash=initial_cash,
+        fee_calculator=fee_calculator,
+        require_external_fee_schedule=require_external_fee_schedule,
+        require_explicit_valuation_marks=require_explicit_valuation_marks,
+    ).run(
         market,
         scores,
         masks=masks,
         corporate_actions=corporate_actions,
         initial_positions=initial_positions,
         diagnostic_mark_observer=diagnostic_mark_observer,
+        diagnostic_mark_observer_v2=diagnostic_mark_observer_v2,
     )
 
 

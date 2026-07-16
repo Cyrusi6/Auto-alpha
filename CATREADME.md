@@ -510,3 +510,7 @@ Task 055-C adds a fail-closed security-date evidence and valuation closure path.
 Task 055-D 将 Tushare 正式网络固定为经 TLS/hostname 验证的 `https://api.tushare.pro`，禁止明文降级、跨主机跳转和凭据派生指纹落盘。L0 必须全扫 v2/v3 cache，L1 计划封存后才可凭 `--allow-network` 与 plan hash 执行；无凭据时明确以 `credential_unavailable` 阻断。全轴 valuation v2 和 Fee Schedule v2 均由独立 verifier 从源 bytes、partition、axis、规则区间重新核验，未闭合时绝不创建 simulator replay。
 
 Task 055-E 的 Offline Source Salvage 不读取凭据、不联网。它从 governed root 自动重验 freeze/raw-index/matrix/Task052+ envelope/cache/normalized rows，发布逐行 byte-offset provenance、六类离线 reconciliation、严格 raw-repair delta、直接向过去查找合法 close 的 anchor 重投影，以及 full-history/static-axis/实际持仓因果域三层 readiness。只有实际 exact-20×五场景持仓前缀中的 mark 缺口阻断 Simulator；轴外缺口只阻断 future research。该阶段绝不生成伪 Simulator 成功证据。
+
+`task_055_f/` 将 Task 055-E 的 provisional frontier 收敛为独立 `truth_v2`、实际读取 ledger、Fee Schedule v2、紧凑估值投影和可恢复网络状态机。正式语义严格区分 S/R、同日冲突与 timing，truth 本身永不授权 stale price；只有真实 held-position observer 使用且存在合法历史 close 的 modeled mark 才计数。L1 为 exact security-date，canary 单请求后强制退出，L2 只能在 L1 应用和全量重投影后动态生成。工程 gate 全绿时原生执行 exact-20×5 primary/sibling/resume；历史选择污染、modeled execution 与全部 certification/deployment blocker 始终保留。
+
+真实离线 hardening 对 35,844 个 security-date 完成守恒重建，并由独立 verifier 从源 bytes 和矩阵分区复核；旧 16-key 仅保留为 Task 055-E lineage，不再被描述为总缺口。正式 frontier 必须在完整官方 Fee Schedule v2 下重新产生。

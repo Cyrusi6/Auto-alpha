@@ -1829,3 +1829,21 @@ The full-axis valuation v2 binds matrix partition and axis hashes and is indepen
 `python -m task_055_e.run --config <offline-config.json>` performs the credential-free, network-free first phase of Task 055-E. It derives the Task 055-C truth, Task 054-C matrix lineage, Task 055-A Simulation Bundle, governed freeze, matching raw-index declaration, Task 052+ suspension envelopes, v2/v3 caches, legacy physical cache inventory, and normalized records from one governed root.
 
 The stage publishes a byte-addressable row provenance index, exact offline classification for the remediation key set, an immutable raw-repair delta only for fully validated source envelopes, direct prior-close reprojection for modeled-but-unmarked cells, and three separate valuation domains. The simulator gate uses only the exact-20 × five-scenario causal held-position prefix; static-axis or out-of-axis gaps remain future-research blockers rather than automatic simulator blockers. This phase never reads credentials, sends requests, opens data after `2026-06-30`, or creates simulator-success evidence.
+
+### Task 055-F hardened truth and dynamic evidence frontier
+
+`python -m task_055_f.run offline --config <server-config.json>` reconstructs `truth_v2` directly from indexed daily/suspend envelopes, the strict matrix, and Task 055-E provenance. `S` and `R` are separate event types; a resume row is never positive suspension evidence, same-day conflicts and intraday timing remain blocked, and even an exact positive `S` never authorizes a price without a finite prior close and the fixed 250-trading-day stale limit.
+
+The offline run publishes an append-only actual-read ledger, compact content-addressed valuation projection, independent semantic verification, and—only after a native official Fee Schedule v2 exists—the exact-20 × five-scenario causal round-1 frontier. The frontier is explicitly the first held-position blocker set, not the total historical gap count. Unindexed cache bodies are not opened, and all reads remain bounded by `2026-06-30`.
+
+Network execution is split across separate commands and requires both CLI authorization and the sealed plan hash:
+
+```bash
+python -m task_055_f.run canary --config <server-config.json> --allow-network --sealed-plan-hash <hash>
+python -m task_055_f.run canary-verify --config <server-config.json>
+python -m task_055_f.run l1-resume --config <server-config.json> --allow-network --sealed-plan-hash <hash>
+```
+
+The canary performs exactly one physical POST and stops. A chained spend ledger counts every physical attempt, L1 is exact `ts_code + trade_date`, and L2 may be generated only after L1 application and a complete truth/causal rebuild. With a closed held-mark frontier, official Fee v2, and canonical operational-state proof, the native producer executes primary 100, independently reloaded sibling 100, and immutable resume 100/100; the independent verifier recalculates every fee component, held mark, ledger, NAV, and exact 20×5 identity. Certification and deployment readiness remain false.
+
+Modeled commission rules must explicitly exclude statutory tax/exchange components; slippage and impact must declare that they are not fee components. This prevents the statutory schedule from being embedded in commission and charged twice.

@@ -13,6 +13,7 @@ from monitoring.checks import (
     check_task055a_simulator_baseline,
     check_task055b_security_date_remediation,
     check_task055e_offline_source_salvage,
+    check_task055f_engineering_baseline,
 )
 from paper_account import LocalPaperAccount
 
@@ -556,4 +557,32 @@ def test_task055e_monitoring_requires_offline_only_boundary(tmp_path):
     data["network_request_count"] = 1
     report.write_text(json.dumps(data), encoding="utf-8")
     _, alerts = check_task055e_offline_source_salvage(report)
+    assert alerts
+
+
+def test_task055f_monitoring_keeps_downstream_blocked(tmp_path):
+    report = tmp_path / "task055f_report.json"
+    report.write_text(json.dumps({
+        "status": "task055f_governed_evidence_or_fee_or_dynamic_simulation_closure_blocked",
+        "network_request_count": 0,
+        "prospective_holdout_accessed": False,
+        "truth_v2": {"record_count": 35844, "stale_marks_authorized_by_truth": 0},
+        "causal_frontier": None,
+        "credential": {"credential_present": False},
+        "engineering_blockers": [{"code": "official_fee_schedule_v2_unavailable"}],
+        "readiness": {
+            "simulator_engineering_ready": False,
+            "certification_ready": False,
+            "portfolio_ready": False,
+            "paper_ready": False,
+            "live_ready": False,
+        },
+    }), encoding="utf-8")
+    payload, alerts = check_task055f_engineering_baseline(report)
+    assert alerts == []
+    assert payload["task055f_boundary_valid"] is True
+    data = json.loads(report.read_text(encoding="utf-8"))
+    data["readiness"]["portfolio_ready"] = True
+    report.write_text(json.dumps(data), encoding="utf-8")
+    _, alerts = check_task055f_engineering_baseline(report)
     assert alerts

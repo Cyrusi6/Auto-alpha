@@ -23,7 +23,11 @@ class SimulationVerificationError(RuntimeError):
     """Raised when independently reconstructed simulation truth does not close."""
 
 
-def recompute_run_truth(root: str | Path) -> dict[str, Any]:
+def recompute_run_truth(
+    root: str | Path,
+    *,
+    valuation_projection_manifest: str | Path | None = None,
+) -> dict[str, Any]:
     """Recompute accounting, positions, metrics, and invariant status from rows."""
 
     generation = Path(root)
@@ -36,16 +40,37 @@ def recompute_run_truth(root: str | Path) -> dict[str, Any]:
     view = np.load(generation / "verification_view.npz", allow_pickle=False)
     open_prices = np.asarray(view["open"], dtype=float)
     close_prices = np.asarray(view["close"], dtype=float)
-    mark_rows = _read_jsonl(generation / "valuation_marks.jsonl")
-    from task_055_b.verifier import build_mark_matrices
+    projection_reference = generation / "valuation_projection_reference.json"
+    if valuation_projection_manifest is not None or projection_reference.is_file():
+        from task_055_f.valuation import load_valuation_projection
 
-    valuation_open, valuation_close, mark_issues = build_mark_matrices(
-        mark_rows,
-        dates=dates,
-        assets=assets,
-        raw_open=open_prices,
-        raw_close=close_prices,
-    )
+        projection_path = (
+            Path(valuation_projection_manifest)
+            if valuation_projection_manifest is not None
+            else _locate_valuation_projection(generation, _read_json(projection_reference))
+        )
+        projection = load_valuation_projection(projection_path, dates=dates, assets=assets)
+        if projection_reference.is_file():
+            reference = _read_json(projection_reference)
+            if (
+                reference.get("content_hash") != projection.get("content_hash")
+                or reference.get("generation_id") != projection.get("generation_id")
+            ):
+                raise SimulationVerificationError("valuation_projection_reference_mismatch")
+        valuation_open = np.asarray(projection["valuation_open"], dtype=float)
+        valuation_close = np.asarray(projection["valuation_close"], dtype=float)
+        mark_issues: list[str] = []
+    else:
+        mark_rows = _read_jsonl(generation / "valuation_marks.jsonl")
+        from task_055_b.verifier import build_mark_matrices
+
+        valuation_open, valuation_close, mark_issues = build_mark_matrices(
+            mark_rows,
+            dates=dates,
+            assets=assets,
+            raw_open=open_prices,
+            raw_close=close_prices,
+        )
     expected_shape = (len(dates), len(assets))
     if any(array.shape != expected_shape for array in (open_prices, close_prices, valuation_open, valuation_close)):
         raise SimulationVerificationError("verification_view_shape_mismatch")
@@ -414,7 +439,18 @@ def _verify_order_closure(orders, fills, rejections, issues) -> None:
 
 def _verify_fill_costs(fills, issues) -> None:
     for row in fills:
-        components = sum(float(row[key]) for key in ("commission", "stamp_duty", "transfer_fee", "slippage", "impact"))
+        components = sum(
+            float(row.get(key, 0.0))
+            for key in (
+                "commission",
+                "stamp_duty",
+                "transfer_fee",
+                "handling_fee",
+                "securities_management_fee",
+                "slippage",
+                "impact",
+            )
+        )
         _money_equal(float(row["total_cost"]), components, f"fill_cost_components:{row.get('fill_id')}", issues)
         _money_equal(float(row["notional"]), float(row["price"]) * int(row["filled_shares"]), f"fill_notional:{row.get('fill_id')}", issues)
 
@@ -555,6 +591,18 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         raise SimulationVerificationError(f"artifact_missing:{path.name}")
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def _locate_valuation_projection(generation: Path, reference: Mapping[str, Any]) -> Path:
+    generation_id = str(reference.get("generation_id") or "")
+    manifest_name = str(reference.get("manifest_name") or "")
+    if not generation_id or manifest_name != "valuation_projection_manifest.json":
+        raise SimulationVerificationError("valuation_projection_reference_invalid")
+    for ancestor in generation.parents:
+        candidate = ancestor / "valuation_projection" / "generations" / generation_id / manifest_name
+        if candidate.is_file():
+            return candidate
+    raise SimulationVerificationError("valuation_projection_reference_target_missing")
 
 
 validate_simulation_run = verify_simulation_run
