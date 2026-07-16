@@ -6,6 +6,7 @@ import argparse
 import importlib
 import json
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -42,7 +43,8 @@ def main(argv: list[str] | None = None) -> int:
         return _finish(args, output_dir, mode, results)
     quick_dir = output_dir / "quick_artifacts"
     smoke_dir = quick_dir / "sample_smoke"
-    sample_data_dir = quick_dir / "sample_data"
+    synthetic_root = Path(tempfile.mkdtemp(prefix="auto_alpha_ci_synthetic_"))
+    sample_data_dir = synthetic_root / "sample_data"
     post_download_ready_path = quick_dir / "post_download_ready_readiness.json"
     _write_post_download_ready_fixture(post_download_ready_path)
     _prepare_shadow_smoke_orders(quick_dir / "shadow_orders" / "plan")
@@ -297,13 +299,13 @@ def main(argv: list[str] | None = None) -> int:
                 "--staging-dir",
                 str(quick_dir / "staging"),
                 "--output-dir",
-                str(quick_dir / "post_download_execute"),
+                str(synthetic_root / "post_download_execute"),
                 "--registry-dir",
-                str(quick_dir / "registry"),
+                str(synthetic_root / "registry"),
                 "--freeze-dir",
-                str(quick_dir / "freeze"),
+                str(synthetic_root / "freeze"),
                 "--matrix-cache-dir",
-                str(quick_dir / "matrix_cache"),
+                str(synthetic_root / "matrix_cache"),
                 "--readiness-report-path",
                 str(post_download_ready_path),
                 "--profile-name",
@@ -315,6 +317,10 @@ def main(argv: list[str] | None = None) -> int:
                 "--execute",
                 "--pretty",
             ],
+        ),
+        (
+            "post_download_real_path_negative_smoke",
+            [sys.executable, "-m", "ci.post_download_negative_smoke", "--output-dir", str(quick_dir / "post_download_negative")],
         ),
         (
             "post_download_plan_smoke",
@@ -1391,13 +1397,13 @@ def _write_post_download_ready_fixture(path: Path) -> None:
             "core_ready": True,
             "expanded_ready": True,
             "alpha_ready": True,
-            "matrix_ready": False,
-            "validation_ready": False,
+            "matrix_ready": True,
+            "validation_ready": True,
             "can_create_freeze": True,
             "can_build_matrix": True,
             "can_run_core_alpha_factory": True,
             "can_run_expanded_alpha_factory": True,
-            "can_run_validation": False,
+            "can_run_validation": True,
             "required_remediations": [],
             "warnings": [],
             "recommended_next_commands": [

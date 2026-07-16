@@ -90,7 +90,7 @@ def build_truth_table(
         if not events:
             residual_reasons["no_event_unexplained_gap" if "matrix_unexplained_data_gap" in row["inventory_reasons"] else "valuation_closure_missing_bar_without_event"] += 1
     rows.sort(key=lambda row: (row["ts_code"], row["trade_date"]))
-    if len(rows) != 35844 or sum(cross.values()) != len(rows):
+    if len(rows) != int(inventory.get("cell_count", -1)) or sum(cross.values()) != len(rows):
         raise Task055CEvidenceError(f"truth_table_total_mismatch:{len(rows)}")
     explanation = {
         "suspension_event_missing_bar": sum(1 for row in rows if row["suspend_type"] != "none" and row["daily_bar"] == "absent"),
@@ -98,13 +98,8 @@ def build_truth_table(
         "residual_2773": residual_reasons["valuation_closure_missing_bar_without_event"],
         "residual_explanation": "valuation closure cells added for continuous holdings after membership exit; no suspension event and no observed bar",
     }
-    if explanation != {
-        "suspension_event_missing_bar": 32754,
-        "no_event_unexplained_gap": 317,
-        "residual_2773": 2773,
-        "residual_explanation": explanation["residual_explanation"],
-    }:
-        raise Task055CEvidenceError(f"reported_inventory_reconciliation_mismatch:{explanation}")
+    if sum((explanation["suspension_event_missing_bar"], explanation["no_event_unexplained_gap"], explanation["residual_2773"])) != len(rows):
+        raise Task055CEvidenceError(f"parent_key_set_conservation_failed:{explanation}")
     calendar = sorted(str(value) for value in (trade_dates or ()))
     episodes = _episodes(rows, {value: index for index, value in enumerate(calendar)})
     return _publish(Path(output_root), rows, episodes, cross, state_counts, explanation, inventory, review_version)

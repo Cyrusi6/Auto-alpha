@@ -35,7 +35,7 @@ class RequestPlanConfig:
     output_root: Path
     max_network_requests: int
     observed_end_date: str = MAX_OBSERVED_END_DATE
-    endpoint: str = "http://api.tushare.pro"
+    endpoint: str = "https://api.tushare.pro"
     provider_api_version: str = "tushare_pro_http.v1"
     request_timeout_seconds: int = 30
 

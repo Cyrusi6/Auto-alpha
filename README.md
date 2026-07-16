@@ -564,7 +564,7 @@ uv run python -m data_source_validation.run_smoke \
   --pretty
 ```
 
-Real Tushare smoke is gated. It sends requests only when `--allow-network` is passed and `TUSHARE_TOKEN` is present. Reports store only token suffix/hash metadata and never the raw token:
+Real Tushare smoke is gated. It sends requests only when `--allow-network` is passed, canonical HTTPS/TLS validation succeeds, and a governed credential is present. Reports store only `credential_present` and `source_type`:
 
 ```bash
 RUN_TUSHARE_ONLINE_SMOKE=1 TUSHARE_TOKEN=<REAL_TOKEN> \
@@ -1817,3 +1817,9 @@ The only success state is the explicit historical-selection-contaminated, modele
 ### Task 055-C evidence remediation
 
 `python -m task_055_c.run --config <server-config.json>` rebuilds the security-date truth table, bounded request cascade, full-axis valuation marks, fee evidence gate, physical queue inspection, and conditional native simulator replay. It never accepts caller-supplied replay-success booleans. Vendor daily no-trade evidence remains modeled engineering evidence and cannot clear certification blockers.
+
+### Task 055-D secure remediation
+
+`python -m task_055_d.run --config /path/to/task055d_config.json` derives Task 055-C inputs from one governed root, seals L0/L1 before network use, performs token-free TLS preflight, inventories formal Tushare v3 caches, and requires both `--allow-network` and the exact request-plan hash before a governed credential may be used. Credentials are accepted only from `TUSHARE_TOKEN` or a non-symlink 0400/0600 `TUSHARE_TOKEN_FILE` outside repository and data-output roots; artifacts record only presence and source type.
+
+The full-axis valuation v2 binds matrix partition and axis hashes and is independently regenerated from raw open/close validity plus security-date evidence. Fee Schedule v2 requires official document bytes, explicit zero rules, continuous market/side/component coverage, and fail-closed matching. Missing credential, valuation closure, fee evidence, or canonical operational-state proof yields `task055d_secure_acquisition_or_valuation_or_fee_closure_blocked`; no simulator run tree is created.

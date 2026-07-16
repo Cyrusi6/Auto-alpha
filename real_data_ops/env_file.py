@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
 
@@ -33,11 +32,7 @@ def merged_env_values(env_file_values: dict[str, str], environ: dict[str, str], 
 
 
 def redacted_token_metadata(token: str | None) -> dict[str, object]:
-    if not token:
-        return {"token_present": False, "token_hash_prefix": None, "token_suffix_last4": None}
-    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
     return {
-        "token_present": True,
-        "token_hash_prefix": digest[:12],
-        "token_suffix_last4": token[-4:],
+        "credential_present": bool(token),
+        "source_type": "environment_or_credential_file" if token else "none",
     }

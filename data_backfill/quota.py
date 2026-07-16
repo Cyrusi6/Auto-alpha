@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from data_pipeline.ashare.config import AShareDataConfig
 
 from .models import BackfillPlan, BackfillQuotaSummary
@@ -32,9 +31,8 @@ def evaluate_backfill_quota(
     return BackfillQuotaSummary(
         provider=config.provider,
         allow_network=bool(allow_network),
-        token_present=token_present,
-        token_hash_prefix=hashlib.sha256(token.encode("utf-8")).hexdigest()[:8] if token else None,
-        token_suffix=token[-4:] if token else None,
+        credential_present=token_present,
+        credential_source_type="environment_or_credential_file" if token_present else "none",
         max_requests=max_requests,
         estimated_requests=estimated,
         status=status,

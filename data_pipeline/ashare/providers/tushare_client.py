@@ -12,6 +12,7 @@ from typing import Any, Callable, Iterable
 
 from ..config import AShareDataConfig
 from ..rate_limit import RateLimitEvent, SimpleRateLimiter
+from ..security import validate_tushare_origin
 from ..request_normalization import stable_json_hash, tushare_code_semantic_hash, tushare_request_fingerprint
 
 
@@ -81,11 +82,11 @@ class TushareHttpClient:
         urlopen: Callable[..., Any] | None = None,
         rate_limiter: SimpleRateLimiter | None = None,
     ):
-        self.api_url = config.tushare_api_url
+        self.api_url = validate_tushare_origin(config.tushare_api_url, allow_fake_transport=urlopen is not None)
         self.token = config.tushare_token
         self.timeout_seconds = config.tushare_timeout_seconds
         self.retry_count = config.tushare_retry_count
-        self._urlopen = urllib.request.urlopen if urlopen is None else urlopen
+        self._urlopen = _secure_urlopen if urlopen is None else urlopen
         self.rate_limiter = rate_limiter
         self.last_rate_limit_event: RateLimitEvent | None = None
 
@@ -129,7 +130,10 @@ class TushareHttpClient:
         code = response_payload.get("code", 0)
         message = str(response_payload.get("msg") or "")
         if code != 0:
-            raise _error_for_response(int(code), message or f"Tushare API returned code {code}")
+            raise _error_for_response(
+                int(code),
+                _redact_secret(message or f"Tushare API returned code {code}", self.token),
+            )
 
         data = response_payload.get("data")
         if not isinstance(data, dict):
@@ -183,7 +187,9 @@ class TushareHttpClient:
                 if attempt + 1 < max(1, self.retry_count):
                     time.sleep(min(0.2 * (attempt + 1), 1.0))
 
-        raise TushareNetworkError(f"Tushare HTTP request failed: {_safe_error(last_error)}") from last_error
+        raise TushareNetworkError(
+            f"Tushare HTTP request failed: {_redact_secret(_safe_error(last_error), self.token)}"
+        ) from last_error
 
     @staticmethod
     def _format_fields(fields: str | Iterable[str] | None) -> str:
@@ -213,6 +219,10 @@ def _safe_error(error: Exception | None) -> str:
     return str(error).replace("\n", " ")
 
 
+def _redact_secret(value: str, secret: str | None) -> str:
+    return value.replace(secret, "[REDACTED]") if secret else value
+
+
 def _decode_response_body(raw: bytes, response: Any) -> str:
     encoding = ""
     headers = getattr(response, "headers", None)
@@ -224,3 +234,12 @@ def _decode_response_body(raw: bytes, response: Any) -> str:
     if "gzip" in encoding or raw.startswith(b"\x1f\x8b"):
         raw = gzip.decompress(raw)
     return raw.decode("utf-8")
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise TushareNetworkError("Tushare redirect forbidden")
+
+
+def _secure_urlopen(request: urllib.request.Request, timeout: int):
+    opener = urllib.request.build_opener(_NoRedirect)
+    return opener.open(request, timeout=timeout)

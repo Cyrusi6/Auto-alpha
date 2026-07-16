@@ -1,3 +1,11 @@
+## 2026-07-16 — Task 055-D secure remediation baseline
+
+- Tushare production origin is now HTTPS-only with token-free DNS/TLS/certificate/hostname preflight, redirect rejection, governed environment/file credentials, and exact-sentinel leak scanning. HTTP defaults were removed from A-share profiles and backfill planning.
+- Task 055-D uses the formal `TushareResponseCache` v3, separates transport and evidence-use identity, inventories legacy and current physical entries, validates response geometry/schema/content before atomic publication, and creates immutable date-split children when endpoint caps are reached.
+- The real Task 055-C parent artifacts reproduce 3,090 unresolved valuation evidence cells plus 648 modeled cells without a prior authoritative close, producing 113 sealed L1 stock windows. Existing cache roots contain 3,834 physical candidates but zero matching validated L1 hits.
+- Full-axis valuation v2 was built on the real 637×6417 matrix. Axis hashes match the strict matrix, illegal carry and lineage-conflict counts are zero, but 7,476 of 28,030 required reporting points remain unresolved.
+- The real secure run stopped before requests with `credential_unavailable`; network spend is zero and the request ledger proves no date after 2026-06-30 was accessed. Fee Schedule v2 and canonical operational-state proof remain blocked, so no simulator tree was created and all certification/portfolio/optimizer/paper/live readiness remains false.
+
 ## 2026-06-27 - 任务 001
 
 ### 本次变更摘要

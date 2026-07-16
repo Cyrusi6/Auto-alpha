@@ -123,9 +123,8 @@ class DatasetCoverageMatrix:
 class BackfillQuotaSummary:
     provider: str
     allow_network: bool
-    token_present: bool
-    token_hash_prefix: str | None
-    token_suffix: str | None
+    credential_present: bool
+    credential_source_type: str
     max_requests: int | None
     estimated_requests: int
     status: str

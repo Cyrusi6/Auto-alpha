@@ -2148,6 +2148,25 @@ def check_task055c_security_date_closure(report_path: str | Path | None) -> tupl
     return {"exists": bool(payload), "status": status, "valuation_closure_blocked": blocked and valid, "factor_replay_ready": bool(readiness.get("factor_replay_ready")), "continuous_portfolio_valuation_ready": bool(readiness.get("continuous_portfolio_valuation_ready")), "simulator_engineering_ready": bool(readiness.get("simulator_engineering_ready")), "future_research_data_ready": bool(readiness.get("future_research_data_ready")), "downstream_queues_physically_empty": queues_empty, "certification_ready": False, "portfolio_ready": False, "paper_ready": False, "live_ready": False}, alerts
 
 
+def check_task055d_secure_remediation(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    if not payload:
+        return {"exists": False, "status": "", "secure_boundary_valid": False}, []
+    status = str(payload.get("status") or "")
+    recognized = status in {
+        "task055d_secure_acquisition_or_valuation_or_fee_closure_blocked",
+        "task055d_simulator_engineering_completed_future_research_data_blocked_historical_selection_contaminated_execution_modeled_certification_blocked",
+        "task055d_simulator_engineering_completed_historical_selection_contaminated_execution_modeled_future_holdout_waiting_certification_blocked",
+    }
+    readiness = dict(payload.get("readiness") or {})
+    downstream_false = all(readiness.get(name) is False for name in ("certification_ready", "portfolio_ready", "optimizer_ready", "paper_ready", "live_ready"))
+    no_holdout_access = payload.get("prospective_holdout_accessed") is False
+    valid = recognized and downstream_false and no_holdout_access
+    details = {"exists": True, "status": status, "secure_boundary_valid": valid, "downstream_readiness_false": downstream_false, "prospective_holdout_accessed": payload.get("prospective_holdout_accessed"), "blocker_count": len(payload.get("blockers") or ())}
+    alerts = [] if valid else [MonitoringAlert("error", "task055d_secure_remediation", "Task 055-D security or readiness boundary is invalid", details)]
+    return details, alerts
+
+
 def check_validation_campaign_leaderboard(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     rows = _read_jsonl(Path(path)) if path else []
     ready = sum(1 for row in rows if row.get("certification_ready") is True)

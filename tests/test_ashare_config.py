@@ -27,7 +27,7 @@ def test_from_env_defaults(monkeypatch):
 
     assert config.provider == "tushare"
     assert config.tushare_token is None
-    assert config.tushare_api_url == "http://api.tushare.pro"
+    assert config.tushare_api_url == "https://api.tushare.pro"
     assert config.tushare_timeout_seconds == 30
     assert config.tushare_retry_count == 3
     assert config.database_url is None

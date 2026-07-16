@@ -57,4 +57,5 @@ def test_probe_fake_scenarios_do_not_leak_token():
     assert missing[0].diagnostic_code == "missing_fields"
     assert denied[0].diagnostic_code == "permission_denied"
     assert "very-secret-token" not in payload
-    assert success[0].redacted_token_suffix == "oken"
+    assert success[0].credential_present is True
+    assert success[0].credential_source_type == "synthetic_fixture"

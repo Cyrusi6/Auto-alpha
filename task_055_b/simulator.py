@@ -16,15 +16,12 @@ class GovernedEventLedgerSimulator(EventLedgerSimulator):
         self,
         policy: Any,
         *,
-        fee_schedule: str | Path | Mapping[str, Any],
+        fee_schedule: str | Path,
         initial_cash: float | None = None,
     ) -> None:
         if isinstance(fee_schedule, Mapping):
-            schedule = dict(fee_schedule)
-            if schedule.get("schema_version") != "task055b_fee_schedule_v1" or not schedule.get("content_hash"):
-                raise ValueError("task055b_verified_fee_schedule_required")
-        else:
-            schedule = validate_fee_schedule(fee_schedule)
+            raise ValueError("task055b_fee_schedule_manifest_path_required")
+        schedule = validate_fee_schedule(fee_schedule)
         if str(schedule.get("policy_id") or "") != str(
             getattr(policy, "fee_schedule_id", None)
             if not isinstance(policy, Mapping)

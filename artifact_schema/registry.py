@@ -793,6 +793,33 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         ["schema_version", "status", "truth", "cascade", "cache_scan", "valuation", "fee_evidence", "replay", "readiness", "queues", "prospective_holdout_accessed", "historical_selection_contaminated", "execution_evidence_level", "blockers", "content_hash", "generation_id"],
         ["task055c_final_report.json"],
     ),
+    "task055d_l0_l1_plan": _definition(
+        "task055d_l0_l1_plan",
+        ["schema_version", "status", "parent_truth_hash", "parent_valuation_hash", "max_date", "global_network_budget", "unresolved_evidence_cells", "modeled_unmarked_cells", "anchor_cause_counts", "l1_stock_count", "requests", "content_hash", "generation_id"],
+        ["task055d_l0_l1_plan.json", "l0_l1_plan.json"],
+        optional=["anchor_rows", "prospective_holdout_boundary", "plan_basis_hash"],
+    ),
+    "task055d_network_execution": _definition(
+        "task055d_network_execution",
+        ["schema_version", "status", "plan_hash", "tls_preflight", "credential", "cache_inventory", "logical_request_count", "physical_attempt_count", "network_spend", "remaining_count", "request_ledger", "prospective_holdout_accessed", "content_hash"],
+        ["task055d_network_execution.json", "network_execution.json"],
+        optional=["blocker", "responses", "quarantine_receipts", "split_child_requests", "validated_cache_hit_count", "request_firewall_violations", "read_firewall_violations"],
+    ),
+    "task055d_valuation_manifest": _definition(
+        "task055d_valuation_manifest",
+        ["schema_version", "status", "truth_content_hash", "matrix_content_hash", "shape", "stock_axis_hash", "date_axis_hash", "reporting_points", "covered_reporting_points", "unresolved_reporting_points", "lineage_conflict_count", "illegal_carry_count", "max_stale_age_trade_days", "method_codes", "partitions", "content_hash", "generation_id"],
+        ["task055d_valuation_manifest.json", "valuation_manifest_v2.json"],
+    ),
+    "task055d_fee_schedule_v2": _definition(
+        "task055d_fee_schedule_v2",
+        ["schema_version", "status", "simulation_start", "simulation_end", "rules", "documents", "content_hash", "generation_id"],
+        ["task055d_fee_schedule_v2.json", "fee_schedule_v2.json"],
+    ),
+    "task055d_final_report": _definition(
+        "task055d_final_report",
+        ["schema_version", "status", "parent_lineage", "observation_seal_hash", "plan", "network", "valuation", "fee_schedule_v2", "operational_state", "readiness", "prospective_holdout_accessed", "historical_selection_contaminated", "execution_evidence_level", "blockers", "content_hash"],
+        ["task055d_final_report.json"],
+    ),
     "validation_candidate_dedup_report": _definition(
         "validation_candidate_dedup_report",
         ["validation_campaign_id", "candidate_count", "duplicate_count"],

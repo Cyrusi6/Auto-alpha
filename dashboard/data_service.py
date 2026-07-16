@@ -469,6 +469,9 @@ class AshareDashboardService:
     def load_task_055c_final_report(self) -> dict[str, Any]:
         return self._read_first_json(self._validation_campaign_artifact_candidates("task055c_final_report.json"))
 
+    def load_task_055d_final_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._validation_campaign_artifact_candidates("task055d_final_report.json"))
+
     def load_task_054_scrubbed_evidence(self) -> dict[str, Any]:
         return self._read_first_json(self._validation_campaign_artifact_candidates("task_054a_scrubbed_evidence_package.json"))
 

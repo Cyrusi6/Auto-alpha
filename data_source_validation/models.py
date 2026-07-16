@@ -43,9 +43,8 @@ class ApiProbeResult:
     response_fields: list[str] = field(default_factory=list)
     missing_fields: list[str] = field(default_factory=list)
     duration_seconds: float = 0.0
-    token_present: bool = False
-    redacted_token_suffix: str | None = None
-    token_hash_prefix: str | None = None
+    credential_present: bool = False
+    credential_source_type: str = "none"
     network_allowed: bool = False
 
     def to_dict(self) -> dict[str, Any]:

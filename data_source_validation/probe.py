@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import replace
 from typing import Iterable
 
@@ -42,7 +41,7 @@ def probe_provider(
                 requested_fields=[],
                 response_fields=[],
                 records=0,
-                token_present=False,
+                credential_present=False,
                 network_allowed=False,
             )
         ]
@@ -58,10 +57,9 @@ def probe_provider(
                 requested_fields=[],
                 response_fields=[],
                 records=0,
-                token_present=bool(config.tushare_token),
+                credential_present=bool(config.tushare_token),
+                credential_source_type="environment_or_credential_file" if config.tushare_token else "none",
                 network_allowed=allow_network,
-                redacted_token_suffix=_token_suffix(config.tushare_token),
-                token_hash_prefix=_token_hash_prefix(config.tushare_token),
             )
         ]
 
@@ -77,10 +75,9 @@ def probe_provider(
                 requested_fields=[],
                 response_fields=[],
                 records=0,
-                token_present=token_present,
+                credential_present=token_present,
+                credential_source_type="environment_or_credential_file" if token_present else "none",
                 network_allowed=False,
-                redacted_token_suffix=_token_suffix(config.tushare_token),
-                token_hash_prefix=_token_hash_prefix(config.tushare_token),
             )
         ]
 
@@ -95,7 +92,7 @@ def probe_provider(
                 requested_fields=[],
                 response_fields=[],
                 records=0,
-                token_present=False,
+                credential_present=False,
                 network_allowed=True,
             )
         ]
@@ -136,10 +133,9 @@ def probe_provider(
                     response_fields=list(envelope.response_fields),
                     missing_fields=missing,
                     records=envelope.item_count,
-                    token_present=bool(probe_config.tushare_token),
+                    credential_present=bool(probe_config.tushare_token),
+                    credential_source_type="synthetic_fixture" if fake_scenario else "environment_or_credential_file",
                     network_allowed=allow_network and fake_scenario is None,
-                    redacted_token_suffix=_token_suffix(probe_config.tushare_token),
-                    token_hash_prefix=_token_hash_prefix(probe_config.tushare_token),
                     duration_seconds=envelope.duration_seconds,
                 )
             )
@@ -154,10 +150,9 @@ def probe_provider(
                     requested_fields=requested_fields,
                     response_fields=[],
                     records=0,
-                    token_present=bool(probe_config.tushare_token),
+                    credential_present=bool(probe_config.tushare_token),
+                    credential_source_type="synthetic_fixture" if fake_scenario else "environment_or_credential_file",
                     network_allowed=allow_network and fake_scenario is None,
-                    redacted_token_suffix=_token_suffix(probe_config.tushare_token),
-                    token_hash_prefix=_token_hash_prefix(probe_config.tushare_token),
                 )
             )
     return results
@@ -192,16 +187,6 @@ def diagnostic_code_from_exception(exc: Exception) -> str:
     if isinstance(exc, TushareApiError):
         return ProviderDiagnosticCode.unexpected_exception
     return ProviderDiagnosticCode.unexpected_exception
-
-
-def _token_suffix(token: str | None) -> str | None:
-    return token[-4:] if token else None
-
-
-def _token_hash_prefix(token: str | None) -> str | None:
-    if not token:
-        return None
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:8]
 
 
 def _safe_message(exc: Exception) -> str:

@@ -14,7 +14,7 @@ from .validators import is_valid_ts_code, is_valid_yyyymmdd
 class AShareDataConfig:
     provider: str = "tushare"
     tushare_token: str | None = None
-    tushare_api_url: str = "http://api.tushare.pro"
+    tushare_api_url: str = "https://api.tushare.pro"
     tushare_timeout_seconds: int = 30
     tushare_retry_count: int = 3
     tushare_rate_limit_per_minute: int = 150
@@ -42,10 +42,12 @@ class AShareDataConfig:
         if end_date == "":
             end_date = None
 
+        from .security import load_tushare_credential
+        credential = load_tushare_credential(dict(env))
         return cls(
             provider=env.get("ASHARE_PROVIDER", "tushare"),
-            tushare_token=env.get("TUSHARE_TOKEN") or None,
-            tushare_api_url=env.get("TUSHARE_API_URL") or "http://api.tushare.pro",
+            tushare_token=credential.token,
+            tushare_api_url=env.get("TUSHARE_API_URL") or "https://api.tushare.pro",
             tushare_timeout_seconds=env.get("TUSHARE_TIMEOUT_SECONDS") or 30,
             tushare_retry_count=env.get("TUSHARE_RETRY_COUNT") or 3,
             tushare_rate_limit_per_minute=env.get("TUSHARE_RATE_LIMIT_PER_MINUTE") or 150,

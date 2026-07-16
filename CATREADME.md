@@ -506,3 +506,5 @@ The Task 054 baseline is contaminated retrospective engineering evidence. The pr
 估值使用独立 evidence overlay，状态严格区分官方成交、受治理无交易、来源冲突、生命周期终止和数据缺口。Verifier 从 quote、状态证据、公司行动和 immutable fee schedule 重建 mark、费用与账本，禁止回退 raw open/close。只有 valuation closure unresolved/conflict 为 0 才允许新 Simulation Bundle 和 exact-20×5 重放；否则终态为 `task055b_security_date_evidence_remediation_blocked`，所有认证与部署 readiness/queue 继续为 false/0。
 
 Task 055-C adds a fail-closed security-date evidence and valuation closure path. It distinguishes transport cache identity from episode-specific evidence use, scans all cache entries at zero request budget, reconstructs raw suspension semantics, limits targeted historical repair, refreshes valuation marks on the complete trading axis, and requires physical exact-20 × five-scenario simulator artifacts before reporting replay completion.
+
+Task 055-D 将 Tushare 正式网络固定为经 TLS/hostname 验证的 `https://api.tushare.pro`，禁止明文降级、跨主机跳转和凭据派生指纹落盘。L0 必须全扫 v2/v3 cache，L1 计划封存后才可凭 `--allow-network` 与 plan hash 执行；无凭据时明确以 `credential_unavailable` 阻断。全轴 valuation v2 和 Fee Schedule v2 均由独立 verifier 从源 bytes、partition、axis、规则区间重新核验，未闭合时绝不创建 simulator replay。

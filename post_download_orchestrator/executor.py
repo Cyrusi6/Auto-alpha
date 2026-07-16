@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,6 @@ from artifact_schema.writer import utc_now
 from .models import FreezeCandidatePackage, PostDownloadPlan, PostDownloadState, PostDownloadStep, PostDownloadStepRun
 
 
-REAL_DATA_PREFIX = Path("/home/lijunsi/data").resolve()
 MUTATION_STEPS = {
     "compact",
     "data_lake_create_version",
@@ -201,7 +201,11 @@ def _real_path_blocker(data_dir: str | Path, allow_real_data_path: bool) -> str 
         resolved = Path(data_dir).resolve()
     except OSError:
         resolved = Path(data_dir)
-    if str(resolved).startswith(str(REAL_DATA_PREFIX)) and not allow_real_data_path:
+    configured = os.environ.get("ASHARE_REAL_DATA_ROOT_PREFIX") or os.environ.get("ASHARE_REAL_DATA_ROOT")
+    if not configured:
+        return None
+    real_data_prefix = Path(configured).expanduser().resolve()
+    if (resolved == real_data_prefix or real_data_prefix in resolved.parents) and not allow_real_data_path:
         return "real data mutation steps require --allow-real-data-path"
     return None
 

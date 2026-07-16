@@ -109,6 +109,7 @@ class TushareResponseCache:
         response_fields: Iterable[str] | None = None,
         item_count: int | None = None,
         response_fields_observed: bool = False,
+        endpoint_schema_proof: dict[str, Any] | None = None,
         endpoint: str = "",
         provider_api_version: str = PROVIDER_API_VERSION,
     ) -> Path:
@@ -161,6 +162,7 @@ class TushareResponseCache:
             },
             "metadata": metadata,
             "negative_attestation": negative_attestation,
+            "endpoint_schema_proof": endpoint_schema_proof,
             "records": records,
         }
         _atomic_write_json(path, payload)
@@ -274,8 +276,9 @@ class TushareResponseCache:
             if not isinstance(negative, dict) or negative.get("request_fingerprint") != expected_fingerprint:
                 raise TushareCacheCorruptionError("empty Tushare cache entry lacks negative attestation")
             fields_observed = bool(response.get("fields_observed") or negative.get("response_fields_observed"))
+            effective_schema_proof = endpoint_schema_proof or payload.get("endpoint_schema_proof")
             if not fields_observed and not _valid_endpoint_schema_proof(
-                endpoint_schema_proof,
+                effective_schema_proof,
                 api_name=api_name,
                 requested_fields=requested_fields,
                 code_semantic_hash=str(payload.get("code_semantic_hash") or ""),
