@@ -382,3 +382,234 @@ def test_task055f_native_manifest_schemas(tmp_path):
     assert validate_artifact(truth, strict=True).valid is True
     assert validate_artifact(projection, strict=True).valid is True
     assert validate_artifact(report, strict=True).valid is True
+
+
+def test_task055g_native_manifest_schemas(tmp_path):
+    root = tmp_path / "task_055_g_run"
+    root.mkdir()
+    artifacts = {
+        "access_plan.json": ({
+            "schema_version": "task055g_immutable_access_plan_v1", "status": "sealed",
+            "plan_scope": "production", "max_allowed_date": "20260630", "entry_count": 0,
+            "entries_root": "e", "entries": [], "content_hash": "c", "generation_id": "g",
+        }, "task055g_access_plan"),
+        "access_ledger_manifest.json": ({
+            "schema_version": "task055g_attempted_access_ledger_v1", "status": "published",
+            "access_plan_content_hash": "p", "max_allowed_date": "20260630", "record_count": 0,
+            "rows_root": "r", "max_read_date": None, "prospective_holdout_accessed": False,
+            "decision_counts": {}, "partition": {}, "content_hash": "c", "generation_id": "g",
+        }, "task055g_access_ledger_manifest"),
+        "truth_v2_manifest.json": ({
+            "schema_version": "task055g_security_date_truth_v2", "status": "published",
+            "review_version": "v1", "max_date": "20260630", "record_count": 1, "key_root": "k",
+            "state_counts": {}, "suspend_type_counts": {}, "daily_empty_response_counts": [],
+            "suspend_empty_response_counts": [], "valuation_domain_count": 1, "modeled_candidate_count": 0,
+            "timing_uncertified_candidate_count": 0, "lineage": {}, "partitions": {},
+            "certification_blockers": [], "content_hash": "c", "generation_id": "g",
+        }, "task055g_truth_v2_manifest"),
+        "fee_plan.json": ({
+            "schema_version": "task055g_fee_plan_v2", "status": "sealed",
+            "simulation_start": "20160104", "simulation_end": "20240530",
+            "policy_seal_hash": "s", "policy_seal_sha256": "q",
+            "policy_seal_relative_path": "inputs/policy.json", "documents": [],
+            "extractors": [], "max_documents": 20, "network_contract": {},
+            "semantic_source_hashes": {}, "builder_semantic_hash": "b",
+            "content_hash": "c", "generation_id": "g",
+        }, "task055g_fee_plan"),
+        "fee_document_acquisition.json": ({
+            "schema_version": "task055g_fee_document_acquisition_v2", "status": "passed",
+            "evidence_scope": "real_official_https", "plan_content_hash": "p", "policy_seal_hash": "s",
+            "documents": [], "transport_ledger_relative_path": "transport_ledger.jsonl",
+            "transport_ledger_sha256": "t", "transport_ledger_root": "r", "document_merkle_root": "m",
+            "source_hash": "h", "content_hash": "c", "generation_id": "g",
+        }, "task055g_fee_document_acquisition"),
+        "fee_document_verification.json": ({
+            "schema_version": "task055g_fee_document_verification_v2", "status": "passed",
+            "plan_content_hash": "p", "acquisition_content_hash": "a",
+            "document_merkle_root": "m", "transport_ledger_root": "t",
+            "evidence_scope": "real_official_https", "verifier_source_hash": "v",
+            "content_hash": "c", "generation_id": "g",
+        }, "task055g_fee_document_verification"),
+        "fee_rule_extraction.json": ({
+            "schema_version": "task055g_fee_rule_extraction_v2", "status": "passed",
+            "plan_content_hash": "p", "acquisition_content_hash": "a",
+            "document_verification_content_hash": "v", "policy_seal_hash": "s",
+            "evidence_scope": "real_official_https", "parser_source_hash": "h",
+            "assertions": [], "assertion_root": "r", "content_hash": "c",
+            "generation_id": "g",
+        }, "task055g_fee_rule_extraction"),
+        "fee_schedule_v2_manifest.json": ({
+            "schema_version": "task055g_fee_schedule_v2", "status": "passed",
+            "evidence_scope": "real_official_https", "simulation_start": "20160104", "simulation_end": "20240530",
+            "plan_content_hash": "p", "document_acquisition_content_hash": "a",
+            "document_verification_content_hash": "v", "rule_extraction_content_hash": "x",
+            "transport_ledger_root": "t", "document_merkle_root": "d", "assertion_root": "a",
+            "policy_seal_hash": "s", "policy_seal_sha256": "q", "semantic_source_hashes": {},
+            "builder_semantic_hash": "b", "statutory_components": [], "modeled_components": [],
+            "modeled_evidence_level": "uncalibrated_modeled", "certification_ready": False,
+            "rules": [], "rules_root": "r", "native_artifacts": {}, "content_hash": "c", "generation_id": "g",
+        }, "task055g_fee_schedule_v2"),
+        "fee_independent_verification.json": ({
+            "schema_version": "task055g_fee_independent_verification_v2", "status": "passed",
+            "schedule_content_hash": "s", "policy_seal_hash": "p",
+            "document_acquisition_content_hash": "a", "document_merkle_root": "m",
+            "transport_ledger_root": "t", "assertion_receipt_root": "x",
+            "rules_root": "r", "rule_count": 0, "coverage": {},
+            "certification_ready": False, "verifier_source_hash": "v",
+            "content_hash": "c", "generation_id": "g",
+        }, "task055g_fee_independent_verification"),
+        "operational_seal.json": ({
+            "schema_version": "task055g_authoritative_operational_seal_v1", "status": "passed",
+            "writer_registry_content_hash": "w", "physical_scan_content_hash": "p", "genesis_content_hash": None,
+            "state_counts": {}, "total_operational_record_count": 0, "blockers": [],
+            "certification_ready": False, "portfolio_ready": False, "paper_ready": False,
+            "live_ready": False, "immutable": True, "content_hash": "c", "generation_id": "g",
+        }, "task055g_authoritative_operational_seal"),
+        "causal_frontier_manifest.json": ({
+            "schema_version": "task055g_fee_aware_causal_frontier_v1", "status": "blocked",
+            "scope": "causal_held_position", "exact20_ids": [], "run_count": 0, "terminal_counts": {},
+            "round_one_frontier_count": 0, "round_one_frontier_semantics": "first_blocker_only",
+            "held_mark_count": 0, "authorized_modeled_held_mark_count": 0, "run_rows_root": "r",
+            "held_mark_root": "h", "missing_key_root": "m", "lineage": {}, "valuation_projection": {},
+            "partitions": {}, "content_hash": "c", "generation_id": "g",
+        }, "task055g_causal_frontier"),
+        "round_one_exact_daily_plan.json": ({
+            "schema_version": "task055f_exact_frontier_network_plan_v1", "status": "sealed_round_one_daily_only",
+            "frontier_root": "f", "requests": [], "plan_hash": "p",
+        }, "task055g_network_plan"),
+        "l2_plan_manifest.json": ({
+            "schema_version": "task055g_dynamic_network_plan_v1", "status": "sealed_dynamic_exact_suspend_l2",
+            "stage": "L2", "round_id": 1, "parent_apply_hash": "a", "lineage": {},
+            "frontier_root": "f", "requests": [], "limits": {}, "plan_hash": "p",
+            "content_hash": "c", "generation_id": "g",
+        }, "task055g_network_plan"),
+        "l1_canary_manifest.json": ({
+            "schema_version": "task055g_request_execution_v1", "status": "canary_completed",
+            "stage": "L1", "round_id": 1, "plan_hash": "p", "must_stop_after_canary": True,
+            "batch_started": False, "attempts_recorded_in_ledger": True, "results": [],
+            "ledger": {}, "content_hash": "c", "generation_id": "g",
+        }, "task055g_network_execution"),
+        "l1_resume_manifest.json": ({
+            "schema_version": "task055g_request_execution_v1", "status": "resume_completed",
+            "stage": "L1", "round_id": 1, "plan_hash": "p", "canary_content_hash": "a",
+            "attempts_recorded_in_ledger": True, "results": [], "remaining_request_count": 0,
+            "ledger": {}, "content_hash": "c", "generation_id": "g",
+        }, "task055g_network_execution"),
+        "l2_canary_manifest.json": ({
+            "schema_version": "task055g_request_execution_v1", "status": "canary_completed",
+            "stage": "L2", "round_id": 1, "plan_hash": "p", "must_stop_after_canary": True,
+            "batch_started": False, "attempts_recorded_in_ledger": True, "results": [],
+            "ledger": {}, "content_hash": "c", "generation_id": "g",
+        }, "task055g_network_execution"),
+        "l2_resume_manifest.json": ({
+            "schema_version": "task055g_request_execution_v1", "status": "resume_completed",
+            "stage": "L2", "round_id": 1, "plan_hash": "p", "canary_content_hash": "a",
+            "attempts_recorded_in_ledger": True, "results": [], "remaining_request_count": 0,
+            "ledger": {}, "content_hash": "c", "generation_id": "g",
+        }, "task055g_network_execution"),
+        "l1_apply_manifest.json": ({
+            "schema_version": "task055g_response_apply_v1", "status": "applied",
+            "stage": "L1", "round_id": 1, "plan_hash": "p", "plan": {},
+            "parent_apply_hash": None, "lineage": {}, "result_count": 0, "results": [],
+            "response_lineage_root": "r", "cache_inputs": [], "cache_input_root": "i",
+            "application_actions": [], "next_truth_required_inputs": {}, "ledger": {},
+            "content_hash": "c", "generation_id": "g",
+        }, "task055g_network_apply"),
+        "l2_apply_manifest.json": ({
+            "schema_version": "task055g_response_apply_v1", "status": "applied",
+            "stage": "L2", "round_id": 1, "plan_hash": "p", "plan": {},
+            "parent_apply_hash": "a", "lineage": {}, "result_count": 0, "results": [],
+            "response_lineage_root": "r", "cache_inputs": [], "cache_input_root": "i",
+            "application_actions": [], "next_truth_required_inputs": {}, "ledger": {},
+            "content_hash": "c", "generation_id": "g",
+        }, "task055g_network_apply"),
+        "network_state_verification.json": ({
+            "schema_version": "task055g_network_state_verification_v1", "status": "verified",
+            "network_accessed": False, "request_count": 0, "max_request_date": None,
+            "logical_request_count": 0, "physical_attempt_count": 0,
+            "unique_security_date_count": 0, "terminal_counts": {}, "ledger_root": "l",
+            "artifact_count": 0, "artifact_root": "a", "applied_plan_count": 0,
+            "offline_default_proven": True, "content_hash": "c", "generation_id": "g",
+        }, "task055g_network_state_verification"),
+        "semantic_verification.json": ({
+            "schema_version": "task055g_independent_semantic_verification_v1", "status": "passed",
+            "parent_lineage_content_hash": "p", "access_plan_content_hash": "a",
+            "producer_truth_content_hash": "t", "truth": {}, "causal": {},
+            "read_ledger_content_hash": "l", "read_ledger_manifest": "ledger.json",
+            "max_read_date": "20260630", "prospective_holdout_accessed": False,
+            "content_hash": "x", "generation_id": "g",
+        }, "task055g_independent_semantic_verification"),
+        "task055g_report.json": ({
+            "schema_version": "task055g_engineering_report_v1",
+            "status": "task055g_fee_aware_frontier_sealed_waiting_for_network_authorization",
+            "stage": "round_one_plan_sealed", "network_accessed": False, "network_request_count": 0,
+            "prospective_holdout_accessed": False, "max_read_date": "20260630", "parent_lineage": {},
+            "access_plan": {}, "read_ledger": {}, "truth_v2": {}, "fee_schedule_v2": {},
+            "operational_state": {}, "causal_frontier": {}, "network_plan": {}, "semantic_verification": {},
+            "readiness": {"certification_ready": False, "portfolio_ready": False, "paper_ready": False, "live_ready": False},
+            "queues": {}, "engineering_blockers": [], "certification_blockers": [], "blockers": [],
+            "content_hash": "c", "generation_id": "g",
+        }, "task055g_final_report"),
+        "task055g_final_verification.json": ({
+            "schema_version": "task055g_independent_final_verification_v1",
+            "status": "verified_waiting_for_network_authorization",
+            "top_status": "task055g_fee_aware_frontier_sealed_waiting_for_network_authorization",
+            "report_content_hash": "r", "validated_artifacts": {}, "missing_artifacts": [],
+            "engineering_blocker_stages": [], "access_plan_content_hash": "a",
+            "access_ledger_content_hash": "l", "truth_content_hash": "t",
+            "fee_content_hash": "f", "fee_independent_verification_content_hash": "fi",
+            "operational_content_hash": "o", "causal_content_hash": "c",
+            "semantic_verification_content_hash": "s",
+            "network_state_verification_content_hash": "n", "frontier_count": 1,
+            "frontier_root": "fr", "network_physical_attempt_count": 0,
+            "prospective_holdout_accessed": False,
+            "operational_queues_verified_empty": True, "content_hash": "h",
+            "generation_id": "g",
+        }, "task055g_independent_final_verification"),
+    }
+    for filename, (payload, artifact_type) in artifacts.items():
+        path = root / filename
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        result = validate_artifact(path, strict=True)
+        assert result.valid is True
+        assert result.artifact_type == artifact_type
+
+    transport = root / "transport_ledger.jsonl"
+    transport.write_text(json.dumps({
+        "logical_index": 0, "document_id": "doc", "request_url": "https://example.test/doc",
+        "final_url": "https://example.test/doc", "redirect_chain": [], "http_status": 200,
+        "tls_verified": True, "hostname_verified": True, "peer_certificate_sha256": "a" * 64,
+        "retrieved_at": "2026-07-16T00:00:00+08:00", "response_headers_sha256": "h",
+        "body_sha256": "b", "body_size_bytes": 1, "evidence_scope": "real_official_https",
+        "transport_receipt_hash": "r",
+    }) + "\n", encoding="utf-8")
+    transport_result = validate_artifact(transport, strict=True)
+    assert transport_result.valid is True
+    assert transport_result.artifact_type == "task055g_fee_transport_ledger"
+
+
+def test_task055g_network_and_fee_schema_reject_missing_native_fields(tmp_path):
+    root = tmp_path / "task_055_g_bad"
+    root.mkdir()
+    bad_canary = root / "l1_canary_manifest.json"
+    bad_canary.write_text(json.dumps({
+        "schema_version": "task055g_request_execution_v1", "status": "canary_completed",
+        "stage": "L1", "round_id": 1, "plan_hash": "p", "results": [], "ledger": {},
+        "content_hash": "c", "generation_id": "g",
+    }), encoding="utf-8")
+    bad_fee_verifier = root / "fee_independent_verification.json"
+    bad_fee_verifier.write_text(json.dumps({
+        "schema_version": "task055g_fee_independent_verification_v2", "status": "passed",
+        "schedule_content_hash": "s", "policy_seal_hash": "p",
+        "document_acquisition_content_hash": "a", "document_merkle_root": "m",
+        "transport_ledger_root": "t", "rules_root": "r", "rule_count": 0,
+        "coverage": {}, "certification_ready": False, "verifier_source_hash": "v",
+        "content_hash": "c", "generation_id": "g",
+    }), encoding="utf-8")
+
+    canary_result = validate_artifact(bad_canary, strict=True)
+    verifier_result = validate_artifact(bad_fee_verifier, strict=True)
+    assert canary_result.valid is False
+    assert verifier_result.valid is False
+    assert any("attempts_recorded_in_ledger" in issue.message for issue in canary_result.issues)
+    assert any("assertion_receipt_root" in issue.message for issue in verifier_result.issues)

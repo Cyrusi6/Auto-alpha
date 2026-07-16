@@ -1362,7 +1362,18 @@ def main(argv: list[str] | None = None) -> int:
     if mode == "full" and not args.skip_build:
         commands.append(("package_build", ["uv", "build"]))
     if mode == "full" and not args.skip_pytest:
-        commands.append(("pytest", ["uv", "run", "pytest"]))
+        commands.append(
+            (
+                "pytest",
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "--basetemp",
+                    str(output_dir / "pytest_tmp"),
+                ],
+            )
+        )
     for name, command in commands:
         result = run_command(name, command, root)
         results.append(result)

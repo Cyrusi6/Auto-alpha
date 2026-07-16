@@ -2562,3 +2562,19 @@
 - 独立 verifier 从 2,820 个实际源文件 bytes、严格矩阵分区和原始 envelope 重建相同状态；32,752 个 modeled candidate 中，31,974 个存在 250 交易日政策内的历史 authoritative close，778 个超过固定 stale 上限。该计数是全量 anchor 取证，不是实际持仓使用量，也不是 round-1 frontier。
 - 三个固定 probe `600170.SH/2016-03-23`、`601018.SH/2016-05-17`、`600019.SH/2016-08-23` 均保持 `DATA_SOURCE_GAP`。由于尚无覆盖完整模拟期的真实官方 Fee Schedule v2，未用旧 embedded fee 计算 frontier；因此没有封存 16 或其他数量为“总缺口”，也没有执行 Tushare canary、L1/L2 或 Simulator。
 - 当前工程 blocker 为：官方 Fee Schedule v2 未闭合、Fee v2 下的 round-1 frontier 尚未封存、canonical operational root 七类目录未形成可验证空状态，以及 credential 不可用。顶层状态为 `task055f_governed_evidence_or_fee_or_dynamic_simulation_closure_blocked`；全部 certification/deployment blocker 继续保留。
+
+## 2026-07-16 — Task 055-G 文档、Schema 与 Monitoring 收敛
+
+- 为 Task 055-G 的 Access Plan/attempted-access ledger、独立 truth、官方 Fee acquisition/verification/extraction/schedule、authoritative writer registry/physical scan/operational seal、causal frontier、动态 network state、semantic verification 和 final report 注册路径隔离的 strict artifact schemas。与 Task 055-F 同名的内容寻址文件按 Task 055-G run path 优先识别，不改写旧产物合同。
+- monitoring 新增 Task 055-G 边界检查，仅接受 `task055g_fee_aware_frontier_sealed_waiting_for_network_authorization` 或 `task055g_offline_engineering_baseline_blocked`。检查要求 Tushare request 为零、prospective holdout 未触碰、authoritative operational state 物理为空，并强制 certification/portfolio/paper/live readiness 为 false。
+- dashboard 增加 Task 055-G access、truth、Fee、operational、causal、network、semantic verification 和 final report reader，支持从 Task 055-G 内容寻址 generation 查找原生 manifest；不会把工程等待状态展示为认证或部署 readiness。
+- 文档统一将 Fee-aware frontier seal 定义为 retrospective engineering baseline。官方法定费用证据与未校准 modeled commission/slippage/impact 明确分层；本轮不因 schema 或监控接入而授权 Tushare、候选晋级、组合、paper 或 live。
+
+## 2026-07-16 — Task 055-G 真实生产封口
+
+- 修复独立 truth verifier 对同值 `NaN` 的 Python 直接比较误报，改为规范化内容哈希；同时将 network final verifier 改为纯只读重算，不再创建锁、更新 pointer 或写验证 artifact。最终 v3 sibling report/final-verification hash 分别为 `c42c49d70ba237122162096db1fd40d5f154dc2194fc8ffc913f5d1c6a2b0ad7`、`fd5028e223fe26ebc44a15eb34f51f468156609ffd9f149e085bc271e84d483b`。
+- `truth_v2` 对 35,844 个 security-date 守恒：32,752 个 `VENDOR_DAILY_NON_TRADING_MODELED_CANDIDATE`、2,744 个 `LIFECYCLE_TERMINATED`、346 个 `DATA_SOURCE_GAP`、1 个同日 S/R 冲突、1 个盘中 timing blocker。独立 verifier 对 exact rows/root、状态分布和 S/R 语义逐项一致。
+- 真实 Fee Schedule v2 从 7 个预封存官方 HTTPS 页面取得并复核 40 条规则，完整覆盖 `2016-01-04` 至 `2024-05-30` 的 SSE/SZSE × BUY/SELL。主要法定区间包括：经手费 `0.0000487`→`0.0000341`（2023-08-28）、过户费 `0.00002`→`0.00001`（2022-04-29）、卖侧印花税 `0.001`→`0.0005`（2023-08-28），买侧印花税以有证据的显式零规则表达；broker commission/slippage/impact 继续为未校准 modeled 成本。
+- exact-20×五场景 producer 和独立 verifier 均真实执行 100 路 EventLedgerSimulator，得到 100 个 `causal_valuation_blocked`，held marks 216,853 个，其中实际持仓使用的授权 modeled marks 4,504 个。Fee-aware round-1 frontier 为 17 个 exact-daily key，root 为 `fd7e9a1468d8b5960767c2c3e4877c6cfa646a9051b8a6b2ba95f5573fb77b6f`，plan hash 为 `397ac8d5190ab492c65d5f947df69e845db517b0358330c95db365186aec1e6a`；脱敏分布为 SZ 9、SH 8，全部位于 2016 年，三个固定 probe 均在 frontier 中。
+- producer access ledger 共 3,069 次 `opened_allowed`、0 次 `blocked_before_open`、0 次 `opened_policy_violation`，最大读取日期为 `2026-06-30`，`prospective_holdout_accessed=false`。Tushare physical attempts=0；仅执行 7 次预封存官方费用 HTTPS 获取。certification/certified-pool/portfolio/production-candidate/optimizer/paper/live 七类物理状态均为 0。
+- 最终状态为 `task055g_fee_aware_frontier_sealed_waiting_for_network_authorization`。historical selection contamination、selection reuse、execution modeled、停牌 timing 未认证、成分公告时点未知、vendor revision、prospective holdout 未到达及未校准 modeled 成本继续保留为 certification blockers；本轮未运行 Tushare canary、L1/L2 或 native Simulator 成功闭环。

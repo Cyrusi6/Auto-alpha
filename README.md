@@ -1847,3 +1847,15 @@ python -m task_055_f.run l1-resume --config <server-config.json> --allow-network
 The canary performs exactly one physical POST and stops. A chained spend ledger counts every physical attempt, L1 is exact `ts_code + trade_date`, and L2 may be generated only after L1 application and a complete truth/causal rebuild. With a closed held-mark frontier, official Fee v2, and canonical operational-state proof, the native producer executes primary 100, independently reloaded sibling 100, and immutable resume 100/100; the independent verifier recalculates every fee component, held mark, ledger, NAV, and exact 20×5 identity. Certification and deployment readiness remain false.
 
 Modeled commission rules must explicitly exclude statutory tax/exchange components; slippage and impact must declare that they are not fee components. This prevents the statutory schedule from being embedded in commission and charged twice.
+
+### Task 055-G pre-open evidence and fee-aware frontier seal
+
+Task 055-G makes the offline evidence boundary observable before any governed payload is opened. An immutable Access Plan binds every allowed relative path, parent generation, expected SHA256, dataset-specific date parser, declared date range, and read mode. Production readers and the independent verifier publish separate attempted-access ledgers with `blocked_before_open`, `opened_allowed`, and `opened_policy_violation`; opening future bytes is recorded as prospective-holdout access even when validation later fails.
+
+Fee Schedule v2 is a native staged workflow: sealed official-document plan, HTTPS acquisition, document verification, rule extraction, immutable publication, and independent reparse. Statutory rules remain tied to official document bytes and extraction assertions, while commission, slippage, and impact remain explicitly uncalibrated modeled assumptions. Fee evidence is engineering accounting input, not proof of executable capacity or certified Alpha.
+
+The operational seal is derived from registered production writers and all canonical/legacy roots. It parses physical records instead of trusting reported counts and rejects shadow roots, unknown schemas, and symlink escapes. The fee-aware causal frontier and exact-date network plan may be published only after access, truth, Fee, operational, and independent semantic verification close their lineage.
+
+This task does not authorize Tushare access. Its accepted terminal states are limited to `task055g_fee_aware_frontier_sealed_waiting_for_network_authorization` and `task055g_offline_engineering_baseline_blocked`. In both states `certification_ready`, `portfolio_ready`, `paper_ready`, and `live_ready` remain false, physical downstream queues remain empty, and historical-selection contamination remains an explicit certification blocker.
+
+The production entry is `python -m task_055_g.run --governed-root <root> --output-root <sibling-run> --allow-official-fee-network`. The flag authorizes only the presealed official fee-document HTTPS plan; the Task 055-G DAG never reads Tushare credentials and the sealed remediation network state remains at zero physical attempts.

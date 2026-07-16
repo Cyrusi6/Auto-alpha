@@ -514,3 +514,9 @@ Task 055-E 的 Offline Source Salvage 不读取凭据、不联网。它从 gover
 `task_055_f/` 将 Task 055-E 的 provisional frontier 收敛为独立 `truth_v2`、实际读取 ledger、Fee Schedule v2、紧凑估值投影和可恢复网络状态机。正式语义严格区分 S/R、同日冲突与 timing，truth 本身永不授权 stale price；只有真实 held-position observer 使用且存在合法历史 close 的 modeled mark 才计数。L1 为 exact security-date，canary 单请求后强制退出，L2 只能在 L1 应用和全量重投影后动态生成。工程 gate 全绿时原生执行 exact-20×5 primary/sibling/resume；历史选择污染、modeled execution 与全部 certification/deployment blocker 始终保留。
 
 真实离线 hardening 对 35,844 个 security-date 完成守恒重建，并由独立 verifier 从源 bytes 和矩阵分区复核；旧 16-key 仅保留为 Task 055-E lineage，不再被描述为总缺口。正式 frontier 必须在完整官方 Fee Schedule v2 下重新产生。
+
+`task_055_g/` 收敛 Task 055-F 的验收边界：任何 governed payload 在打开前必须进入 immutable Access Plan，实际读取由 attempted-access ledger 记录；独立 verifier 使用自己的计划与 ledger，从父 manifests、矩阵、原始 envelope、Fee 和持仓路径重建语义，不能复用 producer 自报结果。Fee Schedule v2 使用官方文档 acquisition→verification→extraction→publish→independent-verify 原生链，法定费用与未校准 modeled 成本分层。Authoritative operational seal 扫描真实 writer roots 和 legacy roots，拒绝影子空目录、自报 record count、未知 schema 与 symlink escape。
+
+Task 055-G 本轮只允许封存 fee-aware exact-date frontier，动态 L1/L2 状态机保持离线且不读取凭据、不发送 Tushare 请求。顶层只能是等待网络授权或离线阻断；两者均属于 retrospective engineering evidence，不是 clean OOS、认证、组合批准或实盘许可，certification/portfolio/paper/live readiness 始终为 false。
+
+真实 v3 sibling 运行完成 35,844 个 security-date 的独立守恒复核、官方 Fee Schedule v2 的 7 份文档/40 条规则验证，以及 exact-20×五场景的 producer/independent 100 路因果重放。Fee-aware round-1 frontier 为 17 个 exact daily key；本轮 Tushare physical attempts 为 0，prospective holdout 未触碰，七类 operational queue/registry 的物理记录数均为 0。

@@ -208,19 +208,36 @@ def _load_matrix(
     for field in MATRIX_DAILY_FIELDS:
         value_name = f"{field}.npy"
         valid_name = f"{field}_validity.npy"
-        for name in (value_name, valid_name):
-            path = root / name
-            reader.record_binary(
-                path,
+        if hasattr(reader, "load_npy"):
+            arrays[field] = reader.load_npy(
+                root / value_name,
                 component="truth_v2",
-                dataset=f"matrix_partition:{name}",
-                declared_start=str(dates[0]),
-                declared_end=str(dates[-1]),
+                dataset=f"matrix_partition:{value_name}",
             )
-            if partitions.get(name) != reader.rows[-1]["sha256"]:
-                raise TruthV2Error(f"matrix_partition_sha_mismatch:{name}")
-        arrays[field] = np.load(root / value_name, mmap_mode="r", allow_pickle=False)
-        arrays[f"{field}:valid"] = np.load(root / valid_name, mmap_mode="r", allow_pickle=False)
+            arrays[f"{field}:valid"] = reader.load_npy(
+                root / valid_name,
+                component="truth_v2",
+                dataset=f"matrix_partition:{valid_name}",
+            )
+            for name in (value_name, valid_name):
+                if partitions.get(name) != next(
+                    row["sha256"] for row in reversed(reader.rows) if row["relative_path"].endswith(name)
+                ):
+                    raise TruthV2Error(f"matrix_partition_sha_mismatch:{name}")
+        else:
+            for name in (value_name, valid_name):
+                path = root / name
+                reader.record_binary(
+                    path,
+                    component="truth_v2",
+                    dataset=f"matrix_partition:{name}",
+                    declared_start=str(dates[0]),
+                    declared_end=str(dates[-1]),
+                )
+                if partitions.get(name) != reader.rows[-1]["sha256"]:
+                    raise TruthV2Error(f"matrix_partition_sha_mismatch:{name}")
+            arrays[field] = np.load(root / value_name, mmap_mode="r", allow_pickle=False)
+            arrays[f"{field}:valid"] = np.load(root / valid_name, mmap_mode="r", allow_pickle=False)
     rows: dict[tuple[str, str], dict[str, Any]] = {}
     for cell in cells:
         code = str(cell["ts_code"])
@@ -394,18 +411,25 @@ def _classify_cell(
     if corporate_action_conflict:
         state = "LIFECYCLE_OR_CORPORATE_ACTION_CONFLICT"
         reason = "corporate_action_evidence_conflict"
-    elif not listed or not active:
-        state = "LIFECYCLE_TERMINATED"
-        reason = "outside_verified_active_lifecycle_requires_settlement_evidence"
+    elif complete_bar and (not listed or not active):
+        state = "MATRIX_SOURCE_CONFLICT"
+        reason = "complete_daily_bar_conflicts_with_lifecycle_or_inventory"
     elif matrix_inventory_conflict:
         state = "MATRIX_SOURCE_CONFLICT"
         reason = "matrix_complete_bar_conflicts_with_inventory_absence"
-    elif complete_bar and events:
+    elif complete_bar and s_rows:
         state = "MATRIX_SOURCE_CONFLICT"
         reason = "complete_daily_bar_conflicts_with_suspend_event"
     elif complete_bar:
         state = "TRADED_PRIMARY_BAR"
-        reason = "strict_matrix_contains_complete_finite_positive_bar"
+        reason = (
+            "strict_matrix_contains_complete_finite_positive_resume_bar"
+            if r_rows
+            else "strict_matrix_contains_complete_finite_positive_bar"
+        )
+    elif not listed or not active:
+        state = "LIFECYCLE_TERMINATED"
+        reason = "outside_verified_active_lifecycle_requires_settlement_evidence"
     elif s_rows and r_rows:
         state = "SUSPENSION_EVENT_CONFLICT"
         reason = "same_date_contains_suspend_and_resume"

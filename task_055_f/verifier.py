@@ -183,18 +183,35 @@ def _matrix_rows(
     partitions = manifest.get("partition_sha256") or {}
     arrays = {}
     for field in ("open", "high", "low", "close", "pre_close", "volume", "amount"):
-        for name in (f"{field}.npy", f"{field}_validity.npy"):
-            reader.record_binary(
-                matrix / name,
+        if hasattr(reader, "load_npy"):
+            arrays[field] = reader.load_npy(
+                matrix / f"{field}.npy",
                 component="task055f_independent_verifier",
-                dataset=f"matrix_partition:{name}",
-                declared_start=str(dates[0]),
-                declared_end=str(dates[-1]),
+                dataset=f"matrix_partition:{field}.npy",
             )
-            if reader.rows[-1]["sha256"] != partitions.get(name):
-                raise SemanticVerificationError(f"independent_matrix_partition_mismatch:{name}")
-        arrays[field] = np.load(matrix / f"{field}.npy", mmap_mode="r", allow_pickle=False)
-        arrays[f"{field}:valid"] = np.load(matrix / f"{field}_validity.npy", mmap_mode="r", allow_pickle=False)
+            arrays[f"{field}:valid"] = reader.load_npy(
+                matrix / f"{field}_validity.npy",
+                component="task055f_independent_verifier",
+                dataset=f"matrix_partition:{field}_validity.npy",
+            )
+            for name in (f"{field}.npy", f"{field}_validity.npy"):
+                if partitions.get(name) != next(
+                    row["sha256"] for row in reversed(reader.rows) if row["relative_path"].endswith(name)
+                ):
+                    raise SemanticVerificationError(f"independent_matrix_partition_mismatch:{name}")
+        else:
+            for name in (f"{field}.npy", f"{field}_validity.npy"):
+                reader.record_binary(
+                    matrix / name,
+                    component="task055f_independent_verifier",
+                    dataset=f"matrix_partition:{name}",
+                    declared_start=str(dates[0]),
+                    declared_end=str(dates[-1]),
+                )
+                if reader.rows[-1]["sha256"] != partitions.get(name):
+                    raise SemanticVerificationError(f"independent_matrix_partition_mismatch:{name}")
+            arrays[field] = np.load(matrix / f"{field}.npy", mmap_mode="r", allow_pickle=False)
+            arrays[f"{field}:valid"] = np.load(matrix / f"{field}_validity.npy", mmap_mode="r", allow_pickle=False)
     result = {}
     for row in truth_rows:
         code, date = str(row["ts_code"]), str(row["trade_date"])
@@ -266,12 +283,14 @@ def _independent_state(row: Mapping[str, Any]) -> str:
     timing = {_timing(event.get("suspend_timing")) for event in s_rows}
     if row.get("corporate_action_validity") is False:
         return "LIFECYCLE_OR_CORPORATE_ACTION_CONFLICT"
-    if not row.get("listed") or not row.get("active"):
-        return "LIFECYCLE_TERMINATED"
-    if complete_bar and (events or row.get("inventory_bar_observed") is False):
+    if complete_bar and (not row.get("listed") or not row.get("active")):
+        return "MATRIX_SOURCE_CONFLICT"
+    if complete_bar and (s_rows or row.get("inventory_bar_observed") is False):
         return "MATRIX_SOURCE_CONFLICT"
     if complete_bar:
         return "TRADED_PRIMARY_BAR"
+    if not row.get("listed") or not row.get("active"):
+        return "LIFECYCLE_TERMINATED"
     if s_rows and r_rows:
         return "SUSPENSION_EVENT_CONFLICT"
     if len(s_rows) > 1 and len({(item.get("suspend_timing"), item.get("row_hash")) for item in s_rows}) > 1:

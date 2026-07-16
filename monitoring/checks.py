@@ -2236,6 +2236,113 @@ def check_task055f_engineering_baseline(report_path: str | Path | None) -> tuple
     return details, alerts
 
 
+def check_task055g_engineering_baseline(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    if not payload:
+        return {
+            "exists": False,
+            "status": "",
+            "task055g_boundary_valid": False,
+            "waiting_for_network_authorization": False,
+            "offline_blocked": False,
+            "certification_ready": False,
+            "portfolio_ready": False,
+            "paper_ready": False,
+            "live_ready": False,
+        }, []
+    waiting_status = "task055g_fee_aware_frontier_sealed_waiting_for_network_authorization"
+    blocked_status = "task055g_offline_engineering_baseline_blocked"
+    status = str(payload.get("status") or "")
+    readiness = dict(payload.get("readiness") or {})
+    operational = dict(payload.get("operational_state") or {})
+    state_counts = dict(operational.get("state_counts") or {})
+    expected_operational_states = {
+        "certification_queue",
+        "certified_pool",
+        "portfolio_campaign",
+        "production_candidate",
+        "optimizer_activation",
+        "paper_registry",
+        "live_registry",
+    }
+    operational_state_complete = expected_operational_states.issubset(state_counts)
+    try:
+        operational_record_count = int(operational.get("total_operational_record_count", -1))
+        operational_counts_empty = all(int(state_counts[name]) == 0 for name in expected_operational_states)
+    except (TypeError, ValueError):
+        operational_record_count = -1
+        operational_counts_empty = False
+    operational_empty = (
+        operational.get("status") == "passed"
+        and operational_record_count == 0
+        and operational_state_complete
+        and operational_counts_empty
+    )
+    queue_counts = dict(payload.get("queues") or {})
+    try:
+        queue_report_empty = bool(queue_counts) and all(int(value) == 0 for value in queue_counts.values())
+    except (TypeError, ValueError):
+        queue_report_empty = False
+    downstream_false = all(
+        readiness.get(name) is False
+        for name in ("certification_ready", "portfolio_ready", "paper_ready", "live_ready")
+    )
+    no_tushare_requests = (
+        payload.get("network_accessed") is False
+        and int(payload.get("network_request_count") or 0) == 0
+    )
+    no_holdout_access = payload.get("prospective_holdout_accessed") is False
+    recognized_status = status in {waiting_status, blocked_status}
+    boundary_valid = (
+        recognized_status
+        and downstream_false
+        and no_tushare_requests
+        and no_holdout_access
+        and operational_empty
+        and queue_report_empty
+    )
+    frontier = dict(payload.get("causal_frontier") or {})
+    fee = dict(payload.get("fee_schedule_v2") or {})
+    semantic = dict(payload.get("semantic_verification") or {})
+    network_plan = dict(payload.get("network_plan") or {})
+    frontier_count = int(frontier.get("round_one_frontier_count") or 0)
+    canary_ready = (
+        status == waiting_status
+        and boundary_valid
+        and frontier_count > 0
+        and fee.get("status") == "passed"
+        and semantic.get("status") == "passed"
+        and str(network_plan.get("status") or "").startswith("sealed")
+    )
+    details = {
+        "exists": True,
+        "status": status,
+        "task055g_boundary_valid": boundary_valid,
+        "waiting_for_network_authorization": canary_ready,
+        "offline_blocked": status == blocked_status and boundary_valid,
+        "fee_schedule_verified": fee.get("status") == "passed",
+        "operational_state_sealed_empty": operational_empty,
+        "downstream_queues_physically_empty": operational_empty and queue_report_empty,
+        "round_one_frontier_count": frontier_count,
+        "network_request_count": int(payload.get("network_request_count") or 0),
+        "prospective_holdout_accessed": payload.get("prospective_holdout_accessed"),
+        "engineering_blocker_count": len(payload.get("engineering_blockers") or ()),
+        "certification_ready": False,
+        "portfolio_ready": False,
+        "paper_ready": False,
+        "live_ready": False,
+    }
+    alerts = [] if boundary_valid and (status != waiting_status or canary_ready) else [
+        MonitoringAlert(
+            "error",
+            "task055g_engineering_baseline",
+            "Task 055-G evidence, operational seal, or downstream boundary is invalid",
+            details,
+        )
+    ]
+    return details, alerts
+
+
 def check_validation_campaign_leaderboard(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     rows = _read_jsonl(Path(path)) if path else []
     ready = sum(1 for row in rows if row.get("certification_ready") is True)

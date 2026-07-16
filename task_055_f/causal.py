@@ -200,16 +200,25 @@ def _load_matrix_marks(
     arrays = {}
     for name in ("open.npy", "open_validity.npy", "close.npy", "close_validity.npy"):
         path = root / name
-        reader.record_binary(
-            path,
-            component="causal_trace",
-            dataset=f"matrix_partition:{name}",
-            declared_start=str(matrix_dates[0]),
-            declared_end=str(matrix_dates[-1]),
-        )
-        if reader.rows[-1]["sha256"] != partitions.get(name):
-            raise CausalTraceError(f"matrix_partition_sha_mismatch:{name}")
-        arrays[name] = np.load(path, mmap_mode="r", allow_pickle=False)
+        if hasattr(reader, "load_npy"):
+            arrays[name] = reader.load_npy(
+                path,
+                component="causal_trace",
+                dataset=f"matrix_partition:{name}",
+            )
+            if reader.rows[-1]["sha256"] != partitions.get(name):
+                raise CausalTraceError(f"matrix_partition_sha_mismatch:{name}")
+        else:
+            reader.record_binary(
+                path,
+                component="causal_trace",
+                dataset=f"matrix_partition:{name}",
+                declared_start=str(matrix_dates[0]),
+                declared_end=str(matrix_dates[-1]),
+            )
+            if reader.rows[-1]["sha256"] != partitions.get(name):
+                raise CausalTraceError(f"matrix_partition_sha_mismatch:{name}")
+            arrays[name] = np.load(path, mmap_mode="r", allow_pickle=False)
     asset_positions = np.asarray([asset_index[asset] for asset in assets], dtype=np.int64)
     date_positions = np.asarray([date_index[date] for date in dates], dtype=np.int64)
     return {

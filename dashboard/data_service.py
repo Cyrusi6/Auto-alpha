@@ -478,6 +478,45 @@ class AshareDashboardService:
     def load_task_055f_report(self) -> dict[str, Any]:
         return self._read_first_json(self._validation_campaign_artifact_candidates("task055f_report.json"))
 
+    def load_task_055g_access_plan(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055g_artifact_candidates("access_plan.json"))
+
+    def load_task_055g_access_ledger(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055g_artifact_candidates("access_ledger_manifest.json"))
+
+    def load_task_055g_truth_v2(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055g_artifact_candidates("truth_v2_manifest.json"))
+
+    def load_task_055g_fee_document_acquisition(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055g_artifact_candidates("fee_document_acquisition.json"))
+
+    def load_task_055g_fee_schedule_v2(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055g_artifact_candidates("fee_schedule_v2_manifest.json"))
+
+    def load_task_055g_operational_seal(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055g_artifact_candidates("operational_seal.json"))
+
+    def load_task_055g_causal_frontier(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055g_artifact_candidates("causal_frontier_manifest.json"))
+
+    def load_task_055g_network_plan(self) -> dict[str, Any]:
+        candidates = self._task055g_artifact_candidates("round_one_exact_daily_plan.json")
+        candidates.extend(self._task055g_artifact_candidates("round_one_network_plan.json"))
+        return self._read_first_json(candidates)
+
+    def load_task_055g_semantic_verification(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055g_artifact_candidates("semantic_verification.json"))
+
+    def load_task_055g_final_report(self) -> dict[str, Any]:
+        candidates = self._task055g_artifact_candidates("task055g_report.json")
+        candidates.extend(self._task055g_artifact_candidates("task055g_final_report.json"))
+        return self._read_first_json(candidates)
+
+    def load_task_055g_final_verification(self) -> dict[str, Any]:
+        return self._read_first_json(
+            self._task055g_artifact_candidates("task055g_final_verification.json")
+        )
+
     def load_task_054_scrubbed_evidence(self) -> dict[str, Any]:
         return self._read_first_json(self._validation_campaign_artifact_candidates("task_054a_scrubbed_evidence_package.json"))
 
@@ -2527,6 +2566,22 @@ class AshareDashboardService:
             root / "suite" / "validation_campaign_store" / filename,
             root / "experiment" / filename,
         ]
+
+    def _task055g_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        candidates = [
+            self.config.validation_campaign_store_dir / "task_055_g" / filename,
+            self.config.validation_campaign_store_dir / "task055g" / filename,
+            root / "task_055_g" / filename,
+            root / "task055g" / filename,
+        ]
+        for search_root in (self.config.validation_campaign_store_dir, root):
+            if not search_root.is_dir():
+                continue
+            for pattern in (f"task_055_g*/**/{filename}", f"validation_runs/task_055_g*/**/{filename}"):
+                candidates.extend(sorted(search_root.glob(pattern), reverse=True))
+        candidates.extend(self._validation_campaign_artifact_candidates(filename))
+        return list(dict.fromkeys(candidates))
 
     def _certification_artifact_candidates(self, filename: str) -> list[Path]:
         root = self.config.report_dir.parent

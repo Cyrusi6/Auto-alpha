@@ -33,6 +33,19 @@ def _definition(
     )
 
 
+def _task055g_patterns(*names: str) -> list[str]:
+    return [
+        pattern
+        for name in names
+        for pattern in (
+            f"*/task_055_g*/{name}",
+            f"*/task_055_g*/**/{name}",
+            f"*/task055g/{name}",
+            f"*/task055g/**/{name}",
+        )
+    ]
+
+
 ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
     "research_suite_result": _definition("research_suite_result", ["suite_name", "status", "stages"], ["suite_result.json"]),
     "artifact_catalog": _definition("artifact_catalog", ["suite_name", "created_at", "entries"], ["artifact_catalog.json"]),
@@ -881,6 +894,178 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         ["schema_version", "status", "offline_stage_status", "network_accessed", "network_request_count", "credential_required", "prospective_holdout_accessed", "max_read_or_request_date", "git", "observation_boundary", "lineage", "target_summary", "classification_counts", "offline_raw_repair_count", "anchor_count", "anchor_cause_counts", "valuation_domains", "minimal_network_plan", "artifacts", "readiness", "simulator_success_evidence_created", "blockers", "content_hash", "generation_id"],
         ["task055e_offline_report.json"],
         optional=["credential_present_checked"],
+    ),
+    "task055g_access_plan": _definition(
+        "task055g_access_plan",
+        ["schema_version", "status", "plan_scope", "max_allowed_date", "entry_count", "entries_root", "entries", "content_hash", "generation_id"],
+        _task055g_patterns("access_plan.json"),
+        optional=[
+            "trust_anchors", "bootstrap_plan_content_hash", "bootstrap_builder_read_ledger_content_hash",
+            "catalog_access_plan_content_hash", "catalog_expansion_read_ledger_content_hash", "parent_content_hashes",
+        ],
+    ),
+    "task055g_access_ledger_manifest": _definition(
+        "task055g_access_ledger_manifest",
+        ["schema_version", "status", "access_plan_content_hash", "max_allowed_date", "record_count", "rows_root", "max_read_date", "prospective_holdout_accessed", "decision_counts", "partition", "content_hash", "generation_id"],
+        _task055g_patterns("access_ledger_manifest.json"),
+    ),
+    "task055g_access_ledger_rows": _definition(
+        "task055g_access_ledger_rows",
+        ["sequence", "principal", "relative_path", "dataset_role", "expected_sha256", "actual_sha256", "declared_min_date", "declared_max_date", "actual_min_date", "actual_max_date", "size_bytes", "decision", "reason", "row_hash"],
+        _task055g_patterns("attempted_access.jsonl"),
+        kind="jsonl",
+        allow_empty=True,
+        optional=["sha256"],
+    ),
+    "task055g_truth_v2_manifest": _definition(
+        "task055g_truth_v2_manifest",
+        ["schema_version", "status", "review_version", "max_date", "record_count", "key_root", "state_counts", "suspend_type_counts", "daily_empty_response_counts", "suspend_empty_response_counts", "valuation_domain_count", "modeled_candidate_count", "timing_uncertified_candidate_count", "lineage", "partitions", "certification_blockers", "content_hash", "generation_id"],
+        _task055g_patterns("truth_v2_manifest.json"),
+    ),
+    "task055g_truth_v2_rows": _definition(
+        "task055g_truth_v2_rows",
+        ["ts_code", "trade_date", "state", "reason_code", "daily_bar_status", "suspend_type", "suspend_timing_status", "suspension_source_coverage", "listed", "active", "valuation_domain_intersection", "modeled_stale_candidate", "stale_mark_authorized", "evidence_hash"],
+        _task055g_patterns("truth_v2_rows.jsonl"),
+        kind="jsonl",
+        allow_empty=False,
+    ),
+    "task055g_fee_plan": _definition(
+        "task055g_fee_plan",
+        ["schema_version", "status", "simulation_start", "simulation_end", "policy_seal_hash", "policy_seal_sha256", "policy_seal_relative_path", "documents", "extractors", "max_documents", "network_contract", "semantic_source_hashes", "builder_semantic_hash", "content_hash", "generation_id"],
+        _task055g_patterns("fee_plan.json"),
+    ),
+    "task055g_fee_document_acquisition": _definition(
+        "task055g_fee_document_acquisition",
+        ["schema_version", "status", "evidence_scope", "plan_content_hash", "policy_seal_hash", "documents", "transport_ledger_relative_path", "transport_ledger_sha256", "transport_ledger_root", "document_merkle_root", "source_hash", "content_hash", "generation_id"],
+        _task055g_patterns("fee_document_acquisition.json"),
+    ),
+    "task055g_fee_transport_ledger": _definition(
+        "task055g_fee_transport_ledger",
+        ["logical_index", "document_id", "request_url", "final_url", "redirect_chain", "http_status", "tls_verified", "hostname_verified", "peer_certificate_sha256", "retrieved_at", "response_headers_sha256", "body_sha256", "body_size_bytes", "evidence_scope", "transport_receipt_hash"],
+        _task055g_patterns("transport_ledger.jsonl"),
+        kind="jsonl",
+        allow_empty=False,
+    ),
+    "task055g_fee_document_verification": _definition(
+        "task055g_fee_document_verification",
+        ["schema_version", "status", "plan_content_hash", "acquisition_content_hash", "document_merkle_root", "transport_ledger_root", "evidence_scope", "verifier_source_hash", "content_hash", "generation_id"],
+        _task055g_patterns("fee_document_verification.json"),
+    ),
+    "task055g_fee_rule_extraction": _definition(
+        "task055g_fee_rule_extraction",
+        ["schema_version", "status", "plan_content_hash", "acquisition_content_hash", "document_verification_content_hash", "policy_seal_hash", "evidence_scope", "parser_source_hash", "assertions", "assertion_root", "content_hash", "generation_id"],
+        _task055g_patterns("fee_rule_extraction.json"),
+    ),
+    "task055g_fee_schedule_v2": _definition(
+        "task055g_fee_schedule_v2",
+        ["schema_version", "status", "evidence_scope", "simulation_start", "simulation_end", "plan_content_hash", "document_acquisition_content_hash", "document_verification_content_hash", "rule_extraction_content_hash", "transport_ledger_root", "document_merkle_root", "assertion_root", "policy_seal_hash", "policy_seal_sha256", "semantic_source_hashes", "builder_semantic_hash", "statutory_components", "modeled_components", "modeled_evidence_level", "certification_ready", "rules", "rules_root", "native_artifacts", "content_hash", "generation_id"],
+        _task055g_patterns("fee_schedule_v2_manifest.json"),
+    ),
+    "task055g_fee_independent_verification": _definition(
+        "task055g_fee_independent_verification",
+        ["schema_version", "status", "schedule_content_hash", "policy_seal_hash", "document_acquisition_content_hash", "document_merkle_root", "transport_ledger_root", "assertion_receipt_root", "rules_root", "rule_count", "coverage", "certification_ready", "verifier_source_hash", "content_hash", "generation_id"],
+        _task055g_patterns("fee_independent_verification.json"),
+    ),
+    "task055g_authoritative_writer_registry": _definition(
+        "task055g_authoritative_writer_registry",
+        ["schema_version", "authority_layout", "operational_states", "writers", "shadow_operational_state_accepted", "content_hash"],
+        _task055g_patterns("writer_registry.json"),
+    ),
+    "task055g_operational_physical_scan": _definition(
+        "task055g_operational_physical_scan",
+        ["schema_version", "writer_registry_content_hash", "status", "state_counts", "total_operational_record_count", "blockers", "writers", "content_hash"],
+        _task055g_patterns("physical_scan_ledger.json"),
+    ),
+    "task055g_operational_genesis": _definition(
+        "task055g_operational_genesis",
+        ["schema_version", "writer_registry_content_hash", "created_canonical_roots", "created_record_files", "physical_zero_claim", "content_hash"],
+        _task055g_patterns("operational_genesis.json"),
+    ),
+    "task055g_authoritative_operational_seal": _definition(
+        "task055g_authoritative_operational_seal",
+        ["schema_version", "status", "writer_registry_content_hash", "physical_scan_content_hash", "genesis_content_hash", "state_counts", "total_operational_record_count", "blockers", "certification_ready", "portfolio_ready", "paper_ready", "live_ready", "immutable", "content_hash", "generation_id"],
+        _task055g_patterns("operational_seal.json"),
+    ),
+    "task055g_causal_frontier": _definition(
+        "task055g_causal_frontier",
+        ["schema_version", "status", "scope", "exact20_ids", "run_count", "terminal_counts", "round_one_frontier_count", "round_one_frontier_semantics", "held_mark_count", "authorized_modeled_held_mark_count", "run_rows_root", "held_mark_root", "missing_key_root", "lineage", "valuation_projection", "partitions", "content_hash", "generation_id"],
+        _task055g_patterns("causal_frontier_manifest.json"),
+    ),
+    "task055g_causal_run_rows": _definition(
+        "task055g_causal_run_rows",
+        ["factor_id", "scenario", "terminal_state", "held_mark_count_before_terminal", "held_mark_root", "blocker", "row_hash"],
+        _task055g_patterns("causal_run_rows.jsonl"),
+        kind="jsonl",
+        allow_empty=False,
+    ),
+    "task055g_held_mark_ledger": _definition(
+        "task055g_held_mark_ledger",
+        ["factor_id", "scenario", "ts_code", "trade_date", "reporting_point", "shares", "mark_price", "method", "source_date", "stale_age_trade_days", "evidence_id", "row_hash"],
+        _task055g_patterns("held_mark_ledger.jsonl"),
+        kind="jsonl",
+        allow_empty=True,
+    ),
+    "task055g_network_plan": _definition(
+        "task055g_network_plan",
+        ["schema_version", "status", "frontier_root", "requests", "plan_hash"],
+        _task055g_patterns("round_one_exact_daily_plan.json", "round_one_network_plan.json", "l2_plan_manifest.json", "next_round_manifest.json"),
+        optional=["stage", "round_id", "parent_apply_hash", "lineage", "limits", "content_hash", "generation_id", "network_executed", "token_read", "max_date", "frontier_count", "frontier_semantics", "truth_v2_content_hash", "matrix_content_hash", "simulation_bundle_content_hash", "fee_schedule_content_hash", "builder_code_hash", "source_plan_schema", "l2_requests", "l2_generation_gate", "excluded_frontier_keys", "empty_response_semantics", "generation_gate", "exhausted_frontier_keys"],
+    ),
+    "task055g_network_consolidation": _definition(
+        "task055g_network_consolidation",
+        ["schema_version", "status", "stage", "round_id", "plan_hash", "plan", "request_count", "successful_request_count", "failed_request_count", "pending_request_count", "request_states", "lineage", "ledger", "content_hash", "generation_id"],
+        _task055g_patterns("consolidation_manifest.json"),
+    ),
+    "task055g_network_execution": _definition(
+        "task055g_network_execution",
+        ["schema_version", "status", "stage", "round_id", "plan_hash", "attempts_recorded_in_ledger", "results", "ledger", "content_hash", "generation_id"],
+        _task055g_patterns("l1_canary_manifest.json", "l1_resume_manifest.json", "l2_canary_manifest.json", "l2_resume_manifest.json"),
+        optional=["must_stop_after_canary", "batch_started", "canary_content_hash", "remaining_request_count"],
+    ),
+    "task055g_network_apply": _definition(
+        "task055g_network_apply",
+        ["schema_version", "status", "stage", "round_id", "plan_hash", "plan", "parent_apply_hash", "lineage", "result_count", "results", "response_lineage_root", "cache_inputs", "cache_input_root", "application_actions", "next_truth_required_inputs", "ledger", "content_hash", "generation_id"],
+        _task055g_patterns("l1_apply_manifest.json", "l2_apply_manifest.json"),
+    ),
+    "task055g_network_run_until_blocked": _definition(
+        "task055g_network_run_until_blocked",
+        ["schema_version", "status", "blocking_gate", "offline_only", "consolidation_content_hash", "ledger", "content_hash", "generation_id"],
+        _task055g_patterns("run_until_blocked_manifest.json"),
+    ),
+    "task055g_network_state_verification": _definition(
+        "task055g_network_state_verification",
+        ["schema_version", "status", "network_accessed", "request_count", "max_request_date", "logical_request_count", "physical_attempt_count", "unique_security_date_count", "terminal_counts", "ledger_root", "artifact_count", "artifact_root", "applied_plan_count", "offline_default_proven", "content_hash", "generation_id"],
+        _task055g_patterns("network_state_verification.json"),
+    ),
+    "task055g_independent_semantic_verification": _definition(
+        "task055g_independent_semantic_verification",
+        ["schema_version", "status", "parent_lineage_content_hash", "access_plan_content_hash", "producer_truth_content_hash", "truth", "causal", "read_ledger_content_hash", "read_ledger_manifest", "max_read_date", "prospective_holdout_accessed", "content_hash", "generation_id"],
+        _task055g_patterns("semantic_verification.json"),
+    ),
+    "task055g_final_report": _definition(
+        "task055g_final_report",
+        ["schema_version", "status", "stage", "network_accessed", "network_request_count", "prospective_holdout_accessed", "max_read_date", "parent_lineage", "access_plan", "read_ledger", "truth_v2", "fee_schedule_v2", "operational_state", "causal_frontier", "network_plan", "semantic_verification", "readiness", "queues", "engineering_blockers", "certification_blockers", "blockers", "content_hash", "generation_id"],
+        _task055g_patterns("task055g_report.json", "task055g_final_report.json"),
+        optional=[
+            "baseline", "network_logical_request_count", "max_request_date",
+            "official_fee_https_request_count", "network_state", "code_semantic_hash",
+            "code_source_hashes", "artifacts",
+        ],
+    ),
+    "task055g_independent_final_verification": _definition(
+        "task055g_independent_final_verification",
+        [
+            "schema_version", "status", "top_status", "report_content_hash",
+            "validated_artifacts", "missing_artifacts", "engineering_blocker_stages",
+            "access_plan_content_hash", "access_ledger_content_hash", "truth_content_hash",
+            "fee_content_hash", "fee_independent_verification_content_hash",
+            "operational_content_hash", "causal_content_hash",
+            "semantic_verification_content_hash", "network_state_verification_content_hash",
+            "frontier_count", "frontier_root", "network_physical_attempt_count",
+            "prospective_holdout_accessed", "operational_queues_verified_empty",
+            "content_hash", "generation_id",
+        ],
+        _task055g_patterns("task055g_final_verification.json"),
     ),
     "task055f_truth_v2_manifest": _definition(
         "task055f_truth_v2_manifest",
