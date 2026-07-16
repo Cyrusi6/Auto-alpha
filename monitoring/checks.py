@@ -2167,6 +2167,33 @@ def check_task055d_secure_remediation(report_path: str | Path | None) -> tuple[d
     return details, alerts
 
 
+def check_task055e_offline_source_salvage(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    if not payload:
+        return {"exists": False, "status": "", "offline_source_salvage_valid": False}, []
+    readiness = dict(payload.get("readiness") or {})
+    valid = (
+        payload.get("status") == "task055e_governed_acquisition_or_dynamic_simulation_closure_blocked"
+        and payload.get("offline_stage_status") == "offline_source_salvage_completed"
+        and payload.get("network_accessed") is False
+        and payload.get("network_request_count") == 0
+        and payload.get("prospective_holdout_accessed") is False
+        and payload.get("simulator_success_evidence_created") is False
+        and readiness.get("offline_source_salvage_ready") is True
+        and all(readiness.get(name) is False for name in ("certification_ready", "portfolio_ready", "optimizer_ready", "paper_ready", "live_ready"))
+    )
+    details = {
+        "exists": True,
+        "status": str(payload.get("status") or ""),
+        "offline_source_salvage_valid": valid,
+        "classification_counts": dict(payload.get("classification_counts") or {}),
+        "causal_remaining_security_dates": int(((payload.get("valuation_domains") or {}).get("causal_held_position_valuation_domain") or {}).get("remaining_security_date_count", 0)),
+        "network_request_count": payload.get("network_request_count"),
+    }
+    alerts = [] if valid else [MonitoringAlert("error", "task055e_offline_source_salvage", "Task 055-E offline salvage boundary is invalid", details)]
+    return details, alerts
+
+
 def check_validation_campaign_leaderboard(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     rows = _read_jsonl(Path(path)) if path else []
     ready = sum(1 for row in rows if row.get("certification_ready") is True)

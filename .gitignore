@@ -48,6 +48,7 @@ ENV/
 # Testing
 .pytest_cache/
 .pytest_tmp_*/
+.pytest_tmp/
 .artifact_schema_*/
 .ci_artifacts/
 .coverage

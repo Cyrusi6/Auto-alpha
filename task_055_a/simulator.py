@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import math
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 
@@ -70,6 +70,7 @@ class EventLedgerSimulator:
         masks: Mapping[str, Any] | None = None,
         corporate_actions: Sequence[Mapping[str, Any]] = (),
         initial_positions: Mapping[str, int] | None = None,
+        diagnostic_mark_observer: Callable[[int, str, str, Mapping[str, int], np.ndarray], None] | None = None,
     ) -> SimulationResult:
         dates = [str(item) for item in self._market_value(market, "dates", "trade_dates")]
         assets = [str(item) for item in self._market_value(market, "assets", "ts_codes")]
@@ -113,6 +114,15 @@ class EventLedgerSimulator:
         for index, date in enumerate(dates):
             self._settle(index, state, settlements, ledger)
             self._apply_actions(index, actions_by_index.get(index, ()), state, settlements, ledger)
+            self._notify_mark_observer(
+                diagnostic_mark_observer,
+                index,
+                date,
+                "open_pretrade",
+                state,
+                assets,
+                valuation_open[index],
+            )
             try:
                 positions_open = self._position_value(state, assets, valuation_open[index])
             except ValueError as error:
@@ -142,6 +152,15 @@ class EventLedgerSimulator:
 
             positions_open_post = self._position_value(state, assets, valuation_open[index])
             open_post = state.cash.total + positions_open_post
+            self._notify_mark_observer(
+                diagnostic_mark_observer,
+                index,
+                date,
+                "close",
+                state,
+                assets,
+                valuation_close[index],
+            )
             try:
                 positions_close = self._position_value(state, assets, valuation_close[index])
             except ValueError as error:
@@ -467,6 +486,27 @@ class EventLedgerSimulator:
         return float(total)
 
     @staticmethod
+    def _notify_mark_observer(
+        observer: Callable[[int, str, str, Mapping[str, int], np.ndarray], None] | None,
+        index: int,
+        date: str,
+        reporting_point: str,
+        state: LedgerState,
+        assets: list[str],
+        prices: np.ndarray,
+    ) -> None:
+        if observer is None:
+            return
+        held = {}
+        for asset in assets:
+            shares = state.total_shares(asset)
+            if shares > 0:
+                held[asset] = shares
+        observed_prices = np.array(prices, dtype=float, copy=True)
+        observed_prices.setflags(write=False)
+        observer(index, date, reporting_point, held, observed_prices)
+
+    @staticmethod
     def _reject(order: Order, index: int, reason: str, ledger: list[dict[str, Any]]) -> Rejection:
         rejection = Rejection(
             order_id=order.order_id,
@@ -608,6 +648,7 @@ def simulate_event_ledger(
     initial_cash: float | None = None,
     initial_positions: Mapping[str, int] | None = None,
     policy: ScenarioPolicy | Mapping[str, Any] | str = BASELINE,
+    diagnostic_mark_observer: Callable[[int, str, str, Mapping[str, int], np.ndarray], None] | None = None,
 ) -> SimulationResult:
     return EventLedgerSimulator(policy, initial_cash=initial_cash).run(
         market,
@@ -615,6 +656,7 @@ def simulate_event_ledger(
         masks=masks,
         corporate_actions=corporate_actions,
         initial_positions=initial_positions,
+        diagnostic_mark_observer=diagnostic_mark_observer,
     )
 
 

@@ -162,6 +162,7 @@ from .checks import (
     check_task055b_security_date_remediation,
     check_task055c_security_date_closure,
     check_task055d_secure_remediation,
+    check_task055e_offline_source_salvage,
     check_uncertified_production_candidate,
     check_validation_lab,
     check_validation_campaign_leaderboard,
@@ -396,6 +397,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--task055b-final-report-path")
     parser.add_argument("--task055c-final-report-path")
     parser.add_argument("--task055d-final-report-path")
+    parser.add_argument("--task055e-offline-report-path")
     parser.add_argument("--factor-certification-campaign-report-path")
     parser.add_argument("--factor-certification-campaign-registry-path")
     parser.add_argument("--certified-factor-pool-path")
@@ -591,6 +593,7 @@ def main(argv: list[str] | None = None) -> int:
         ("task055b_security_date_remediation", lambda: check_task055b_security_date_remediation(args.task055b_final_report_path)),
         ("task055c_security_date_closure", lambda: check_task055c_security_date_closure(args.task055c_final_report_path)),
         ("task055d_secure_remediation", lambda: check_task055d_secure_remediation(args.task055d_final_report_path)),
+        ("task055e_offline_source_salvage", lambda: check_task055e_offline_source_salvage(args.task055e_offline_report_path)),
         (
             "factor_certification",
             lambda: check_factor_certification(args.factor_certification_decision_path, args.factor_certification_scorecard_path),

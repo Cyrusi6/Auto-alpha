@@ -410,6 +410,9 @@ def _prepare_simulation_inputs(bundle: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+prepare_simulation_inputs = _prepare_simulation_inputs
+
+
 def _execute_generation(
     *,
     root: Path,

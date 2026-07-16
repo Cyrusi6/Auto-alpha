@@ -12,6 +12,7 @@ from monitoring.checks import (
     check_quality_report,
     check_task055a_simulator_baseline,
     check_task055b_security_date_remediation,
+    check_task055e_offline_source_salvage,
 )
 from paper_account import LocalPaperAccount
 
@@ -526,3 +527,33 @@ def test_task055b_monitoring_accepts_blocked_remediation_with_empty_physical_que
     assert payload["remediation_blocked"] is True
     assert payload["factor_replay_ready"] is True
     assert alerts == []
+
+
+def test_task055e_monitoring_requires_offline_only_boundary(tmp_path):
+    report = tmp_path / "task055e_offline_report.json"
+    report.write_text(json.dumps({
+        "status": "task055e_governed_acquisition_or_dynamic_simulation_closure_blocked",
+        "offline_stage_status": "offline_source_salvage_completed",
+        "network_accessed": False,
+        "network_request_count": 0,
+        "prospective_holdout_accessed": False,
+        "simulator_success_evidence_created": False,
+        "classification_counts": {"existing_positive_suspend_event": 3},
+        "valuation_domains": {"causal_held_position_valuation_domain": {"remaining_security_date_count": 1}},
+        "readiness": {
+            "offline_source_salvage_ready": True,
+            "certification_ready": False,
+            "portfolio_ready": False,
+            "optimizer_ready": False,
+            "paper_ready": False,
+            "live_ready": False,
+        },
+    }), encoding="utf-8")
+    payload, alerts = check_task055e_offline_source_salvage(report)
+    assert alerts == []
+    assert payload["offline_source_salvage_valid"] is True
+    data = json.loads(report.read_text(encoding="utf-8"))
+    data["network_request_count"] = 1
+    report.write_text(json.dumps(data), encoding="utf-8")
+    _, alerts = check_task055e_offline_source_salvage(report)
+    assert alerts

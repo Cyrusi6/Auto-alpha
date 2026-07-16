@@ -91,9 +91,15 @@ def strict_true_mask(values: Any, shape: tuple[int, ...] | None = None) -> np.nd
         if shape is None:
             raise ValueError("shape is required for a missing strict mask")
         return np.zeros(shape, dtype=bool)
-    raw = np.asarray(values, dtype=object)
+    raw = np.asarray(values)
     if shape is not None and raw.shape != shape:
         raise ValueError(f"mask shape {raw.shape} does not match {shape}")
+    if np.issubdtype(raw.dtype, np.bool_):
+        return raw.astype(bool, copy=True)
+    if np.issubdtype(raw.dtype, np.number):
+        numeric = raw.astype(float, copy=False)
+        return np.isfinite(numeric) & (numeric == 1.0)
+    raw = np.asarray(values, dtype=object)
     result = np.zeros(raw.shape, dtype=bool)
     for index, value in np.ndenumerate(raw):
         if isinstance(value, (bool, np.bool_)):

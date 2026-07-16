@@ -313,3 +313,36 @@ def test_task055b_native_manifest_schemas(tmp_path):
     assert validate_artifact(inventory, strict=True).valid is True
     assert validate_artifact(preflight, strict=True).valid is True
     assert validate_artifact(report, strict=True).valid is True
+
+
+def test_task055e_offline_native_manifest_schemas(tmp_path):
+    provenance = tmp_path / "provenance_manifest.json"
+    provenance.write_text(json.dumps({
+        "schema_version": "task055e_row_provenance_index_v1", "status": "published",
+        "network_accessed": False, "prospective_holdout_accessed": False,
+        "max_allowed_date": "20260630", "target_key_count": 1, "target_key_hash": "a", "builder_code_hash": "c",
+        "provenance_record_count": 1, "classification_counts": {}, "offline_raw_repair_count": 0,
+        "source_summaries": {}, "partitions": {}, "content_hash": "b", "generation_id": "g",
+    }), encoding="utf-8")
+    domains = tmp_path / "domain_manifest.json"
+    domains.write_text(json.dumps({
+        "schema_version": "task055e_valuation_domains_v1", "status": "published",
+        "network_accessed": False, "prospective_holdout_accessed": False, "lineage": {},
+        "anchor_count": 0, "anchor_cause_counts": {}, "causal_terminal_counts": {},
+        "causal_remaining_security_dates": 0, "partitions": {}, "content_hash": "b", "generation_id": "g",
+    }), encoding="utf-8")
+    report = tmp_path / "task055e_offline_report.json"
+    report.write_text(json.dumps({
+        "schema_version": "task055e_offline_source_salvage_report_v1",
+        "status": "task055e_governed_acquisition_or_dynamic_simulation_closure_blocked",
+        "offline_stage_status": "offline_source_salvage_completed", "network_accessed": False,
+        "network_request_count": 0, "credential_required": False, "prospective_holdout_accessed": False,
+        "max_read_or_request_date": "20260630", "git": {}, "observation_boundary": {}, "lineage": {},
+        "target_summary": {}, "classification_counts": {}, "offline_raw_repair_count": 0,
+        "anchor_count": 0, "anchor_cause_counts": {}, "valuation_domains": {},
+        "minimal_network_plan": {}, "artifacts": {}, "readiness": {},
+        "simulator_success_evidence_created": False, "blockers": [], "content_hash": "b", "generation_id": "g",
+    }), encoding="utf-8")
+    assert validate_artifact(provenance, strict=True).valid is True
+    assert validate_artifact(domains, strict=True).valid is True
+    assert validate_artifact(report, strict=True).valid is True

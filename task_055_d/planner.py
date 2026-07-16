@@ -14,14 +14,15 @@ class PlanError(RuntimeError): pass
 
 def build_l0_l1_plan(*,parent_truth_manifest:str|Path,parent_valuation_manifest:str|Path,matrix_root:str|Path,output_root:str|Path)->dict[str,Any]:
     truth=validate_truth_table(parent_truth_manifest); valuation_path=Path(parent_valuation_manifest); valuation=json.loads(valuation_path.read_text()); valuation_root=valuation_path.parent
-    keys=json.loads((valuation_root/valuation["partitions"]["keys"]["path"]).read_text()); methods=np.load(valuation_root/valuation["partitions"]["methods"]["path"],mmap_mode="r"); source=np.load(valuation_root/valuation["partitions"]["source_date"]["path"],mmap_mode="r"); stale=np.load(valuation_root/valuation["partitions"]["stale_age"]["path"],mmap_mode="r")
-    truth_by_key={(row["ts_code"],row["trade_date"]):row for row in truth["records"]}; matrix=Path(matrix_root); dates=json.loads((matrix/"trade_dates.json").read_text()); date_index={date:i for i,date in enumerate(dates)}
+    keys=json.loads((valuation_root/valuation["partitions"]["keys"]["path"]).read_text()); methods=np.load(valuation_root/valuation["partitions"]["methods"]["path"],mmap_mode="r")
+    truth_by_key={(row["ts_code"],row["trade_date"]):row for row in truth["records"]}; matrix=Path(matrix_root); dates=json.loads((matrix/"trade_dates.json").read_text()); date_index={date:i for i,date in enumerate(dates)}; codes=json.loads((matrix/"ts_codes.json").read_text()); code_index={code:i for i,code in enumerate(codes)}; close_valid=np.load(matrix/"close_validity.npy",mmap_mode="r")
     causes=Counter(); anchor_rows=[]
     for index,key in enumerate(keys):
         row=truth_by_key[tuple(key)]
         if row["state"]!="VENDOR_DAILY_NON_TRADING_MODELED" or np.all(methods[index]!=0): continue
-        if np.all(source[index]<0): cause="no_prior_authoritative_close"
-        elif np.max(stale[index])>int(valuation["max_stale_age_trade_days"]): cause="stale_age_exceeds_policy"
+        asset_pos=code_index[key[0]]; date_pos=date_index[key[1]]; prior=np.flatnonzero(np.asarray(close_valid[asset_pos,:date_pos],dtype=bool))
+        if prior.size==0: cause="no_prior_authoritative_close"
+        elif date_pos-int(prior[-1])>int(valuation["max_stale_age_trade_days"]): cause="stale_age_exceeds_policy"
         elif row["daily_bar"]=="absent" and any((row.get("raw_field_validity") or {}).values()): cause="matrix_truth_conflict"
         elif row.get("corporate_action") is None and not row.get("active",True): cause="lifecycle_or_corporate_action_anchor_missing"
         else: cause="other_anchor_failure"
