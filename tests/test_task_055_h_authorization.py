@@ -186,6 +186,18 @@ def test_scrubbed_package_rejects_absolute_path_and_tamper(tmp_path: Path) -> No
         verify_scrubbed_evidence_package(package["manifest_path"])
 
 
+def test_scrubbed_package_verifies_as_standalone_file(tmp_path: Path) -> None:
+    seal = ready_seal(tmp_path)
+    from task_055_h.authorization import publish_scrubbed_evidence_package
+
+    package = publish_scrubbed_evidence_package(seal, tmp_path / "native_scrubbed")
+    standalone = tmp_path / "scrubbed_authorization_evidence.json"
+    standalone.write_bytes(Path(package["manifest_path"]).read_bytes())
+    verified = verify_scrubbed_evidence_package(standalone)
+    assert verified["status"] == "passed"
+    assert verified["package_content_hash"] == package["content_hash"]
+
+
 def test_durable_journal_blocks_future_file_before_open(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     governed = tmp_path / "governed"
     governed.mkdir()

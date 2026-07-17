@@ -395,7 +395,25 @@ def publish_scrubbed_evidence_package(seal: Mapping[str, Any], output_root: str 
 
 
 def verify_scrubbed_evidence_package(path: str | Path) -> dict[str, Any]:
-    package = validate_generation(path, schema=SCRUBBED_EVIDENCE_SCHEMA, manifest_name="scrubbed_authorization_evidence.json")
+    package_path = Path(path)
+    try:
+        package = validate_generation(
+            package_path,
+            schema=SCRUBBED_EVIDENCE_SCHEMA,
+            manifest_name="scrubbed_authorization_evidence.json",
+        )
+    except ValueError as exc:
+        if "generation_identity_invalid" not in str(exc) or not package_path.is_file():
+            raise
+        package = read_json(package_path)
+        semantic = {key: value for key, value in package.items() if key not in {"content_hash", "generation_id"}}
+        if (
+            package.get("schema_version") != SCRUBBED_EVIDENCE_SCHEMA
+            or canonical_hash(semantic) != package.get("content_hash")
+            or not str(package.get("generation_id") or "").endswith(str(package.get("content_hash") or "")[:24])
+        ):
+            raise Task055HAuthorizationError("standalone_scrubbed_package_identity_invalid") from exc
+        package = package | {"manifest_path": str(package_path.resolve())}
     serialized = json.dumps({key: value for key, value in package.items() if key != "manifest_path"}, sort_keys=True)
     if "/home/" in serialized or "TUSHARE_TOKEN" in serialized:
         raise Task055HAuthorizationError("scrubbed_package_sensitive_content_detected")
