@@ -542,45 +542,7 @@ def main() -> int:
         result = run_offline_hardening(config)
         print(json.dumps(result, indent=2, sort_keys=True, default=str))
         return 0 if result.get("status") == COMPLETED_STATUS else 2
-    governed = Path(str(config["governed_data_root"])).resolve()
-    output = Path(str(config["output_root"])).resolve()
-    report = _load_current_manifest(output / "final")
-    causal_relative = (report.get("artifacts") or {}).get("causal_manifest")
-    if not causal_relative:
-        raise Task055FError("network_command_requires_published_causal_frontier")
-    causal_manifest = output / str(causal_relative)
-    network_root = output / "network"
-    if args.command == "canary":
-        result = execute_canary(
-            causal_manifest=causal_manifest,
-            output_root=network_root / "canary",
-            cache_data_root=network_root / "cache",
-            allow_network=args.allow_network,
-            sealed_plan_hash=str(args.sealed_plan_hash or ""),
-            repo_root=Path(__file__).resolve().parents[1],
-            governed_root=governed,
-        )
-    elif args.command == "canary-verify":
-        if args.allow_network or args.sealed_plan_hash:
-            raise Task055FError("canary_verify_forbids_network_authorization")
-        result = verify_canary(
-            _load_current_path(network_root / "canary"),
-            cache_data_root=network_root / "cache",
-            output_root=network_root / "canary_acceptance",
-        )
-    else:
-        result = execute_l1_resume(
-            causal_manifest=causal_manifest,
-            canary_acceptance_manifest=_load_current_path(network_root / "canary_acceptance"),
-            output_root=network_root / "l1_resume",
-            cache_data_root=network_root / "cache",
-            allow_network=args.allow_network,
-            sealed_plan_hash=str(args.sealed_plan_hash or ""),
-            repo_root=Path(__file__).resolve().parents[1],
-            governed_root=governed,
-        )
-    print(json.dumps(result, indent=2, sort_keys=True, default=str))
-    return 0
+    raise Task055FError("superseded_by_task055i")
 
 
 def _load_current_manifest(root: Path) -> dict[str, Any]:

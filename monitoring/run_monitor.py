@@ -165,6 +165,7 @@ from .checks import (
     check_task055e_offline_source_salvage,
     check_task055f_engineering_baseline,
     check_task055g_engineering_baseline,
+    check_task055i_single_canary_authority,
     check_uncertified_production_candidate,
     check_validation_lab,
     check_validation_campaign_leaderboard,
@@ -402,6 +403,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--task055e-offline-report-path")
     parser.add_argument("--task055f-report-path")
     parser.add_argument("--task055g-report-path")
+    parser.add_argument("--task055i-report-path")
+    parser.add_argument("--task055i-execution-authorization-path")
+    parser.add_argument("--task055i-final-verification-path")
     parser.add_argument("--factor-certification-campaign-report-path")
     parser.add_argument("--factor-certification-campaign-registry-path")
     parser.add_argument("--certified-factor-pool-path")
@@ -600,6 +604,14 @@ def main(argv: list[str] | None = None) -> int:
         ("task055e_offline_source_salvage", lambda: check_task055e_offline_source_salvage(args.task055e_offline_report_path)),
         ("task055f_engineering_baseline", lambda: check_task055f_engineering_baseline(args.task055f_report_path)),
         ("task055g_engineering_baseline", lambda: check_task055g_engineering_baseline(args.task055g_report_path)),
+        (
+            "task055i_single_canary_authority",
+            lambda: check_task055i_single_canary_authority(
+                args.task055i_report_path,
+                args.task055i_execution_authorization_path,
+                args.task055i_final_verification_path,
+            ),
+        ),
         (
             "factor_certification",
             lambda: check_factor_certification(args.factor_certification_decision_path, args.factor_certification_scorecard_path),

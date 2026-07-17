@@ -554,6 +554,21 @@ class AshareDashboardService:
             self._task055h_artifact_candidates("task055h_final_verification.json")
         )
 
+    def load_task_055i_runtime_authority(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055i_artifact_candidates("runtime_authority.json"))
+
+    def load_task_055i_execution_authorization(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055i_artifact_candidates("execution_authorization.json"))
+
+    def load_task_055i_rehearsal(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055i_artifact_candidates("rehearsal_manifest.json"))
+
+    def load_task_055i_final_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055i_artifact_candidates("task055i_report.json"))
+
+    def load_task_055i_final_verification(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055i_artifact_candidates("task055i_final_verification.json"))
+
     def load_task_054_scrubbed_evidence(self) -> dict[str, Any]:
         return self._read_first_json(self._validation_campaign_artifact_candidates("task_054a_scrubbed_evidence_package.json"))
 
@@ -2632,6 +2647,21 @@ class AshareDashboardService:
             if not search_root.is_dir():
                 continue
             for pattern in (f"task_055_h*/**/{filename}", f"validation_runs/task_055_h*/**/{filename}"):
+                candidates.extend(sorted(search_root.glob(pattern), reverse=True))
+        return list(dict.fromkeys(candidates))
+
+    def _task055i_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        candidates = [
+            self.config.validation_campaign_store_dir / "task_055_i" / filename,
+            self.config.validation_campaign_store_dir / "task055i" / filename,
+            root / "task_055_i" / filename,
+            root / "task055i" / filename,
+        ]
+        for search_root in (self.config.validation_campaign_store_dir, root):
+            if not search_root.is_dir():
+                continue
+            for pattern in (f"task_055_i*/**/{filename}", f"validation_runs/task_055_i*/**/{filename}"):
                 candidates.extend(sorted(search_root.glob(pattern), reverse=True))
         return list(dict.fromkeys(candidates))
 

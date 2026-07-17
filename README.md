@@ -1871,3 +1871,13 @@ The operational seal scans authoritative runtime roots as well as governed histo
 The only Task 055-H top-level states are `canary_authorization_ready_no_network_executed` and `task055h_canary_authorization_blocked_no_network_executed`. Both are offline engineering evidence. Certification, portfolio, paper, and live readiness remain false, and no state authorizes a Tushare request by itself.
 
 The Git-safe audit copy is `evidence/task_055_h/scrubbed_authorization_evidence.json`. It contains the complete ordered 17-key request set and hash chain, but no prices, credentials, absolute server paths, or source data. Verify it offline with `verify_scrubbed_evidence_package`; this standalone verification checks internal lineage only and does not replace server-side native artifact revalidation.
+
+### Task 055-I single-canary execution authority
+
+Task 055-H readiness is parent evidence only. The sole future production entrypoint is `python -m task_055_i.network_cli canary`; it accepts one sealed runtime-authority manifest, the reviewed full hash, an owner-only absolute credential file, and explicit `--allow-network`. No resume or batch command is exposed.
+
+The canonical authority lives under the governed root rather than a task output. It binds the fixed Task 055-H seal, ordered 17-key frontier, first exact-daily request (`daily / 000413.SZ / 20160726`), immutable root identities, append-only network and transport-spend ledgers, a single-flight lock, and global `64/128/160` limits. Seal copies, root substitution, ledger deletion, and budget resets fail closed.
+
+The Task 055-I release itself remains offline: credential reads, Tushare requests, other HTTP, real response application, and GPU work are all zero. Its isolated synthetic-response rehearsal calls the same executor and native application chain to build an immutable raw repair, governed freeze, strict matrix, v3 tensor, exact-20 materializations, research-firewall sentinel, and fee-aware exact-20 × five-scenario event-ledger replay. Synthetic evidence is permanently ineligible for the production seal.
+
+`operational_state_unproven` remains explicit because every historical writer CLI is not yet globally constrained to one authoritative root. Monitoring and dashboard readers therefore do not claim that all downstream queues are physically proven empty. Certification, portfolio, paper, and live readiness remain false.
