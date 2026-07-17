@@ -517,6 +517,43 @@ class AshareDashboardService:
             self._task055g_artifact_candidates("task055g_final_verification.json")
         )
 
+    def load_task_055h_authorization_seal(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055h_artifact_candidates("authorization_seal.json"))
+
+    def load_task_055h_scrubbed_evidence(self) -> dict[str, Any]:
+        return self._read_first_json(
+            self._task055h_artifact_candidates("scrubbed_authorization_evidence.json")
+        )
+
+    def load_task_055h_access_journal(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055h_artifact_candidates("access_journal.json"))
+
+    def load_task_055h_fee_attestation(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055h_artifact_candidates("fee_attestation.json"))
+
+    def load_task_055h_operational_seal(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055h_artifact_candidates("operational_seal.json"))
+
+    def load_task_055h_canary_acceptance(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055h_artifact_candidates("canary_acceptance.json"))
+
+    def load_task_055h_resume_authorization(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055h_artifact_candidates("resume_authorization.json"))
+
+    def load_task_055h_response_apply(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055h_artifact_candidates("response_apply.json"))
+
+    def load_task_055h_dynamic_l2_plan(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055h_artifact_candidates("dynamic_l2_plan.json"))
+
+    def load_task_055h_final_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055h_artifact_candidates("task055h_report.json"))
+
+    def load_task_055h_final_verification(self) -> dict[str, Any]:
+        return self._read_first_json(
+            self._task055h_artifact_candidates("task055h_final_verification.json")
+        )
+
     def load_task_054_scrubbed_evidence(self) -> dict[str, Any]:
         return self._read_first_json(self._validation_campaign_artifact_candidates("task_054a_scrubbed_evidence_package.json"))
 
@@ -2581,6 +2618,21 @@ class AshareDashboardService:
             for pattern in (f"task_055_g*/**/{filename}", f"validation_runs/task_055_g*/**/{filename}"):
                 candidates.extend(sorted(search_root.glob(pattern), reverse=True))
         candidates.extend(self._validation_campaign_artifact_candidates(filename))
+        return list(dict.fromkeys(candidates))
+
+    def _task055h_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        candidates = [
+            self.config.validation_campaign_store_dir / "task_055_h" / filename,
+            self.config.validation_campaign_store_dir / "task055h" / filename,
+            root / "task_055_h" / filename,
+            root / "task055h" / filename,
+        ]
+        for search_root in (self.config.validation_campaign_store_dir, root):
+            if not search_root.is_dir():
+                continue
+            for pattern in (f"task_055_h*/**/{filename}", f"validation_runs/task_055_h*/**/{filename}"):
+                candidates.extend(sorted(search_root.glob(pattern), reverse=True))
         return list(dict.fromkeys(candidates))
 
     def _certification_artifact_candidates(self, filename: str) -> list[Path]:

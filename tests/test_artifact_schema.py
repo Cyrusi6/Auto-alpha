@@ -613,3 +613,60 @@ def test_task055g_network_and_fee_schema_reject_missing_native_fields(tmp_path):
     assert verifier_result.valid is False
     assert any("attempts_recorded_in_ledger" in issue.message for issue in canary_result.issues)
     assert any("assertion_receipt_root" in issue.message for issue in verifier_result.issues)
+
+
+def test_task055h_native_manifest_schemas(tmp_path):
+    root = tmp_path / "task_055_h_run"
+    root.mkdir()
+    artifacts = {
+        "authorization_seal.json": ({
+            "schema_version": "task055h_network_authorization_seal_v1", "status": "canary_authorization_ready_no_network_executed",
+            "baseline_commit": "b", "implementation_commit": "i", "task055g_report_content_hash": "r",
+                "task055g_final_verifier_content_hash": "v", "task055g_plan_hash": "p", "task055g_plan_lineage": {}, "frontier_root": "f",
+                "ordered_exact_daily_key_count": 17, "ordered_exact_daily_keys": [], "ordered_key_root": "k", "canary": {},
+                "canary_execution_plan": {}, "canary_execution_plan_hash": "x",
+                "canary_retry_count": 1, "resume_requires_separate_authorization": True, "resume_authorized": False,
+                "root_identities": {}, "canonical_roots": {}, "parent_network_ledger_root": "l",
+                "authorization_network_ledger_root": "a", "authorization_transport_spend_root": "t", "budgets": {}, "consolidation_content_hash": "c",
+            "access_journal_content_hash": "j", "fee_attestation_content_hash": "f", "operational_seal_content_hash": "o",
+            "independent_causal_attestation": {}, "artifact_sha_catalog": [], "semantic_source_hashes": {},
+            "semantic_source_root": "s", "network_execution": {}, "engineering_blockers": [],
+            "certification_ready": False, "portfolio_ready": False, "paper_ready": False, "live_ready": False,
+            "content_hash": "h", "generation_id": "g",
+        }, "task055h_authorization_seal"),
+        "fee_attestation.json": ({
+            "schema_version": "task055h_fee_schedule_attestation_v1", "status": "passed", "production_spec_hash": "p",
+            "schedule_content_hash": "s", "schedule_manifest_sha256": "m", "independent_verification_content_hash": "i",
+            "policy_seal_hash": "q", "document_count": 7, "document_catalog": [],
+            "official_rate_or_statutory_interval_record_count": 28, "uncalibrated_modeled_record_count": 12,
+            "evidence_counts": {}, "projected_rules_root": "r", "commission_interpretations": {},
+            "content_hash": "h", "generation_id": "g",
+        }, "task055h_fee_attestation"),
+        "operational_seal.json": ({
+            "schema_version": "task055h_authoritative_operational_seal_v1", "status": "passed",
+            "writer_registry_source_hash": "w", "writer_count": 6, "writers": [], "state_counts": {}, "blockers": [],
+            "shadow_governed_artifacts_authoritative": False, "runtime_default_roots_scanned": True,
+            "content_hash": "h", "generation_id": "g",
+        }, "task055h_operational_seal"),
+        "task055h_report.json": ({
+            "schema_version": "task055h_engineering_report_v1", "status": "canary_authorization_ready_no_network_executed",
+            "implementation_commit": "i", "authorization_seal_content_hash": "a", "scrubbed_evidence_content_hash": "s",
+            "fee_attestation_content_hash": "f", "operational_seal_content_hash": "o", "frontier_count": 17,
+            "frontier_root": "r", "plan_hash": "p", "canary": {}, "credential_read_count": 0,
+            "tushare_request_count": 0, "other_network_request_count": 0, "prospective_holdout_accessed": False,
+            "resume_authorized": False, "engineering_blockers": [], "readiness": {}, "content_hash": "h", "generation_id": "g",
+        }, "task055h_final_report"),
+        "task055h_final_verification.json": ({
+            "schema_version": "task055h_independent_final_verification_v1", "status": "passed",
+            "top_status": "canary_authorization_ready_no_network_executed", "report_content_hash": "r",
+            "authorization_seal_content_hash": "a", "scrubbed_evidence_verification_hash": "s", "frontier_count": 17,
+            "frontier_root": "f", "plan_hash": "p", "credential_read_count": 0, "tushare_request_count": 0,
+            "other_network_request_count": 0, "prospective_holdout_accessed": False, "content_hash": "h", "generation_id": "g",
+        }, "task055h_final_verification"),
+    }
+    for filename, (payload, expected) in artifacts.items():
+        path = root / filename
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        result = validate_artifact(path, strict=True)
+        assert result.valid is True
+        assert result.artifact_type == expected

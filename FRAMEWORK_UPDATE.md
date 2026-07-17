@@ -2578,3 +2578,11 @@
 - exact-20×五场景 producer 和独立 verifier 均真实执行 100 路 EventLedgerSimulator，得到 100 个 `causal_valuation_blocked`，held marks 216,853 个，其中实际持仓使用的授权 modeled marks 4,504 个。Fee-aware round-1 frontier 为 17 个 exact-daily key，root 为 `fd7e9a1468d8b5960767c2c3e4877c6cfa646a9051b8a6b2ba95f5573fb77b6f`，plan hash 为 `397ac8d5190ab492c65d5f947df69e845db517b0358330c95db365186aec1e6a`；脱敏分布为 SZ 9、SH 8，全部位于 2016 年，三个固定 probe 均在 frontier 中。
 - producer access ledger 共 3,069 次 `opened_allowed`、0 次 `blocked_before_open`、0 次 `opened_policy_violation`，最大读取日期为 `2026-06-30`，`prospective_holdout_accessed=false`。Tushare physical attempts=0；仅执行 7 次预封存官方费用 HTTPS 获取。certification/certified-pool/portfolio/production-candidate/optimizer/paper/live 七类物理状态均为 0。
 - 最终状态为 `task055g_fee_aware_frontier_sealed_waiting_for_network_authorization`。historical selection contamination、selection reuse、execution modeled、停牌 timing 未认证、成分公告时点未知、vendor revision、prospective holdout 未到达及未校准 modeled 成本继续保留为 certification blockers；本轮未运行 Tushare canary、L1/L2 或 native Simulator 成功闭环。
+
+## 2026-07-17 — Task 055-H 离线授权证据展示
+
+- monitoring 增加 Task 055-H 纯离线边界检查，联合核对 final report、authorization seal、Fee attestation、operational seal 和 independent final verification。只有 credential read、Tushare/其他 network request、prospective holdout access 均为 0，且 resume 尚未授权时，才可识别离线授权证据。
+- 17-key exact-daily seal 必须同时满足 report、authorization seal、frontier root、父 plan 和有序 key 集合一致；monitoring 只展示 sealed frontier 数量和状态，不暴露请求细节或凭据。
+- Fee 展示固定区分 28 条 official-rate/statutory-interval 证据与 12 条 uncalibrated modeled 规则。该分层用于工程账本解释，不改变 historical-selection contamination、modeled execution 或 certification blocker。
+- dashboard 增加 authorization seal、scrubbed evidence、access journal、Fee attestation、operational seal、canary acceptance、resume authorization、response apply、dynamic L2 plan、final report 和 final verification reader。
+- `operational_state_unproven` 被明确展示为“权威运行根或物理空状态未证明”，不能解释为 queue 已知为空，也不能通过影子目录消除。Task 055-H 仅允许 `canary_authorization_ready_no_network_executed` 或 `task055h_canary_authorization_blocked_no_network_executed`；certification/portfolio/paper/live readiness 继续为 false。

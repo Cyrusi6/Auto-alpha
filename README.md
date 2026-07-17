@@ -1859,3 +1859,13 @@ The operational seal is derived from registered production writers and all canon
 This task does not authorize Tushare access. Its accepted terminal states are limited to `task055g_fee_aware_frontier_sealed_waiting_for_network_authorization` and `task055g_offline_engineering_baseline_blocked`. In both states `certification_ready`, `portfolio_ready`, `paper_ready`, and `live_ready` remain false, physical downstream queues remain empty, and historical-selection contamination remains an explicit certification blocker.
 
 The production entry is `python -m task_055_g.run --governed-root <root> --output-root <sibling-run> --allow-official-fee-network`. The flag authorizes only the presealed official fee-document HTTPS plan; the Task 055-G DAG never reads Tushare credentials and the sealed remediation network state remains at zero physical attempts.
+
+### Task 055-H offline canary authorization plane
+
+`python -m task_055_h.run --repository-root <repo> --governed-root <root>` is a pure-offline authorization pass over the immutable Task 055-G result. It seals the ordered round-one frontier as 17 exact security-date requests, records a deterministic first canary, and requires a separate future authorization before either canary execution or resume. During Task 055-H itself, credential reads, Tushare requests, other network requests, and prospective-holdout access must all remain zero.
+
+The Fee attestation independently binds the production Fee Schedule to its official document bytes and classifies 28 official-rate/statutory-interval records separately from 12 uncalibrated modeled records. The modeled records remain accounting assumptions; their presence cannot support certification, capacity claims, or live readiness.
+
+The operational seal scans authoritative runtime roots as well as governed historical roots. `operational_state_unproven` means the registered roots, schemas, or physical records could not be independently proven empty and stable; it does not mean the queues are known empty. This blocker prevents canary authorization and cannot be cleared by creating a shadow empty directory.
+
+The only Task 055-H top-level states are `canary_authorization_ready_no_network_executed` and `task055h_canary_authorization_blocked_no_network_executed`. Both are offline engineering evidence. Certification, portfolio, paper, and live readiness remain false, and no state authorizes a Tushare request by itself.

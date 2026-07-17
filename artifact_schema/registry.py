@@ -46,6 +46,19 @@ def _task055g_patterns(*names: str) -> list[str]:
     ]
 
 
+def _task055h_patterns(*names: str) -> list[str]:
+    return [
+        pattern
+        for name in names
+        for pattern in (
+            f"*/task_055_h*/{name}",
+            f"*/task_055_h*/**/{name}",
+            f"*/task055h/{name}",
+            f"*/task055h/**/{name}",
+        )
+    ]
+
+
 ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
     "research_suite_result": _definition("research_suite_result", ["suite_name", "status", "stages"], ["suite_result.json"]),
     "artifact_catalog": _definition("artifact_catalog", ["suite_name", "created_at", "entries"], ["artifact_catalog.json"]),
@@ -1066,6 +1079,63 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
             "content_hash", "generation_id",
         ],
         _task055g_patterns("task055g_final_verification.json"),
+    ),
+    "task055h_access_journal": _definition(
+        "task055h_access_journal",
+        ["schema_version", "status", "event_count", "attempt_count", "terminal_count", "max_read_date", "prospective_holdout_accessed", "ledger_root", "partition", "content_hash", "generation_id"],
+        _task055h_patterns("access_journal.json"),
+    ),
+    "task055h_fee_attestation": _definition(
+        "task055h_fee_attestation",
+        ["schema_version", "status", "production_spec_hash", "schedule_content_hash", "schedule_manifest_sha256", "independent_verification_content_hash", "policy_seal_hash", "document_count", "document_catalog", "official_rate_or_statutory_interval_record_count", "uncalibrated_modeled_record_count", "evidence_counts", "projected_rules_root", "commission_interpretations", "content_hash", "generation_id"],
+        _task055h_patterns("fee_attestation.json"),
+    ),
+    "task055h_operational_seal": _definition(
+        "task055h_operational_seal",
+        ["schema_version", "status", "writer_registry_source_hash", "writer_count", "writers", "state_counts", "blockers", "shadow_governed_artifacts_authoritative", "runtime_default_roots_scanned", "content_hash", "generation_id"],
+        _task055h_patterns("operational_seal.json"),
+    ),
+    "task055h_authorization_seal": _definition(
+        "task055h_authorization_seal",
+        ["schema_version", "status", "baseline_commit", "implementation_commit", "task055g_report_content_hash", "task055g_final_verifier_content_hash", "task055g_plan_hash", "frontier_root", "ordered_exact_daily_key_count", "ordered_exact_daily_keys", "ordered_key_root", "canary", "canary_retry_count", "resume_requires_separate_authorization", "resume_authorized", "root_identities", "parent_network_ledger_root", "authorization_network_ledger_root", "budgets", "consolidation_content_hash", "access_journal_content_hash", "fee_attestation_content_hash", "operational_seal_content_hash", "independent_causal_attestation", "artifact_sha_catalog", "semantic_source_hashes", "semantic_source_root", "network_execution", "engineering_blockers", "certification_ready", "portfolio_ready", "paper_ready", "live_ready", "content_hash", "generation_id"],
+        _task055h_patterns("authorization_seal.json"),
+        optional=["task055g_plan_lineage", "canary_execution_plan", "canary_execution_plan_hash", "canonical_roots", "authorization_transport_spend_root"],
+    ),
+    "task055h_scrubbed_authorization_evidence": _definition(
+        "task055h_scrubbed_authorization_evidence",
+        ["schema_version", "status", "authorization_seal_content_hash", "baseline_commit", "implementation_commit", "task055g_report_content_hash", "task055g_final_verifier_content_hash", "plan_hash", "frontier_root", "ordered_exact_daily_keys", "ordered_key_root", "canary", "root_identity_hashes", "parent_network_ledger_root", "authorization_network_ledger_root", "budgets", "fee_attestation_content_hash", "operational_seal_content_hash", "artifact_sha_catalog", "semantic_source_root", "engineering_blockers", "contains_absolute_paths", "contains_market_values", "contains_credentials", "content_hash", "generation_id"],
+        _task055h_patterns("scrubbed_authorization_evidence.json"),
+        optional=["plan_lineage", "canary_execution_plan_hash", "authorization_transport_spend_root"],
+    ),
+    "task055h_canary_acceptance": _definition(
+        "task055h_canary_acceptance",
+        ["schema_version", "status", "authorization_seal_content_hash", "canary_execution_content_hash", "transport_hash", "cache_sha256", "item_count", "network_ledger_root", "transport_spend_root", "physical_post_count", "resume_authorized", "crash_recovery_cache_verified", "content_hash", "generation_id"],
+        _task055h_patterns("canary_acceptance.json"),
+    ),
+    "task055h_response_apply": _definition(
+        "task055h_response_apply",
+        ["schema_version", "status", "authorization_seal_content_hash", "canary_acceptance_content_hash", "transport_hash", "cache_sha256", "response_item_count", "response_partition", "action", "rebuild_dag", "parent_artifact_catalog_root", "semantic_source_root", "production_inputs_from_sealed_native_artifacts_only", "external_mapping_accepted", "content_hash", "generation_id"],
+        _task055h_patterns("response_apply.json"),
+    ),
+    "task055h_resume_authorization": _definition(
+        "task055h_resume_authorization",
+        ["schema_version", "status", "canary_acceptance_content_hash", "reviewed_acceptance_hash", "resume_authorized", "content_hash", "generation_id"],
+        _task055h_patterns("resume_authorization.json"),
+    ),
+    "task055h_dynamic_l2_plan": _definition(
+        "task055h_dynamic_l2_plan",
+        ["schema_version", "status", "stage", "round_id", "frontier_root", "parent_apply_hash", "lineage", "parent_l1_apply_hash", "authorization_seal_content_hash", "requests", "limits", "empty_response_semantics", "plan_hash", "content_hash", "generation_id"],
+        _task055h_patterns("dynamic_l2_plan.json"),
+    ),
+    "task055h_final_report": _definition(
+        "task055h_final_report",
+        ["schema_version", "status", "implementation_commit", "authorization_seal_content_hash", "scrubbed_evidence_content_hash", "fee_attestation_content_hash", "operational_seal_content_hash", "frontier_count", "frontier_root", "plan_hash", "canary", "credential_read_count", "tushare_request_count", "other_network_request_count", "prospective_holdout_accessed", "resume_authorized", "engineering_blockers", "readiness", "content_hash", "generation_id"],
+        _task055h_patterns("task055h_report.json"),
+    ),
+    "task055h_final_verification": _definition(
+        "task055h_final_verification",
+        ["schema_version", "status", "top_status", "report_content_hash", "authorization_seal_content_hash", "scrubbed_evidence_verification_hash", "frontier_count", "frontier_root", "plan_hash", "credential_read_count", "tushare_request_count", "other_network_request_count", "prospective_holdout_accessed", "content_hash", "generation_id"],
+        _task055h_patterns("task055h_final_verification.json"),
     ),
     "task055f_truth_v2_manifest": _definition(
         "task055f_truth_v2_manifest",

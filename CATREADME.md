@@ -520,3 +520,7 @@ Task 055-E 的 Offline Source Salvage 不读取凭据、不联网。它从 gover
 Task 055-G 本轮只允许封存 fee-aware exact-date frontier，动态 L1/L2 状态机保持离线且不读取凭据、不发送 Tushare 请求。顶层只能是等待网络授权或离线阻断；两者均属于 retrospective engineering evidence，不是 clean OOS、认证、组合批准或实盘许可，certification/portfolio/paper/live readiness 始终为 false。
 
 真实 v3 sibling 运行完成 35,844 个 security-date 的独立守恒复核、官方 Fee Schedule v2 的 7 份文档/40 条规则验证，以及 exact-20×五场景的 producer/independent 100 路因果重放。Fee-aware round-1 frontier 为 17 个 exact daily key；本轮 Tushare physical attempts 为 0，prospective holdout 未触碰，七类 operational queue/registry 的物理记录数均为 0。
+
+`task_055_h/` 是 Task 055-G 之后的纯离线 canary authorization plane。它重新验证父报告和 verifier，封存有序的 17 个 exact security-date key、首个 canary、预算和独立 resume gate；本阶段 `credential_read_count`、Tushare/其他网络请求及 prospective holdout access 必须全部为 0。Fee attestation 将 28 条官方费率或法定区间证据与 12 条未校准 modeled 规则分层展示，不把 modeled commission/slippage/impact 描述成官方费用或认证证据。
+
+Task 055-H 的 authoritative operational seal 同时扫描实际 runtime roots 与 governed historical roots。`operational_state_unproven` 表示根身份、schema、内容或物理空状态尚未得到独立证明，而不是“已知为空”；该状态必须阻断 canary authorization。Task 055-H 顶层只允许 offline ready-no-network 或 offline blocked-no-network，certification/portfolio/paper/live readiness 始终为 false。

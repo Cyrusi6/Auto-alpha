@@ -2343,6 +2343,201 @@ def check_task055g_engineering_baseline(report_path: str | Path | None) -> tuple
     return details, alerts
 
 
+def check_task055h_offline_authorization(
+    report_path: str | Path | None,
+    authorization_seal_path: str | Path | None = None,
+    fee_attestation_path: str | Path | None = None,
+    operational_seal_path: str | Path | None = None,
+    final_verification_path: str | Path | None = None,
+) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    report = _read_json(Path(report_path)) if report_path else {}
+    if not report:
+        return {
+            "exists": False,
+            "status": "",
+            "offline_state": "missing",
+            "task055h_boundary_valid": False,
+            "offline_execution_proven": False,
+            "canary_authorization_ready": False,
+            "offline_blocked": False,
+            "operational_state_unproven": True,
+            "certification_ready": False,
+            "portfolio_ready": False,
+            "paper_ready": False,
+            "live_ready": False,
+        }, []
+    ready_status = "canary_authorization_ready_no_network_executed"
+    blocked_status = "task055h_canary_authorization_blocked_no_network_executed"
+    status = str(report.get("status") or "")
+    authorization = _read_json(Path(authorization_seal_path)) if authorization_seal_path else {}
+    fee = _read_json(Path(fee_attestation_path)) if fee_attestation_path else {}
+    operational = _read_json(Path(operational_seal_path)) if operational_seal_path else {}
+    verification = _read_json(Path(final_verification_path)) if final_verification_path else {}
+    readiness = dict(report.get("readiness") or {})
+    engineering_blockers = [str(value) for value in (report.get("engineering_blockers") or ())]
+    try:
+        credential_reads = int(report.get("credential_read_count") or 0)
+        tushare_requests = int(report.get("tushare_request_count") or 0)
+        other_network_requests = int(report.get("other_network_request_count") or 0)
+        frontier_count = int(report.get("frontier_count") or 0)
+    except (TypeError, ValueError):
+        credential_reads = tushare_requests = other_network_requests = frontier_count = -1
+    offline_execution = (
+        credential_reads == 0
+        and tushare_requests == 0
+        and other_network_requests == 0
+        and report.get("prospective_holdout_accessed") is False
+        and report.get("resume_authorized") is False
+    )
+    downstream_false = all(
+        readiness.get(name) is False
+        for name in ("certification_ready", "portfolio_ready", "paper_ready", "live_ready")
+    )
+    authorization_network = dict(authorization.get("network_execution") or {})
+    authorization_offline = False
+    if authorization:
+        try:
+            authorization_offline = (
+                int(authorization_network.get("credential_read_count") or 0) == 0
+                and int(authorization_network.get("tushare_request_count") or 0) == 0
+                and int(authorization_network.get("other_network_request_count") or 0) == 0
+                and authorization_network.get("prospective_holdout_accessed") is False
+                and authorization.get("resume_authorized") is False
+            )
+        except (TypeError, ValueError):
+            authorization_offline = False
+    ordered_keys = list(authorization.get("ordered_exact_daily_keys") or ())
+    try:
+        authorization_frontier_count = int(authorization.get("ordered_exact_daily_key_count") or -1)
+    except (TypeError, ValueError):
+        authorization_frontier_count = -1
+    frontier_sealed = (
+        frontier_count == 17
+        and authorization_frontier_count == 17
+        and len(ordered_keys) == 17
+        and authorization.get("status") == status
+        and authorization.get("frontier_root") == report.get("frontier_root")
+        and authorization.get("task055g_plan_hash") == report.get("plan_hash")
+        and authorization.get("content_hash") == report.get("authorization_seal_content_hash")
+        and authorization_offline
+    )
+    try:
+        official_fee_records = int(fee.get("official_rate_or_statutory_interval_record_count") or 0)
+        modeled_fee_records = int(fee.get("uncalibrated_modeled_record_count") or 0)
+    except (TypeError, ValueError):
+        official_fee_records = modeled_fee_records = -1
+    fee_verified = (
+        fee.get("status") == "passed"
+        and official_fee_records == 28
+        and modeled_fee_records == 12
+        and fee.get("content_hash") == report.get("fee_attestation_content_hash")
+    )
+    operational_blockers = [str(value) for value in (operational.get("blockers") or ())]
+    try:
+        operational_counts_empty = bool(operational.get("state_counts")) and all(
+            int(value) == 0 for value in dict(operational.get("state_counts") or {}).values()
+        )
+    except (TypeError, ValueError):
+        operational_counts_empty = False
+    operational_bound = (
+        bool(operational)
+        and operational.get("content_hash") == report.get("operational_seal_content_hash")
+    )
+    operational_proven = (
+        operational_bound
+        and operational.get("status") == "passed"
+        and not operational_blockers
+        and operational_counts_empty
+    )
+    operational_state_unproven = (
+        not operational_proven
+        and (
+            any(value.startswith("operational_state_unproven") for value in engineering_blockers)
+            or bool(operational_blockers)
+            or operational.get("status") == "blocked"
+            or not operational_bound
+        )
+    )
+    expected_verification_status = "passed" if status == ready_status else "blocked_verified"
+    try:
+        verification_offline = (
+            int(verification.get("credential_read_count") or 0) == 0
+            and int(verification.get("tushare_request_count") or 0) == 0
+            and int(verification.get("other_network_request_count") or 0) == 0
+        )
+    except (TypeError, ValueError):
+        verification_offline = False
+    final_verification_bound = (
+        verification.get("status") == expected_verification_status
+        and verification.get("top_status") == status
+        and verification.get("report_content_hash") == report.get("content_hash")
+        and verification.get("authorization_seal_content_hash") == report.get("authorization_seal_content_hash")
+        and verification_offline
+        and verification.get("prospective_holdout_accessed") is False
+    )
+    common_boundary = (
+        status in {ready_status, blocked_status}
+        and offline_execution
+        and downstream_false
+        and frontier_sealed
+        and fee_verified
+        and final_verification_bound
+    )
+    canary_ready = (
+        common_boundary
+        and status == ready_status
+        and operational_proven
+        and not engineering_blockers
+        and readiness.get("canary_authorization_ready") is True
+    )
+    blocked_verified = (
+        common_boundary
+        and status == blocked_status
+        and bool(engineering_blockers)
+        and readiness.get("canary_authorization_ready") is False
+        and (operational_bound or operational_state_unproven)
+    )
+    boundary_valid = canary_ready or blocked_verified
+    details = {
+        "exists": True,
+        "status": status,
+        "offline_state": status,
+        "task055h_boundary_valid": boundary_valid,
+        "offline_execution_proven": offline_execution and authorization_offline,
+        "credential_read_count": credential_reads,
+        "tushare_request_count": tushare_requests,
+        "other_network_request_count": other_network_requests,
+        "network_request_count": tushare_requests + other_network_requests,
+        "prospective_holdout_accessed": report.get("prospective_holdout_accessed"),
+        "prospective_holdout_access_count": 0 if report.get("prospective_holdout_accessed") is False else 1,
+        "frontier_key_count": frontier_count,
+        "frontier_sealed": frontier_sealed,
+        "official_fee_record_count": official_fee_records,
+        "modeled_fee_record_count": modeled_fee_records,
+        "fee_attestation_verified": fee_verified,
+        "operational_state_proven": operational_proven,
+        "operational_state_unproven": operational_state_unproven,
+        "operational_blockers": operational_blockers,
+        "downstream_queues_proven_empty": operational_proven,
+        "canary_authorization_ready": canary_ready,
+        "offline_blocked": blocked_verified,
+        "engineering_blocker_count": len(engineering_blockers),
+        "certification_ready": False,
+        "portfolio_ready": False,
+        "paper_ready": False,
+        "live_ready": False,
+    }
+    alerts = [] if boundary_valid else [
+        MonitoringAlert(
+            "error",
+            "task055h_offline_authorization",
+            "Task 055-H offline authorization evidence or downstream boundary is invalid",
+            details,
+        )
+    ]
+    return details, alerts
+
+
 def check_validation_campaign_leaderboard(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     rows = _read_jsonl(Path(path)) if path else []
     ready = sum(1 for row in rows if row.get("certification_ready") is True)
