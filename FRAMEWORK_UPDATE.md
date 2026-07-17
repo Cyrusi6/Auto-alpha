@@ -2586,3 +2586,14 @@
 - Fee 展示固定区分 28 条 official-rate/statutory-interval 证据与 12 条 uncalibrated modeled 规则。该分层用于工程账本解释，不改变 historical-selection contamination、modeled execution 或 certification blocker。
 - dashboard 增加 authorization seal、scrubbed evidence、access journal、Fee attestation、operational seal、canary acceptance、resume authorization、response apply、dynamic L2 plan、final report 和 final verification reader。
 - `operational_state_unproven` 被明确展示为“权威运行根或物理空状态未证明”，不能解释为 queue 已知为空，也不能通过影子目录消除。Task 055-H 仅允许 `canary_authorization_ready_no_network_executed` 或 `task055h_canary_authorization_blocked_no_network_executed`；certification/portfolio/paper/live readiness 继续为 false。
+
+### Task 055-H 真实离线封口结果
+
+- 最终实现 commit 为 `cf9f908f519efdf812d35105fbcd430cbbf12f85`；原生 Task 055-G report/final verifier、Fee、causal frontier、simulation bundle、network state 和 operational roots 均重新验证，未读取凭据、未发送网络请求。
+- 顶层状态为 `canary_authorization_ready_no_network_executed`。authorization seal 为 `6c32e777374319026c1db23b10686bf9c245595b170a76f8e29e2f8259ca9b72`，final report 为 `d64e06b85781811e9627f85107fb37dd33d32e653ca5e1721785a0463adfb407`，final verification 为 `14c639d12da5ec9af165ad843221ab4ce66c65be8b5534a7c4f5a988a249fa41`。
+- 有序 frontier 为 17 个 exact daily key，父 plan hash 为 `397ac8d5190ab492c65d5f947df69e845db517b0358330c95db365186aec1e6a`，单请求 canary execution plan hash 为 `314aef9d0fca5e46980214fad97c15397dc309c3478ffc3278ca58cfce0bccae`；预算封存为 unique/logical/physical=`17/17/0`，上限 `64/128/160`，resume 未授权。
+- 独立 Fee-aware 20×5 因果重算：net-commission frontier 17、held marks 216,853、modeled held marks 4,504；all-in-commission frontier 16、held marks 215,684、modeled held marks 4,388。两种口径均为 100 个 `causal_valuation_blocked`，仅用于定位下一轮补证，不是收益或 Alpha 结论。
+- Fee production spec hash 为 `49ec200524518ee5026007dcd7c27d4011533b58d39f561f55a7bc13d6f9ce5f`，严格区分 28 条 official-rate/statutory interval records 与 12 条 uncalibrated modeled records；handling/securities-management 仅标记为 official-rate modeled pass-through。
+- Access Journal 最大读取日期为 `2026-06-30`，`prospective_holdout_accessed=false`；credential read、Tushare request、其他 network request 均为 0。七类 operational queue/registry 物理计数均为 0，certification/portfolio/paper/live readiness 继续为 false。
+- Git-safe package 为 `evidence/task_055_h/scrubbed_authorization_evidence.json`，content hash 为 `2ef732ecb20eebcbf0dede46a058cb5e1730ea2bea94a98f02afac9d09b2fa20`，standalone verifier 通过；该包不包含价格、凭据、绝对路径或原始数据，也不等价于公开验证服务器数据。
+- 验收：focused Task 055-H tests 通过；完整 pytest `796 passed`；local CI full 为 `passed`；package wheel/sdist 构建通过；真实 Task 055-H artifact strict schema 为 0 errors、0 warnings、0 unknown；secret scan blocker=0，`git diff --check` 通过。

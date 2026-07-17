@@ -564,10 +564,10 @@ uv run python -m data_source_validation.run_smoke \
   --pretty
 ```
 
-Real Tushare smoke is gated. It sends requests only when `--allow-network` is passed, canonical HTTPS/TLS validation succeeds, and a governed credential is present. Reports store only `credential_present` and `source_type`:
+Real Tushare smoke is gated. It sends requests only when `--allow-network` is passed, canonical HTTPS/TLS validation succeeds, and a governed credential is injected by the operator's secret manager. Reports store only `credential_present` and `source_type`:
 
 ```bash
-RUN_TUSHARE_ONLINE_SMOKE=1 TUSHARE_TOKEN=<REAL_TOKEN> \
+RUN_TUSHARE_ONLINE_SMOKE=1 \
 uv run python -m data_source_validation.run_smoke \
   --provider tushare \
   --allow-network \
@@ -1869,3 +1869,5 @@ The Fee attestation independently binds the production Fee Schedule to its offic
 The operational seal scans authoritative runtime roots as well as governed historical roots. `operational_state_unproven` means the registered roots, schemas, or physical records could not be independently proven empty and stable; it does not mean the queues are known empty. This blocker prevents canary authorization and cannot be cleared by creating a shadow empty directory.
 
 The only Task 055-H top-level states are `canary_authorization_ready_no_network_executed` and `task055h_canary_authorization_blocked_no_network_executed`. Both are offline engineering evidence. Certification, portfolio, paper, and live readiness remain false, and no state authorizes a Tushare request by itself.
+
+The Git-safe audit copy is `evidence/task_055_h/scrubbed_authorization_evidence.json`. It contains the complete ordered 17-key request set and hash chain, but no prices, credentials, absolute server paths, or source data. Verify it offline with `verify_scrubbed_evidence_package`; this standalone verification checks internal lineage only and does not replace server-side native artifact revalidation.
