@@ -1,0 +1,437 @@
+{
+  "artifact_catalog": [
+    {
+      "content_hash": "6c32e777374319026c1db23b10686bf9c245595b170a76f8e29e2f8259ca9b72",
+      "role": "parent_authorization_seal",
+      "sha256": "6c32e777374319026c1db23b10686bf9c245595b170a76f8e29e2f8259ca9b72"
+    },
+    {
+      "content_hash": "2ef732ecb20eebcbf0dede46a058cb5e1730ea2bea94a98f02afac9d09b2fa20",
+      "role": "parent_git_evidence",
+      "sha256": "2ef732ecb20eebcbf0dede46a058cb5e1730ea2bea94a98f02afac9d09b2fa20"
+    },
+    {
+      "content_hash": "314aef9d0fca5e46980214fad97c15397dc309c3478ffc3278ca58cfce0bccae",
+      "role": "single_request_plan",
+      "sha256": "314aef9d0fca5e46980214fad97c15397dc309c3478ffc3278ca58cfce0bccae"
+    },
+    {
+      "content_hash": "faa134dd6527321ca33d872abc5821c1b648f77963f16b5ec9e448dd65accb57",
+      "role": "runtime_authority",
+      "sha256": "b6867e30252015be479155cfda25b5998b43f9c3686c7854624dc4ec82952c4d"
+    },
+    {
+      "content_hash": "5ff8226d9fcbc475c0c6970d7d1d94cd16bfac3f27ee02ea47009b2666e1d5bb",
+      "role": "execution_authorization",
+      "sha256": "117f990a608f50c86835c9a9a7cdc1931aedf77e5bd5da9fed8ac4c1652e23c3"
+    },
+    {
+      "content_hash": "ff3a81e2c61686bf274ee8ef38d22b21e2ebfca9a9922dca3dc05097106b211f",
+      "role": "native_rehearsal",
+      "sha256": "f9c584088d55465a1ecd2e9db0cd0e59b72c9fa308d19eb7f2d8f7af21020a0b"
+    }
+  ],
+  "artifact_catalog_root": "34ad0135b0c96c023a535a7cc4492263e9e86774d3b0a12c76d55ad8c44840b6",
+  "batch_authorized": false,
+  "budgets": {
+    "limits": {
+      "logical_requests": 128,
+      "physical_attempts": 160,
+      "unique_security_dates": 64
+    },
+    "logical_requests": 17,
+    "physical_attempts": 0,
+    "unique_security_dates": 17
+  },
+  "canary": {
+    "api_name": "daily",
+    "evidence_use_hash": "a4241983bdd7616c60e02dc9444662be01e7ee43bb6fe81a2cc8637df59d4a5f",
+    "fields": [
+      "ts_code",
+      "trade_date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "pre_close",
+      "vol",
+      "amount"
+    ],
+    "trade_date": "20160726",
+    "transport_hash": "6497cb48c414a9b4b0e2f5dc152c134fa66bf01938f598bdd79831f415a7464e",
+    "ts_code": "000413.SZ"
+  },
+  "certification_blockers": [
+    "historical_selection_contamination",
+    "selection_data_reused",
+    "execution_modeled",
+    "suspension_timing_semantics_uncertified",
+    "constituent_publication_timing_unknown",
+    "vendor_historical_revision_risk",
+    "prospective_holdout_not_arrived",
+    "broker_specific_commission_unavailable"
+  ],
+  "certification_ready": false,
+  "contains_absolute_paths": false,
+  "contains_credentials": false,
+  "contains_market_values": false,
+  "content_hash": "4187f9ec4e40cc1086ad9a1bb2fd9e1efe1b6ea0d1f72ca9f32f5fc9d207ee5c",
+  "execution_authorization_content_hash": "5ff8226d9fcbc475c0c6970d7d1d94cd16bfac3f27ee02ea47009b2666e1d5bb",
+  "implementation_commit": "aecac4e09d3ac2dcc79b6bdae1a36010137d8b30",
+  "initial_network_ledger_root": "dea111afa273b2937224beac56a486fc0aaf3ed8c38fc4ef6047bb174dba6718",
+  "initial_transport_spend_root": "03133c61f80b96f8aad8321f3a4a3c29bb684e6031e7585b6ccf72779a1c0cd6",
+  "live_ready": false,
+  "network_execution": {
+    "credential_read_count": 0,
+    "other_network_request_count": 0,
+    "prospective_holdout_accessed": false,
+    "tushare_request_count": 0
+  },
+  "operational_state_unproven": true,
+  "ordered_exact_daily_key_count": 17,
+  "ordered_exact_daily_keys": [
+    {
+      "api_name": "daily",
+      "evidence_use_hash": "a4241983bdd7616c60e02dc9444662be01e7ee43bb6fe81a2cc8637df59d4a5f",
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "vol",
+        "amount"
+      ],
+      "ordinal": 1,
+      "trade_date": "20160726",
+      "transport_hash": "6497cb48c414a9b4b0e2f5dc152c134fa66bf01938f598bdd79831f415a7464e",
+      "ts_code": "000413.SZ"
+    },
+    {
+      "api_name": "daily",
+      "evidence_use_hash": "d540a4664ece24f1d83933d7d6c9039fe293f1c1160a6f6d86ff7e5ab7af0b7d",
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "vol",
+        "amount"
+      ],
+      "ordinal": 2,
+      "trade_date": "20160719",
+      "transport_hash": "dfe37041a850ebcdff107212593c5594736a7074f2af248e64be69df8182cccd",
+      "ts_code": "000538.SZ"
+    },
+    {
+      "api_name": "daily",
+      "evidence_use_hash": "2ad7e5b9efe1ab650cd7b74775c7b0cd1efef1fa181d0f78f7deb0b569d19777",
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "vol",
+        "amount"
+      ],
+      "ordinal": 3,
+      "trade_date": "20160504",
+      "transport_hash": "e16367b54c9cd5197c29c12bc82801662685504ec6ecbec057047e718b3350b1",
+      "ts_code": "000568.SZ"
+    },
+    {
+      "api_name": "daily",
+      "evidence_use_hash": "6f9515fcec8ccb9d27ec3e903f0ae40a68613d97c8ebd15cbd7cdb04a6b7fd59",
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "vol",
+        "amount"
+      ],
+      "ordinal": 4,
+      "trade_date": "20160316",
+      "transport_hash": "0aba1d319c31147fa1b77cee0d6bd002a49a350e6346bc51f66b9d219fe7784d",
+      "ts_code": "000651.SZ"
+    },
+    {
+      "api_name": "daily",
+      "evidence_use_hash": "e4e1de03e0794ef4ea289197fc33be9f4349d7fae562926e385eb99303e361f6",
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "vol",
+        "amount"
+      ],
+      "ordinal": 5,
+      "trade_date": "20160406",
+      "transport_hash": "782ce2b97f0b1d51e47e0de1aeff3fd4fd4758c2fc450994fd83279454ba50d6",
+      "ts_code": "000917.SZ"
+    },
+    {
+      "api_name": "daily",
+      "evidence_use_hash": "1c0670edacd4d3f7cdb1820a8a884d7b6ae7d92b9bc1167ebcf650e005acfd15",
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "vol",
+        "amount"
+      ],
+      "ordinal": 6,
+      "trade_date": "20160407",
+      "transport_hash": "a61c8e138de77a48e548101917ca991784e76b65ab235037c03481d2d08bb619",
+      "ts_code": "002230.SZ"
+    },
+    {
+      "api_name": "daily",
+      "evidence_use_hash": "ec002f8ef413dfebae66f7807b0e08b30fd5df677e9561b91384777ab7b631e6",
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "vol",
+        "amount"
+      ],
+      "ordinal": 7,
+      "trade_date": "20160928",
+      "transport_hash": "8b8a28ed61ad28ca0d00535e39ea8729dae3edd2738b6a409ae136ed47bfa27b",
+      "ts_code": "002465.SZ"
+    },
+    {
+      "api_name": "daily",
+      "evidence_use_hash": "8795e2607c7c1beaa87072142f01f0d5ca19e4a35a9e520b8e237cf4eb81c37b",
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "vol",
+        "amount"
+      ],
+      "ordinal": 8,
+      "trade_date": "20160229",
+      "transport_hash": "0180df7af7369bae64319130b254ed1fdae10a4fd4f6246174a96329789c2cdd",
+      "ts_code": "002739.SZ"
+    },
+    {
+      "api_name": "daily",
+      "evidence_use_hash": "1ffb04e3f26ce874a9bb0cd739e675d4b283f3a5e274f13cf97ad0295d3b8182",
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "vol",
+        "amount"
+      ],
+      "ordinal": 9,
+      "trade_date": "20160426",
+      "transport_hash": "9c5207486175718493cacba2c8225f7748750b609132c1fa0a71f3c988fdb41f",
+      "ts_code": "300251.SZ"
+    },
+    {
+      "api_name": "daily",
+      "evidence_use_hash": "348d9f22172185fe85e4dbf05a4238ad1e47cc675c2a93418146b62692aaa7fd",
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "vol",
+        "amount"
+      ],
+      "ordinal": 10,
+      "trade_date": "20160219",
+      "transport_hash": "8a338c3d0df28c0fae7844eccfe7b1d11e334e368bef52c3f93b2a482ba604e3",
+      "ts_code": "600000.SH"
+    },
+    {
+      "api_name": "daily",
+      "evidence_use_hash": "ef44284ab19aa4fb63f0f8b434e359343c6b5184f80a44e2060692bb15621899",
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "vol",
+        "amount"
+      ],
+      "ordinal": 11,
+      "trade_date": "20160823",
+      "transport_hash": "39972d318809204841ca42912875cef1db3037933ff330e31de3a62ed837e8e5",
+      "ts_code": "600019.SH"
+    },
+    {
+      "api_name": "daily",
+      "evidence_use_hash": "5a8efd05411810e6ce0f9e38c5e2bf515a2fb35cf7d1258d5571d7efeb68df24",
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "vol",
+        "amount"
+      ],
+      "ordinal": 12,
+      "trade_date": "20160323",
+      "transport_hash": "b5a1a08494f52ac1afa24c8bc317438b66798f9a4df2e880983008db0102ade6",
+      "ts_code": "600170.SH"
+    },
+    {
+      "api_name": "daily",
+      "evidence_use_hash": "b34bd4b4931fdd34d270fbfd27a0c583848891ad087178f2df7048ea8ba56420",
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "vol",
+        "amount"
+      ],
+      "ordinal": 13,
+      "trade_date": "20160516",
+      "transport_hash": "f2d8292eba226d31c4aefdc02360fcba17185739b14e44a4c714e6b92c6700b3",
+      "ts_code": "600489.SH"
+    },
+    {
+      "api_name": "daily",
+      "evidence_use_hash": "acb7ed77eae15c3fe73d655ce5b50543e99026b1684570a95139dd36cc685ebe",
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "vol",
+        "amount"
+      ],
+      "ordinal": 14,
+      "trade_date": "20161212",
+      "transport_hash": "649ea95945c3466416d322e8dca27884e7f0f386b5f8a5b698ea8e4788c24c7c",
+      "ts_code": "600649.SH"
+    },
+    {
+      "api_name": "daily",
+      "evidence_use_hash": "95d9ef4f3413ab51a60a690c3b38139361a797348e1310c400bb74715503f96b",
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "vol",
+        "amount"
+      ],
+      "ordinal": 15,
+      "trade_date": "20160809",
+      "transport_hash": "ede5660b9ac81814c7516822c6922799ab3a764a92634bbd1888a6b5bbdd5735",
+      "ts_code": "600863.SH"
+    },
+    {
+      "api_name": "daily",
+      "evidence_use_hash": "4e9b23694f97d611c0058fc3035d9186fcb60129b47b5e0b22536e4d8219cfa6",
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "vol",
+        "amount"
+      ],
+      "ordinal": 16,
+      "trade_date": "20160307",
+      "transport_hash": "702384ac268419723358057c84b2f62bc584a0bb0ff25b7cda79ad0076a8dccb",
+      "ts_code": "600900.SH"
+    },
+    {
+      "api_name": "daily",
+      "evidence_use_hash": "8d6e3eaed4f240e7c307e49f2d4f2fdc002fe3df30f48345c6daff2a91808b11",
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "vol",
+        "amount"
+      ],
+      "ordinal": 17,
+      "trade_date": "20160517",
+      "transport_hash": "0c5ba8c7b39590af73352878d31dfc7895d2590aebfaef557a5f8286a8f04662",
+      "ts_code": "601018.SH"
+    }
+  ],
+  "paper_ready": false,
+  "parent_authorization_seal_hash": "6c32e777374319026c1db23b10686bf9c245595b170a76f8e29e2f8259ca9b72",
+  "parent_git_evidence_hash": "2ef732ecb20eebcbf0dede46a058cb5e1730ea2bea94a98f02afac9d09b2fa20",
+  "portfolio_ready": false,
+  "rehearsal_artifact_root": "14f4d033713693aed6f63f173eb545b23b5fff5bb761de582d00d3cd0412fdc3",
+  "rehearsal_content_hash": "ff3a81e2c61686bf274ee8ef38d22b21e2ebfca9a9922dca3dc05097106b211f",
+  "resume_authorized": false,
+  "root_binding_hashes": {
+    "authority": "429663fe616617ffe613071848a2a55121fdce619421bef3576238d0d97ce638",
+    "cache": "866f7d5d2c5d259d357452ea7be0cc2c222ad9e0bd003c1eacb37b7713c8c97e",
+    "governed": "a3dfd275bf19d84805e99843a259768f9526223923add550cc2275da277dc24b",
+    "repository": "a3582d62ec554e7c1fd4c8653086d15d51e00bf56605663f64b103a8820f89d9",
+    "spend": "1c2f56f17b6ec166fc651555f43516c6e8ce10700c5bb584e51f784e68994e91",
+    "state": "2f6f3209f69a2a82ee6f3b14ce025439d46b2de1768ece86184e6725a8bd6e74"
+  },
+  "runtime_authority_content_hash": "faa134dd6527321ca33d872abc5821c1b648f77963f16b5ec9e448dd65accb57",
+  "schema_version": "task055i_scrubbed_execution_authorization_v1",
+  "semantic_source_root": "0e3d8e2112c26120d72e25bc33f47bf168768add8261ad21e43cf64724978a44",
+  "single_request_plan_hash": "314aef9d0fca5e46980214fad97c15397dc309c3478ffc3278ca58cfce0bccae",
+  "status": "single_canary_execution_ready_no_network_executed"
+}

@@ -1185,6 +1185,7 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         "task055i_scrubbed_execution_authorization",
         ["schema_version", "status", "implementation_commit", "parent_authorization_seal_hash", "parent_git_evidence_hash", "single_request_plan_hash", "runtime_authority_content_hash", "execution_authorization_content_hash", "rehearsal_content_hash", "semantic_source_root", "canary", "ordered_exact_daily_key_count", "ordered_exact_daily_keys", "budgets", "root_binding_hashes", "initial_network_ledger_root", "initial_transport_spend_root", "artifact_catalog", "artifact_catalog_root", "network_execution", "resume_authorized", "batch_authorized", "operational_state_unproven", "certification_ready", "portfolio_ready", "paper_ready", "live_ready", "contains_absolute_paths", "contains_market_values", "contains_credentials", "content_hash"],
         _task055i_patterns("task055i_scrubbed_evidence.json"),
+        optional=["certification_blockers", "rehearsal_artifact_root"],
     ),
     "task055i_final_report": _definition(
         "task055i_final_report",

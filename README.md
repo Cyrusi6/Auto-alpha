@@ -1881,3 +1881,5 @@ The canonical authority lives under the governed root rather than a task output.
 The Task 055-I release itself remains offline: credential reads, Tushare requests, other HTTP, real response application, and GPU work are all zero. Its isolated synthetic-response rehearsal calls the same executor and native application chain to build an immutable raw repair, governed freeze, strict matrix, v3 tensor, exact-20 materializations, research-firewall sentinel, and fee-aware exact-20 × five-scenario event-ledger replay. Synthetic evidence is permanently ineligible for the production seal.
 
 `operational_state_unproven` remains explicit because every historical writer CLI is not yet globally constrained to one authoritative root. Monitoring and dashboard readers therefore do not claim that all downstream queues are physically proven empty. Certification, portfolio, paper, and live readiness remain false.
+
+The Git-safe evidence is `evidence/task_055_i/task055i_scrubbed_evidence.json`. Verify its internal hash chain with `python task_055_i/verifier.py evidence/task_055_i/task055i_scrubbed_evidence.json`; full validation still requires the governed server artifacts.
