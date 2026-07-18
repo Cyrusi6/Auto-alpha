@@ -31,6 +31,7 @@ from task_055_j.executor import (
     Task055JExecutionError,
     _execute_synthetic_test_only,
     _load_credential_file,
+    _verify_lock_identity,
     _verify_and_accept_synthetic_test_only,
 )
 from task_055_j.ledger import DurableHashJournal
@@ -177,6 +178,17 @@ def test_rehearsal_runtime_hash_selects_immutable_sibling_root(tmp_path: Path) -
     second = _rehearsal_execution_root(tmp_path, runtime_authority={"content_hash": "2" * 64})
     assert first == tmp_path / "runs" / f"runtime_{'1' * 24}"
     assert first != second
+
+
+def test_single_flight_lock_atomic_replacement_is_rejected(tmp_path: Path) -> None:
+    runtime = _runtime_fixture(tmp_path)
+    authority_root, seal = _publish_synthetic_authority(tmp_path / "authority", runtime)
+    lock = authority_root / "single_canary.lock"
+    replacement = authority_root / "single_canary.replacement"
+    replacement.touch()
+    os.replace(replacement, lock)
+    with pytest.raises(Task055JExecutionError, match="inode_drift"):
+        _verify_lock_identity(lock, seal)
 
 
 def test_journal_detects_manual_chain_and_checkpoint_tampering(tmp_path: Path) -> None:

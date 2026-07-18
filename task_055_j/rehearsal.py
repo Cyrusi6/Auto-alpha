@@ -387,8 +387,9 @@ def _corruption_case(root: Path, runtime: Mapping[str, Any], *, target: str) -> 
 def _lock_replacement_case(root: Path, runtime: Mapping[str, Any]) -> dict[str, Any]:
     authority_root, seal = _publish_synthetic_authority(root, runtime)
     lock = authority_root / "single_canary.lock"
-    lock.unlink()
-    lock.touch()
+    replacement = authority_root / "single_canary.replacement"
+    replacement.touch()
+    os.replace(replacement, lock)
     try:
         _execute_synthetic_test_only(
             final_execution_seal=seal["manifest_path"],
