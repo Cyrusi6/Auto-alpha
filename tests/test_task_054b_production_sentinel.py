@@ -12,7 +12,15 @@ from task_054_b.audit import (
     validate_component_receipts,
     validate_read_ledger,
 )
-from task_054_b.sentinel import EVIDENCE_SCOPE, PATHS, MUTATIONS, REQUIRED_COMPONENTS, validate_task054b_production_sentinel
+from task_054_b.sentinel import (
+    EVIDENCE_SCOPE,
+    MUTATIONS,
+    PATHS,
+    REQUIRED_COMPONENTS,
+    _apply_research_cache_contract,
+    _validated_projection_eligibility,
+    validate_task054b_production_sentinel,
+)
 
 
 def _public_copy(source: Path, destination: Path) -> str:
@@ -37,6 +45,44 @@ def test_audited_read_broker_chains_actual_reads_and_blocks_boundary(tmp_path: P
         broker.verify_input(source, component="loader", dataset="artifact", date_range=["20240531"])
 
 
+def test_audited_read_broker_shared_invocation_uses_one_persistent_sequence(tmp_path: Path):
+    first = tmp_path / "first.json"
+    second = tmp_path / "second.json"
+    first.write_text(json.dumps({"value": 1}), encoding="utf-8")
+    second.write_text(json.dumps({"value": 2}), encoding="utf-8")
+    ledger = tmp_path / "ledger.jsonl"
+    supervisor = AuditedReadBroker(
+        ledger,
+        invocation_id="shared",
+        principal="projection_publisher",
+        research_end_date="20240530",
+    )
+    research = AuditedReadBroker(
+        ledger,
+        invocation_id="shared",
+        principal="research",
+        research_end_date="20240530",
+    )
+    supervisor.read_json(first, component="projection", dataset="first", date_range=["20240530"])
+    research.read_json(second, component="loader", dataset="second", date_range=["20240530"])
+    rows = research.rows()
+    assert [row["sequence"] for row in rows] == [1, 2]
+    assert validate_read_ledger(rows, invocation_id="shared")["entry_count"] == 2
+
+
+def test_audited_read_broker_derives_date_axis_range_from_opened_payload(tmp_path: Path) -> None:
+    dates = tmp_path / "trade_dates.json"
+    dates.write_text(json.dumps(["20240528", "20240529", "20240530"]), encoding="utf-8")
+    broker = AuditedReadBroker(
+        tmp_path / "ledger.jsonl",
+        invocation_id="dates",
+        principal="projection_publisher",
+        research_end_date="20240530",
+    )
+    broker.read_json(dates, component="projection", dataset="trade_dates")
+    assert broker.rows()[0]["date_range"] == ["20240528", "20240530"]
+
+
 def test_component_receipt_binds_entrypoint_inputs_outputs_and_rejects_source_hash_only(tmp_path: Path):
     source = tmp_path / "source.txt"
     output = tmp_path / "output.txt"
@@ -56,6 +102,34 @@ def test_component_receipt_binds_entrypoint_inputs_outputs_and_rejects_source_ha
     forged[0]["entrypoint"] = ""
     with pytest.raises(RuntimeError):
         validate_component_receipts(forged, invocation_id="invocation", required_components=["loader"])
+
+
+def test_research_cache_contract_requires_baseline_post_inside_order(tmp_path: Path):
+    semantic = {"research": "stable"}
+    assert _apply_research_cache_contract(
+        cache_dir=tmp_path / "path", mutation_kind="baseline", cache_key="same", semantic=semantic
+    ) == "miss_write"
+    assert _apply_research_cache_contract(
+        cache_dir=tmp_path / "path", mutation_kind="post_cutoff", cache_key="same", semantic=semantic
+    ) == "hit"
+    assert _apply_research_cache_contract(
+        cache_dir=tmp_path / "path", mutation_kind="inside_cutoff", cache_key="changed", semantic={"research": "changed"}
+    ) == "miss_write"
+    with pytest.raises(RuntimeError, match="post-cutoff research cache miss"):
+        _apply_research_cache_contract(
+            cache_dir=tmp_path / "other", mutation_kind="post_cutoff", cache_key="missing", semantic=semantic
+        )
+
+
+def test_physical_projection_uses_persisted_signal_eligibility_without_double_truncation() -> None:
+    dates = ["20240524", "20240527", "20240528"]
+    mask, eligible_hash = _validated_projection_eligibility(
+        dates,
+        [True, True, True],
+        {"max_legal_signal_date": "20240528", "eligible_date_hash": "a" * 64},
+    )
+    assert mask.tolist() == [True, True, True]
+    assert eligible_hash == "a" * 64
 
 
 def _receipt(invocation: str, component: str) -> dict:
@@ -126,7 +200,9 @@ def _sentinel_payload(scope: str = EVIDENCE_SCOPE, status: str = "passed") -> di
         "proof": {
             "post_cutoff_invariant": {path: True for path in PATHS},
             "inside_cutoff_cache_miss": {path: True for path in PATHS},
+            "cache_contract": {path: True for path in PATHS},
             "mutation_applied": {mutation: True for mutation in MUTATIONS},
+            "semantic_consistency": {mutation: True for mutation in MUTATIONS},
         },
     }
 

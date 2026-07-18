@@ -1,4 +1,3 @@
-import tushare as ts
 import pandas as pd
 import numpy as np
 import torch
@@ -25,12 +24,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.set_float32_matmul_precision('high')
 
 def get_tushare_token():
-    token = os.getenv("TUSHARE_TOKEN")
-    if not token:
-        raise RuntimeError(
-            "TUSHARE_TOKEN is not set. Export TUSHARE_TOKEN before running times.py."
-        )
-    return token
+    raise RuntimeError("superseded_by_task055j")
 
 @torch.jit.script
 def _ts_delay(x: torch.Tensor, d: int) -> torch.Tensor:
@@ -109,8 +103,7 @@ class AlphaGPT(nn.Module):
 
 class DataEngine:
     def __init__(self, tushare_token=None):
-        self.tushare_token = tushare_token or get_tushare_token()
-        self.pro = ts.pro_api(self.tushare_token)
+        raise RuntimeError("superseded_by_task055j")
     def load(self):
         if os.path.exists(DATA_CACHE_PATH):
             df = pd.read_parquet(DATA_CACHE_PATH)

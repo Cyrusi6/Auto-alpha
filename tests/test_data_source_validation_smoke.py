@@ -147,7 +147,7 @@ def test_tushare_without_allow_network_does_not_sync(tmp_path, capsys):
     assert payload["diagnostic_counts"]["network_disabled"] == 1
 
 
-def test_tushare_allow_network_without_token_reports_missing_token(tmp_path, capsys, monkeypatch):
+def test_tushare_allow_network_is_superseded_before_token_lookup(tmp_path, capsys, monkeypatch):
     monkeypatch.delenv("TUSHARE_TOKEN", raising=False)
 
     rc = main(
@@ -168,9 +168,8 @@ def test_tushare_allow_network_without_token_reports_missing_token(tmp_path, cap
     )
     payload = json.loads(capsys.readouterr().out)
 
-    assert rc == 0
-    assert payload["status"] == "ERROR"
-    assert payload["diagnostic_counts"]["missing_token"] == 1
+    assert rc == 2
+    assert payload == {"status": "blocked", "reason": "superseded_by_task055j"}
 
 
 def test_smoke_baseline_compare_reports_diff_without_failing(tmp_path, capsys):

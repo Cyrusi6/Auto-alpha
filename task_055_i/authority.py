@@ -258,6 +258,7 @@ def validate_runtime_authority(
     path: str | Path,
     *,
     require_pristine: bool,
+    historical_source_commit: str | None = None,
 ) -> dict[str, Any]:
     payload = validate_generation(path, schema=RUNTIME_AUTHORITY_SCHEMA, manifest_name="runtime_authority.json")
     manifest_path = Path(payload["manifest_path"]).resolve()
@@ -281,7 +282,7 @@ def validate_runtime_authority(
         or read_json(registry).get("content_hash") != payload.get("network_authority_registry_content_hash")
     ):
         raise Task055IAuthorityError("task055i_network_authority_registry_invalid")
-    _validate_source_state(payload, repository)
+    _validate_source_state(payload, repository, historical_source_commit=historical_source_commit)
     _validate_parent(repository, governed)
     network = HashChainLedger(authority_root / "network_ledger", name="network")
     spend = HashChainLedger(authority_root / "transport_spend", name="transport")
@@ -460,8 +461,17 @@ def _source_hashes(repository: Path) -> dict[str, str]:
     return result
 
 
-def _validate_source_state(payload: Mapping[str, Any], repository: Path) -> None:
-    current = _source_hashes(repository)
+def _validate_source_state(
+    payload: Mapping[str, Any],
+    repository: Path,
+    *,
+    historical_source_commit: str | None = None,
+) -> None:
+    current = (
+        _source_hashes_at_commit(repository, historical_source_commit)
+        if historical_source_commit
+        else _source_hashes(repository)
+    )
     if current != payload.get("semantic_source_hashes") or canonical_hash(current) != payload.get("semantic_source_root"):
         raise Task055IAuthorityError("task055i_semantic_source_drift")
     implementation = str(payload.get("implementation_commit") or "")
@@ -469,8 +479,23 @@ def _validate_source_state(payload: Mapping[str, Any], repository: Path) -> None
     if subprocess.run(["git", "merge-base", "--is-ancestor", implementation, head], cwd=repository).returncode != 0:
         raise Task055IAuthorityError("task055i_implementation_commit_not_ancestor")
     changed = _git(repository, "diff", "--name-only", f"{implementation}..{head}", "--", *SEMANTIC_SOURCE_PATHS)
-    if changed:
+    if changed and historical_source_commit is None:
         raise Task055IAuthorityError("task055i_source_changed_after_authority_seal")
+
+
+def _source_hashes_at_commit(repository: Path, commit: str) -> dict[str, str]:
+    import hashlib
+
+    result: dict[str, str] = {}
+    for relative in SEMANTIC_SOURCE_PATHS:
+        completed = subprocess.run(
+            ["git", "show", f"{commit}:{relative}"],
+            cwd=repository,
+            check=True,
+            capture_output=True,
+        )
+        result[relative] = hashlib.sha256(completed.stdout).hexdigest()
+    return result
 
 
 def _validate_root_identities(payload: Mapping[str, Any], repository: Path, governed: Path, authority: Path) -> None:

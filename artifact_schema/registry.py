@@ -73,6 +73,20 @@ def _task055i_patterns(*names: str) -> list[str]:
     ]
 
 
+def _task055j_patterns(*names: str) -> list[str]:
+    return [
+        pattern
+        for name in names
+        for pattern in (
+            f"*/task_055_j*/{name}",
+            f"*/task_055_j*/**/{name}",
+            f"*/task055j/{name}",
+            f"*/task055j/**/{name}",
+            f"*/network_authority/task055j_single_canary_v1/**/{name}",
+        )
+    ]
+
+
 ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
     "research_suite_result": _definition("research_suite_result", ["suite_name", "status", "stages"], ["suite_result.json"]),
     "artifact_catalog": _definition("artifact_catalog", ["suite_name", "created_at", "entries"], ["artifact_catalog.json"]),
@@ -1196,6 +1210,114 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         "task055i_final_verification",
         ["schema_version", "status", "top_status", "report_content_hash", "runtime_authority_content_hash", "execution_authorization_content_hash", "scrubbed_verification_hash", "rehearsal_content_hash", "canary", "credential_read_count", "tushare_request_count", "other_network_request_count", "prospective_holdout_accessed", "resume_authorized", "content_hash", "generation_id"],
         _task055i_patterns("task055i_final_verification.json"),
+    ),
+    "task055j_source_tree_seal": _definition(
+        "task055j_source_tree_seal",
+        ["schema_version", "status", "implementation_commit", "entry_count", "entries", "source_root", "selection_contract", "content_hash", "generation_id"],
+        _task055j_patterns("source_tree_seal.json"),
+    ),
+    "task055j_application_tree_seal": _definition(
+        "task055j_application_tree_seal",
+        ["schema_version", "status", "catalog", "catalog_count", "tree_root", "role_roots", "contains_absolute_paths", "content_hash", "generation_id"],
+        _task055j_patterns("application_tree_seal.json"),
+    ),
+    "task055j_application_preflight": _definition(
+        "task055j_application_preflight",
+        ["schema_version", "status", "max_allowed_date", "max_validated_source_date", "parent_runtime_authority_content_hash", "application_artifact_tree_content_hash", "application_artifact_tree_root", "native_validation", "exact20_ids", "exact20_identity_root", "research_cutoff", "target_endpoint_horizon", "production_context_parsed", "network_accessed", "credential_read_count", "prospective_holdout_accessed", "content_hash", "generation_id"],
+        _task055j_patterns("application_preflight.json"),
+    ),
+    "task055j_runtime_authority": _definition(
+        "task055j_runtime_authority",
+        ["schema_version", "status", "baseline_commit", "implementation_commit", "parent_runtime_authority_hash", "authority_relative_root", "canonical_subroots", "root_identities", "ordered_exact_daily_keys", "ordered_key_count", "ordered_key_root", "canary", "single_request_plan", "single_request_plan_hash", "retry_count", "budgets", "initial_network_journal", "initial_transport_spend", "source_tree_seal_content_hash", "source_root", "application_preflight_content_hash", "application_tree_content_hash", "application_tree_root", "max_validated_source_date", "application_artifacts", "network_execution", "resume_authorized", "batch_authorized", "content_hash", "generation_id"],
+        _task055j_patterns("runtime_authority.json"),
+    ),
+    "task055j_execution_authorization": _definition(
+        "task055j_execution_authorization",
+        ["schema_version", "status", "runtime_authority_content_hash", "source_root", "application_preflight_content_hash", "rehearsal_content_hash", "rehearsal_verification_content_hash", "ordered_key_root", "canary", "single_request_plan_hash", "engineering_blockers", "network_execution", "resume_authorized", "batch_authorized", "operational_state_unproven", "certification_ready", "portfolio_ready", "optimizer_ready", "paper_ready", "live_ready", "content_hash", "generation_id"],
+        _task055j_patterns("execution_authorization.json"),
+        optional=["operational_state_proven", "operational_blockers"],
+    ),
+    "task055j_transport_receipt": _definition(
+        "task055j_transport_receipt",
+        ["schema_version", "status", "attempt_id", "final_execution_seal_content_hash", "transport_hash", "evidence_use_hash", "api_name", "params", "fields", "tls_attestation", "endpoint", "provider_api_version", "response_code", "response_payload_hash", "response_fields", "item_count", "records_hash", "records", "contains_credential", "content_hash", "generation_id"],
+        _task055j_patterns("transport_receipt.json"),
+    ),
+    "task055j_canary_execution": _definition(
+        "task055j_canary_execution",
+        ["schema_version", "status", "final_execution_seal_content_hash", "runtime_authority_content_hash", "canary", "attempt_id", "transport_receipt_content_hash", "transport_receipt_sha256", "cache_relative_path", "cache_sha256", "outcome", "item_count", "network_journal_root", "transport_spend_root", "physical_post_count", "credential_read_count", "crash_recovered", "must_stop_after_canary", "resume_authorized", "batch_started", "content_hash", "generation_id"],
+        _task055j_patterns("canary_execution.json"),
+    ),
+    "task055j_canary_acceptance": _definition(
+        "task055j_canary_acceptance",
+        ["schema_version", "status", "final_execution_seal_content_hash", "runtime_authority_content_hash", "execution_content_hash", "attempt_id", "canary", "transport_receipt_content_hash", "transport_receipt_sha256", "cache_relative_path", "cache_sha256", "item_count", "response_fields", "physical_post_count", "network_journal_root", "transport_spend_root", "resume_authorized", "batch_authorized", "content_hash", "generation_id"],
+        _task055j_patterns("canary_acceptance.json"),
+    ),
+    "task055j_native_causal_replay": _definition(
+        "task055j_native_causal_replay",
+        ["schema_version", "status", "evidence_scope", "exact20_ids", "scenarios", "run_count", "terminal_counts", "run_rows_root", "held_mark_root", "net_frontier_root", "all_in_frontier_root", "frontier_union", "frontier_union_root", "truth_content_hash", "matrix_content_hash", "simulation_bundle_parent_content_hash", "fee_schedule_content_hash", "valuation_projection_content_hash", "partitions", "content_hash", "generation_id"],
+        _task055j_patterns("native_causal_replay.json"),
+    ),
+    "task055j_causal_run_rows": _definition(
+        "task055j_causal_run_rows",
+        ["factor_id", "scenario", "terminal_state", "held_mark_count_before_terminal", "held_mark_root", "blocker", "row_hash"],
+        _task055j_patterns("causal_run_rows.jsonl"),
+        kind="jsonl",
+        allow_empty=False,
+    ),
+    "task055j_held_mark_ledger": _definition(
+        "task055j_held_mark_ledger",
+        ["factor_id", "scenario", "ts_code", "trade_date", "reporting_point", "shares", "mark_price", "method", "source_date", "stale_age_trade_days", "evidence_id", "row_hash"],
+        _task055j_patterns("held_mark_ledger.jsonl"),
+        kind="jsonl",
+        allow_empty=True,
+    ),
+    "task055j_causal_independent_verification": _definition(
+        "task055j_causal_independent_verification",
+        ["schema_version", "status", "producer_run_rows_root", "producer_held_mark_root", "net_frontier_root", "all_in_frontier_root", "frontier_union", "frontier_union_root", "net_terminal_counts", "all_in_terminal_counts", "content_hash"],
+        _task055j_patterns("independent_verification.json"),
+    ),
+    "task055j_dynamic_l2_plan": _definition(
+        "task055j_dynamic_l2_plan",
+        ["schema_version", "status", "parent_truth_content_hash", "parent_replay_content_hash", "requests", "request_count", "content_hash", "generation_id"],
+        _task055j_patterns("dynamic_l2_plan.json"),
+    ),
+    "task055j_response_application": _definition(
+        "task055j_response_application",
+        ["schema_version", "status", "evidence_scope", "production_seal_eligible", "final_execution_seal_content_hash", "canary_acceptance_content_hash", "request", "response_item_count", "action", "application_spec_hash", "context_root", "stage_outputs", "truth_manifest_relative_path", "native_replay_manifest_relative_path", "artifact_catalog", "artifact_catalog_root", "terminal_pair_count", "terminal_counts", "net_frontier_root", "all_in_frontier_root", "frontier_union_root", "next_frontier_keys", "candidate_reselection_allowed", "resume_authorized", "certification_ready", "portfolio_ready", "optimizer_ready", "paper_ready", "live_ready", "content_hash", "generation_id"],
+        _task055j_patterns("response_application.json"),
+    ),
+    "task055j_native_rehearsal": _definition(
+        "task055j_native_rehearsal",
+        ["schema_version", "status", "evidence_scope", "production_seal_eligible", "production_context_root", "production_context_parsed", "positive_chain_complete", "positive_terminal_pair_count", "positive_terminal_counts", "positive_frontier_union_root", "empty_chain_complete", "empty_terminal_pair_count", "empty_terminal_counts", "empty_frontier_union_root", "empty_dynamic_l2_status", "l2_response_application_status", "negative_cases", "negative_case_count", "artifact_hashes", "artifact_root", "network_execution", "content_hash", "generation_id"],
+        _task055j_patterns("rehearsal_manifest.json"),
+        optional=["blockers"],
+    ),
+    "task055j_rehearsal_verification": _definition(
+        "task055j_rehearsal_verification",
+        ["schema_version", "status", "rehearsal_content_hash", "artifact_root", "positive_terminal_pair_count", "empty_terminal_pair_count", "negative_case_count", "real_network_counts", "content_hash", "generation_id"],
+        _task055j_patterns("rehearsal_verification.json"),
+        optional=["blockers"],
+    ),
+    "task055j_final_report": _definition(
+        "task055j_final_report",
+        ["schema_version", "status", "implementation_commit", "parent_authorization_seal_hash", "parent_canary_plan_hash", "source_tree_seal_content_hash", "source_root", "application_preflight_content_hash", "application_tree_content_hash", "application_tree_root", "runtime_authority_content_hash", "execution_authorization_content_hash", "rehearsal_content_hash", "rehearsal_verification_content_hash", "ordered_key_count", "ordered_key_root", "canary", "budgets", "network_execution", "real_canary_executed", "real_response_applied", "real_gpu_started", "resume_authorized", "batch_authorized", "operational_state_unproven", "engineering_blockers", "certification_blockers", "readiness", "content_hash", "generation_id"],
+        _task055j_patterns("task055j_report.json"),
+        optional=["operational_state_proven", "operational_blockers"],
+    ),
+    "task055j_final_verification": _definition(
+        "task055j_final_verification",
+        ["schema_version", "status", "top_status", "report_content_hash", "runtime_authority_content_hash", "execution_authorization_content_hash", "application_preflight_content_hash", "source_tree_seal_content_hash", "rehearsal_content_hash", "rehearsal_verification_content_hash", "source_root", "application_tree_root", "ordered_key_root", "canary", "credential_read_count", "tushare_post_count", "other_market_http_count", "prospective_holdout_accessed", "max_read_date", "content_hash", "generation_id"],
+        _task055j_patterns("task055j_final_verification.json"),
+    ),
+    "task055j_final_execution_seal": _definition(
+        "task055j_final_execution_seal",
+        ["schema_version", "status", "implementation_commit", "runtime_authority_content_hash", "execution_authorization_content_hash", "application_preflight_content_hash", "application_tree_content_hash", "application_tree_root", "source_tree_seal_content_hash", "source_root", "rehearsal_content_hash", "rehearsal_verification_content_hash", "final_report_content_hash", "final_verification_content_hash", "parent_authorization_seal_hash", "parent_canary_plan_hash", "ordered_exact_daily_keys", "ordered_key_count", "ordered_key_root", "canary", "budgets", "root_identities", "registry_content_hash", "initial_network_journal", "initial_transport_spend", "engineering_blockers", "review_required_before_execution", "resume_authorized", "batch_authorized", "real_canary_executed", "network_execution", "content_hash", "generation_id"],
+        _task055j_patterns("final_execution_seal.json"),
+    ),
+    "task055j_scrubbed_evidence": _definition(
+        "task055j_scrubbed_evidence",
+        ["schema_version", "status", "implementation_commit", "parent_authorization_seal_hash", "parent_canary_plan_hash", "ordered_exact_daily_keys", "ordered_key_root", "canary", "budgets", "root_binding_hashes", "source_entries", "source_root", "application_role_roots", "application_tree_root", "artifact_catalog", "artifact_catalog_root", "lineage", "network_execution", "resume_authorized", "batch_authorized", "operational_state_unproven", "engineering_blockers", "certification_ready", "portfolio_ready", "optimizer_ready", "paper_ready", "live_ready", "certification_blockers", "contains_absolute_paths", "contains_market_values", "contains_credentials", "content_hash"],
+        _task055j_patterns("task055j_scrubbed_evidence.json"),
     ),
     "task055f_truth_v2_manifest": _definition(
         "task055f_truth_v2_manifest",

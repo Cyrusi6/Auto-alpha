@@ -137,9 +137,14 @@ def verify_task055i_report(
     execution_authorization: str | Path,
     scrubbed_evidence: str | Path,
     rehearsal_manifest: str | Path,
+    historical_source_commit: str | None = None,
 ) -> dict[str, Any]:
     report = validate_generation(report_path, schema=FINAL_REPORT_SCHEMA, manifest_name="task055i_report.json")
-    runtime = validate_runtime_authority(runtime_authority, require_pristine=True)
+    runtime = validate_runtime_authority(
+        runtime_authority,
+        require_pristine=True,
+        historical_source_commit=historical_source_commit,
+    )
     authorization = validate_execution_authorization(execution_authorization)
     scrubbed = verify_scrubbed_evidence(scrubbed_evidence)
     rehearsal = read_json(rehearsal_manifest)

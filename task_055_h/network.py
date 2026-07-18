@@ -26,6 +26,7 @@ def load_file_credential_after_offline_gates(
     credential_file: str | Path,
     forbidden_root_identities: Mapping[str, Path],
 ) -> str:
+    raise Task055HNetworkError("superseded_by_task055j")
     path = Path(credential_file)
     if not path.is_absolute() or path.is_symlink():
         raise Task055HNetworkError("credential_file_absolute_non_symlink_required")
@@ -51,6 +52,7 @@ def ordered_future_canary_gate(
     tls_checker: Callable[[], Mapping[str, Any]],
     credential_loader: Callable[[], str],
 ) -> dict[str, Any]:
+    raise Task055HNetworkError("superseded_by_task055j")
     seal = validate_authorization_seal(authorization_seal, require_ready=True)
     if not allow_network or sealed_plan_hash != seal["canary_execution_plan_hash"]:
         raise Task055HNetworkError("canary_explicit_authorization_invalid")

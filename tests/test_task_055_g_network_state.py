@@ -148,37 +148,24 @@ def test_l1_canary_resume_are_native_schema_artifacts_and_can_be_applied(tmp_pat
         calls.append(request["transport_hash"])
         return _result(request, suffix=f"l1-{len(calls)}")
 
-    canary = network_state.execute_l1_canary(
-        state_root=state_root,
-        plan_manifest=plan,
-        allow_network=True,
-        sealed_plan_hash=plan["plan_hash"],
-        request_executor=executor,
-    )
-    resumed = network_state.execute_l1_resume(
-        state_root=state_root,
-        plan_manifest=plan,
-        canary_manifest=canary["manifest_path"],
-        allow_network=True,
-        sealed_plan_hash=plan["plan_hash"],
-        request_executor=executor,
-    )
-    _assert_schema(canary["manifest_path"], "task055g_network_execution")
-    _assert_schema(resumed["manifest_path"], "task055g_network_execution")
-
-    consolidated = network_state.consolidate(
-        state_root=state_root,
-        plan_manifest=plan,
-        execution_manifests=[canary["manifest_path"], resumed["manifest_path"]],
-    )
-    applied = network_state.apply_l1(
-        state_root=state_root,
-        consolidation_manifest=consolidated["manifest_path"],
-    )
-    _assert_schema(consolidated["manifest_path"], "task055g_network_consolidation")
-    _assert_schema(applied["manifest_path"], "task055g_network_apply")
-    assert applied["result_count"] == 2
-    assert len(calls) == 2
+    with pytest.raises(network_state.Task055GNetworkStateError, match="superseded_by_task055j"):
+        network_state.execute_l1_canary(
+            state_root=state_root,
+            plan_manifest=plan,
+            allow_network=True,
+            sealed_plan_hash=plan["plan_hash"],
+            request_executor=executor,
+        )
+    with pytest.raises(network_state.Task055GNetworkStateError, match="superseded_by_task055j"):
+        network_state.execute_l1_resume(
+            state_root=state_root,
+            plan_manifest=plan,
+            canary_manifest={},
+            allow_network=True,
+            sealed_plan_hash=plan["plan_hash"],
+            request_executor=executor,
+        )
+    assert calls == []
 
 
 def test_l1_failure_recovery_is_idempotent_and_apply_uses_real_responses(tmp_path):
@@ -318,7 +305,7 @@ def test_l2_canary_resume_and_apply_are_separate_and_offline_by_default(tmp_path
         return _result(request, suffix=f"network-{len(calls)}")
 
     before = network_state.ledger_summary(state_root)["physical_attempt_count"]
-    with pytest.raises(network_state.Task055GNetworkStateError, match="offline_default"):
+    with pytest.raises(network_state.Task055GNetworkStateError, match="superseded_by_task055j"):
         network_state.execute_l2_canary(
             state_root=state_root,
             plan_manifest=l2["manifest_path"],
@@ -327,35 +314,17 @@ def test_l2_canary_resume_and_apply_are_separate_and_offline_by_default(tmp_path
     assert calls == []
     assert network_state.ledger_summary(state_root)["physical_attempt_count"] == before
 
-    canary = network_state.execute_l2_canary(
-        state_root=state_root,
-        plan_manifest=l2["manifest_path"],
-        allow_network=True,
-        sealed_plan_hash=l2["plan_hash"],
-        request_executor=executor,
-    )
-    assert canary["must_stop_after_canary"] is True
-    assert len(calls) == 1
-    _assert_schema(canary["manifest_path"], "task055g_network_execution")
-    resumed = network_state.execute_l2_resume(
-        state_root=state_root,
-        plan_manifest=l2["manifest_path"],
-        canary_manifest=canary["manifest_path"],
-        allow_network=True,
-        sealed_plan_hash=l2["plan_hash"],
-        request_executor=executor,
-    )
-    assert resumed["remaining_request_count"] == 0
-    assert len(calls) == 2
-    _assert_schema(resumed["manifest_path"], "task055g_network_execution")
-    l2_apply = network_state.apply_l2(
-        state_root=state_root,
-        plan_manifest=l2["manifest_path"],
-        execution_manifests=[canary["manifest_path"], resumed["manifest_path"]],
-    )
-    _assert_schema(l2_apply["manifest_path"], "task055g_network_apply")
-    assert l2_apply["result_count"] == 2
-    assert network_state.ledger_summary(state_root)["terminal_counts"] == {"applied": 4}
+    with pytest.raises(network_state.Task055GNetworkStateError, match="superseded_by_task055j"):
+        network_state.execute_l2_resume(
+            state_root=state_root,
+            plan_manifest=l2["manifest_path"],
+            canary_manifest={},
+            allow_network=True,
+            sealed_plan_hash=l2["plan_hash"],
+            request_executor=executor,
+        )
+    assert calls == []
+    assert network_state.ledger_summary(state_root)["physical_attempt_count"] == before
 
 
 def test_cross_round_unique_key_and_logical_budget_is_global(tmp_path):

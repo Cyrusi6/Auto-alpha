@@ -40,6 +40,7 @@ class GovernedBackfillConfig:
 
 
 def run_governed_backfill(config: GovernedBackfillConfig) -> dict[str, Any]:
+    raise RuntimeError("superseded_by_task055j")
     codes = sorted({str(row["ts_code"]) for row in _read_jsonl(config.union_path) if row.get("ts_code")})
     if not codes:
         raise RuntimeError("historical union is empty")

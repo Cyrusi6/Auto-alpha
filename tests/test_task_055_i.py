@@ -23,13 +23,7 @@ from task_055_i.contracts import (
     READY_STATUS,
 )
 from task_055_i.executor import execute_single_canary
-from task_055_i.rehearsal import run_native_application_rehearsal
 from task_055_i.verifier import ScrubbedEvidenceError, verify_scrubbed_evidence
-
-
-@pytest.fixture(scope="module")
-def native_rehearsal(tmp_path_factory):
-    return run_native_application_rehearsal(tmp_path_factory.mktemp("task055i_native_rehearsal"))
 
 
 def test_fixed_parent_and_first_canary_identity_are_exact():
@@ -66,41 +60,21 @@ def test_production_cli_exposes_only_canary_and_acceptance_without_injection():
 
 def test_task055g_network_commands_are_superseded_before_config_or_credentials():
     for command in ("l1-canary", "l1-resume", "l2-canary", "l2-resume"):
-        with pytest.raises(Task055GNetworkStateError, match="superseded_by_task055i"):
+        with pytest.raises(Task055GNetworkStateError, match="superseded_by_task055j"):
             _dispatch(
                 argparse.Namespace(command=command, allow_network=False, sealed_plan_hash=None),
                 {},
             )
 
 
-def test_native_rehearsal_runs_real_positive_empty_suspend_and_concurrency_paths(native_rehearsal):
-    payload = json.loads(Path(native_rehearsal["manifest_path"]).read_text(encoding="utf-8"))
-    assert payload["status"] == "passed"
-    assert payload["production_seal_eligible"] is False
-    assert payload["positive_chain_complete"] is True
-    assert payload["positive_terminal_pair_count"] == 100
-    assert payload["positive_terminal_counts"] == {"completed": 100}
-    assert payload["empty_dynamic_l2_generated"] is True
-    assert payload["s_outcome"] == "modeled_suspend_candidate_timing_uncertified"
-    assert payload["r_outcome"] == "resume_event_not_suspension_proof"
-    assert payload["empty_suspend_outcome"] == "vendor_suspend_absence_not_no_trade_proof"
-    assert payload["negative_case_count"] >= 8
-    assert all(row["passed"] is True for row in payload["negative_cases"].values())
-    assert payload["negative_cases"]["concurrent_single_flight"]["transport_calls"] == 1
-    assert payload["negative_cases"]["crash_after_cache"]["post_calls"] == 1
-    required = {
-        "positive_raw_repair", "positive_repaired_freeze", "positive_repaired_matrix",
-        "positive_repaired_tensor", "positive_firewall_sentinel",
-        "positive_exact20_materialization", "positive_exact20_x5",
-    }
-    assert required.issubset(payload["artifact_hashes"])
-    assert all(len(payload["artifact_hashes"][key]) == 64 for key in required)
-    assert payload["real_network_execution"] == {
-        "credential_read_count": 0,
-        "tushare_request_count": 0,
-        "other_network_request_count": 0,
-        "prospective_holdout_accessed": False,
-    }
+def test_native_rehearsal_is_superseded_by_task055j_before_execution():
+    with pytest.raises(Exception, match="superseded_by_task055j"):
+        execute_single_canary(
+            runtime_authority="unused",
+            reviewed_authority_hash="unused",
+            credential_file="unused",
+            allow_network=True,
+        )
 
 
 def test_scrubbed_verifier_and_artifact_schema_detect_tampering(tmp_path):

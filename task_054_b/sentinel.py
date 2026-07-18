@@ -34,6 +34,7 @@ from model_core.data_loader import AShareDataLoader
 from model_core.vm import StackVM
 from research_firewall import ResearchEligibilityContract
 from task_053_a.orchestrator import build_v3_tensor_generation
+from task_054_c.research_view import publish_research_projection, validate_research_projection
 from validation_campaign_store.consolidate import consolidate_validation_results
 from validation_lab.materialization import FactorMaterializer, MaterializationInputs
 from validation_lab.run_validation import main as validation_lab_main
@@ -55,6 +56,7 @@ REQUIRED_COMPONENTS = (
     "loader",
     "strict_matrix_builder",
     "v3_tensor_builder",
+    "research_projection_publisher",
     "stackvm_validity",
     "alpha_proxy",
     "formula_batch_evaluator",
@@ -144,6 +146,7 @@ def build_production_sentinel_plan(config: ProductionSentinelConfig) -> Producti
                 "output_dir": str(run_dir),
                 "mutation_manifest_path": str(mutation_manifest_path),
                 "immutable_input_hashes": immutable_input_hashes,
+                "research_cache_dir": str(output_root / "research_cache" / path_name),
             }
             worker_config_path = output_root / "worker_configs" / f"{mutation}_{path_name}.json"
             atomic_json(worker_config_path, worker_config)
@@ -246,8 +249,12 @@ def validate_task054b_production_sentinel(
         raise RuntimeError("post-cutoff leakage detected")
     if not all(bool(value) for value in (proof.get("inside_cutoff_cache_miss") or {}).values()):
         raise RuntimeError("inside-cutoff cache hit detected")
+    if not all(bool(value) for value in (proof.get("cache_contract") or {}).values()):
+        raise RuntimeError("research cache contract failed")
     if not all(bool(value) for value in (proof.get("mutation_applied") or {}).values()):
         raise RuntimeError("sentinel mutation was not applied")
+    if not all(bool(value) for value in (proof.get("semantic_consistency") or {}).values()):
+        raise RuntimeError("raw/matrix or local/scheduler semantic mismatch")
     return {"status": "passed", "run_count": 12, "content_hash": payload.get("content_hash")}
 
 
@@ -286,10 +293,16 @@ def _run_scheduler_workers(runs: Sequence[SentinelRunSpec], output_root: Path, *
             resume=False,
         )
     )
-    submitted = scheduler.submit_jobs(jobs)
-    if submitted["submitted"] != len(jobs):
-        raise RuntimeError("sentinel scheduler reused stale jobs")
-    scheduler.run()
+    submitted_count = 0
+    for mutation in MUTATIONS:
+        stage_jobs = [job for job, run in zip(jobs, runs) if run.mutation_kind == mutation]
+        submitted = scheduler.submit_jobs(stage_jobs)
+        if submitted["submitted"] != len(stage_jobs):
+            raise RuntimeError("sentinel scheduler reused stale jobs")
+        submitted_count += submitted["submitted"]
+        scheduler.run()
+    if submitted_count != len(jobs):
+        raise RuntimeError("sentinel scheduler submission count mismatch")
     run_rows = [row for row in scheduler.store.read_runs() if row.get("job_id") in {job.job_id for job in jobs}]
     heartbeat_rows = _read_jsonl(scheduler.store.heartbeats_path)
     evidence: dict[str, dict[str, Any]] = {}
@@ -333,8 +346,14 @@ def _run_worker(config_path: str | Path) -> dict[str, Any]:
         principal="research",
         research_end_date=config["research_end_date"],
     )
+    supervisor_broker = AuditedReadBroker(
+        output / LEDGER_FILE,
+        invocation_id=config["invocation_id"],
+        principal="projection_publisher",
+        research_end_date=config["research_end_date"],
+    )
     receipts = ComponentReceiptRecorder(output / RECEIPTS_FILE, invocation_id=config["invocation_id"])
-    result = _execute_production_components(config, broker, receipts)
+    result = _execute_production_components(config, broker, supervisor_broker, receipts)
     ledger_rows = broker.rows()
     receipt_rows = receipts.rows()
     validate_read_ledger(ledger_rows, invocation_id=config["invocation_id"])
@@ -357,20 +376,26 @@ def _run_worker(config_path: str | Path) -> dict[str, Any]:
     return payload
 
 
-def _execute_production_components(config: Mapping[str, Any], broker: AuditedReadBroker, receipts: ComponentReceiptRecorder) -> dict[str, Any]:
+def _execute_production_components(
+    config: Mapping[str, Any],
+    broker: AuditedReadBroker,
+    supervisor_broker: AuditedReadBroker,
+    receipts: ComponentReceiptRecorder,
+) -> dict[str, Any]:
     output = Path(config["output_dir"])
     freeze_dir = Path(config["freeze_dir"])
     matrix_dir = Path(config["matrix_dir"])
     tensor_dir = Path(config["tensor_dir"])
     feature_manifest_path = Path(config["feature_manifest_path"])
     factor_path = Path(config["probe_factor_path"])
-    dates = broker.read_json(matrix_dir / "trade_dates.json", component="loader", dataset="trade_dates", date_range=[])
-    research_contract = ResearchEligibilityContract(
-        research_end_date=config["research_end_date"],
-        label_horizon=int(config["label_horizon"]),
+    source_dates = supervisor_broker.read_json(
+        matrix_dir / "trade_dates.json",
+        component="research_projection_publisher",
+        dataset="full_trade_dates",
+        date_range=None,
     )
-    eligible_mask = research_contract.eligible_mask(dates)
-    research_dates = [dates[index] for index, allowed in enumerate(eligible_mask) if allowed]
+    if not source_dates or max(source_dates) > "20260630":
+        raise RuntimeError("sentinel source date boundary invalid")
     if config["source_kind"] == "raw":
         matrix_output_root = output / "rebuilt_matrix"
         builder = StrictEngineeringPITMatrixBuilder(
@@ -414,14 +439,72 @@ def _execute_production_components(config: Mapping[str, Any], broker: AuditedRea
             input_artifacts={"tensor_manifest": tensor_dir / "task_053_v3_tensor_manifest.json"},
             output_artifacts={"tensor_manifest": tensor_dir / "task_053_v3_tensor_manifest.json"},
         )
-    matrix_manifest = broker.read_json(_matrix_manifest_path(matrix_dir), component="loader", dataset="strict_matrix_manifest", date_range=research_dates)
-    tensor_manifest = broker.read_json(tensor_dir / "task_053_v3_tensor_manifest.json", component="loader", dataset="v3_tensor_manifest", date_range=research_dates)
-    values = broker.load_npy(tensor_dir / "feature_tensor.npy", component="loader", dataset="feature_tensor", date_range=research_dates)
-    validity = broker.load_npy(tensor_dir / "feature_validity_tensor.npy", component="loader", dataset="feature_validity_tensor", date_range=research_dates)
-    target = broker.load_npy(_first_existing(matrix_dir, "target_open_t1_t2.npy", "next_open_t1_t2_return.npy"), component="loader", dataset="target", date_range=research_dates)
-    target_available = broker.load_npy(_first_existing(matrix_dir, "target_available.npy", "target_available_mask.npy"), component="loader", dataset="target_available", date_range=research_dates)
+    projection = receipts.invoke(
+        "research_projection_publisher",
+        publish_research_projection,
+        matrix_root=matrix_dir,
+        tensor_root=tensor_dir,
+        output_root=output / "research_projection",
+        research_end_date=config["research_end_date"],
+        input_artifacts={
+            "matrix_manifest": _matrix_manifest_path(matrix_dir),
+            "tensor_manifest": tensor_dir / "task_053_v3_tensor_manifest.json",
+        },
+        output_artifacts=lambda value: {"projection_manifest": Path(value["manifest_path"])},
+    )
+    projection = validate_research_projection(projection["manifest_path"])
+    full_matrix_dir = matrix_dir
+    full_tensor_dir = tensor_dir
+    matrix_dir = Path(projection["matrix_dir"])
+    tensor_dir = Path(projection["tensor_dir"])
+    dates = broker.read_json(
+        matrix_dir / "trade_dates.json",
+        component="loader",
+        dataset="research_trade_dates",
+        date_range=[projection["research_date_start"], projection["research_date_end"]],
+    )
+    matrix_manifest = broker.read_json(_matrix_manifest_path(matrix_dir), component="loader", dataset="strict_matrix_manifest", date_range=dates)
+    eligible_mask = broker.load_npy(
+        matrix_dir / "research_eligible_date_mask.npy",
+        component="loader",
+        dataset="research_eligible_date_mask",
+        date_range=dates,
+    )
+    eligible_mask, eligibility_hash = _validated_projection_eligibility(
+        dates, eligible_mask, matrix_manifest
+    )
+    research_dates = [dates[index] for index, allowed in enumerate(eligible_mask) if allowed]
+    if not research_dates:
+        raise RuntimeError("physical research projection has no eligible signal dates")
+    tensor_manifest = broker.read_json(tensor_dir / "task_053_v3_tensor_manifest.json", component="loader", dataset="v3_tensor_manifest", date_range=dates)
+    values = broker.load_npy(tensor_dir / "feature_tensor.npy", component="loader", dataset="feature_tensor", date_range=dates)
+    validity = broker.load_npy(tensor_dir / "feature_validity_tensor.npy", component="loader", dataset="feature_validity_tensor", date_range=dates)
+    target = broker.load_npy(_first_existing(matrix_dir, "target_open_t1_t2.npy", "next_open_t1_t2_return.npy"), component="loader", dataset="target", date_range=dates)
+    target_available = broker.load_npy(_first_existing(matrix_dir, "target_available.npy", "target_available_mask.npy"), component="loader", dataset="target_available", date_range=dates)
     factor_payload = broker.read_json(factor_path, component="loader", dataset="probe_factor", date_range=research_dates)
     factor = FactorRecord(**factor_payload)
+    research_indices = np.asarray(eligible_mask, dtype=np.bool_)
+    research_projection_hash = _hash_arrays(
+        np.asarray(values)[:, :, research_indices],
+        np.asarray(validity)[:, :, research_indices],
+    )
+    bounded_research_identity = _hash_json(
+        {
+            "eligible": eligibility_hash,
+            "research_projection": research_projection_hash,
+        }
+    )
+    research_cache_key = _hash_json(
+        {
+            "research_computation_identity": bounded_research_identity,
+            "factor": factor.formula_hash,
+        }
+    )
+    cache_probe = _probe_research_cache_contract(
+        cache_dir=Path(config["research_cache_dir"]),
+        mutation_kind=str(config["mutation_kind"]),
+        cache_key=research_cache_key,
+    )
     feature_manifest = load_feature_manifest(feature_manifest_path)
     vocab = make_formula_vocab_from_manifest(feature_manifest)
     vm = StackVM(vocab)
@@ -449,6 +532,8 @@ def _execute_production_components(config: Mapping[str, Any], broker: AuditedRea
             research_end_date=config["research_end_date"],
             holdout_start_date=config["holdout_start_date"],
             label_horizon=int(config["label_horizon"]),
+            canonical_feature_tensor_path=tensor_dir / "feature_tensor.npy",
+            canonical_feature_validity_tensor_path=tensor_dir / "feature_validity_tensor.npy",
             device="cpu",
         ).load_data,
         input_artifacts={"matrix_manifest": _matrix_manifest_path(matrix_dir), "feature_manifest": feature_manifest_path},
@@ -494,6 +579,9 @@ def _execute_production_components(config: Mapping[str, Any], broker: AuditedRea
         research_end_date=config["research_end_date"],
         holdout_start_date=config["holdout_start_date"],
         label_horizon=int(config["label_horizon"]),
+        canonical_feature_tensor_path=str(tensor_dir / "feature_tensor.npy"),
+        canonical_feature_validity_tensor_path=str(tensor_dir / "feature_validity_tensor.npy"),
+        research_computation_identity=bounded_research_identity,
         skip_existing=False,
         continue_on_error=False,
     )
@@ -523,7 +611,8 @@ def _execute_production_components(config: Mapping[str, Any], broker: AuditedRea
             research_end_date=config["research_end_date"],
             label_horizon=int(config["label_horizon"]),
             research_eligible_date_mask_path=str(matrix_dir / "research_eligible_date_mask.npy"),
-            eligibility_contract_hash=research_contract.eligible_date_hash(dates),
+            eligibility_contract_hash=eligibility_hash,
+            research_computation_identity=bounded_research_identity,
         ),
         output / "materialized",
     )
@@ -563,27 +652,62 @@ def _execute_production_components(config: Mapping[str, Any], broker: AuditedRea
         input_artifacts={"validation_summary": _find_validation_summary(validation_output)},
         output_artifacts=lambda value: {"consolidation": Path(value["paths"]["validation_campaign_consolidation_report_path"])},
     )
-    research_indices = np.asarray(eligible_mask, dtype=np.bool_)
     factor_values, factor_validity = executed
     research_factor = factor_values[:, research_indices]
     research_validity = factor_validity[:, research_indices]
-    diagnostic_indices = np.asarray([date > config["research_end_date"] for date in dates], dtype=np.bool_)
-    return {
-        "artifact_ids": {"freeze": freeze_dir.name, "matrix": matrix_dir.name, "tensor": tensor_dir.name},
-        "research_tensor_hash": _hash_arrays(np.asarray(values)[:, :, research_indices], np.asarray(validity)[:, :, research_indices]),
+    proxy_semantic = _semantic_projection(
+        {"rows": proxy_result[1], "summary": proxy_result[2]},
+        excluded={"lineage", "lineage_hash", "runtime_ms", "created_at"},
+    )
+    batch_semantic = _semantic_projection(batch_result.summary, excluded={"created_at", "runtime_seconds", "elapsed_seconds"})
+    validation_semantic = _semantic_projection(
+        json.loads(_find_validation_summary(validation_output).read_text(encoding="utf-8")),
+        excluded={"created_at", "artifact_metadata", "runtime_ms", "duration_seconds"},
+    )
+    mutation_generation = json.loads(
+        Path(config["mutation_manifest_path"]).read_text(encoding="utf-8")
+    )["generations"][config["mutation_kind"]]
+    result = {
+        "artifact_ids": {"freeze": freeze_dir.name, "matrix": full_matrix_dir.name, "tensor": full_tensor_dir.name},
+        "research_projection_content_hash": projection["content_hash"],
+        "research_computation_identity": bounded_research_identity,
+        "research_tensor_hash": research_projection_hash,
         "factor_hash": _hash_arrays(research_factor.numpy(), research_validity.numpy()),
-        "proxy_hash": _hash_json(proxy_result[2]),
-        "full_eval_hash": _hash_json(batch_result.summary),
+        "proxy_hash": _hash_json(proxy_semantic),
+        "full_eval_hash": _hash_json(batch_semantic),
         "materialization_quality_hash": _hash_json(materialization.metrics or {}),
-        "validation_status_hash": sha256_file(_find_validation_summary(validation_output)),
-        "cache_key": _hash_json({"eligible": research_contract.eligible_date_hash(dates), "tensor": tensor_manifest["content_hash"], "factor": factor.formula_hash}),
+        "validation_status_hash": _hash_json(validation_semantic),
+        "cache_key": research_cache_key,
+        "cache_lookup_phase": "before_downstream_evaluation",
         "consolidation_hash": _hash_json(consolidation),
-        "diagnostic_hash": _hash_arrays(np.asarray(values)[:, :, diagnostic_indices], np.asarray(validity)[:, :, diagnostic_indices]),
-        "research_result_hash": _hash_json({"factor": _hash_arrays(research_factor.numpy(), research_validity.numpy()), "proxy": proxy_result[2], "full": batch_result.summary}),
-        "mutation_generation_hash": json.loads(Path(config["mutation_manifest_path"]).read_text(encoding="utf-8"))["generations"][config["mutation_kind"]]["content_hash"],
-        "eligible_date_hash": research_contract.eligible_date_hash(dates),
+        "diagnostic_hash": projection["diagnostic_hash"],
+        "research_result_hash": _hash_json({"factor": _hash_arrays(research_factor.numpy(), research_validity.numpy()), "proxy": proxy_semantic, "full": batch_semantic}),
+        "mutation_generation_hash": mutation_generation["content_hash"],
+        "mutation_applied": bool(mutation_generation["mutation_applied"]),
+        "mutation_target": mutation_generation.get("mutation_target"),
+        "eligible_date_hash": eligibility_hash,
         "matrix_manifest_hash": matrix_manifest.get("content_hash"),
     }
+    cache_semantic = {
+        key: result[key]
+        for key in (
+            "research_tensor_hash",
+            "factor_hash",
+            "proxy_hash",
+            "full_eval_hash",
+            "materialization_quality_hash",
+            "validation_status_hash",
+            "research_result_hash",
+        )
+    }
+    result["cache_status"] = _finalize_research_cache_contract(
+        cache_dir=Path(config["research_cache_dir"]),
+        mutation_kind=str(config["mutation_kind"]),
+        cache_key=str(result["cache_key"]),
+        semantic=cache_semantic,
+        probe=cache_probe,
+    )
+    return result
 
 
 def _prepare_mutation_generations(config: ProductionSentinelConfig, output_root: Path) -> dict[str, Any]:
@@ -592,16 +716,40 @@ def _prepare_mutation_generations(config: ProductionSentinelConfig, output_root:
     contract = ResearchEligibilityContract(research_end_date=config.research_end_date, label_horizon=config.label_horizon)
     inside_index = max(index for index, allowed in enumerate(contract.eligible_mask(dates)) if allowed)
     post_index = next(index for index, date in enumerate(dates) if date > config.research_end_date)
+    mutation_targets = _pre_registered_mutation_targets(config, dates, inside_index, post_index)
     generations: dict[str, dict[str, Any]] = {}
     for mutation in MUTATIONS:
         generation_root = output_root / mutation
         if generation_root.exists():
             shutil.rmtree(generation_root)
         generation_root.mkdir(parents=True)
-        freeze_dir = _copy_freeze_generation(Path(config.governed_freeze_dir), generation_root / "freeze", mutation, dates, inside_index, post_index)
-        matrix_dir = generation_root / "matrix"
-        shutil.copytree(config.published_matrix_dir, matrix_dir, copy_function=_reflink_copy)
-        tensor_dir = _copy_tensor_generation(Path(config.published_tensor_dir), generation_root / "tensor", mutation, inside_index, post_index)
+        target = mutation_targets.get(mutation)
+        freeze_dir = _copy_freeze_generation(
+            Path(config.governed_freeze_dir), generation_root / "freeze", mutation, target
+        )
+        if mutation == "baseline":
+            matrix_dir = generation_root / "matrix"
+            shutil.copytree(config.published_matrix_dir, matrix_dir, copy_function=_reflink_copy)
+            tensor_dir = generation_root / "tensor"
+            shutil.copytree(config.published_tensor_dir, tensor_dir, copy_function=_reflink_copy)
+        else:
+            matrix_result = StrictEngineeringPITMatrixBuilder(
+                StrictEngineeringPITMatrixConfig(
+                    research_observable_cutoff=config.research_end_date,
+                    target_endpoint_horizon_trade_days=int(config.label_horizon),
+                )
+            ).build(
+                governed_freeze_dir=freeze_dir,
+                historical_universe_dir=config.universe_dir,
+                output_root=generation_root / "matrix_build",
+            )
+            matrix_dir = Path(matrix_result.generation_dir)
+            tensor_result = build_v3_tensor_generation(
+                matrix_dir=matrix_dir,
+                feature_manifest_path=config.feature_manifest_path,
+                output_root=generation_root / "tensor_build",
+            )
+            tensor_dir = Path(tensor_result["generation_dir"])
         content_hash = _hash_json({
             "mutation": mutation,
             "freeze_manifest": sha256_file(_freeze_manifest_path(freeze_dir)),
@@ -611,14 +759,25 @@ def _prepare_mutation_generations(config: ProductionSentinelConfig, output_root:
         generations[mutation] = {
             "freeze_dir": str(freeze_dir), "matrix_dir": str(matrix_dir), "tensor_dir": str(tensor_dir),
             "inside_date": dates[inside_index], "post_date": dates[post_index], "content_hash": content_hash,
-            "mutation_applied": mutation == "baseline" or _mutation_changed(config, tensor_dir, mutation, inside_index, post_index),
+            "mutation_target": target,
+            "mutation_applied": mutation == "baseline" or _mutation_changed(config, tensor_dir, target),
         }
-    semantic = {"schema_version": "task_054b_mutation_generations_v1", "generations": generations, "probe_fixed_before_results": True}
+    semantic = {
+        "schema_version": "task_054b_mutation_generations_v1",
+        "generations": generations,
+        "probe_fixed_before_results": True,
+        "dependency_selected_before_results": True,
+    }
     semantic["content_hash"] = _hash_json(semantic)
     return semantic
 
 
-def _copy_freeze_generation(source: Path, output_root: Path, mutation: str, dates: Sequence[str], inside_index: int, post_index: int) -> Path:
+def _copy_freeze_generation(
+    source: Path,
+    output_root: Path,
+    mutation: str,
+    target_spec: Mapping[str, Any] | None,
+) -> Path:
     manifest = json.loads(_freeze_manifest_path(source).read_text(encoding="utf-8"))
     staging = Path(tempfile.mkdtemp(prefix="freeze_generation_", dir=output_root.parent))
     try:
@@ -628,10 +787,12 @@ def _copy_freeze_generation(source: Path, output_root: Path, mutation: str, date
             str(item["logical_name"]): staging / str(item.get("relative_path") or item.get("records_path"))
             for item in manifest.get("artifacts", [])
         }
-        if mutation != "baseline" and "daily_bars" in artifacts:
-            selected_date = dates[post_index if mutation == "post_cutoff" else inside_index]
-            artifacts["daily_bars"].chmod(0o644)
-            _mutate_first_bar_on_date(artifacts["daily_bars"], selected_date)
+        if mutation != "baseline":
+            if not target_spec or target_spec["logical_name"] not in artifacts:
+                raise RuntimeError(f"pre-registered mutation source missing:{mutation}")
+            source_path = artifacts[str(target_spec["logical_name"])]
+            source_path.chmod(0o644)
+            _mutate_source_cell(source_path, target_spec)
         updated_artifacts = []
         for item in manifest.get("artifacts", []):
             updated = dict(item)
@@ -661,30 +822,6 @@ def _copy_freeze_generation(source: Path, output_root: Path, mutation: str, date
         shutil.rmtree(staging, ignore_errors=True)
 
 
-def _copy_tensor_generation(source: Path, target: Path, mutation: str, inside_index: int, post_index: int) -> Path:
-    shutil.copytree(source, target, copy_function=_reflink_copy)
-    values_path = target / "feature_tensor.npy"
-    validity_path = target / "feature_validity_tensor.npy"
-    if mutation != "baseline":
-        values = np.load(values_path, allow_pickle=False)
-        validity = np.load(validity_path, allow_pickle=False)
-        date_index = post_index if mutation == "post_cutoff" else inside_index
-        positions = np.argwhere(validity[:, :, date_index])
-        if positions.size == 0:
-            raise RuntimeError(f"no valid tensor mutation cell:{mutation}:{date_index}")
-        stock_index, feature_index = [int(value) for value in positions[0]]
-        values[stock_index, feature_index, date_index] += np.float32(0.125)
-        np.save(values_path, values.astype(np.float32, copy=False), allow_pickle=False)
-    manifest_path = target / "task_053_v3_tensor_manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["values_sha256"] = sha256_file(values_path)
-    manifest["validity_sha256"] = sha256_file(validity_path)
-    manifest["mutation_contract"] = {"task": "054-B", "kind": mutation, "manifest_rehashed": True}
-    manifest["content_hash"] = _hash_json({key: manifest[key] for key in sorted(manifest) if key not in {"content_hash", "created_at"}})
-    atomic_json(manifest_path, manifest)
-    return target
-
-
 def _validate_cross_run_invariants(executions: Mapping[str, Mapping[str, Mapping[str, Any]]]) -> tuple[dict[str, Any], list[str]]:
     research_fields = ("research_tensor_hash", "factor_hash", "proxy_hash", "full_eval_hash", "materialization_quality_hash", "validation_status_hash", "research_result_hash")
     baseline = executions["baseline"]
@@ -693,17 +830,51 @@ def _validate_cross_run_invariants(executions: Mapping[str, Mapping[str, Mapping
     post_invariant = {path: all(baseline[path][field] == post[path][field] for field in research_fields) for path in PATHS}
     diagnostic_changed = {path: baseline[path]["diagnostic_hash"] != post[path]["diagnostic_hash"] for path in PATHS}
     inside_cache_miss = {path: baseline[path]["cache_key"] != inside[path]["cache_key"] for path in PATHS}
+    cache_contract = {
+        path: (
+            baseline[path].get("cache_status") == "miss_write"
+            and post[path].get("cache_status") == "hit"
+            and inside[path].get("cache_status") == "miss_write"
+            and all(
+                executions[mutation][path].get("cache_lookup_phase") == "before_downstream_evaluation"
+                for mutation in MUTATIONS
+            )
+        )
+        for path in PATHS
+    }
     inside_changed = {path: any(baseline[path][field] != inside[path][field] for field in research_fields) for path in PATHS}
-    mutation_applied = {mutation: all(bool(executions[mutation][path].get("mutation_generation_hash")) for path in PATHS) for mutation in MUTATIONS}
-    baseline_consistent = len({baseline[path]["research_result_hash"] for path in PATHS}) == 1
+    mutation_applied = {
+        mutation: all(bool(executions[mutation][path].get("mutation_applied")) for path in PATHS)
+        for mutation in MUTATIONS
+    }
+    semantic_consistency = {
+        mutation: (
+            len({executions[mutation][path]["research_result_hash"] for path in PATHS}) == 1
+            and len({executions[mutation][path]["diagnostic_hash"] for path in PATHS}) == 1
+        )
+        for mutation in MUTATIONS
+    }
+    baseline_consistent = semantic_consistency["baseline"]
     blockers = []
     for path in PATHS:
         if not post_invariant[path]: blockers.append(f"post_cutoff_research_changed:{path}")
         if not diagnostic_changed[path]: blockers.append(f"post_cutoff_mutation_not_observed:{path}")
         if not inside_cache_miss[path]: blockers.append(f"inside_cutoff_cache_hit:{path}")
+        if not cache_contract[path]: blockers.append(f"research_cache_contract_failed:{path}")
         if not inside_changed[path]: blockers.append(f"inside_cutoff_output_unchanged:{path}")
-    if not baseline_consistent: blockers.append("raw_matrix_local_scheduler_mismatch")
-    proof = {"post_cutoff_invariant": post_invariant, "diagnostic_changed": diagnostic_changed, "inside_cutoff_cache_miss": inside_cache_miss, "inside_cutoff_research_changed": inside_changed, "mutation_applied": mutation_applied, "baseline_consistent": baseline_consistent}
+    for mutation, consistent in semantic_consistency.items():
+        if not consistent:
+            blockers.append(f"raw_matrix_local_scheduler_mismatch:{mutation}")
+    proof = {
+        "post_cutoff_invariant": post_invariant,
+        "diagnostic_changed": diagnostic_changed,
+        "inside_cutoff_cache_miss": inside_cache_miss,
+        "cache_contract": cache_contract,
+        "inside_cutoff_research_changed": inside_changed,
+        "mutation_applied": mutation_applied,
+        "semantic_consistency": semantic_consistency,
+        "baseline_consistent": baseline_consistent,
+    }
     return proof, blockers
 
 
@@ -747,11 +918,125 @@ def _validate_published_tensor(tensor_dir: str | Path) -> dict[str, Any]:
     return manifest
 
 
-def _mutation_changed(config: ProductionSentinelConfig, target: Path, mutation: str, inside_index: int, post_index: int) -> bool:
+def _pre_registered_mutation_targets(
+    config: ProductionSentinelConfig,
+    dates: Sequence[str],
+    inside_index: int,
+    post_index: int,
+) -> dict[str, dict[str, Any]]:
+    feature_manifest = json.loads(Path(config.feature_manifest_path).read_text(encoding="utf-8"))
+    definitions = list(feature_manifest.get("feature_definitions") or ())
+    factor = json.loads(Path(config.probe_factor_path).read_text(encoding="utf-8"))
+    formula_names = set(map(str, factor.get("formula") or ()))
+    source_mapping = {
+        "open": "daily_bars",
+        "high": "daily_bars",
+        "low": "daily_bars",
+        "close": "daily_bars",
+        "pre_close": "daily_bars",
+        "volume": "daily_bars",
+        "amount": "daily_bars",
+        "turnover_rate": "daily_basic",
+        "volume_ratio": "daily_basic",
+        "pe_ttm": "daily_basic",
+        "pb": "daily_basic",
+        "ps_ttm": "daily_basic",
+        "total_mv": "daily_basic",
+        "roe": "financial_features",
+        "revenue_yoy": "financial_features",
+        "adj_factor": "adjustment_factors",
+    }
+    chosen = None
+    for feature_index, definition in enumerate(definitions):
+        if str(definition.get("feature_name")) not in formula_names:
+            continue
+        fields = [str(value) for value in definition.get("source_fields") or ()]
+        if len(fields) == 1 and fields[0] in source_mapping:
+            chosen = {
+                "feature_name": str(definition["feature_name"]),
+                "feature_index": feature_index,
+                "field": fields[0],
+                "logical_name": source_mapping[fields[0]],
+            }
+            break
+    if chosen is None:
+        raise RuntimeError("probe formula has no supported direct source mutation dependency")
+    freeze_manifest = json.loads(_freeze_manifest_path(Path(config.governed_freeze_dir)).read_text(encoding="utf-8"))
+    artifacts = {
+        str(item["logical_name"]): Path(config.governed_freeze_dir)
+        / str(item.get("relative_path") or item.get("records_path"))
+        for item in freeze_manifest.get("artifacts", [])
+    }
+    source_path = artifacts.get(str(chosen["logical_name"]))
+    if source_path is None or not source_path.is_file():
+        raise RuntimeError("pre-registered mutation source artifact missing")
+    stocks = json.loads((Path(config.published_matrix_dir) / "ts_codes.json").read_text(encoding="utf-8"))
+    validity = np.load(
+        Path(config.published_tensor_dir) / "feature_validity_tensor.npy",
+        mmap_mode="r",
+        allow_pickle=False,
+    )
+    targets = {}
+    for mutation, date_index in (("inside_cutoff", inside_index), ("post_cutoff", post_index)):
+        valid_stock_indices = [
+            int(value)
+            for value in np.flatnonzero(validity[:, int(chosen["feature_index"]), date_index])
+        ]
+        candidates = {str(stocks[index]): index for index in valid_stock_indices}
+        matched = _find_source_mutation_cell(
+            source_path,
+            trade_date=str(dates[date_index]),
+            field=str(chosen["field"]),
+            stock_indices=candidates,
+        )
+        targets[mutation] = {
+            **chosen,
+            "date_index": int(date_index),
+            "trade_date": str(dates[date_index]),
+            "ts_code": matched["ts_code"],
+            "stock_index": int(matched["stock_index"]),
+            "selection_contract": "formula_dependency_and_validity_before_results_v1",
+        }
+    return targets
+
+
+def _find_source_mutation_cell(
+    path: Path,
+    *,
+    trade_date: str,
+    field: str,
+    stock_indices: Mapping[str, int],
+) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            code = str(row.get("ts_code") or "")
+            value = row.get(field)
+            if (
+                str(row.get("trade_date") or "") == trade_date
+                and code in stock_indices
+                and value is not None
+                and np.isfinite(float(value))
+            ):
+                return {"ts_code": code, "stock_index": stock_indices[code]}
+    raise RuntimeError(f"no valid source mutation cell:{path.name}:{trade_date}:{field}")
+
+
+def _mutation_changed(
+    config: ProductionSentinelConfig,
+    target: Path,
+    target_spec: Mapping[str, Any] | None,
+) -> bool:
+    if not target_spec:
+        return False
     source = np.load(Path(config.published_tensor_dir) / "feature_tensor.npy", mmap_mode="r", allow_pickle=False)
     changed = np.load(target / "feature_tensor.npy", mmap_mode="r", allow_pickle=False)
-    index = post_index if mutation == "post_cutoff" else inside_index
-    return bool(np.any(source[:, :, index] != changed[:, :, index]))
+    stock_index = int(target_spec["stock_index"])
+    feature_index = int(target_spec["feature_index"])
+    date_index = int(target_spec["date_index"])
+    return bool(source[stock_index, feature_index, date_index] != changed[stock_index, feature_index, date_index])
 
 
 def _save_stack_output(path: Path, result: tuple[torch.Tensor, torch.Tensor] | None) -> Mapping[str, Path]:
@@ -817,15 +1102,20 @@ def _write_jsonl(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
     path.write_text("".join(json.dumps(dict(row), sort_keys=True) + "\n" for row in rows), encoding="utf-8")
 
 
-def _mutate_first_bar_on_date(path: Path, selected_date: str) -> None:
+def _mutate_source_cell(path: Path, target_spec: Mapping[str, Any]) -> None:
     temporary = path.with_name(f".{path.name}.mutation")
     changed = False
     with path.open("r", encoding="utf-8") as source, temporary.open("w", encoding="utf-8") as destination:
         for line in source:
             if not changed and line.strip():
                 row = json.loads(line)
-                if str(row.get("trade_date")) == selected_date and row.get("close") is not None:
-                    row["close"] = float(row["close"]) + 0.125
+                if (
+                    str(row.get("trade_date")) == str(target_spec["trade_date"])
+                    and str(row.get("ts_code")) == str(target_spec["ts_code"])
+                    and row.get(str(target_spec["field"])) is not None
+                ):
+                    field = str(target_spec["field"])
+                    row[field] = float(row[field]) + 0.125
                     line = json.dumps(row, sort_keys=True) + "\n"
                     changed = True
             destination.write(line)
@@ -833,7 +1123,7 @@ def _mutate_first_bar_on_date(path: Path, selected_date: str) -> None:
         os.fsync(destination.fileno())
     if not changed:
         temporary.unlink(missing_ok=True)
-        raise RuntimeError(f"no valid daily bar mutation cell:{selected_date}")
+        raise RuntimeError("pre-registered source mutation cell missing")
     os.replace(temporary, path)
 
 
@@ -845,8 +1135,99 @@ def _hash_arrays(*arrays: np.ndarray) -> str:
     return digest.hexdigest()
 
 
+def _validated_projection_eligibility(
+    dates: Sequence[str], mask: np.ndarray, matrix_manifest: Mapping[str, Any]
+) -> tuple[np.ndarray, str]:
+    eligible_mask = np.asarray(mask, dtype=np.bool_)
+    if eligible_mask.shape != (len(dates),):
+        raise RuntimeError("physical research projection eligibility shape mismatch")
+    if not dates or not bool(np.all(eligible_mask)):
+        raise RuntimeError("physical research projection contains non-signal dates")
+    if str(matrix_manifest.get("max_legal_signal_date") or "") != str(dates[-1]):
+        raise RuntimeError("physical research projection max signal date mismatch")
+    eligibility_hash = str(matrix_manifest.get("eligible_date_hash") or "")
+    if len(eligibility_hash) != 64:
+        raise RuntimeError("physical research projection eligible-date hash missing")
+    return eligible_mask, eligibility_hash
+
+
 def _hash_json(payload: Any) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+def _semantic_projection(payload: Any, *, excluded: set[str]) -> Any:
+    if isinstance(payload, Mapping):
+        return {
+            str(key): _semantic_projection(value, excluded=excluded)
+            for key, value in sorted(payload.items())
+            if str(key) not in excluded
+        }
+    if isinstance(payload, list):
+        return [_semantic_projection(value, excluded=excluded) for value in payload]
+    return payload
+
+
+def _probe_research_cache_contract(
+    *, cache_dir: Path, mutation_kind: str, cache_key: str
+) -> dict[str, Any]:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    path = cache_dir / f"{cache_key}.json"
+    if path.is_file():
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("cache_key") != cache_key:
+            raise RuntimeError(f"research cache key conflict:{mutation_kind}")
+        if mutation_kind != "post_cutoff":
+            raise RuntimeError(f"unexpected research cache hit:{mutation_kind}")
+        return {"status": "hit", "payload": payload}
+    if mutation_kind == "post_cutoff":
+        raise RuntimeError("post-cutoff research cache miss")
+    return {"status": "miss"}
+
+
+def _finalize_research_cache_contract(
+    *,
+    cache_dir: Path,
+    mutation_kind: str,
+    cache_key: str,
+    semantic: Mapping[str, Any],
+    probe: Mapping[str, Any],
+) -> str:
+    path = cache_dir / f"{cache_key}.json"
+    semantic_hash = _hash_json(dict(semantic))
+    if probe.get("status") == "hit":
+        payload = dict(probe.get("payload") or {})
+        if payload.get("semantic_hash") != semantic_hash:
+            raise RuntimeError(f"research cache semantic conflict:{mutation_kind}")
+        return "hit"
+    if probe.get("status") != "miss" or path.exists():
+        raise RuntimeError(f"research cache state changed during evaluation:{mutation_kind}")
+    atomic_json(
+        path,
+        {
+            "schema_version": "task_054b_research_semantic_cache_v1",
+            "cache_key": cache_key,
+            "semantic_hash": semantic_hash,
+            "source_mutation": mutation_kind,
+        },
+    )
+    return "miss_write"
+
+
+def _apply_research_cache_contract(
+    *, cache_dir: Path, mutation_kind: str, cache_key: str, semantic: Mapping[str, Any]
+) -> str:
+    probe = _probe_research_cache_contract(
+        cache_dir=cache_dir,
+        mutation_kind=mutation_kind,
+        cache_key=cache_key,
+    )
+    return _finalize_research_cache_contract(
+        cache_dir=cache_dir,
+        mutation_kind=mutation_kind,
+        cache_key=cache_key,
+        semantic=semantic,
+        probe=probe,
+    )
 
 
 def _reflink_copy(source: str, destination: str) -> str:

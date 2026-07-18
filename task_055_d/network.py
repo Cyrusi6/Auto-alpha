@@ -29,6 +29,7 @@ def execute_plan(
     tls_checker: Callable[[], dict[str, object]] = tls_preflight,
     client_factory: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
+    raise NetworkGateError("superseded_by_task055j")
     if allow_network and sealed_plan_hash != plan.get("content_hash"):
         raise NetworkGateError("sealed_request_plan_hash_mismatch")
     if request_budget < 0 or request_budget > GLOBAL_BUDGET:

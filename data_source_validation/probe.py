@@ -29,6 +29,23 @@ def probe_provider(
 ) -> list[ApiProbeResult]:
     """Probe provider readiness without leaking credentials."""
 
+    if config.provider == "tushare" and fake_scenario is None and allow_network:
+        return [
+            ApiProbeResult(
+                dataset="provider",
+                api_name="tushare",
+                status=ProviderReadinessStatus.ERROR,
+                diagnostic_code=ProviderDiagnosticCode.network_disabled,
+                message="superseded_by_task055j",
+                requested_fields=[],
+                response_fields=[],
+                records=0,
+                credential_present=False,
+                credential_source_type="not_read",
+                network_allowed=False,
+            )
+        ]
+
     selected_contracts = list(contracts_for_datasets(list(datasets) if datasets is not None else None).values())
     if config.provider == "sample":
         return [

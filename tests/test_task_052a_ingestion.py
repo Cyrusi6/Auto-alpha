@@ -131,7 +131,7 @@ def test_tushare_response_row_width_is_fail_closed():
             return json.dumps({"code": 0, "data": {"fields": ["ts_code", "trade_date"], "items": [["000001.SZ"]]}}).encode()
 
     config = AShareDataConfig(provider="tushare", tushare_token="token")
-    client = TushareHttpClient(config, urlopen=lambda *args, **kwargs: Response())
+    client = TushareHttpClient(config, urlopen=lambda *args, **kwargs: Response(), test_only_transport=True)
     with pytest.raises(TushareSchemaError, match="row width"):
         client.post("suspend_d", {"trade_date": "20240102"}, "ts_code,trade_date")
 

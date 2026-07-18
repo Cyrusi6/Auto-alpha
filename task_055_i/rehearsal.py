@@ -671,7 +671,7 @@ def _legacy_entrypoint_contract() -> dict[str, Any]:
     try:
         _dispatch(argparse.Namespace(command="l1-canary", allow_network=False, sealed_plan_hash=None), {})
     except Task055GNetworkStateError as exc:
-        return {"passed": str(exc) == "superseded_by_task055i", "blocker": str(exc)}
+        return {"passed": str(exc) == "superseded_by_task055j", "blocker": str(exc)}
     return {"passed": False}
 
 

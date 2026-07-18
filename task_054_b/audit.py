@@ -51,12 +51,15 @@ class AuditedReadBroker:
         self.invocation_id = invocation_id
         self.principal = principal
         self.research_end_date = research_end_date
-        self._sequence = len(self.rows())
 
     def read_json(self, path: str | Path, *, component: str, dataset: str, date_range: Sequence[str] | None = None) -> Any:
         target = Path(path)
         with target.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
+        if date_range is None and isinstance(payload, list) and payload and all(
+            isinstance(value, str) and len(value) == 8 and value.isdigit() for value in payload
+        ):
+            date_range = payload
         self._record(target, component=component, dataset=dataset, date_range=date_range)
         return payload
 
@@ -98,11 +101,12 @@ class AuditedReadBroker:
         resolved = path.resolve(strict=True)
         start, end = _normalized_date_range(date_range)
         allowed = not (self.principal == "research" and end and end > self.research_end_date)
-        self._sequence += 1
-        previous_hash = self.rows()[-1]["entry_hash"] if self.rows() else "0" * 64
+        existing_rows = self.rows()
+        sequence = len(existing_rows) + 1
+        previous_hash = existing_rows[-1]["entry_hash"] if existing_rows else "0" * 64
         row = {
             "schema_version": READ_LEDGER_SCHEMA,
-            "sequence": self._sequence,
+            "sequence": sequence,
             "invocation_id": self.invocation_id,
             "principal": self.principal,
             "component": component,

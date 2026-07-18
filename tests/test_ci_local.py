@@ -30,5 +30,7 @@ def test_workflow_boundaries_are_offline_by_default():
     assert "workflow_dispatch" in release_text
     assert "--allow-network" not in release_text
     assert "workflow_dispatch" in online_text
-    assert "secrets.TUSHARE_TOKEN" in online_text
-    assert "--allow-network" in online_text
+    assert "secrets.TUSHARE_TOKEN" not in online_text
+    assert "--allow-network" not in online_text
+    assert "Legacy Tushare Entry-Point Guard" in online_text
+    assert "tests/test_task_055_j.py" in online_text

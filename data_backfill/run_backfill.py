@@ -76,6 +76,9 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    if args.provider == "tushare" and args.allow_network and not args.fake_tushare_scenario:
+        print(json.dumps({"status": "blocked", "reason": "superseded_by_task055j"}, sort_keys=True))
+        return 2
     datasets = [item.strip() for item in args.datasets.split(",") if item.strip()]
     index_codes = tuple(item.strip() for item in args.index_codes.split(",") if item.strip())
     statuses = tuple(item.strip().upper() for item in args.security_list_statuses.split(",") if item.strip())

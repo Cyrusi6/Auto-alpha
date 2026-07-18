@@ -638,6 +638,24 @@ class AshareDashboardService:
             + self._experiment_artifact_candidates("production_candidate_bundle_plan.json")
         )
 
+    def load_task_055j_runtime_authority(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055j_artifact_candidates("runtime_authority.json"))
+
+    def load_task_055j_execution_authorization(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055j_artifact_candidates("execution_authorization.json"))
+
+    def load_task_055j_rehearsal(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055j_artifact_candidates("rehearsal_manifest.json"))
+
+    def load_task_055j_final_execution_seal(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055j_artifact_candidates("final_execution_seal.json"))
+
+    def load_task_055j_final_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055j_artifact_candidates("task055j_report.json"))
+
+    def load_task_055j_final_verification(self) -> dict[str, Any]:
+        return self._read_first_json(self._task055j_artifact_candidates("task055j_final_verification.json"))
+
     def load_validation_candidate_dedup_report(self) -> dict[str, Any]:
         return self._read_first_json(self._validation_campaign_artifact_candidates("validation_candidate_dedup_report.json"))
 
@@ -2663,6 +2681,30 @@ class AshareDashboardService:
                 continue
             for pattern in (f"task_055_i*/**/{filename}", f"validation_runs/task_055_i*/**/{filename}"):
                 candidates.extend(sorted(search_root.glob(pattern), reverse=True))
+        return list(dict.fromkeys(candidates))
+
+    def _task055j_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        candidates = [
+            self.config.validation_campaign_store_dir / "task_055_j" / filename,
+            self.config.validation_campaign_store_dir / "task055j" / filename,
+            root / "task_055_j" / filename,
+            root / "task055j" / filename,
+            root / "governance" / "network_authority" / "task055j_single_canary_v1" / filename,
+        ]
+        for search_root in (self.config.validation_campaign_store_dir, root):
+            if not search_root.is_dir():
+                continue
+            for pattern in (f"task_055_j*/**/{filename}", f"validation_runs/task_055_j*/**/{filename}"):
+                candidates.extend(sorted(search_root.glob(pattern), reverse=True))
+            candidates.extend(
+                sorted(
+                    search_root.glob(
+                        f"governance/network_authority/task055j_single_canary_v1/**/{filename}"
+                    ),
+                    reverse=True,
+                )
+            )
         return list(dict.fromkeys(candidates))
 
     def _certification_artifact_candidates(self, filename: str) -> list[Path]:

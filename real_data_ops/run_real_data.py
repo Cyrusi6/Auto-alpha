@@ -77,6 +77,10 @@ def _add_args(parser: argparse.ArgumentParser) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     profile = load_profile_json(args.profile_json) if args.profile_json else get_real_data_profile(args.profile_name)
+    effective_provider = args.provider or profile.provider
+    if args.allow_network and effective_provider == "tushare" and not args.fake_tushare_scenario:
+        print(json.dumps({"status": "blocked", "reason": "superseded_by_task055j"}, sort_keys=True))
+        return 2
     datasets = _csv(args.datasets) or profile.datasets
     index_codes = _csv(args.index_codes) or profile.index_codes
     statuses = _csv(args.security_list_statuses) or profile.security_list_statuses
@@ -101,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
     config = AShareDataConfig.from_env(env)
     config = replace(
         config,
-        provider=args.provider or profile.provider,
+        provider=effective_provider,
         data_dir=Path(args.data_dir or env.get("ASHARE_REAL_DATA_ROOT") or env.get("ASHARE_DATA_DIR") or "data/ashare"),
         start_date=args.start_date or profile.start_date,
         end_date=args.end_date or profile.end_date,

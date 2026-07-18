@@ -82,6 +82,7 @@ PLATFORM_MODULES = [
     "shadow_trading",
     "leakage_audit",
     "strategy_manager",
+    "task_055_j",
     "universe",
     "validation_campaign_store",
     "validation_lab",

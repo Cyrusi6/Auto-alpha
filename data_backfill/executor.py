@@ -68,6 +68,8 @@ def execute_backfill_plan(
     dry_run: bool = False,
     direct_append: bool = False,
 ) -> BackfillRunReport:
+    if config.provider == "tushare" and allow_network and fake_tushare_scenario is None:
+        raise RuntimeError("superseded_by_task055j")
     started = utc_now()
     root = Path(output_dir)
     root.mkdir(parents=True, exist_ok=True)
@@ -98,7 +100,11 @@ def execute_backfill_plan(
                 enabled=True,
             )
         )
-    provider = _provider(config, fake_tushare_scenario, rate_limiter=rate_limiter)
+    provider = (
+        _provider(config, fake_tushare_scenario, rate_limiter=rate_limiter)
+        if quota.status == "ok"
+        else None
+    )
     cache_root = cache_dir if cache_dir is not None else data_dir
     cache = TushareResponseCache(cache_root, enabled=cache_enabled) if cache_enabled else None
     auditor = ApiRequestAuditor(Path(data_dir) / "api_audit.jsonl") if audit_enabled else None

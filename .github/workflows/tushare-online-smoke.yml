@@ -1,4 +1,4 @@
-name: Manual Tushare Online Smoke
+name: Legacy Tushare Entry-Point Guard
 
 on:
   workflow_dispatch:
@@ -7,11 +7,8 @@ permissions:
   contents: read
 
 jobs:
-  tushare-online-smoke:
+  legacy-network-guard:
     runs-on: ubuntu-latest
-    env:
-      RUN_TUSHARE_ONLINE_SMOKE: "1"
-      TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,40 +24,5 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Run gated online smoke
-        run: |
-          if [ -z "${TUSHARE_TOKEN}" ]; then
-            uv run python -m data_source_validation.run_smoke \
-              --provider tushare \
-              --data-dir .ci_artifacts/tushare_online/data \
-              --output-dir .ci_artifacts/tushare_online/report \
-              --start-date 20240102 \
-              --end-date 20240104 \
-              --datasets securities,trade_calendar \
-              --pretty
-          else
-            uv run python -m data_source_validation.run_smoke \
-              --provider tushare \
-              --allow-network \
-              --require-token \
-              --data-dir .ci_artifacts/tushare_online/data \
-              --output-dir .ci_artifacts/tushare_online/report \
-              --start-date 20240102 \
-              --end-date 20240104 \
-              --datasets securities,trade_calendar,daily_bars,daily_basic,daily_limits,adjustment_factors,index_members \
-              --index-codes 000300.SH \
-              --chunk-days 1 \
-              --max-requests 20 \
-              --cache \
-              --audit \
-              --validate \
-              --stats \
-              --pretty
-          fi
-
-      - name: Upload online smoke artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: tushare-online-smoke-artifacts
-          path: .ci_artifacts/tushare_online
+      - name: Verify legacy production paths are sealed
+        run: uv run pytest -q tests/test_task_055_j.py tests/test_task_055f_network.py tests/test_task_055_g_network_state.py tests/test_task_055_h_network.py tests/test_task_055_i.py

@@ -70,6 +70,7 @@ def _publish(root,semantic,prefix="cascade_plan"):
 
 def execute_transport_stage(*,plan_manifest:str|Path,output_root:str|Path,stage:str,request_budget:int,requests_per_minute:float=120.0)->dict[str,Any]:
     """Execute one immutable cascade stage, scanning every item before spending budget."""
+    raise CascadeError("superseded_by_task055j")
     import os
     from data_pipeline.ashare.config import AShareDataConfig
     from data_pipeline.ashare.providers.tushare_client import TushareHttpClient

@@ -412,6 +412,19 @@ def _trace_runs(
     }
 
 
+def build_valuation_surface(**kwargs: Any) -> dict[str, Any]:
+    return _build_valuation_surface(**kwargs)
+
+
+def trace_causal_runs(
+    bundle: Mapping[str, Any],
+    prepared: Mapping[str, Any],
+    surface: Mapping[str, Any],
+    calculator: FeeScheduleCalculator,
+) -> dict[str, Any]:
+    return _trace_runs(bundle, prepared, surface, calculator)
+
+
 def _seal_round_one_plan(
     *,
     trace: Mapping[str, Any],

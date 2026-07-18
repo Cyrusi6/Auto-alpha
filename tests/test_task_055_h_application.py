@@ -49,62 +49,13 @@ def test_synthetic_l2_s_r_and_empty_semantics():
 
 
 def test_native_positive_response_publishes_verified_partition_and_rebuild_dag(tmp_path: Path):
-    seal = ready_seal(tmp_path)
-    request = dict(seal["canary_execution_plan"]["requests"][0])
-    cache_root = tmp_path / "network_cache_data"
-    cache = TushareResponseCache(cache_root, enabled=True)
-    row = {
-        "ts_code": request["ts_code"],
-        "trade_date": request["trade_date"],
-        "open": 10.0,
-        "high": 11.0,
-        "low": 9.0,
-        "close": 10.5,
-        "pre_close": 10.0,
-        "vol": 1000.0,
-        "amount": 10000.0,
-    }
-    cache_path = cache.write(
-        "daily",
-        params=request["params"],
-        fields=request["fields"],
-        records=[row],
-        response_code=0,
-        response_fields=request["fields"],
-        item_count=1,
-        response_fields_observed=True,
-        endpoint="https://api.tushare.pro",
-        provider_api_version="tushare_pro_http.v1",
-    )
-    execution = network_state.execute_l1_canary(
-        state_root=tmp_path / "network_state",
-        plan_manifest=seal["canary_execution_plan"],
-        allow_network=True,
-        sealed_plan_hash=seal["canary_execution_plan_hash"],
-        request_executor=lambda _: {
-            "request": request,
-            "outcome": "positive_response",
-            "item_count": 1,
-            "cache_relative_path": str(cache_path.relative_to(cache_root)),
-            "cache_sha256": sha256_file(cache_path),
-        },
-    )
-    _append_spend_event(tmp_path / "transport_spend", {"event": "physical_post_started", "transport_hash": request["transport_hash"]})
-    _append_spend_event(tmp_path / "transport_spend", {"event": "physical_post_completed", "transport_hash": request["transport_hash"]})
-    acceptance = verify_and_accept_canary(
-        authorization_seal=seal["manifest_path"],
-        canary_execution_manifest=execution["manifest_path"],
-        output_root=tmp_path / "canary_acceptance",
-    )
-    applied = apply_native_canary_response(
-        authorization_seal=seal["manifest_path"],
-        canary_acceptance=acceptance["manifest_path"],
-        output_root=tmp_path / "response_apply",
-    )
-    validated = validate_native_response_apply(applied["manifest_path"])
-    assert validated["action"]["kind"] == "immutable_daily_raw_repair"
-    assert [row["stage"] for row in validated["rebuild_dag"]["stages"]][-1] == "fee_aware_causal_frontier"
-    partition = Path(validated["manifest_path"]).parent / validated["response_partition"]["path"]
-    partition.write_text("{}\n", encoding="utf-8")
-    with pytest.raises(Exception, match="partition_invalid"):
-        validate_native_response_apply(applied["manifest_path"])
+    calls = []
+    with pytest.raises(network_state.Task055GNetworkStateError, match="superseded_by_task055j"):
+        network_state.execute_l1_canary(
+            state_root=tmp_path / "state",
+            plan_manifest={},
+            allow_network=True,
+            sealed_plan_hash="unused",
+            request_executor=lambda request: calls.append(request),
+        )
+    assert calls == []

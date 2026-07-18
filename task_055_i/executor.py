@@ -55,15 +55,7 @@ def execute_single_canary(
     credential_file: str | Path,
     allow_network: bool,
 ) -> dict[str, Any]:
-    return _execute_single_canary(
-        runtime_authority=runtime_authority,
-        reviewed_authority_hash=reviewed_authority_hash,
-        credential_file=credential_file,
-        allow_network=allow_network,
-        rehearsal_transport=None,
-        rehearsal_tls=None,
-        rehearsal_secret=None,
-    )
+    raise Task055IExecutionError("superseded_by_task055j")
 
 
 def verify_and_accept_canary(

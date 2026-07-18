@@ -122,6 +122,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     try:
         args = parser.parse_args(argv)
+        if args.sync and args.provider in {None, "tushare"}:
+            print("superseded_by_task055j", file=sys.stderr)
+            return 2
         config = _config_from_args(args)
         selected_datasets = _parse_datasets(args.datasets)
         if selected_datasets is None and not config.include_corporate_actions:

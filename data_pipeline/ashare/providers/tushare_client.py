@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterable
 
 from ..config import AShareDataConfig
+from ..network_capability import TushareExecutionCapability
 from ..rate_limit import RateLimitEvent, SimpleRateLimiter
 from ..security import validate_tushare_origin
 from ..request_normalization import stable_json_hash, tushare_code_semantic_hash, tushare_request_fingerprint
@@ -81,14 +82,25 @@ class TushareHttpClient:
         config: AShareDataConfig,
         urlopen: Callable[..., Any] | None = None,
         rate_limiter: SimpleRateLimiter | None = None,
+        *,
+        execution_capability: TushareExecutionCapability | None = None,
+        test_only_transport: bool = False,
     ):
-        self.api_url = validate_tushare_origin(config.tushare_api_url, allow_fake_transport=urlopen is not None)
+        if urlopen is None and execution_capability is None:
+            raise TushareNetworkError("real_tushare_transport_requires_task055j_execution_capability")
+        if urlopen is not None and not test_only_transport:
+            raise TushareNetworkError("injected_tushare_transport_requires_test_only_marker")
+        self.api_url = validate_tushare_origin(
+            config.tushare_api_url,
+            allow_fake_transport=urlopen is not None and test_only_transport,
+        )
         self.token = config.tushare_token
         self.timeout_seconds = config.tushare_timeout_seconds
         self.retry_count = config.tushare_retry_count
         self._urlopen = _secure_urlopen if urlopen is None else urlopen
         self.rate_limiter = rate_limiter
         self.last_rate_limit_event: RateLimitEvent | None = None
+        self._execution_capability = execution_capability
 
     def post(
         self,
@@ -106,6 +118,10 @@ class TushareHttpClient:
     ) -> TushareResponseEnvelope:
         if not self.token:
             raise ValueError("TUSHARE_TOKEN is required for provider=tushare")
+        if self._execution_capability is not None:
+            self._execution_capability.authorize(api_name, params, fields)
+        elif self._urlopen is _secure_urlopen:
+            raise TushareNetworkError("real_tushare_transport_capability_missing")
 
         request_fields = self._format_fields(fields)
         request_params = {} if params is None else dict(params)

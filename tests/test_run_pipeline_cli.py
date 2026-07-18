@@ -44,7 +44,7 @@ def test_run_pipeline_sync_tushare_without_token_returns_error(monkeypatch, caps
     captured = capsys.readouterr()
 
     assert result != 0
-    assert "TUSHARE_TOKEN is required" in captured.err
+    assert "superseded_by_task055j" in captured.err
 
 
 def test_run_pipeline_sync_sample_writes_local_files(tmp_path, capsys):
@@ -168,7 +168,7 @@ def test_run_pipeline_sync_selected_market_constraint_datasets_and_index_codes(t
     assert {record["index_code"] for record in members} == {"000300.SH", "000905.SH"}
 
 
-def test_run_pipeline_sync_tushare_with_fake_provider_writes_local_files(
+def test_run_pipeline_sync_tushare_monkeypatched_provider_cannot_bypass_task055j(
     monkeypatch,
     tmp_path,
     capsys,
@@ -191,15 +191,9 @@ def test_run_pipeline_sync_tushare_with_fake_provider_writes_local_files(
     )
     captured = capsys.readouterr()
 
-    assert result == 0
-    payload = json.loads(captured.out)
-    assert payload["provider"] == "tushare"
-    names = [dataset["dataset"] for dataset in payload["datasets"]]
-    assert names == list(FULL_RESEARCH_DATASETS)
-    assert set(names) >= set(EXPECTED_CORE_DATASETS)
-    for dataset in payload["datasets"]:
-        assert Path(dataset["path"]).is_relative_to(tmp_path)
-        assert Path(dataset["path"]).exists()
+    assert result == 2
+    assert "superseded_by_task055j" in captured.err
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_run_pipeline_sync_tushare_without_token_returns_nonzero(monkeypatch, capsys):
@@ -209,7 +203,7 @@ def test_run_pipeline_sync_tushare_without_token_returns_nonzero(monkeypatch, ca
     captured = capsys.readouterr()
 
     assert result != 0
-    assert "TUSHARE_TOKEN is required" in captured.err
+    assert "superseded_by_task055j" in captured.err
 
 
 def test_run_pipeline_source_excludes_old_entrypoint_terms():

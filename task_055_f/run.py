@@ -542,7 +542,7 @@ def main() -> int:
         result = run_offline_hardening(config)
         print(json.dumps(result, indent=2, sort_keys=True, default=str))
         return 0 if result.get("status") == COMPLETED_STATUS else 2
-    raise Task055FError("superseded_by_task055i")
+    raise Task055FError("superseded_by_task055j")
 
 
 def _load_current_manifest(root: Path) -> dict[str, Any]:

@@ -69,6 +69,8 @@ def run_real_data_pipeline(
     token_expiry: str | None = None,
     command_name: str = "run",
 ) -> RealDataPipelineRun:
+    if config.provider == "tushare" and allow_network and fake_tushare_scenario is None:
+        raise RuntimeError("superseded_by_task055j")
     started_at = utc_now()
     root = Path(output_dir)
     root.mkdir(parents=True, exist_ok=True)

@@ -84,6 +84,16 @@ def independently_replay_causal_frontier(
     return semantic | {"content_hash": canonical_hash(semantic)}
 
 
+def independently_trace_prepared(
+    *,
+    bundle_manifest: Mapping[str, Any],
+    prepared: Mapping[str, Any],
+    projection: Mapping[str, Any],
+    calculator: FeeProjectionCalculator,
+) -> dict[str, Any]:
+    return _trace(bundle_manifest, prepared, projection, calculator)
+
+
 def _prepare(bundle: Mapping[str, Any], projection: Mapping[str, Any]) -> dict[str, Any]:
     dates = [str(value) for value in bundle["execution_dates"]]
     signal_dates = [str(value) for value in bundle["trade_dates"]]

@@ -52,7 +52,7 @@ def test_tushare_http_client_posts_payload_and_maps_rows():
         tushare_timeout_seconds=7,
         tushare_retry_count=1,
     )
-    client = TushareHttpClient(config, urlopen=fake_urlopen)
+    client = TushareHttpClient(config, urlopen=fake_urlopen, test_only_transport=True)
 
     rows = client.post("daily", params={"start_date": "20240101"}, fields=["ts_code", "close"])
 
@@ -79,7 +79,7 @@ def test_tushare_http_client_post_with_metadata_redacts_params_token():
             }
         )
 
-    client = TushareHttpClient(AShareDataConfig(tushare_token="secret-token", tushare_retry_count=1), urlopen=fake_urlopen)
+    client = TushareHttpClient(AShareDataConfig(tushare_token="secret-token", tushare_retry_count=1), urlopen=fake_urlopen, test_only_transport=True)
 
     envelope = client.post_with_metadata("daily", params={"start_date": "20240101"}, fields=["ts_code", "close"])
 
@@ -106,7 +106,7 @@ def test_tushare_http_client_decodes_gzip_response():
         assert request.headers["Accept-encoding"] == "gzip"
         return FakeResponse(payload, headers={"Content-Encoding": "gzip"}, raw=gzip.compress(json.dumps(payload).encode("utf-8")))
 
-    client = TushareHttpClient(AShareDataConfig(tushare_token="secret-token", tushare_retry_count=1), urlopen=fake_urlopen)
+    client = TushareHttpClient(AShareDataConfig(tushare_token="secret-token", tushare_retry_count=1), urlopen=fake_urlopen, test_only_transport=True)
 
     assert client.post("daily", fields=["ts_code", "close"]) == [{"ts_code": "000001.SZ", "close": 10.5}]
 
@@ -115,7 +115,7 @@ def test_tushare_http_client_preserves_observed_empty_response_fields():
     def fake_urlopen(request, timeout):
         return FakeResponse({"code": 0, "msg": "", "data": {"fields": [], "items": []}})
 
-    client = TushareHttpClient(AShareDataConfig(tushare_token="secret-token", tushare_retry_count=1), urlopen=fake_urlopen)
+    client = TushareHttpClient(AShareDataConfig(tushare_token="secret-token", tushare_retry_count=1), urlopen=fake_urlopen, test_only_transport=True)
     envelope = client.post_with_metadata("suspend_d", fields=["ts_code", "trade_date", "suspend_timing", "suspend_type"])
 
     assert envelope.response_fields == []
@@ -129,7 +129,7 @@ def test_tushare_http_client_raises_api_error_on_nonzero_code():
         return FakeResponse({"code": 2002, "msg": "bad token"})
 
     config = AShareDataConfig(tushare_token="test-token", tushare_retry_count=1)
-    client = TushareHttpClient(config, urlopen=fake_urlopen)
+    client = TushareHttpClient(config, urlopen=fake_urlopen, test_only_transport=True)
 
     with pytest.raises(TushareApiError, match="bad token"):
         client.post("stock_basic")
@@ -145,23 +145,27 @@ def test_tushare_http_client_maps_permission_and_rate_limit_errors():
         return FakeResponse({"code": 2003, "msg": "访问次数超过限制"})
 
     with pytest.raises(TusharePermissionError):
-        TushareHttpClient(config, urlopen=permission_urlopen).post("stock_basic")
+        TushareHttpClient(config, urlopen=permission_urlopen, test_only_transport=True).post("stock_basic")
     with pytest.raises(TushareRateLimitError):
-        TushareHttpClient(config, urlopen=rate_urlopen).post("stock_basic")
+        TushareHttpClient(config, urlopen=rate_urlopen, test_only_transport=True).post("stock_basic")
 
 
 def test_tushare_http_client_raises_schema_error_on_malformed_data():
     def fake_urlopen(request, timeout):
         return FakeResponse({"code": 0, "data": {"fields": "ts_code", "items": []}})
 
-    client = TushareHttpClient(AShareDataConfig(tushare_token="test-token", tushare_retry_count=1), urlopen=fake_urlopen)
+    client = TushareHttpClient(AShareDataConfig(tushare_token="test-token", tushare_retry_count=1), urlopen=fake_urlopen, test_only_transport=True)
 
     with pytest.raises(TushareSchemaError):
         client.post("daily")
 
 
 def test_tushare_http_client_requires_token():
-    client = TushareHttpClient(AShareDataConfig(tushare_token=None))
+    client = TushareHttpClient(
+        AShareDataConfig(tushare_token=None),
+        urlopen=lambda *_args, **_kwargs: None,
+        test_only_transport=True,
+    )
 
     with pytest.raises(ValueError, match="TUSHARE_TOKEN"):
         client.post("stock_basic")

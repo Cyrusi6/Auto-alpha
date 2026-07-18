@@ -2652,6 +2652,104 @@ def check_task055i_single_canary_authority(
     return details, alerts
 
 
+def check_task055j_single_canary_closure(
+    report_path: str | Path | None,
+    execution_authorization_path: str | Path | None = None,
+    final_verification_path: str | Path | None = None,
+    final_execution_seal_path: str | Path | None = None,
+) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    report = _read_json(Path(report_path)) if report_path else {}
+    if not report:
+        return {
+            "exists": False,
+            "status": "",
+            "task055j_boundary_valid": False,
+            "single_canary_production_closure_ready": False,
+            "operational_state_unproven": True,
+            "certification_ready": False,
+            "portfolio_ready": False,
+            "optimizer_ready": False,
+            "paper_ready": False,
+            "live_ready": False,
+        }, []
+    authorization = _read_json(Path(execution_authorization_path)) if execution_authorization_path else {}
+    verification = _read_json(Path(final_verification_path)) if final_verification_path else {}
+    seal = _read_json(Path(final_execution_seal_path)) if final_execution_seal_path else {}
+    ready = "task055j_single_canary_production_closure_ready_no_network_executed"
+    blocked = "task055j_single_canary_production_closure_blocked_no_network_executed"
+    status = str(report.get("status") or "")
+    network = dict(report.get("network_execution") or {})
+    readiness = dict(report.get("readiness") or {})
+    offline = (
+        int(network.get("credential_read_count") or 0) == 0
+        and int(network.get("tushare_post_count") or 0) == 0
+        and int(network.get("other_market_http_count") or 0) == 0
+        and network.get("prospective_holdout_accessed") is False
+    )
+    canary = dict(report.get("canary") or {})
+    canary_valid = (
+        canary.get("api_name") == "daily"
+        and canary.get("ts_code") == "000413.SZ"
+        and canary.get("trade_date") == "20160726"
+        and canary.get("transport_hash") == "6497cb48c414a9b4b0e2f5dc152c134fa66bf01938f598bdd79831f415a7464e"
+        and canary.get("evidence_use_hash") == "a4241983bdd7616c60e02dc9444662be01e7ee43bb6fe81a2cc8637df59d4a5f"
+    )
+    downstream_false = all(
+        readiness.get(name) is False
+        for name in ("certification_ready", "portfolio_ready", "optimizer_ready", "paper_ready", "live_ready")
+    )
+    lineage = (
+        authorization.get("content_hash") == report.get("execution_authorization_content_hash")
+        and verification.get("report_content_hash") == report.get("content_hash")
+        and verification.get("execution_authorization_content_hash") == authorization.get("content_hash")
+        and seal.get("execution_authorization_content_hash") == authorization.get("content_hash")
+        and seal.get("final_report_content_hash") == report.get("content_hash")
+        and seal.get("final_verification_content_hash") == verification.get("content_hash")
+    )
+    boundaries = (
+        report.get("real_canary_executed") is False
+        and report.get("real_response_applied") is False
+        and report.get("real_gpu_started") is False
+        and report.get("resume_authorized") is False
+        and report.get("batch_authorized") is False
+        and seal.get("review_required_before_execution") is True
+    )
+    blockers = list(report.get("engineering_blockers") or ())
+    common = status in {ready, blocked} and offline and canary_valid and downstream_false and lineage and boundaries
+    is_ready = common and status == ready and not blockers and readiness.get("single_canary_production_closure_ready") is True
+    is_blocked = common and status == blocked and bool(blockers) and readiness.get("single_canary_production_closure_ready") is False
+    valid = is_ready or is_blocked
+    details = {
+        "exists": True,
+        "status": status,
+        "task055j_boundary_valid": valid,
+        "single_canary_production_closure_ready": is_ready,
+        "offline_blocked": is_blocked,
+        "offline_execution_proven": offline,
+        "credential_read_count": int(network.get("credential_read_count") or 0),
+        "tushare_post_count": int(network.get("tushare_post_count") or 0),
+        "other_market_http_count": int(network.get("other_market_http_count") or 0),
+        "prospective_holdout_accessed": network.get("prospective_holdout_accessed"),
+        "operational_state_unproven": report.get("operational_state_unproven") is True,
+        "global_downstream_queues_proven_empty": False,
+        "engineering_blocker_count": len(blockers),
+        "certification_ready": False,
+        "portfolio_ready": False,
+        "optimizer_ready": False,
+        "paper_ready": False,
+        "live_ready": False,
+    }
+    alerts = [] if valid else [
+        MonitoringAlert(
+            "error",
+            "task055j_single_canary_closure",
+            "Task 055-J production closure authority or offline boundary is invalid",
+            details,
+        )
+    ]
+    return details, alerts
+
+
 def check_validation_campaign_leaderboard(path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     rows = _read_jsonl(Path(path)) if path else []
     ready = sum(1 for row in rows if row.get("certification_ready") is True)

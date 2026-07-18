@@ -21,6 +21,116 @@ class TruthV2Error(RuntimeError):
     pass
 
 
+def publish_truth_successor(
+    *,
+    parent_truth_manifest: str | Path,
+    api_name: str,
+    request: Mapping[str, Any],
+    records: list[Mapping[str, Any]],
+    response_evidence: Mapping[str, Any],
+    output_root: str | Path,
+    parent_apply_hash: str,
+    expected_record_count: int | None = 35844,
+) -> dict[str, Any]:
+    """Publish a full-key immutable successor after one verified response.
+
+    A positive daily bar may change one row under the existing truth precedence.
+    An empty daily response is retained as vendor-absence evidence and never
+    becomes suspension or no-trade proof.
+    """
+
+    parent = validate_truth_v2(parent_truth_manifest)
+    rows = [dict(row) for row in parent["records"]]
+    if expected_record_count is not None and len(rows) != expected_record_count:
+        raise TruthV2Error(f"truth_successor_parent_key_count_invalid:{len(rows)}")
+    key = (str(request.get("ts_code") or (request.get("params") or {}).get("ts_code") or ""), str(request.get("trade_date") or (request.get("params") or {}).get("trade_date") or ""))
+    matches = [index for index, row in enumerate(rows) if (str(row.get("ts_code")), str(row.get("trade_date"))) == key]
+    if len(matches) != 1:
+        raise TruthV2Error("truth_successor_exact_key_cardinality_invalid")
+    if api_name != "daily" or len(records) > 1:
+        raise TruthV2Error("truth_successor_only_exact_daily_supported")
+    index = matches[0]
+    current = dict(rows[index])
+    proof = {
+        "api": "daily",
+        "source_kind": "task055j_native_accepted_cache",
+        "proof_quality": "validated_task055j_transport_receipt_and_v3_cache",
+        "outcome": "matching_row" if records else "no_matching_row",
+        "request_fingerprint": request.get("transport_hash"),
+        "source_sha256": response_evidence.get("cache_sha256"),
+        "transport_receipt_content_hash": response_evidence.get("transport_receipt_content_hash"),
+        "parent_apply_hash": parent_apply_hash,
+    }
+    proof["proof_hash"] = canonical_hash(proof)
+    daily_evidence = [dict(row) for row in current.get("daily_response_evidence") or ()]
+    daily_evidence = [row for row in daily_evidence if row.get("proof_hash") != proof["proof_hash"]]
+    daily_evidence.append(proof)
+    current["daily_response_evidence"] = sorted(daily_evidence, key=lambda row: str(row.get("proof_hash")))
+    if records:
+        raw = dict(records[0])
+        matrix_bar = {
+            "open": raw.get("open"),
+            "high": raw.get("high"),
+            "low": raw.get("low"),
+            "close": raw.get("close"),
+            "pre_close": raw.get("pre_close"),
+            "volume": raw.get("vol"),
+            "amount": raw.get("amount"),
+        }
+        if current.get("corporate_action_validity") is False:
+            state = "LIFECYCLE_OR_CORPORATE_ACTION_CONFLICT"
+            reason = "new_complete_daily_bar_with_corporate_action_conflict"
+        elif not current.get("listed") or not current.get("active"):
+            state = "MATRIX_SOURCE_CONFLICT"
+            reason = "new_complete_daily_bar_conflicts_with_lifecycle_or_inventory"
+        elif current.get("suspend_type") in {"S", "S+R"}:
+            state = "MATRIX_SOURCE_CONFLICT"
+            reason = "new_complete_daily_bar_conflicts_with_suspend_event"
+        else:
+            state = "TRADED_PRIMARY_BAR"
+            reason = "task055j_verified_exact_daily_bar"
+        current.update(
+            {
+                "state": state,
+                "reason_code": reason,
+                "daily_bar_status": "present_complete",
+                "matrix_bar": matrix_bar,
+                "inventory_bar_observed": True,
+                "modeled_stale_candidate": False,
+                "stale_mark_authorized": False,
+                "task055j_response_application": "positive_daily",
+            }
+        )
+    else:
+        current["task055j_response_application"] = "vendor_daily_absence_not_no_trade_proof"
+        current["task055j_vendor_daily_absence"] = True
+    current.pop("evidence_hash", None)
+    current["evidence_hash"] = canonical_hash(current)
+    rows[index] = current
+    rows.sort(key=lambda row: (str(row["ts_code"]), str(row["trade_date"])))
+    source = {
+        "daily_empty_response_counts": parent.get("daily_empty_response_counts"),
+        "suspend_empty_response_counts": parent.get("suspend_empty_response_counts"),
+        "valuation_domain_count": parent.get("valuation_domain_count"),
+        "modeled_candidate_count": sum(bool(row.get("modeled_stale_candidate")) for row in rows),
+        "timing_uncertified_candidate_count": sum(
+            bool(row.get("modeled_stale_candidate")) and row.get("suspend_timing_status") == "raw_null"
+            for row in rows
+        ),
+    }
+    return _publish(
+        Path(output_root),
+        rows=rows,
+        source=source,
+        lineage={
+            "parent_truth_content_hash": parent["content_hash"],
+            "parent_apply_hash": parent_apply_hash,
+            "response_evidence_hash": canonical_hash(dict(response_evidence)),
+            "updated_security_date": list(key),
+        },
+    )
+
+
 def build_truth_v2(
     *,
     governed_root: str | Path,

@@ -143,22 +143,13 @@ def test_fake_transport_canary_executes_and_zero_budget_still_scans(tmp_path):
         def post_with_metadata(self, api_name, params, fields):
             return _envelope([_daily_row()])
 
-    completed = execute_plan(
-        plan=plan, output_root=tmp_path / "run", cache_roots=[], allow_network=True,
-        sealed_plan_hash=plan["content_hash"], request_budget=1,
-        credential_loader=lambda: CredentialStatus("sentinel-token", True, "environment"),
-        tls_checker=lambda: {"status": "passed", "credential_present": False, "source_type": "none"},
-        client_factory=Client,
-    )
-    assert completed["status"] == "complete"
-    assert completed["physical_attempt_count"] == 1
-    resumed = execute_plan(
-        plan=plan, output_root=tmp_path / "zero", cache_roots=[tmp_path / "run"], allow_network=True,
-        sealed_plan_hash=plan["content_hash"], request_budget=0,
-        credential_loader=lambda: CredentialStatus(None, False, "none"),
-        tls_checker=lambda: {"status": "passed", "credential_present": False, "source_type": "none"},
-    )
-    assert resumed["status"] == "complete"
-    assert resumed["cache_inventory"]["physical_candidates"] >= 1
-    assert resumed["physical_attempt_count"] == 0
-    assert resumed["prospective_holdout_accessed"] is False
+    calls = {"credential": 0, "client": 0}
+    with pytest.raises(Exception, match="superseded_by_task055j"):
+        execute_plan(
+            plan=plan, output_root=tmp_path / "run", cache_roots=[], allow_network=True,
+            sealed_plan_hash=plan["content_hash"], request_budget=1,
+            credential_loader=lambda: calls.__setitem__("credential", calls["credential"] + 1),
+            tls_checker=lambda: {},
+            client_factory=lambda: calls.__setitem__("client", calls["client"] + 1),
+        )
+    assert calls == {"credential": 0, "client": 0}

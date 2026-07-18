@@ -166,6 +166,7 @@ from .checks import (
     check_task055f_engineering_baseline,
     check_task055g_engineering_baseline,
     check_task055i_single_canary_authority,
+    check_task055j_single_canary_closure,
     check_uncertified_production_candidate,
     check_validation_lab,
     check_validation_campaign_leaderboard,
@@ -406,6 +407,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--task055i-report-path")
     parser.add_argument("--task055i-execution-authorization-path")
     parser.add_argument("--task055i-final-verification-path")
+    parser.add_argument("--task055j-report-path")
+    parser.add_argument("--task055j-execution-authorization-path")
+    parser.add_argument("--task055j-final-verification-path")
+    parser.add_argument("--task055j-final-execution-seal-path")
     parser.add_argument("--factor-certification-campaign-report-path")
     parser.add_argument("--factor-certification-campaign-registry-path")
     parser.add_argument("--certified-factor-pool-path")
@@ -610,6 +615,15 @@ def main(argv: list[str] | None = None) -> int:
                 args.task055i_report_path,
                 args.task055i_execution_authorization_path,
                 args.task055i_final_verification_path,
+            ),
+        ),
+        (
+            "task055j_single_canary_closure",
+            lambda: check_task055j_single_canary_closure(
+                args.task055j_report_path,
+                args.task055j_execution_authorization_path,
+                args.task055j_final_verification_path,
+                args.task055j_final_execution_seal_path,
             ),
         ),
         (
