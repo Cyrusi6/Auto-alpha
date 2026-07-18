@@ -200,7 +200,7 @@ def _verify_repository_source_tree(payload: dict[str, Any], repository: Path) ->
         raise Task055JScrubbedEvidenceError("task055j_scrubbed_post_implementation_runtime_drift")
     expected_entries = []
     tracked = _git(repository, "ls-files", "-z").split("\0")
-    for relative in sorted(name for name in tracked if name and _runtime_source(relative)):
+    for relative in sorted(name for name in tracked if name and _runtime_source(name)):
         source = repository / relative
         if not source.is_file() or source.is_symlink():
             raise Task055JScrubbedEvidenceError(f"task055j_scrubbed_source_invalid:{relative}")

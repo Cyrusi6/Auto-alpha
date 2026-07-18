@@ -40,7 +40,11 @@ from task_055_j.rehearsal import (
     _rehearsal_execution_root,
     _synthetic_seal_validator,
 )
-from task_055_j.verifier import Task055JScrubbedEvidenceError, verify_scrubbed_evidence
+from task_055_j.verifier import (
+    Task055JScrubbedEvidenceError,
+    _verify_repository_source_tree,
+    verify_scrubbed_evidence,
+)
 
 
 def test_client_requires_task055j_capability_or_explicit_test_transport() -> None:
@@ -425,6 +429,40 @@ def test_standalone_verifier_enforces_ready_and_blocked_status_semantics(tmp_pat
     payload["content_hash"] = canonical_hash({key: value for key, value in payload.items() if key != "content_hash"})
     path.write_text(json.dumps(payload))
     assert verify_scrubbed_evidence(path)["verified"] is True
+
+
+def test_standalone_verifier_recomputes_repository_source_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = tmp_path / "repository"
+    (repository / ".git").mkdir(parents=True)
+    source = repository / "module.py"
+    source.write_text("VALUE = 1\n", encoding="utf-8")
+    implementation = "1" * 40
+
+    def fake_git(_repository: Path, *args: str) -> str:
+        if args[:2] == ("rev-parse", "HEAD"):
+            return implementation
+        if args[:2] == ("diff", "--name-only"):
+            return ""
+        if args[:2] == ("ls-files", "-z"):
+            return "module.py\0"
+        return ""
+
+    monkeypatch.setattr("task_055_j.verifier._git", fake_git)
+    monkeypatch.setattr("task_055_j.verifier.subprocess.run", lambda *_args, **_kwargs: type("Result", (), {"returncode": 0})())
+    payload = {
+        "implementation_commit": implementation,
+        "source_entries": [
+            {
+                "path": "module.py",
+                "sha256": __import__("hashlib").sha256(source.read_bytes()).hexdigest(),
+                "size_bytes": source.stat().st_size,
+                "mode": source.stat().st_mode & 0o777,
+            }
+        ],
+    }
+    _verify_repository_source_tree(payload, repository)
 
 
 def _runtime_fixture(tmp_path: Path) -> dict:
