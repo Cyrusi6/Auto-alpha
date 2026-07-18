@@ -10,7 +10,11 @@ import pytest
 from data_pipeline.ashare.cache import TushareResponseCache
 from data_pipeline.ashare.config import AShareDataConfig
 from data_pipeline.ashare.providers.tushare_client import TushareHttpClient, TushareNetworkError, TushareResponseEnvelope
-from data_pipeline.ashare.request_normalization import stable_json_hash, tushare_code_semantic_hash
+from data_pipeline.ashare.request_normalization import (
+    stable_json_hash,
+    tushare_code_semantic_hash,
+    tushare_request_fingerprint,
+)
 from task_055_f.transport import CANONICAL_ORIGIN
 from task_055_g.truth import publish_truth_successor, validate_truth_v2
 from task_052_a.backfill import GovernedBackfillConfig, run_governed_backfill
@@ -327,6 +331,17 @@ def test_empty_cache_endpoint_schema_proof_is_recomputed_from_native_receipt(tmp
     )
     cache_path = next((authority_root / "cache_data/.cache/tushare").glob("*.json"))
     payload = json.loads(cache_path.read_text())
+    assert payload["negative_attestation"]["request_fingerprint"] == tushare_request_fingerprint(
+        CANARY["api_name"],
+        params={"ts_code": CANARY["ts_code"], "trade_date": CANARY["trade_date"]},
+        fields=CANARY["fields"],
+    )
+    accepted = _verify_and_accept_synthetic_test_only(
+        final_execution_seal=seal["manifest_path"],
+        reviewed_hash=seal["content_hash"],
+        seal_validator=_synthetic_seal_validator,
+    )
+    assert accepted["item_count"] == 0
     proof = dict(payload["endpoint_schema_proof"])
     proof["source_receipt_content_hash"] = "0" * 64
     unsigned = {key: value for key, value in proof.items() if key != "proof_hash"}

@@ -675,7 +675,10 @@ def _verify_receipt_cache(
         negative = envelope.get("negative_attestation") or {}
         if (
             negative.get("assertion") != "provider_returned_zero_rows"
-            or negative.get("request_fingerprint") != request["transport_hash"]
+            or negative.get("request_fingerprint")
+            != tushare_request_fingerprint(
+                request["api_name"], params=request["params"], fields=request["fields"]
+            )
             or negative.get("response_code") != 0
             or negative.get("item_count") != 0
         ):
