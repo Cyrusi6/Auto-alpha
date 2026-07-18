@@ -44,6 +44,8 @@ def run_native_rehearsal(
 ) -> dict[str, Any]:
     root = Path(output_root)
     root.mkdir(parents=True, exist_ok=True)
+    execution_root = _rehearsal_execution_root(root, runtime_authority=runtime_authority)
+    execution_root.mkdir(parents=True, exist_ok=True)
     context = _production_context(
         {"runtime_authority": runtime_authority, "governed_root": runtime_authority["governed_root"]}
     )
@@ -51,8 +53,8 @@ def run_native_rehearsal(
         "evidence_scope": "synthetic_rehearsal_only",
         "sentinel_timeout_seconds": 1800,
     }
-    positive_root, positive_seal = _publish_synthetic_authority(root / "positive_authority", runtime_authority)
-    positive_calls = root / "positive_transport_calls.jsonl"
+    positive_root, positive_seal = _publish_synthetic_authority(execution_root / "positive_authority", runtime_authority)
+    positive_calls = execution_root / "positive_transport_calls.jsonl"
     positive_execution = _execute_synthetic_test_only(
         final_execution_seal=positive_seal["manifest_path"],
         reviewed_hash=positive_seal["content_hash"],
@@ -79,8 +81,8 @@ def run_native_rehearsal(
         positive_application["manifest_path"], authority_root=positive_root
     )
 
-    empty_root, empty_seal = _publish_synthetic_authority(root / "empty_authority", runtime_authority)
-    empty_calls = root / "empty_transport_calls.jsonl"
+    empty_root, empty_seal = _publish_synthetic_authority(execution_root / "empty_authority", runtime_authority)
+    empty_calls = execution_root / "empty_transport_calls.jsonl"
     _execute_synthetic_test_only(
         final_execution_seal=empty_seal["manifest_path"],
         reviewed_hash=empty_seal["content_hash"],
@@ -104,7 +106,7 @@ def run_native_rehearsal(
         output_root=empty_root / "applications",
     )
     empty_payload = validate_native_application(empty_application["manifest_path"], authority_root=empty_root)
-    negative = _negative_matrix(root / "negative", runtime_authority)
+    negative = _negative_matrix(execution_root / "negative", runtime_authority)
     if not all(row.get("passed") is True for row in negative.values()):
         raise Task055JRehearsalError("task055j_negative_rehearsal_failed:" + json.dumps(negative, sort_keys=True))
     artifact_hashes = {
@@ -160,6 +162,13 @@ def run_native_rehearsal(
         semantic=semantic,
     )
     return validate_rehearsal(result["manifest_path"])
+
+
+def _rehearsal_execution_root(root: Path, *, runtime_authority: Mapping[str, Any]) -> Path:
+    runtime_hash = str(runtime_authority.get("content_hash") or "")
+    if len(runtime_hash) != 64:
+        raise Task055JRehearsalError("task055j_rehearsal_runtime_hash_invalid")
+    return root / "runs" / f"runtime_{runtime_hash[:24]}"
 
 
 def validate_rehearsal(path: str | Path, *, require_passed: bool = True) -> dict[str, Any]:

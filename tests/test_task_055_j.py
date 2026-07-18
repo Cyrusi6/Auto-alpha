@@ -30,7 +30,11 @@ from task_055_j.executor import (
     _verify_and_accept_synthetic_test_only,
 )
 from task_055_j.ledger import DurableHashJournal
-from task_055_j.rehearsal import _publish_synthetic_authority, _synthetic_seal_validator
+from task_055_j.rehearsal import (
+    _publish_synthetic_authority,
+    _rehearsal_execution_root,
+    _synthetic_seal_validator,
+)
 from task_055_j.verifier import Task055JScrubbedEvidenceError, verify_scrubbed_evidence
 
 
@@ -162,6 +166,13 @@ def test_new_application_stage_journal_is_initialized_in_memory_and_on_disk(tmp_
     journal = _load_or_initialize_stage_journal(journal_path, spec_hash="a" * 64)
     assert journal == {"status": "started", "spec_hash": "a" * 64}
     assert json.loads(journal_path.read_text(encoding="utf-8")) == journal
+
+
+def test_rehearsal_runtime_hash_selects_immutable_sibling_root(tmp_path: Path) -> None:
+    first = _rehearsal_execution_root(tmp_path, runtime_authority={"content_hash": "1" * 64})
+    second = _rehearsal_execution_root(tmp_path, runtime_authority={"content_hash": "2" * 64})
+    assert first == tmp_path / "runs" / f"runtime_{'1' * 24}"
+    assert first != second
 
 
 def test_journal_detects_manual_chain_and_checkpoint_tampering(tmp_path: Path) -> None:
