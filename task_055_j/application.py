@@ -147,12 +147,7 @@ def _apply(
             stage_root = output_root / "stages" / f"application_{spec_hash[:24]}"
             stage_root.mkdir(parents=True, exist_ok=True)
             journal_path = stage_root / "stage_journal.json"
-            if journal_path.is_file():
-                journal = read_json(journal_path)
-                if journal.get("spec_hash") != spec_hash:
-                    raise Task055JApplicationError("task055j_application_stage_spec_drift")
-            else:
-                atomic_json(journal_path, {"status": "started", "spec_hash": spec_hash})
+            journal = _load_or_initialize_stage_journal(journal_path, spec_hash=spec_hash)
             if journal.get("status") == "completed":
                 stage, action = _load_completed_stage(stage_root, records=records, journal=journal)
             else:
@@ -226,6 +221,17 @@ def _find_existing_application(output_root: Path, spec_hash: str) -> Path | None
     if len(matches) > 1:
         raise Task055JApplicationError("task055j_application_duplicate_generation")
     return matches[0] if matches else None
+
+
+def _load_or_initialize_stage_journal(journal_path: Path, *, spec_hash: str) -> dict[str, Any]:
+    if journal_path.is_file():
+        journal = read_json(journal_path)
+        if journal.get("spec_hash") != spec_hash:
+            raise Task055JApplicationError("task055j_application_stage_spec_drift")
+        return journal
+    journal = {"status": "started", "spec_hash": spec_hash}
+    atomic_json(journal_path, journal)
+    return journal
 
 
 def _independently_verify_truth_successor(

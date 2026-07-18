@@ -20,6 +20,7 @@ from data_source_validation.run_smoke import main as data_source_smoke_main
 from real_data_ops.run_real_data import main as real_data_main
 from task_055_h.io import canonical_hash, publish_generation
 from task_055_j import network_cli
+from task_055_j.application import _load_or_initialize_stage_journal
 from task_055_j.application_tree import publish_application_tree_seal, validate_application_preflight
 from task_055_j.contracts import CANARY, READY_STATUS
 from task_055_j.executor import (
@@ -154,6 +155,13 @@ def test_application_preflight_resolves_sibling_artifact_tree(tmp_path: Path) ->
     assert validate_application_preflight(
         preflight["manifest_path"], governed_root=governed
     )["application_artifact_tree_content_hash"] == tree["content_hash"]
+
+
+def test_new_application_stage_journal_is_initialized_in_memory_and_on_disk(tmp_path: Path) -> None:
+    journal_path = tmp_path / "stage_journal.json"
+    journal = _load_or_initialize_stage_journal(journal_path, spec_hash="a" * 64)
+    assert journal == {"status": "started", "spec_hash": "a" * 64}
+    assert json.loads(journal_path.read_text(encoding="utf-8")) == journal
 
 
 def test_journal_detects_manual_chain_and_checkpoint_tampering(tmp_path: Path) -> None:
