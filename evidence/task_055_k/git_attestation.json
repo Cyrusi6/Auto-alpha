@@ -1,0 +1,7 @@
+{
+  "content_hash": "cac2cad0a22da0712180e65551664dd4a367377124a84c9b4c81155251f35710",
+  "evidence_git_blob_id": "16a7163d59914536030c9beae28168cb3632000b",
+  "evidence_path": "evidence/task_055_k/task055k_scrubbed_evidence.json",
+  "implementation_commit": "77d60a468a2cd3e1a1810461d91d7504cf029cbd",
+  "schema_version": "task055k_git_evidence_attestation_v1"
+}
