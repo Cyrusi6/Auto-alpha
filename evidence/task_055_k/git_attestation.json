@@ -1,7 +1,7 @@
 {
-  "content_hash": "cac2cad0a22da0712180e65551664dd4a367377124a84c9b4c81155251f35710",
-  "evidence_git_blob_id": "16a7163d59914536030c9beae28168cb3632000b",
+  "content_hash": "a86f08516a653b6492a4b5223debb5c4a257c06bbe9fe41c9eb08b74a3daebd7",
+  "evidence_git_blob_id": "4733d2b4985b7e472a123ffa0f75996709787e6a",
   "evidence_path": "evidence/task_055_k/task055k_scrubbed_evidence.json",
-  "implementation_commit": "77d60a468a2cd3e1a1810461d91d7504cf029cbd",
+  "implementation_commit": "22e566c8681210925810d8ed63af291eecb290e9",
   "schema_version": "task055k_git_evidence_attestation_v1"
 }
