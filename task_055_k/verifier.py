@@ -177,7 +177,9 @@ def verify_scrubbed_evidence(
         raise Task055KVerifierError("task055k_evidence_forbidden_content")
     if repository_root is not None:
         _verify_repository(payload, evidence_path, Path(repository_root).resolve(), require_git_attestation)
-    return payload | {"verified": True, "verification_hash": _hash(payload)}
+    result = dict(payload)
+    result.update({"verified": True, "verification_hash": _hash(payload)})
+    return result
 
 
 def _verify_repository(payload: dict[str, Any], evidence_path: Path, repository: Path, require_attestation: bool) -> None:
