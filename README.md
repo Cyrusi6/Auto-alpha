@@ -1883,3 +1883,15 @@ The Task 055-I release itself remains offline: credential reads, Tushare request
 `operational_state_unproven` remains explicit because every historical writer CLI is not yet globally constrained to one authoritative root. Monitoring and dashboard readers therefore do not claim that all downstream queues are physically proven empty. Certification, portfolio, paper, and live readiness remain false.
 
 The Git-safe evidence is `evidence/task_055_i/task055i_scrubbed_evidence.json`. Verify its internal hash chain with `python task_055_i/verifier.py evidence/task_055_i/task055i_scrubbed_evidence.json`; full validation still requires the governed server artifacts.
+
+### Task 055-J single-canary production closure
+
+Task 055-J supersedes every older production Tushare entrypoint with one capability-gated gateway. The canonical authority is derived from the reviewed Task 055-H/I lineage and binds the ordered 17-key plan, fixed first daily canary, root identities, source tree, application artifact tree, append-only journals, single-flight locks, and the global `64/128/160` budget. Legacy Task 052/055-C/D/F/G/H/I network functions fail closed before credential, TLS, or transport access.
+
+The executor persists attempt intent, transport receipt, validated v3 cache, journal completion, and execution generation in that order. Ambiguous post-without-receipt states remain permanently blocked; receipt/cache-complete crash states recover without another POST; lock replacement, ledger corruption, cache corruption, concurrent execution, root substitution, and budget reset are rejected.
+
+The offline native rehearsal uses the real production application DAG with only the lowest HTTP response replaced. A positive daily response builds an immutable raw-repair generation, governed freeze, strict matrix, v3 values/validity tensor, exact-20 materializations, the real 12-path Research Firewall sentinel, full truth successor, and Fee-aware exact-20 × five-scenario causal replay. An empty daily response remains vendor absence, rebuilds truth/replay, and seals one unauthorized exact `suspend_d` L2 plan. Synthetic evidence is always `production_seal_eligible=false`.
+
+The published Task 055-J state is `task055j_single_canary_production_closure_blocked_no_network_executed`. The only engineering blocker is the absence of an external immutable checkpoint proving global ledger rollback resistance; `operational_state_unproven` also remains because legacy writer roots are not globally constrained. Credential reads, Tushare POSTs, other market HTTP, GPU work, and prospective-holdout access are all zero. Certification, portfolio, optimizer, paper, and live readiness remain false.
+
+The Git-safe evidence is `evidence/task_055_j/task055j_scrubbed_evidence.json`. Verify it in the Python 3.11 project environment with `python task_055_j/verifier.py evidence/task_055_j/task055j_scrubbed_evidence.json --repository-root .`. This checks the complete 17-key ordering, source tree, root bindings, artifact catalog, cross-lineage, budgets, and offline counters; it does not authorize a real canary.
