@@ -26,6 +26,7 @@ from task_055_k.broker import (
 )
 from task_055_k.contracts import CANARY
 from task_055_k.independent import _resolve_matrix_root
+from task_055_k.rehearsal import _rehearsal_execution_root
 from task_055_k.signing import EphemeralReceiptSigner, Task055KSigningError, verify_signature
 from task_055_k.source_tree import git_index_source_entries
 
@@ -276,3 +277,11 @@ def test_independent_matrix_resolution_ignores_sentinel_copies(tmp_path: Path):
     )
 
     assert resolved == application_matrix.resolve()
+
+
+def test_rehearsal_execution_root_is_checkpoint_content_addressed(tmp_path: Path):
+    first = _rehearsal_execution_root(tmp_path, "a" * 64)
+    second = _rehearsal_execution_root(tmp_path, "b" * 64)
+
+    assert first != second
+    assert first.parent == second.parent == tmp_path / "executions"

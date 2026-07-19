@@ -40,13 +40,14 @@ def run_native_rehearsal(
         },
         output_root=root / "synthetic_checkpoint",
     )
+    execution_root = _rehearsal_execution_root(root, synthetic_checkpoint["content_hash"])
     positive = _run_branch(
         branch="positive",
         checkpoint=synthetic_checkpoint,
         context=context,
         runtime_authority=verified_parent["runtime"],
         governed_root=verified_parent["governed_root"],
-        root=root / "positive",
+        root=execution_root / "positive",
         response_bytes=_response_bytes(
             [["000413.SZ", "20160726", 10.0, 11.0, 9.0, 10.5, 10.0, 100.0, 1000.0]]
         ),
@@ -57,7 +58,7 @@ def run_native_rehearsal(
         context=context,
         runtime_authority=verified_parent["runtime"],
         governed_root=verified_parent["governed_root"],
-        root=root / "empty",
+        root=execution_root / "empty",
         response_bytes=_response_bytes([]),
     )
     if positive["primary_replay_roots"] != positive["sibling_replay_roots"]:
@@ -237,3 +238,7 @@ def _response_bytes(items: list[list[object]]) -> bytes:
         },
         sort_keys=True,
     ).encode()
+
+
+def _rehearsal_execution_root(root: Path, checkpoint_content_hash: str) -> Path:
+    return root / "executions" / f"checkpoint_{checkpoint_content_hash[:24]}"
