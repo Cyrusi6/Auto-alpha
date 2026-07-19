@@ -8,7 +8,7 @@ from task_055_h.network import Task055HNetworkError, ordered_future_canary_gate
 
 def _assert_gate_superseded() -> None:
     calls = {"tls": 0, "credential": 0}
-    with pytest.raises(Task055HNetworkError, match="superseded_by_task055j"):
+    with pytest.raises(Task055HNetworkError, match="superseded_by_task055k_transport_broker"):
         ordered_future_canary_gate(
             authorization_seal="unused",
             allow_network=True,
@@ -21,7 +21,7 @@ def _assert_gate_superseded() -> None:
 
 def _assert_l1_superseded() -> None:
     calls = []
-    with pytest.raises(network_state.Task055GNetworkStateError, match="superseded_by_task055j"):
+    with pytest.raises(network_state.Task055GNetworkStateError, match="superseded_by_task055k_transport_broker"):
         network_state.execute_l1_canary(
             state_root="unused",
             plan_manifest={},

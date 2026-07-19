@@ -176,7 +176,21 @@ def _apply(
                 "production_seal_eligible": evidence_scope == "real_production",
                 "final_execution_seal_content_hash": accepted["final_execution_seal"]["content_hash"],
                 "canary_acceptance_content_hash": accepted["acceptance"]["content_hash"],
-                "request": {key: request[key] for key in ("api_name", "ts_code", "trade_date", "fields", "transport_hash", "evidence_use_hash")},
+                "request": {
+                    key: request[key]
+                    for key in (
+                        "api_name",
+                        "ts_code",
+                        "trade_date",
+                        "fields",
+                        "request_fingerprint",
+                        "transport_identity",
+                        "evidence_use_identity",
+                        "transport_hash",
+                        "evidence_use_hash",
+                    )
+                    if key in request
+                },
                 "response_item_count": len(records),
                 "action": action,
                 "application_spec_hash": spec_hash,
@@ -309,7 +323,7 @@ def _expected_truth_successor_row(
         "source_kind": "task055j_native_accepted_cache",
         "proof_quality": "validated_task055j_transport_receipt_and_v3_cache",
         "outcome": "matching_row" if records else "no_matching_row",
-        "request_fingerprint": request["transport_hash"],
+        "request_fingerprint": request.get("request_fingerprint") or request["transport_hash"],
         "source_sha256": cache_sha256,
         "transport_receipt_content_hash": receipt_content_hash,
         "parent_apply_hash": acceptance_content_hash,
@@ -585,9 +599,14 @@ def _run_production_sentinel(
             holdout_start_date=str(context["holdout_start_date"]),
             label_horizon=2,
             timeout_seconds=int(context.get("sentinel_timeout_seconds", 1800)),
+            evidence_scope=evidence_scope,
         )
     )
-    validate_task054b_production_sentinel(payload["artifact_path"], scheduler_state_dir=stage_root / "scheduler_state")
+    validate_task054b_production_sentinel(
+        payload["artifact_path"],
+        scheduler_state_dir=stage_root / "scheduler_state",
+        expected_evidence_scope=evidence_scope,
+    )
     if payload.get("status") != "passed" or payload.get("exact_run_count") != 12:
         raise Task055JApplicationError("task055j_production_sentinel_not_passed")
     return payload | {

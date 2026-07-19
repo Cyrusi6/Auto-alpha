@@ -47,22 +47,16 @@ from task_055_j.verifier import (
 )
 
 
-def test_client_requires_task055j_capability_or_explicit_test_transport() -> None:
+def test_client_requires_task055k_capability_and_rejects_transport_injection() -> None:
     config = AShareDataConfig(tushare_token="synthetic", tushare_retry_count=1)
-    with pytest.raises(TushareNetworkError, match="task055j_execution_capability"):
+    with pytest.raises(TushareNetworkError, match="task055k_execution_capability"):
         TushareHttpClient(config)
-    with pytest.raises(TushareNetworkError, match="test_only_marker"):
+    with pytest.raises(TypeError):
         TushareHttpClient(config, urlopen=lambda *_args, **_kwargs: None)
-    client = TushareHttpClient(
-        config,
-        urlopen=lambda *_args, **_kwargs: None,
-        test_only_transport=True,
-    )
-    assert client.retry_count == 1
 
 
 def test_legacy_backfill_and_online_probe_fail_before_credential_or_transport(tmp_path: Path) -> None:
-    with pytest.raises(RuntimeError, match="superseded_by_task055j"):
+    with pytest.raises(RuntimeError, match="superseded_by_task055k_transport_broker"):
         run_governed_backfill(
             GovernedBackfillConfig(
                 union_path=tmp_path / "missing-union.jsonl",
@@ -75,7 +69,7 @@ def test_legacy_backfill_and_online_probe_fail_before_credential_or_transport(tm
         allow_network=True,
     )
     assert len(result) == 1
-    assert result[0].message == "superseded_by_task055j"
+    assert result[0].message == "superseded_by_task055k_transport_broker"
     assert result[0].credential_present is False
     assert result[0].network_allowed is False
 
@@ -115,7 +109,7 @@ def test_generic_online_clis_fail_before_environment_credential_loading(
     for entrypoint, argv in invocations:
         assert entrypoint(argv) == 2
         assert json.loads(capsys.readouterr().out) == {
-            "reason": "superseded_by_task055j",
+            "reason": "superseded_by_task055k_transport_broker",
             "status": "blocked",
         }
 

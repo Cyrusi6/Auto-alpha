@@ -24,7 +24,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.set_float32_matmul_precision('high')
 
 def get_tushare_token():
-    raise RuntimeError("superseded_by_task055j")
+    raise RuntimeError("superseded_by_task055k_transport_broker")
 
 @torch.jit.script
 def _ts_delay(x: torch.Tensor, d: int) -> torch.Tensor:
@@ -103,7 +103,7 @@ class AlphaGPT(nn.Module):
 
 class DataEngine:
     def __init__(self, tushare_token=None):
-        raise RuntimeError("superseded_by_task055j")
+        raise RuntimeError("superseded_by_task055k_transport_broker")
     def load(self):
         if os.path.exists(DATA_CACHE_PATH):
             df = pd.read_parquet(DATA_CACHE_PATH)

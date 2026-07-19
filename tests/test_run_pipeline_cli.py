@@ -44,7 +44,7 @@ def test_run_pipeline_sync_tushare_without_token_returns_error(monkeypatch, caps
     captured = capsys.readouterr()
 
     assert result != 0
-    assert "superseded_by_task055j" in captured.err
+    assert "superseded_by_task055k_transport_broker" in captured.err
 
 
 def test_run_pipeline_sync_sample_writes_local_files(tmp_path, capsys):
@@ -192,7 +192,7 @@ def test_run_pipeline_sync_tushare_monkeypatched_provider_cannot_bypass_task055j
     captured = capsys.readouterr()
 
     assert result == 2
-    assert "superseded_by_task055j" in captured.err
+    assert "superseded_by_task055k_transport_broker" in captured.err
     assert list(tmp_path.iterdir()) == []
 
 
@@ -203,7 +203,7 @@ def test_run_pipeline_sync_tushare_without_token_returns_nonzero(monkeypatch, ca
     captured = capsys.readouterr()
 
     assert result != 0
-    assert "superseded_by_task055j" in captured.err
+    assert "superseded_by_task055k_transport_broker" in captured.err
 
 
 def test_run_pipeline_source_excludes_old_entrypoint_terms():

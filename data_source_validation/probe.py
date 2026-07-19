@@ -36,7 +36,7 @@ def probe_provider(
                 api_name="tushare",
                 status=ProviderReadinessStatus.ERROR,
                 diagnostic_code=ProviderDiagnosticCode.network_disabled,
-                message="superseded_by_task055j",
+                message="superseded_by_task055k_transport_broker",
                 requested_fields=[],
                 response_fields=[],
                 records=0,

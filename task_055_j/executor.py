@@ -60,15 +60,7 @@ def execute_single_canary(
     credential_file: str | Path,
     allow_network: bool,
 ) -> dict[str, Any]:
-    return _execute_single_canary(
-        final_execution_seal=final_execution_seal,
-        reviewed_final_execution_seal_hash=reviewed_final_execution_seal_hash,
-        credential_file=credential_file,
-        allow_network=allow_network,
-        synthetic_transport=None,
-        synthetic_tls=None,
-        crash_point=None,
-    )
+    raise Task055JExecutionError("superseded_by_task055k_transport_broker")
 
 
 def verify_and_accept_canary(

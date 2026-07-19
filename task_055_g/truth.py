@@ -56,7 +56,7 @@ def publish_truth_successor(
         "source_kind": "task055j_native_accepted_cache",
         "proof_quality": "validated_task055j_transport_receipt_and_v3_cache",
         "outcome": "matching_row" if records else "no_matching_row",
-        "request_fingerprint": request.get("transport_hash"),
+        "request_fingerprint": request.get("request_fingerprint") or request.get("transport_hash"),
         "source_sha256": response_evidence.get("cache_sha256"),
         "transport_receipt_content_hash": response_evidence.get("transport_receipt_content_hash"),
         "parent_apply_hash": parent_apply_hash,

@@ -172,7 +172,7 @@ def execute_l1_canary(
     sealed_plan_hash: str | None = None,
     request_executor: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    raise Task055GNetworkStateError("superseded_by_task055j")
+    raise Task055GNetworkStateError("superseded_by_task055k_transport_broker")
     return _execute_canary(
         state_root=Path(state_root),
         plan_manifest=plan_manifest,
@@ -193,7 +193,7 @@ def execute_l1_resume(
     sealed_plan_hash: str | None = None,
     request_executor: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    raise Task055GNetworkStateError("superseded_by_task055j")
+    raise Task055GNetworkStateError("superseded_by_task055k_transport_broker")
     return _execute_resume(
         state_root=Path(state_root),
         plan_manifest=plan_manifest,
@@ -282,7 +282,7 @@ def execute_l2_canary(
     executor is intentionally injected so this module never reads credentials.
     """
 
-    raise Task055GNetworkStateError("superseded_by_task055j")
+    raise Task055GNetworkStateError("superseded_by_task055k_transport_broker")
     return _execute_canary(
         state_root=Path(state_root),
         plan_manifest=plan_manifest,
@@ -303,7 +303,7 @@ def execute_l2_resume(
     sealed_plan_hash: str | None = None,
     request_executor: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    raise Task055GNetworkStateError("superseded_by_task055j")
+    raise Task055GNetworkStateError("superseded_by_task055k_transport_broker")
     return _execute_resume(
         state_root=Path(state_root),
         plan_manifest=plan_manifest,
@@ -326,7 +326,7 @@ def _execute_canary(
     request_executor: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None,
     artifact_stage: str,
 ) -> dict[str, Any]:
-    raise Task055GNetworkStateError("superseded_by_task055j")
+    raise Task055GNetworkStateError("superseded_by_task055k_transport_broker")
     plan = _normalize_plan(plan_manifest)
     if plan["stage"] != expected_stage:
         raise Task055GNetworkStateError(f"{expected_stage.lower()}_canary_plan_stage_invalid")
@@ -367,7 +367,7 @@ def _execute_resume(
     request_executor: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None,
     artifact_stage: str,
 ) -> dict[str, Any]:
-    raise Task055GNetworkStateError("superseded_by_task055j")
+    raise Task055GNetworkStateError("superseded_by_task055k_transport_broker")
     plan = _normalize_plan(plan_manifest)
     if plan["stage"] != expected_stage:
         raise Task055GNetworkStateError(f"{expected_stage.lower()}_resume_plan_stage_invalid")

@@ -169,7 +169,7 @@ def test_tushare_allow_network_is_superseded_before_token_lookup(tmp_path, capsy
     payload = json.loads(capsys.readouterr().out)
 
     assert rc == 2
-    assert payload == {"status": "blocked", "reason": "superseded_by_task055j"}
+    assert payload == {"status": "blocked", "reason": "superseded_by_task055k_transport_broker"}
 
 
 def test_smoke_baseline_compare_reports_diff_without_failing(tmp_path, capsys):

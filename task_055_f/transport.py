@@ -4,27 +4,18 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from data_pipeline.ashare.providers.tushare_client import TUSHARE_PROVIDER_API_VERSION
-from data_pipeline.ashare.request_normalization import (
-    normalize_tushare_request,
-    stable_json_hash,
-    tushare_code_semantic_hash,
+from data_pipeline.ashare.request_identity import (
+    CANONICAL_TUSHARE_ORIGIN,
+    TRANSPORT_IDENTITY_VERSION,
+    tushare_transport_identity,
 )
+from data_pipeline.ashare.request_normalization import stable_json_hash
 
-CANONICAL_ORIGIN = "https://api.tushare.pro"
-TRANSPORT_IDENTITY_VERSION = "task055f_transport_identity_v1"
+CANONICAL_ORIGIN = CANONICAL_TUSHARE_ORIGIN
 
 
 def transport_identity(api_name: str, params: Mapping[str, Any], fields: list[str] | tuple[str, ...]) -> str:
-    return stable_json_hash(
-        {
-            "origin": CANONICAL_ORIGIN,
-            "provider_api_version": TUSHARE_PROVIDER_API_VERSION,
-            "request_normalization_version": TRANSPORT_IDENTITY_VERSION,
-            "code_semantic_hash": tushare_code_semantic_hash(),
-            "request": normalize_tushare_request(api_name, params=dict(params), fields=fields),
-        }
-    )
+    return tushare_transport_identity(api_name, params, fields)
 
 
 def evidence_use_identity(

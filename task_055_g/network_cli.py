@@ -47,7 +47,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _dispatch(args: argparse.Namespace, config: Mapping[str, Any]) -> dict[str, Any]:
     command = str(args.command)
     if command in {"l1-canary", "l1-resume", "l2-canary", "l2-resume"}:
-        raise Task055GNetworkStateError("superseded_by_task055j")
+        raise Task055GNetworkStateError("superseded_by_task055k_transport_broker")
     state_root = _required(config, "state_root")
     if command == "consolidate":
         return consolidate(

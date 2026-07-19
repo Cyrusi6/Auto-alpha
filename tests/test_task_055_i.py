@@ -60,15 +60,15 @@ def test_production_cli_exposes_only_canary_and_acceptance_without_injection():
 
 def test_task055g_network_commands_are_superseded_before_config_or_credentials():
     for command in ("l1-canary", "l1-resume", "l2-canary", "l2-resume"):
-        with pytest.raises(Task055GNetworkStateError, match="superseded_by_task055j"):
+        with pytest.raises(Task055GNetworkStateError, match="superseded_by_task055k_transport_broker"):
             _dispatch(
                 argparse.Namespace(command=command, allow_network=False, sealed_plan_hash=None),
                 {},
             )
 
 
-def test_native_rehearsal_is_superseded_by_task055j_before_execution():
-    with pytest.raises(Exception, match="superseded_by_task055j"):
+def test_native_rehearsal_is_superseded_by_task055k_before_execution():
+    with pytest.raises(Exception, match="superseded_by_task055k_transport_broker"):
         execute_single_canary(
             runtime_authority="unused",
             reviewed_authority_hash="unused",

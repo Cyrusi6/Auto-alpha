@@ -8,13 +8,14 @@ import urllib.error
 import urllib.request
 import gzip
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable
+from typing import Any, Iterable, Mapping
 
 from ..config import AShareDataConfig
 from ..network_capability import TushareExecutionCapability
 from ..rate_limit import RateLimitEvent, SimpleRateLimiter
 from ..security import validate_tushare_origin
-from ..request_normalization import stable_json_hash, tushare_code_semantic_hash, tushare_request_fingerprint
+from ..request_identity import TushareRequestIdentity
+from ..request_normalization import stable_json_hash, tushare_code_semantic_hash
 
 
 TUSHARE_PROVIDER_API_VERSION = "tushare_pro_http.v1"
@@ -52,6 +53,8 @@ class TushareResponseEnvelope:
     item_count: int
     duration_seconds: float
     request_fingerprint: str = ""
+    transport_identity: str = ""
+    evidence_use_identity: str = ""
     code_semantic_hash: str = ""
     endpoint: str = ""
     provider_api_version: str = TUSHARE_PROVIDER_API_VERSION
@@ -69,6 +72,8 @@ class TushareResponseEnvelope:
             "item_count": self.item_count,
             "duration_seconds": self.duration_seconds,
             "request_fingerprint": self.request_fingerprint,
+            "transport_identity": self.transport_identity,
+            "evidence_use_identity": self.evidence_use_identity,
             "code_semantic_hash": self.code_semantic_hash,
             "endpoint": self.endpoint,
             "provider_api_version": self.provider_api_version,
@@ -80,24 +85,16 @@ class TushareHttpClient:
     def __init__(
         self,
         config: AShareDataConfig,
-        urlopen: Callable[..., Any] | None = None,
         rate_limiter: SimpleRateLimiter | None = None,
         *,
         execution_capability: TushareExecutionCapability | None = None,
-        test_only_transport: bool = False,
     ):
-        if urlopen is None and execution_capability is None:
-            raise TushareNetworkError("real_tushare_transport_requires_task055j_execution_capability")
-        if urlopen is not None and not test_only_transport:
-            raise TushareNetworkError("injected_tushare_transport_requires_test_only_marker")
-        self.api_url = validate_tushare_origin(
-            config.tushare_api_url,
-            allow_fake_transport=urlopen is not None and test_only_transport,
-        )
+        if execution_capability is None:
+            raise TushareNetworkError("real_tushare_transport_requires_task055k_execution_capability")
+        self.api_url = validate_tushare_origin(config.tushare_api_url)
         self.token = config.tushare_token
         self.timeout_seconds = config.tushare_timeout_seconds
         self.retry_count = config.tushare_retry_count
-        self._urlopen = _secure_urlopen if urlopen is None else urlopen
         self.rate_limiter = rate_limiter
         self.last_rate_limit_event: RateLimitEvent | None = None
         self._execution_capability = execution_capability
@@ -118,94 +115,49 @@ class TushareHttpClient:
     ) -> TushareResponseEnvelope:
         if not self.token:
             raise ValueError("TUSHARE_TOKEN is required for provider=tushare")
-        if self._execution_capability is not None:
-            self._execution_capability.authorize(api_name, params, fields)
-        elif self._urlopen is _secure_urlopen:
-            raise TushareNetworkError("real_tushare_transport_capability_missing")
+        if self.retry_count != 1:
+            raise TushareNetworkError("task055k_single_post_retry_count_must_equal_one")
+        self._execution_capability.authorize(api_name, params, fields)
 
         request_fields = self._format_fields(fields)
         request_params = {} if params is None else dict(params)
-        body = {
-            "api_name": api_name,
-            "token": self.token,
-            "params": request_params,
-            "fields": request_fields,
-        }
-        request = urllib.request.Request(
-            self.api_url,
-            data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json", "Accept-Encoding": "gzip"},
-            method="POST",
+        request = serialize_tushare_request(
+            endpoint=self.api_url,
+            api_name=api_name,
+            token=self.token,
+            params=request_params,
+            fields=request_fields,
         )
 
         started = time.perf_counter()
         self.last_rate_limit_event = None
         if self.rate_limiter is not None:
             self.last_rate_limit_event = self.rate_limiter.wait(api_name)
-        response_payload = self._send_with_retry(request)
-        code = response_payload.get("code", 0)
-        message = str(response_payload.get("msg") or "")
-        if code != 0:
-            raise _error_for_response(
-                int(code),
-                _redact_secret(message or f"Tushare API returned code {code}", self.token),
-            )
-
-        data = response_payload.get("data")
-        if not isinstance(data, dict):
-            raise TushareSchemaError("Tushare response data must be an object")
-        response_fields = data.get("fields")
-        items = data.get("items")
-        if not isinstance(response_fields, list) or not isinstance(items, list):
-            raise TushareSchemaError("Tushare response data.fields/data.items must be lists")
-        if not all(isinstance(field, str) for field in response_fields):
-            raise TushareSchemaError("Tushare response data.fields must contain strings")
-        if not all(isinstance(item, list) for item in items):
-            raise TushareSchemaError("Tushare response data.items must contain row lists")
-        if any(len(item) != len(response_fields) for item in items):
-            raise TushareSchemaError("Tushare response row width does not match data.fields")
-        requested_field_list = [field.strip() for field in request_fields.split(",") if field.strip()]
-        if items and requested_field_list and not set(requested_field_list).issubset(response_fields):
-            raise TushareSchemaError("Tushare response omitted requested fields")
-
-        records = [dict(zip(response_fields, item)) for item in items]
-        return TushareResponseEnvelope(
+        response_payload = self._send_once(request)
+        return parse_tushare_response_payload(
+            response_payload,
             api_name=api_name,
-            params_without_token=request_params,
+            params=request_params,
             requested_fields=request_fields,
-            response_code=int(code),
-            response_message=message,
-            response_fields=list(response_fields),
-            records=records,
-            item_count=len(items),
+            identity=self._execution_capability.identity,
             duration_seconds=max(0.0, time.perf_counter() - started),
-            request_fingerprint=tushare_request_fingerprint(api_name, params=request_params, fields=request_fields),
-            code_semantic_hash=tushare_code_semantic_hash(),
             endpoint=self.api_url,
-            provider_api_version=TUSHARE_PROVIDER_API_VERSION,
-            response_payload_hash=stable_json_hash(response_payload),
         )
 
-    def _send_with_retry(self, request: urllib.request.Request) -> dict[str, Any]:
-        last_error: Exception | None = None
-        for attempt in range(max(1, self.retry_count)):
-            try:
-                with self._urlopen(request, timeout=self.timeout_seconds) as response:
-                    raw = _decode_response_body(response.read(), response)
-                payload = json.loads(raw)
-                if not isinstance(payload, dict):
-                    raise TushareSchemaError("Tushare response must be a JSON object")
-                return payload
-            except (TushareApiError, TushareSchemaError):
-                raise
-            except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError) as exc:
-                last_error = exc
-                if attempt + 1 < max(1, self.retry_count):
-                    time.sleep(min(0.2 * (attempt + 1), 1.0))
-
-        raise TushareNetworkError(
-            f"Tushare HTTP request failed: {_redact_secret(_safe_error(last_error), self.token)}"
-        ) from last_error
+    def _send_once(self, request: urllib.request.Request) -> dict[str, Any]:
+        try:
+            with _secure_urlopen(request, timeout=self.timeout_seconds) as response:
+                raw = _decode_response_body(response.read(), response)
+            payload = json.loads(raw)
+            if not isinstance(payload, dict):
+                raise TushareSchemaError("Tushare response must be a JSON object")
+            return payload
+        except (TushareApiError, TushareSchemaError):
+            raise
+        except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError) as exc:
+            raise TushareNetworkError(
+                f"Tushare HTTP request failed: {_redact_secret(_safe_error(exc), self.token)}"
+            ) from exc
 
     @staticmethod
     def _format_fields(fields: str | Iterable[str] | None) -> str:
@@ -214,6 +166,81 @@ class TushareHttpClient:
         if isinstance(fields, str):
             return fields
         return ",".join(fields)
+
+
+def serialize_tushare_request(
+    *,
+    endpoint: str,
+    api_name: str,
+    token: str,
+    params: Mapping[str, Any] | None,
+    fields: str | Iterable[str] | None,
+) -> urllib.request.Request:
+    request_fields = TushareHttpClient._format_fields(fields)
+    body = {
+        "api_name": api_name,
+        "token": token,
+        "params": dict(params or {}),
+        "fields": request_fields,
+    }
+    return urllib.request.Request(
+        endpoint,
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept-Encoding": "gzip"},
+        method="POST",
+    )
+
+
+def parse_tushare_response_payload(
+    response_payload: Mapping[str, Any],
+    *,
+    api_name: str,
+    params: Mapping[str, Any],
+    requested_fields: str | Iterable[str],
+    identity: TushareRequestIdentity,
+    duration_seconds: float,
+    endpoint: str,
+) -> TushareResponseEnvelope:
+    request_fields = TushareHttpClient._format_fields(requested_fields)
+    code = int(response_payload.get("code", 0))
+    message = str(response_payload.get("msg") or "")
+    if code != 0:
+        raise _error_for_response(code, message or f"Tushare API returned code {code}")
+    data = response_payload.get("data")
+    if not isinstance(data, dict):
+        raise TushareSchemaError("Tushare response data must be an object")
+    response_fields = data.get("fields")
+    items = data.get("items")
+    if not isinstance(response_fields, list) or not isinstance(items, list):
+        raise TushareSchemaError("Tushare response data.fields/data.items must be lists")
+    if not all(isinstance(field, str) for field in response_fields):
+        raise TushareSchemaError("Tushare response data.fields must contain strings")
+    if not all(isinstance(item, list) for item in items):
+        raise TushareSchemaError("Tushare response data.items must contain row lists")
+    if any(len(item) != len(response_fields) for item in items):
+        raise TushareSchemaError("Tushare response row width does not match data.fields")
+    requested = [field.strip() for field in request_fields.split(",") if field.strip()]
+    if requested and not set(requested).issubset(response_fields):
+        raise TushareSchemaError("Tushare response omitted requested fields")
+    records = [dict(zip(response_fields, item)) for item in items]
+    return TushareResponseEnvelope(
+        api_name=api_name,
+        params_without_token=dict(params),
+        requested_fields=request_fields,
+        response_code=code,
+        response_message=message,
+        response_fields=list(response_fields),
+        records=records,
+        item_count=len(items),
+        duration_seconds=max(0.0, duration_seconds),
+        request_fingerprint=identity.request_fingerprint,
+        transport_identity=identity.transport_identity,
+        evidence_use_identity=identity.evidence_use_identity,
+        code_semantic_hash=tushare_code_semantic_hash(),
+        endpoint=endpoint,
+        provider_api_version=TUSHARE_PROVIDER_API_VERSION,
+        response_payload_hash=stable_json_hash(dict(response_payload)),
+    )
 
 
 def _error_for_response(code: int, message: str) -> TushareApiError:

@@ -1,171 +1,129 @@
-import gzip
 import json
 
 import pytest
 
 from data_pipeline.ashare import AShareDataConfig
+from data_pipeline.ashare.network_capability import _validated_task055k_execution_capability
 from data_pipeline.ashare.providers.tushare_client import (
     TushareApiError,
+    TushareHttpClient,
+    TushareNetworkError,
     TusharePermissionError,
     TushareRateLimitError,
     TushareSchemaError,
-    TushareHttpClient,
+    parse_tushare_response_payload,
+    serialize_tushare_request,
 )
+from data_pipeline.ashare.request_identity import TushareRequestIdentity
+from data_pipeline.ashare.request_normalization import tushare_request_fingerprint
+from task_055_f.transport import CANONICAL_ORIGIN, transport_identity
 
 
-class FakeResponse:
-    def __init__(self, payload, headers=None, raw=None):
-        self.payload = payload
-        self.headers = headers or {}
-        self.raw = raw
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, traceback):
-        return False
-
-    def read(self):
-        if self.raw is not None:
-            return self.raw
-        return json.dumps(self.payload).encode("utf-8")
-
-
-def test_tushare_http_client_posts_payload_and_maps_rows():
-    captured = {}
-
-    def fake_urlopen(request, timeout):
-        captured["payload"] = json.loads(request.data.decode("utf-8"))
-        captured["timeout"] = timeout
-        return FakeResponse(
-            {
-                "code": 0,
-                "data": {
-                    "fields": ["ts_code", "close"],
-                    "items": [["000001.SZ", 10.5]],
-                },
-            }
-        )
-
-    config = AShareDataConfig(
-        tushare_token="test-token",
-        tushare_timeout_seconds=7,
-        tushare_retry_count=1,
+def _identity(api_name="daily", params=None, fields=None):
+    params = dict(params or {})
+    fields = list(fields or ["ts_code", "close"])
+    return TushareRequestIdentity(
+        request_fingerprint=tushare_request_fingerprint(api_name, params=params, fields=fields),
+        transport_identity=transport_identity(api_name, params, fields),
+        evidence_use_identity="e" * 64,
     )
-    client = TushareHttpClient(config, urlopen=fake_urlopen, test_only_transport=True)
 
-    rows = client.post("daily", params={"start_date": "20240101"}, fields=["ts_code", "close"])
 
-    assert rows == [{"ts_code": "000001.SZ", "close": 10.5}]
-    assert captured["timeout"] == 7
-    assert captured["payload"] == {
+def _parse(payload, *, api_name="daily", params=None, fields=None):
+    params = dict(params or {})
+    fields = list(fields or ["ts_code", "close"])
+    return parse_tushare_response_payload(
+        payload,
+        api_name=api_name,
+        params=params,
+        requested_fields=fields,
+        identity=_identity(api_name, params, fields),
+        duration_seconds=0.25,
+        endpoint=CANONICAL_ORIGIN,
+    )
+
+
+def test_tushare_request_serializer_and_response_parser_are_transport_free():
+    request = serialize_tushare_request(
+        endpoint=CANONICAL_ORIGIN,
+        api_name="daily",
+        token="test-token",
+        params={"start_date": "20240101"},
+        fields=["ts_code", "close"],
+    )
+    assert json.loads(request.data.decode("utf-8")) == {
         "api_name": "daily",
         "token": "test-token",
         "params": {"start_date": "20240101"},
         "fields": "ts_code,close",
     }
-
-
-def test_tushare_http_client_post_with_metadata_redacts_params_token():
-    def fake_urlopen(request, timeout):
-        return FakeResponse(
-            {
-                "code": 0,
-                "msg": "",
-                "data": {
-                    "fields": ["ts_code", "close"],
-                    "items": [["000001.SZ", 10.5]],
-                },
-            }
-        )
-
-    client = TushareHttpClient(AShareDataConfig(tushare_token="secret-token", tushare_retry_count=1), urlopen=fake_urlopen, test_only_transport=True)
-
-    envelope = client.post_with_metadata("daily", params={"start_date": "20240101"}, fields=["ts_code", "close"])
-
-    assert envelope.api_name == "daily"
-    assert envelope.params_without_token == {"start_date": "20240101"}
-    assert envelope.requested_fields == "ts_code,close"
-    assert envelope.response_fields == ["ts_code", "close"]
+    envelope = _parse(
+        {"code": 0, "msg": "", "data": {"fields": ["ts_code", "close"], "items": [["000001.SZ", 10.5]]}},
+        params={"start_date": "20240101"},
+    )
     assert envelope.records == [{"ts_code": "000001.SZ", "close": 10.5}]
-    assert envelope.item_count == 1
-    assert "secret-token" not in json.dumps(envelope.to_dict())
+    assert envelope.request_fingerprint == _identity("daily", {"start_date": "20240101"}).request_fingerprint
+    assert envelope.transport_identity == _identity("daily", {"start_date": "20240101"}).transport_identity
+    assert "test-token" not in json.dumps(envelope.to_dict())
 
 
-def test_tushare_http_client_decodes_gzip_response():
-    payload = {
-        "code": 0,
-        "msg": "",
-        "data": {
-            "fields": ["ts_code", "close"],
-            "items": [["000001.SZ", 10.5]],
-        },
-    }
-
-    def fake_urlopen(request, timeout):
-        assert request.headers["Accept-encoding"] == "gzip"
-        return FakeResponse(payload, headers={"Content-Encoding": "gzip"}, raw=gzip.compress(json.dumps(payload).encode("utf-8")))
-
-    client = TushareHttpClient(AShareDataConfig(tushare_token="secret-token", tushare_retry_count=1), urlopen=fake_urlopen, test_only_transport=True)
-
-    assert client.post("daily", fields=["ts_code", "close"]) == [{"ts_code": "000001.SZ", "close": 10.5}]
+def test_production_client_rejects_missing_capability_and_transport_injection():
+    config = AShareDataConfig(tushare_token="synthetic", tushare_retry_count=1)
+    with pytest.raises(TushareNetworkError, match="task055k_execution_capability"):
+        TushareHttpClient(config)
+    with pytest.raises(TypeError):
+        TushareHttpClient(config, urlopen=lambda *_args, **_kwargs: None)
 
 
-def test_tushare_http_client_preserves_observed_empty_response_fields():
-    def fake_urlopen(request, timeout):
-        return FakeResponse({"code": 0, "msg": "", "data": {"fields": [], "items": []}})
+def test_validated_capability_is_single_use_and_preserves_three_identities():
+    params = {"trade_date": "20240102"}
+    fields = ["ts_code", "trade_date"]
+    identity = _identity("daily", params, fields)
+    capability = _validated_task055k_execution_capability(
+        authority_content_hash="a" * 64,
+        final_execution_seal_hash="b" * 64,
+        api_name="daily",
+        params=params,
+        fields=fields,
+        identity=identity,
+        attempt_id="c" * 64,
+        broker_contract_hash="d" * 64,
+    )
+    capability.authorize("daily", params, fields)
+    with pytest.raises(Exception, match="already_consumed"):
+        capability.authorize("daily", params, fields)
 
-    client = TushareHttpClient(AShareDataConfig(tushare_token="secret-token", tushare_retry_count=1), urlopen=fake_urlopen, test_only_transport=True)
-    envelope = client.post_with_metadata("suspend_d", fields=["ts_code", "trade_date", "suspend_timing", "suspend_type"])
 
-    assert envelope.response_fields == []
+def test_parser_preserves_observed_empty_response_fields():
+    fields = ["ts_code", "trade_date", "suspend_timing", "suspend_type"]
+    envelope = _parse(
+        {"code": 0, "msg": "", "data": {"fields": fields, "items": []}},
+        api_name="suspend_d",
+        fields=fields,
+    )
+    assert envelope.response_fields == fields
     assert envelope.records == []
     assert envelope.item_count == 0
     assert envelope.response_payload_hash
 
 
-def test_tushare_http_client_raises_api_error_on_nonzero_code():
-    def fake_urlopen(request, timeout):
-        return FakeResponse({"code": 2002, "msg": "bad token"})
-
-    config = AShareDataConfig(tushare_token="test-token", tushare_retry_count=1)
-    client = TushareHttpClient(config, urlopen=fake_urlopen, test_only_transport=True)
-
-    with pytest.raises(TushareApiError, match="bad token"):
-        client.post("stock_basic")
-
-
-def test_tushare_http_client_maps_permission_and_rate_limit_errors():
-    config = AShareDataConfig(tushare_token="test-token", tushare_retry_count=1)
-
-    def permission_urlopen(request, timeout):
-        return FakeResponse({"code": 2002, "msg": "权限不足"})
-
-    def rate_urlopen(request, timeout):
-        return FakeResponse({"code": 2003, "msg": "访问次数超过限制"})
-
+def test_parser_maps_permission_rate_and_api_errors():
     with pytest.raises(TusharePermissionError):
-        TushareHttpClient(config, urlopen=permission_urlopen, test_only_transport=True).post("stock_basic")
+        _parse({"code": 2002, "msg": "权限不足", "data": {}})
     with pytest.raises(TushareRateLimitError):
-        TushareHttpClient(config, urlopen=rate_urlopen, test_only_transport=True).post("stock_basic")
+        _parse({"code": 2003, "msg": "访问次数超过限制", "data": {}})
+    with pytest.raises(TushareApiError, match="other error"):
+        _parse({"code": 2004, "msg": "other error", "data": {}})
 
 
-def test_tushare_http_client_raises_schema_error_on_malformed_data():
-    def fake_urlopen(request, timeout):
-        return FakeResponse({"code": 0, "data": {"fields": "ts_code", "items": []}})
-
-    client = TushareHttpClient(AShareDataConfig(tushare_token="test-token", tushare_retry_count=1), urlopen=fake_urlopen, test_only_transport=True)
-
-    with pytest.raises(TushareSchemaError):
-        client.post("daily")
-
-
-def test_tushare_http_client_requires_token():
-    client = TushareHttpClient(
-        AShareDataConfig(tushare_token=None),
-        urlopen=lambda *_args, **_kwargs: None,
-        test_only_transport=True,
-    )
-
-    with pytest.raises(ValueError, match="TUSHARE_TOKEN"):
-        client.post("stock_basic")
+@pytest.mark.parametrize(
+    "payload, message",
+    [
+        ({"code": 0, "data": {"fields": "ts_code", "items": []}}, "must be lists"),
+        ({"code": 0, "data": {"fields": ["ts_code", "trade_date"], "items": [["000001.SZ"]]}}, "row width"),
+        ({"code": 0, "data": {"fields": ["ts_code"], "items": [["000001.SZ"]]}}, "omitted requested fields"),
+    ],
+)
+def test_parser_fails_closed_on_malformed_schema(payload, message):
+    with pytest.raises(TushareSchemaError, match=message):
+        _parse(payload, fields=["ts_code", "trade_date"])

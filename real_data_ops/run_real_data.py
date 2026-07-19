@@ -79,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     profile = load_profile_json(args.profile_json) if args.profile_json else get_real_data_profile(args.profile_name)
     effective_provider = args.provider or profile.provider
     if args.allow_network and effective_provider == "tushare" and not args.fake_tushare_scenario:
-        print(json.dumps({"status": "blocked", "reason": "superseded_by_task055j"}, sort_keys=True))
+        print(json.dumps({"status": "blocked", "reason": "superseded_by_task055k_transport_broker"}, sort_keys=True))
         return 2
     datasets = _csv(args.datasets) or profile.datasets
     index_codes = _csv(args.index_codes) or profile.index_codes

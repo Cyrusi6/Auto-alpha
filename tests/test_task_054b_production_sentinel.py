@@ -136,6 +136,7 @@ def _receipt(invocation: str, component: str) -> dict:
     row = {
         "schema_version": "task_054b_component_receipt_v1",
         "invocation_id": invocation,
+        "evidence_scope": EVIDENCE_SCOPE,
         "component": component,
         "entrypoint": f"production.{component}",
         "source_hash": "1" * 64,
@@ -156,6 +157,7 @@ def _ledger(invocation: str) -> list[dict]:
         "schema_version": "task_054b_audited_read_ledger_v1",
         "sequence": 1,
         "invocation_id": invocation,
+        "evidence_scope": EVIDENCE_SCOPE,
         "principal": "research",
         "component": "loader",
         "dataset": "matrix",

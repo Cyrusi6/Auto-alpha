@@ -7,7 +7,7 @@ from task_055_f import network
 
 def _assert_canary_superseded() -> None:
     calls = {"credential": 0, "tls": 0, "client": 0}
-    with pytest.raises(network.Task055FNetworkError, match="superseded_by_task055j"):
+    with pytest.raises(network.Task055FNetworkError, match="superseded_by_task055k_transport_broker"):
         network.execute_canary(
             causal_manifest="unused",
             output_root="unused",
@@ -25,7 +25,7 @@ def _assert_canary_superseded() -> None:
 
 def _assert_resume_superseded() -> None:
     calls = {"credential": 0, "tls": 0, "client": 0}
-    with pytest.raises(network.Task055FNetworkError, match="superseded_by_task055j"):
+    with pytest.raises(network.Task055FNetworkError, match="superseded_by_task055k_transport_broker"):
         network.execute_l1_resume(
             causal_manifest="unused",
             canary_acceptance_manifest="unused",

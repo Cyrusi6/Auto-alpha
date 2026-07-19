@@ -144,7 +144,7 @@ def test_fake_transport_canary_executes_and_zero_budget_still_scans(tmp_path):
             return _envelope([_daily_row()])
 
     calls = {"credential": 0, "client": 0}
-    with pytest.raises(Exception, match="superseded_by_task055j"):
+    with pytest.raises(Exception, match="superseded_by_task055k_transport_broker"):
         execute_plan(
             plan=plan, output_root=tmp_path / "run", cache_roots=[], allow_network=True,
             sealed_plan_hash=plan["content_hash"], request_budget=1,

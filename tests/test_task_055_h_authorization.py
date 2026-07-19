@@ -262,7 +262,7 @@ def test_credential_file_rejects_inline_relative_symlink_and_forbidden_root(tmp_
     outside.write_text("token", encoding="utf-8")
     outside.chmod(0o600)
 
-    with pytest.raises(Exception, match="superseded_by_task055j"):
+    with pytest.raises(Exception, match="superseded_by_task055k_transport_broker"):
         load_file_credential_after_offline_gates(
             credential_file="inline-token",
             forbidden_root_identities={"governed": forbidden},
@@ -270,7 +270,7 @@ def test_credential_file_rejects_inline_relative_symlink_and_forbidden_root(tmp_
 
     link = tmp_path / "credential-link"
     link.symlink_to(outside)
-    with pytest.raises(Exception, match="superseded_by_task055j"):
+    with pytest.raises(Exception, match="superseded_by_task055k_transport_broker"):
         load_file_credential_after_offline_gates(
             credential_file=link.resolve().parent / link.name,
             forbidden_root_identities={"governed": forbidden},
@@ -279,7 +279,7 @@ def test_credential_file_rejects_inline_relative_symlink_and_forbidden_root(tmp_
     inside = forbidden / "credential.txt"
     inside.write_text("token", encoding="utf-8")
     inside.chmod(0o600)
-    with pytest.raises(Exception, match="superseded_by_task055j"):
+    with pytest.raises(Exception, match="superseded_by_task055k_transport_broker"):
         load_file_credential_after_offline_gates(
             credential_file=inside,
             forbidden_root_identities={"governed": forbidden},
@@ -290,7 +290,7 @@ def test_credential_file_rejects_wrong_permissions_and_owner(tmp_path: Path, mon
     credential = tmp_path / "credential.txt"
     credential.write_text("token", encoding="utf-8")
     credential.chmod(0o644)
-    with pytest.raises(Exception, match="superseded_by_task055j"):
+    with pytest.raises(Exception, match="superseded_by_task055k_transport_broker"):
         load_file_credential_after_offline_gates(
             credential_file=credential,
             forbidden_root_identities={},
@@ -299,7 +299,7 @@ def test_credential_file_rejects_wrong_permissions_and_owner(tmp_path: Path, mon
     credential.chmod(0o600)
     current_uid = os.getuid()
     monkeypatch.setattr("task_055_h.network.os.getuid", lambda: current_uid + 1)
-    with pytest.raises(Exception, match="superseded_by_task055j"):
+    with pytest.raises(Exception, match="superseded_by_task055k_transport_broker"):
         load_file_credential_after_offline_gates(
             credential_file=credential,
             forbidden_root_identities={},
@@ -345,7 +345,7 @@ def test_nonzero_budget_blocks_before_tls_and_credential(tmp_path: Path) -> None
         calls["credential"] += 1
         return "secret"
 
-    with pytest.raises(Exception, match="superseded_by_task055j"):
+    with pytest.raises(Exception, match="superseded_by_task055k_transport_broker"):
         ordered_future_canary_gate(
             authorization_seal=forged["manifest_path"],
             allow_network=True,
@@ -362,7 +362,7 @@ def test_parent_plan_seal_substitution_is_rejected_before_credential(tmp_path: P
     payload["task055g_plan_hash"] = "0" * 64
     forged = _republish_seal(tmp_path, payload)
     calls = {"tls": 0, "credential": 0}
-    with pytest.raises(Exception, match="superseded_by_task055j"):
+    with pytest.raises(Exception, match="superseded_by_task055k_transport_broker"):
         ordered_future_canary_gate(
             authorization_seal=forged["manifest_path"],
             allow_network=True,

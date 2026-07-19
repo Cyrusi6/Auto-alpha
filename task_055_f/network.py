@@ -113,7 +113,7 @@ def execute_canary(
     tls_checker: Callable[[], Mapping[str, Any]] = tls_preflight,
     client_factory: Callable[[LoadedCredential, Path], Any] | None = None,
 ) -> dict[str, Any]:
-    raise Task055FNetworkError("superseded_by_task055j")
+    raise Task055FNetworkError("superseded_by_task055k_transport_broker")
     causal = validate_causal_frontier(causal_manifest)
     plan = causal["network_plan"]
     _validate_plan(plan)
@@ -234,7 +234,7 @@ def execute_l1_resume(
     tls_checker: Callable[[], Mapping[str, Any]] = tls_preflight,
     client_factory: Callable[[LoadedCredential, Path], Any] | None = None,
 ) -> dict[str, Any]:
-    raise Task055FNetworkError("superseded_by_task055j")
+    raise Task055FNetworkError("superseded_by_task055k_transport_broker")
     causal = validate_causal_frontier(causal_manifest)
     plan = causal["network_plan"]
     _validate_plan(plan)
@@ -376,7 +376,7 @@ def _execute_one(
     client_factory: Callable[[LoadedCredential, Path], Any] | None,
     spend_root: Path,
 ) -> dict[str, Any]:
-    raise Task055FNetworkError("superseded_by_task055j")
+    raise Task055FNetworkError("superseded_by_task055k_transport_broker")
     if str(request.get("trade_date") or (request.get("params") or {}).get("trade_date") or "") > MAX_DATE:
         raise Task055FNetworkError("network_request_date_exceeds_boundary")
     if client_factory is None:

@@ -50,7 +50,7 @@ def test_synthetic_l2_s_r_and_empty_semantics():
 
 def test_native_positive_response_publishes_verified_partition_and_rebuild_dag(tmp_path: Path):
     calls = []
-    with pytest.raises(network_state.Task055GNetworkStateError, match="superseded_by_task055j"):
+    with pytest.raises(network_state.Task055GNetworkStateError, match="superseded_by_task055k_transport_broker"):
         network_state.execute_l1_canary(
             state_root=tmp_path / "state",
             plan_manifest={},

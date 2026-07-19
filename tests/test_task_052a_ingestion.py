@@ -19,7 +19,9 @@ from data_pipeline.ashare.request_normalization import (
     tushare_request_fingerprint,
 )
 from data_pipeline.ashare.providers.tushare import TushareAShareDataProvider
-from data_pipeline.ashare.providers.tushare_client import TushareHttpClient, TushareSchemaError
+from data_pipeline.ashare.providers.tushare_client import TushareSchemaError, parse_tushare_response_payload
+from data_pipeline.ashare.request_identity import TushareRequestIdentity
+from task_055_f.transport import CANONICAL_ORIGIN, transport_identity
 
 
 class GenericClient:
@@ -118,22 +120,23 @@ def test_cache_envelope_negative_attestation_and_fail_closed_validation(tmp_path
 
 
 def test_tushare_response_row_width_is_fail_closed():
-    class Response:
-        headers = {}
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return False
-
-        def read(self):
-            return json.dumps({"code": 0, "data": {"fields": ["ts_code", "trade_date"], "items": [["000001.SZ"]]}}).encode()
-
-    config = AShareDataConfig(provider="tushare", tushare_token="token")
-    client = TushareHttpClient(config, urlopen=lambda *args, **kwargs: Response(), test_only_transport=True)
+    params = {"trade_date": "20240102"}
+    fields = ["ts_code", "trade_date"]
+    identity = TushareRequestIdentity(
+        tushare_request_fingerprint("suspend_d", params=params, fields=fields),
+        transport_identity("suspend_d", params, fields),
+        "e" * 64,
+    )
     with pytest.raises(TushareSchemaError, match="row width"):
-        client.post("suspend_d", {"trade_date": "20240102"}, "ts_code,trade_date")
+        parse_tushare_response_payload(
+            {"code": 0, "data": {"fields": fields, "items": [["000001.SZ"]]}},
+            api_name="suspend_d",
+            params=params,
+            requested_fields=fields,
+            identity=identity,
+            duration_seconds=0.0,
+            endpoint=CANONICAL_ORIGIN,
+        )
 
 
 def test_provider_normalizes_suspensions_and_stock_st_without_legacy_fields():

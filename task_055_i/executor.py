@@ -55,7 +55,7 @@ def execute_single_canary(
     credential_file: str | Path,
     allow_network: bool,
 ) -> dict[str, Any]:
-    raise Task055IExecutionError("superseded_by_task055j")
+    raise Task055IExecutionError("superseded_by_task055k_transport_broker")
 
 
 def verify_and_accept_canary(

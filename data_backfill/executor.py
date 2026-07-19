@@ -69,7 +69,7 @@ def execute_backfill_plan(
     direct_append: bool = False,
 ) -> BackfillRunReport:
     if config.provider == "tushare" and allow_network and fake_tushare_scenario is None:
-        raise RuntimeError("superseded_by_task055j")
+        raise RuntimeError("superseded_by_task055k_transport_broker")
     started = utc_now()
     root = Path(output_dir)
     root.mkdir(parents=True, exist_ok=True)

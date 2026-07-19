@@ -49,7 +49,9 @@ from .audit import (
 )
 
 
-EVIDENCE_SCOPE = "real_production"
+REAL_PRODUCTION_SCOPE = "real_production"
+SYNTHETIC_REHEARSAL_SCOPE = "synthetic_rehearsal_only"
+EVIDENCE_SCOPE = REAL_PRODUCTION_SCOPE
 PATHS = ("raw_local", "raw_scheduler", "matrix_local", "matrix_scheduler")
 MUTATIONS = ("baseline", "post_cutoff", "inside_cutoff")
 REQUIRED_COMPONENTS = (
@@ -83,6 +85,7 @@ class ProductionSentinelConfig:
     holdout_start_date: str = "20240531"
     label_horizon: int = 2
     timeout_seconds: int = 1800
+    evidence_scope: str = REAL_PRODUCTION_SCOPE
 
 
 @dataclass(frozen=True)
@@ -95,6 +98,7 @@ class SentinelRunSpec:
     config_path: str
     output_dir: str
     job_id: str | None = None
+    evidence_scope: str = REAL_PRODUCTION_SCOPE
 
 
 @dataclass(frozen=True)
@@ -108,6 +112,8 @@ class ProductionSentinelPlan:
 def build_production_sentinel_plan(config: ProductionSentinelConfig) -> ProductionSentinelPlan:
     """Build the only accepted 12-run plan from governed artifacts."""
     _validate_config_inputs(config)
+    if config.evidence_scope not in {REAL_PRODUCTION_SCOPE, SYNTHETIC_REHEARSAL_SCOPE}:
+        raise RuntimeError("sentinel evidence_scope invalid")
     output_root = Path(config.output_root)
     output_root.mkdir(parents=True, exist_ok=True)
     mutation_manifest = _prepare_mutation_generations(config, output_root / "mutation_generations")
@@ -127,7 +133,7 @@ def build_production_sentinel_plan(config: ProductionSentinelConfig) -> Producti
             run_dir = output_root / "runs" / mutation / path_name
             worker_config = {
                 "schema_version": "task_054b_worker_config_v1",
-                "evidence_scope": EVIDENCE_SCOPE,
+                "evidence_scope": config.evidence_scope,
                 "invocation_id": invocation,
                 "path_name": path_name,
                 "mutation_kind": mutation,
@@ -161,6 +167,7 @@ def build_production_sentinel_plan(config: ProductionSentinelConfig) -> Producti
                     config_path=str(worker_config_path),
                     output_dir=str(run_dir),
                     job_id=job_id,
+                    evidence_scope=config.evidence_scope,
                 )
             )
     semantic = {
@@ -189,7 +196,7 @@ def run_task054b_production_sentinel(config: ProductionSentinelConfig) -> dict[s
     proof, blockers = _validate_cross_run_invariants(executions)
     payload = {
         "schema_version": "task_054b_production_sentinel_v1",
-        "evidence_scope": EVIDENCE_SCOPE,
+        "evidence_scope": config.evidence_scope,
         "status": "passed" if not blockers else "blocked",
         "plan_hash": plan.plan_hash,
         "mutation_manifest_sha256": sha256_file(plan.mutation_manifest_path),
@@ -201,7 +208,11 @@ def run_task054b_production_sentinel(config: ProductionSentinelConfig) -> dict[s
     payload["content_hash"] = _hash_json(payload)
     artifact_path = output_root / "task_054b_production_sentinel.json"
     atomic_json(artifact_path, payload)
-    validate_task054b_production_sentinel(artifact_path, scheduler_state_dir=output_root / "scheduler_state")
+    validate_task054b_production_sentinel(
+        artifact_path,
+        scheduler_state_dir=output_root / "scheduler_state",
+        expected_evidence_scope=config.evidence_scope,
+    )
     return payload | {"artifact_path": str(artifact_path)}
 
 
@@ -209,10 +220,11 @@ def validate_task054b_production_sentinel(
     artifact: str | Path | Mapping[str, Any],
     *,
     scheduler_state_dir: str | Path,
+    expected_evidence_scope: str = REAL_PRODUCTION_SCOPE,
 ) -> dict[str, Any]:
     payload = json.loads(Path(artifact).read_text(encoding="utf-8")) if not isinstance(artifact, Mapping) else dict(artifact)
-    if payload.get("evidence_scope") != EVIDENCE_SCOPE:
-        raise RuntimeError("production sentinel evidence_scope must equal real_production")
+    if payload.get("evidence_scope") != expected_evidence_scope:
+        raise RuntimeError("production sentinel evidence_scope mismatch")
     if payload.get("status") != "passed" or payload.get("blockers"):
         raise RuntimeError("blocked sentinel cannot be wrapped as passed")
     executions = payload.get("executions") or {}
@@ -226,12 +238,21 @@ def validate_task054b_production_sentinel(
     heartbeats = _read_jsonl(state_dir / "compute_heartbeats.jsonl")
     for mutation, path_name in sorted(expected):
         row = executions[mutation][path_name]
-        if row.get("evidence_scope") != EVIDENCE_SCOPE or row.get("status") != "success":
+        if row.get("evidence_scope") != expected_evidence_scope or row.get("status") != "success":
             raise RuntimeError(f"invalid production path result:{mutation}:{path_name}")
         ledger = row.get("read_ledger") or []
         receipts = row.get("component_receipts") or []
-        validate_read_ledger(ledger, invocation_id=row["invocation_id"])
-        validate_component_receipts(receipts, invocation_id=row["invocation_id"], required_components=REQUIRED_COMPONENTS)
+        validate_read_ledger(
+            ledger,
+            invocation_id=row["invocation_id"],
+            expected_evidence_scope=expected_evidence_scope,
+        )
+        validate_component_receipts(
+            receipts,
+            invocation_id=row["invocation_id"],
+            required_components=REQUIRED_COMPONENTS,
+            expected_evidence_scope=expected_evidence_scope,
+        )
         if path_name.endswith("scheduler"):
             evidence = row.get("scheduler_evidence") or {}
             job_id = evidence.get("job_id")
@@ -279,7 +300,7 @@ def _run_scheduler_workers(runs: Sequence[SentinelRunSpec], output_root: Path, *
             required_device_type=ComputeDeviceType.CPU,
             max_duration_seconds=float(timeout),
             max_retries=0,
-            metadata={"task": "054-B", "evidence_scope": EVIDENCE_SCOPE, "invocation_id": run.invocation_id},
+            metadata={"task": "054-B", "evidence_scope": run.evidence_scope, "invocation_id": run.invocation_id},
         )
         for run in runs
     ]
@@ -327,8 +348,9 @@ def _run_scheduler_workers(runs: Sequence[SentinelRunSpec], output_root: Path, *
 
 def _run_worker(config_path: str | Path) -> dict[str, Any]:
     config = json.loads(Path(config_path).read_text(encoding="utf-8"))
-    if config.get("evidence_scope") != EVIDENCE_SCOPE:
-        raise RuntimeError("worker evidence_scope must equal real_production")
+    evidence_scope = str(config.get("evidence_scope") or "")
+    if evidence_scope not in {REAL_PRODUCTION_SCOPE, SYNTHETIC_REHEARSAL_SCOPE}:
+        raise RuntimeError("worker evidence_scope invalid")
     expected_hashes = config.get("immutable_input_hashes") or {}
     actual_hashes = {
         "feature_manifest": sha256_file(config["feature_manifest_path"]),
@@ -345,22 +367,37 @@ def _run_worker(config_path: str | Path) -> dict[str, Any]:
         invocation_id=config["invocation_id"],
         principal="research",
         research_end_date=config["research_end_date"],
+        evidence_scope=evidence_scope,
     )
     supervisor_broker = AuditedReadBroker(
         output / LEDGER_FILE,
         invocation_id=config["invocation_id"],
         principal="projection_publisher",
         research_end_date=config["research_end_date"],
+        evidence_scope=evidence_scope,
     )
-    receipts = ComponentReceiptRecorder(output / RECEIPTS_FILE, invocation_id=config["invocation_id"])
+    receipts = ComponentReceiptRecorder(
+        output / RECEIPTS_FILE,
+        invocation_id=config["invocation_id"],
+        evidence_scope=evidence_scope,
+    )
     result = _execute_production_components(config, broker, supervisor_broker, receipts)
     ledger_rows = broker.rows()
     receipt_rows = receipts.rows()
-    validate_read_ledger(ledger_rows, invocation_id=config["invocation_id"])
-    validate_component_receipts(receipt_rows, invocation_id=config["invocation_id"], required_components=REQUIRED_COMPONENTS)
+    validate_read_ledger(
+        ledger_rows,
+        invocation_id=config["invocation_id"],
+        expected_evidence_scope=evidence_scope,
+    )
+    validate_component_receipts(
+        receipt_rows,
+        invocation_id=config["invocation_id"],
+        required_components=REQUIRED_COMPONENTS,
+        expected_evidence_scope=evidence_scope,
+    )
     payload = {
         "schema_version": "task_054b_path_result_v1",
-        "evidence_scope": EVIDENCE_SCOPE,
+        "evidence_scope": evidence_scope,
         "status": "success",
         "invocation_id": config["invocation_id"],
         "path_name": config["path_name"],
@@ -883,7 +920,7 @@ def _load_and_validate_path_result(run: SentinelRunSpec) -> dict[str, Any]:
     if not result_path.is_file():
         raise RuntimeError(f"sentinel path result missing:{run.invocation_id}")
     payload = json.loads(result_path.read_text(encoding="utf-8"))
-    if payload.get("evidence_scope") != EVIDENCE_SCOPE or payload.get("invocation_id") != run.invocation_id:
+    if payload.get("evidence_scope") != run.evidence_scope or payload.get("invocation_id") != run.invocation_id:
         raise RuntimeError(f"sentinel path identity/scope mismatch:{run.invocation_id}")
     if payload.get("path_name") != run.path_name or payload.get("mutation_kind") != run.mutation_kind:
         raise RuntimeError(f"sentinel path semantics mismatch:{run.invocation_id}")

@@ -148,7 +148,7 @@ def test_l1_canary_resume_are_native_schema_artifacts_and_can_be_applied(tmp_pat
         calls.append(request["transport_hash"])
         return _result(request, suffix=f"l1-{len(calls)}")
 
-    with pytest.raises(network_state.Task055GNetworkStateError, match="superseded_by_task055j"):
+    with pytest.raises(network_state.Task055GNetworkStateError, match="superseded_by_task055k_transport_broker"):
         network_state.execute_l1_canary(
             state_root=state_root,
             plan_manifest=plan,
@@ -156,7 +156,7 @@ def test_l1_canary_resume_are_native_schema_artifacts_and_can_be_applied(tmp_pat
             sealed_plan_hash=plan["plan_hash"],
             request_executor=executor,
         )
-    with pytest.raises(network_state.Task055GNetworkStateError, match="superseded_by_task055j"):
+    with pytest.raises(network_state.Task055GNetworkStateError, match="superseded_by_task055k_transport_broker"):
         network_state.execute_l1_resume(
             state_root=state_root,
             plan_manifest=plan,
@@ -305,7 +305,7 @@ def test_l2_canary_resume_and_apply_are_separate_and_offline_by_default(tmp_path
         return _result(request, suffix=f"network-{len(calls)}")
 
     before = network_state.ledger_summary(state_root)["physical_attempt_count"]
-    with pytest.raises(network_state.Task055GNetworkStateError, match="superseded_by_task055j"):
+    with pytest.raises(network_state.Task055GNetworkStateError, match="superseded_by_task055k_transport_broker"):
         network_state.execute_l2_canary(
             state_root=state_root,
             plan_manifest=l2["manifest_path"],
@@ -314,7 +314,7 @@ def test_l2_canary_resume_and_apply_are_separate_and_offline_by_default(tmp_path
     assert calls == []
     assert network_state.ledger_summary(state_root)["physical_attempt_count"] == before
 
-    with pytest.raises(network_state.Task055GNetworkStateError, match="superseded_by_task055j"):
+    with pytest.raises(network_state.Task055GNetworkStateError, match="superseded_by_task055k_transport_broker"):
         network_state.execute_l2_resume(
             state_root=state_root,
             plan_manifest=l2["manifest_path"],

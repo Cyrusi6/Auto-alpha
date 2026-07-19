@@ -45,12 +45,14 @@ class AuditedReadBroker:
         invocation_id: str,
         principal: str,
         research_end_date: str,
+        evidence_scope: str = "real_production",
     ):
         self.ledger_path = Path(ledger_path)
         self.ledger_path.parent.mkdir(parents=True, exist_ok=True)
         self.invocation_id = invocation_id
         self.principal = principal
         self.research_end_date = research_end_date
+        self.evidence_scope = evidence_scope
 
     def read_json(self, path: str | Path, *, component: str, dataset: str, date_range: Sequence[str] | None = None) -> Any:
         target = Path(path)
@@ -108,6 +110,7 @@ class AuditedReadBroker:
             "schema_version": READ_LEDGER_SCHEMA,
             "sequence": sequence,
             "invocation_id": self.invocation_id,
+            "evidence_scope": self.evidence_scope,
             "principal": self.principal,
             "component": component,
             "dataset": dataset,
@@ -130,10 +133,17 @@ class AuditedReadBroker:
 class ComponentReceiptRecorder:
     """Records a receipt around a direct call to a public production entrypoint."""
 
-    def __init__(self, receipt_path: str | Path, *, invocation_id: str):
+    def __init__(
+        self,
+        receipt_path: str | Path,
+        *,
+        invocation_id: str,
+        evidence_scope: str = "real_production",
+    ):
         self.receipt_path = Path(receipt_path)
         self.receipt_path.parent.mkdir(parents=True, exist_ok=True)
         self.invocation_id = invocation_id
+        self.evidence_scope = evidence_scope
 
     def invoke(
         self,
@@ -167,6 +177,7 @@ class ComponentReceiptRecorder:
             receipt = {
                 "schema_version": RECEIPT_SCHEMA,
                 "invocation_id": self.invocation_id,
+                "evidence_scope": self.evidence_scope,
                 "component": component,
                 "entrypoint": f"{entrypoint.__module__}.{entrypoint.__qualname__}",
                 "source_hash": semantic_source_hash(entrypoint),
@@ -190,7 +201,13 @@ class ComponentReceiptRecorder:
         return [json.loads(line) for line in self.receipt_path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def validate_read_ledger(rows: Sequence[Mapping[str, Any]], *, invocation_id: str, require_research_safe: bool = True) -> dict[str, Any]:
+def validate_read_ledger(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    invocation_id: str,
+    require_research_safe: bool = True,
+    expected_evidence_scope: str = "real_production",
+) -> dict[str, Any]:
     if not rows:
         raise RuntimeError("production read ledger is empty")
     previous = "0" * 64
@@ -199,6 +216,8 @@ def validate_read_ledger(rows: Sequence[Mapping[str, Any]], *, invocation_id: st
         entry_hash = row.pop("entry_hash", None)
         if row.get("schema_version") != READ_LEDGER_SCHEMA or row.get("invocation_id") != invocation_id:
             raise RuntimeError("read ledger identity/schema mismatch")
+        if row.get("evidence_scope") != expected_evidence_scope:
+            raise RuntimeError("read ledger evidence scope mismatch")
         if int(row.get("sequence", 0)) != expected_sequence or row.get("previous_entry_hash") != previous:
             raise RuntimeError("read ledger chain mismatch")
         if entry_hash != _hash_json(row):
@@ -217,6 +236,7 @@ def validate_component_receipts(
     *,
     invocation_id: str,
     required_components: Sequence[str],
+    expected_evidence_scope: str = "real_production",
 ) -> dict[str, Any]:
     if not rows:
         raise RuntimeError("production component receipts are empty")
@@ -227,6 +247,8 @@ def validate_component_receipts(
         receipt_hash = row.pop("receipt_hash", None)
         if row.get("schema_version") != RECEIPT_SCHEMA or row.get("invocation_id") != invocation_id:
             raise RuntimeError("component receipt identity/schema mismatch")
+        if row.get("evidence_scope") != expected_evidence_scope:
+            raise RuntimeError("component receipt evidence scope mismatch")
         if receipt_hash != _hash_json(row):
             raise RuntimeError("component receipt hash mismatch")
         if row.get("status") != "success":
