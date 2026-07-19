@@ -143,6 +143,8 @@ def _native_application_root(manifest_path: Path) -> Path:
 def _resolve_matrix_root(native_root: Path, context: Mapping[str, Any], content_hash: str) -> Path:
     candidates = []
     for path in native_root.rglob("task_052a_strict_matrix_manifest.json"):
+        if "firewall_sentinel" in path.parts:
+            continue
         try:
             if read_json(path).get("content_hash") == content_hash:
                 candidates.append(path.parent)

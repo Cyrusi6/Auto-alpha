@@ -25,6 +25,7 @@ from task_055_k.broker import (
     validate_transport_receipt,
 )
 from task_055_k.contracts import CANARY
+from task_055_k.independent import _resolve_matrix_root
 from task_055_k.signing import EphemeralReceiptSigner, Task055KSigningError, verify_signature
 from task_055_k.source_tree import git_index_source_entries
 
@@ -242,3 +243,36 @@ def test_ephemeral_signature_round_trip_and_substitution_rejection():
     verify_signature(public_key_pem=signer.public_key_pem, payload=b"receipt", signature_b64=signature)
     with pytest.raises(Task055KSigningError):
         verify_signature(public_key_pem=signer.public_key_pem, payload=b"replacement", signature_b64=signature)
+
+
+def test_independent_matrix_resolution_ignores_sentinel_copies(tmp_path: Path):
+    content_hash = "a" * 64
+    native_root = tmp_path / "native_task055j_example"
+    application_matrix = native_root / "stages" / "application_example" / "matrix" / "generation"
+    sentinel_matrix = (
+        native_root
+        / "stages"
+        / "application_example"
+        / "firewall_sentinel"
+        / "mutation_generations"
+        / "baseline"
+        / "matrix"
+    )
+    for root in (application_matrix, sentinel_matrix):
+        root.mkdir(parents=True)
+        (root / "task_052a_strict_matrix_manifest.json").write_text(
+            json.dumps({"content_hash": content_hash}), encoding="utf-8"
+        )
+    parent_matrix = tmp_path / "different_parent"
+    parent_matrix.mkdir()
+    (parent_matrix / "task_052a_strict_matrix_manifest.json").write_text(
+        json.dumps({"content_hash": "b" * 64}), encoding="utf-8"
+    )
+
+    resolved = _resolve_matrix_root(
+        native_root,
+        {"matrix_root": str(parent_matrix)},
+        content_hash,
+    )
+
+    assert resolved == application_matrix.resolve()
