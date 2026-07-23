@@ -552,3 +552,15 @@ Task 055-J 最终保持 `task055j_single_canary_production_closure_blocked_no_ne
 Positive/empty 两个真实 production-context rehearsal 均运行 primary、独立 sibling 和 primary immutable resume。Positive 实际重建 raw repair、freeze、strict matrix、v3 tensor、20/20 materialization 和 12-path Sentinel；两分支均由独立 verifier 从 truth、matrix、公司行动和 Fee 规则重算 net/all-in 各 100 条路径。当前终态均为 `causal_valuation_blocked`，不表示 simulator、Alpha 或认证通过。
 
 顶层状态为 `task055k_single_canary_engineering_ready_waiting_operator_authorization_no_network_executed`，`network_authorized=false`、`operational_state_unproven=true`。Git-safe evidence 位于 `evidence/task_055_k/task055k_scrubbed_evidence.json`；其 source root 使用 Git blob 与 `100644/100755` index mode，可在 clean clone 中用标准库 verifier 重验。旧 Task 055-J evidence 因绑定服务器实际权限位而明确不可移植，未被改写。
+
+### Task 055-KR 单笔查询纠偏闭环
+
+Task 055-KR 不改写旧 Task 055-K evidence，而是通过新的 immutable supersession lineage 将 `evidence/task_055_k/task055k_scrubbed_evidence.json` 明确降级为 `superseded=true`、`executable=false`、`authorization_eligible=false`。新的 implementation commit 为 `21fb2f78a694d1876b74c156b96c8c91c98d6e82`，source root 为 `a4d958419bec8160cda2741cbbbc6782e176cc83e9e208c4f65a18616a9bad35`。
+
+唯一真实 transport 边界收敛到 Task 055-KR gateway。最终 HTTPS 调用点会重新验证 canonical authority、checkpoint、reviewed candidate seal、operator authorization、完整 17-key 顺序、首个固定 canary、三类 identity、attempt reservation、公钥、双 journal、single-flight lock、TLS 和 credential budget；Task 052 与 Task 055-C/D/F/G/H/I/J 旧入口及通用 Tushare client 均在凭据或 transport 前 fail closed。
+
+Positive/empty 两个 production-shaped rehearsal 的 primary 与 sibling 都实际执行 12 个阶段，primary resume 均为 12/12 immutable hit。两分支分别由独立 verifier 重算 net/all-in 各 100 个终态，当前均为 `causal_valuation_blocked`。恢复矩阵覆盖 37 个通用 stage 边界和 10 个真实生产组件边界，包括 Sentinel、net/all-in replay 与 final pointer。
+
+最终状态为 `task055k_single_canary_engineering_ready_waiting_operator_authorization_no_network_executed`。candidate authority/checkpoint/final seal/rehearsal/report root 分别为 `9960eafb...5981`、`9fded99c...e6d4`、`0b371a92...062e`、`679754fc...ed76`、`ab691932...a6f4`。credential、Tushare POST、其他 HTTP、GPU、prospective holdout access 均为 0，最大读取日期为 `2026-06-30`；`network_authorized=false`、`authorization_eligible=false`、`operational_state_unproven=true`，所有认证和实盘 readiness 继续为 false。
+
+新的 Git-safe evidence 位于 `evidence/task_055_k/task055kr_scrubbed_evidence.json`，使用 `python task_055_k/verifier.py evidence/task_055_k/task055kr_scrubbed_evidence.json --repository-root .` 做标准库离线验证；该命令不授权真实请求。
