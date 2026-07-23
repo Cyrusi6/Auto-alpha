@@ -92,11 +92,24 @@ def _task055k_patterns(*names: str) -> list[str]:
         pattern
         for name in names
         for pattern in (
-            f"*/task_055_k*/{name}",
-            f"*/task_055_k*/**/{name}",
+            f"*/task_055_k_20260719/{name}",
+            f"*/task_055_k_20260719/**/{name}",
             f"*/task055k/{name}",
             f"*/task055k/**/{name}",
             f"*/network_authority/task055k_single_canary_v1/**/{name}",
+        )
+    ]
+
+
+def _task055kr_patterns(*names: str) -> list[str]:
+    return [
+        pattern
+        for name in names
+        for pattern in (
+            f"*/task_055_k_kr_*/{name}",
+            f"*/task_055_k_kr_*/**/{name}",
+            f"*/network_authority/task055k_single_canary_v2/**/{name}",
+            f"*/evidence/task_055_k/{name}",
         )
     ]
 
@@ -1397,6 +1410,189 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         "task055k_scrubbed_evidence",
         ["schema_version", "status", "implementation_commit", "parent_task055j_final_seal_hash", "ordered_exact_daily_keys", "ordered_key_root", "canary", "budgets", "source_entries", "source_root", "application_role_roots", "artifact_catalog", "artifact_catalog_root", "lineage", "broker_contract_hash", "threat_model", "network_authorized", "operator_authorization_required", "operational_state_unproven", "engineering_blockers", "certification_blockers", "certification_ready", "portfolio_ready", "optimizer_ready", "paper_ready", "live_ready", "network_execution", "contains_absolute_paths", "contains_market_values", "contains_credentials", "task055j_source_evidence_portable", "git_attestation_required", "content_hash"],
         _task055k_patterns("task055k_scrubbed_evidence.json"),
+    ),
+    "task055kr_git_index_source_seal": _definition(
+        "task055kr_git_index_source_seal",
+        ["schema_version", "status", "implementation_commit", "identity_basis", "entries", "entry_count", "source_root", "server_permission_audit", "content_hash", "generation_id"],
+        _task055kr_patterns("source_seal.json"),
+    ),
+    "task055kr_parent_verification": _definition(
+        "task055kr_parent_verification",
+        ["schema_version", "status", "parent_final_execution_seal_content_hash", "runtime_authority_content_hash", "execution_authorization_content_hash", "application_preflight_content_hash", "application_tree_content_hash", "source_tree_seal_content_hash", "rehearsal_content_hash", "rehearsal_verification_content_hash", "final_report_content_hash", "final_verification_content_hash", "ordered_exact_daily_keys", "ordered_key_root", "canary", "high_assurance_limitation", "functional_single_read_canary_blocked_by_limitation", "operational_state_unproven", "content_hash", "generation_id"],
+        _task055kr_patterns("parent_verification.json"),
+    ),
+    "task055kr_historical_supersession": _definition(
+        "task055kr_historical_supersession",
+        ["schema_version", "status", "superseded", "executable", "authorization_eligible", "historical_artifacts", "reason_codes", "content_hash", "generation_id"],
+        _task055kr_patterns("historical_supersession.json"),
+    ),
+    "task055kr_candidate_authority": _definition(
+        "task055kr_candidate_authority",
+        ["schema_version", "status", "implementation_commit", "parent_task055j_final_seal_hash", "parent_verification_content_hash", "source_seal_content_hash", "source_root", "ordered_exact_daily_keys", "ordered_key_count", "ordered_key_root", "canary", "budgets", "network_authorized", "credential_read_count", "tushare_post_count", "other_http_count", "prospective_holdout_accessed", "operational_state_unproven", "historical_ready_evidence_superseded", "root_identities", "initial_network_journal", "initial_transport_spend", "content_hash", "generation_id"],
+        _task055kr_patterns("candidate_authority.json"),
+    ),
+    "task055kr_candidate_checkpoint": _definition(
+        "task055kr_candidate_checkpoint",
+        ["schema_version", "status", "candidate_authority_content_hash", "implementation_commit", "source_root", "ordered_exact_daily_keys", "ordered_key_root", "canary", "budgets", "root_identities", "initial_network_journal", "initial_transport_spend", "lineage", "broker_public_contract", "network_authorized", "authorization_eligible", "operator_authorization_required", "real_canary_executed", "credential_read_count", "tushare_post_count", "other_http_count", "prospective_holdout_accessed", "content_hash", "generation_id"],
+        _task055kr_patterns("candidate_checkpoint.json"),
+    ),
+    "task055kr_final_candidate_seal": _definition(
+        "task055kr_final_candidate_seal",
+        ["schema_version", "status", "implementation_commit", "source_root", "ordered_exact_daily_keys", "ordered_key_root", "canary", "budgets", "root_identities", "initial_network_journal", "initial_transport_spend", "broker_contract_hash", "execution_lineage", "engineering_validation", "network_authorized", "authorization_eligible", "operator_authorization_required", "real_canary_executed", "credential_read_count", "tushare_post_count", "other_http_count", "gpu_job_count", "prospective_holdout_accessed", "operational_state_unproven", "content_hash", "generation_id"],
+        _task055kr_patterns("final_candidate_seal.json"),
+    ),
+    "task055kr_attempt_reservation": _definition(
+        "task055kr_attempt_reservation",
+        ["schema_version", "status", "evidence_scope", "production_seal_eligible", "candidate_checkpoint_content_hash", "final_candidate_seal_content_hash", "operator_authorization_content_hash", "attempt_id", "request_fingerprint", "transport_identity", "evidence_use_identity", "broker_contract_hash", "broker_public_key_pem_b64", "broker_public_key_sha256", "private_key_persisted", "content_hash", "generation_id"],
+        _task055kr_patterns("attempt_reservation.json"),
+    ),
+    "task055kr_transport_receipt": _definition(
+        "task055kr_transport_receipt",
+        ["schema_version", "status", "evidence_scope", "production_seal_eligible", "candidate_checkpoint_content_hash", "final_candidate_seal_content_hash", "operator_authorization_content_hash", "attempt_reservation_content_hash", "attempt_id", "request_fingerprint", "transport_identity", "evidence_use_identity", "api_name", "params", "fields", "tls_attestation", "endpoint", "provider_api_version", "response_code", "response_message", "response_payload_hash", "response_payload", "response_fields", "item_count", "records_hash", "records", "empty_response_semantics", "contains_credential", "broker_contract_hash", "signature", "content_hash", "generation_id"],
+        _task055kr_patterns("transport_receipt.json"),
+    ),
+    "task055kr_canary_acceptance": _definition(
+        "task055kr_canary_acceptance",
+        ["schema_version", "status", "evidence_scope", "production_seal_eligible", "candidate_checkpoint_content_hash", "final_candidate_seal_content_hash", "operator_authorization_content_hash", "attempt_reservation_content_hash", "transport_receipt_content_hash", "transport_receipt_sha256", "cache_relative_path", "cache_sha256", "request", "item_count", "empty_response_semantics", "resume_authorized", "content_hash", "generation_id"],
+        _task055kr_patterns("canary_acceptance.json"),
+    ),
+    "task055kr_generation_pointer": _definition(
+        "task055kr_generation_pointer",
+        ["content_hash", "generation_id", "manifest"],
+        _task055kr_patterns("current.json"),
+        optional=["schema_version"],
+    ),
+    "task055kr_durable_journal_checkpoint": _definition(
+        "task055kr_durable_journal_checkpoint",
+        ["name", "root", "sequence"],
+        _task055kr_patterns("checkpoint.json"),
+    ),
+    "task055kr_durable_journal_events": _definition(
+        "task055kr_durable_journal_events",
+        ["event_id", "event", "sequence", "previous_event_hash", "event_hash"],
+        _task055kr_patterns("events.jsonl"),
+        kind="jsonl",
+        allow_empty=False,
+    ),
+    "task055kr_tushare_cache_envelope": _definition(
+        "task055kr_tushare_cache_envelope",
+        ["schema_version", "request", "request_fingerprint", "provider", "response", "records", "metadata", "source_code_hash", "code_semantic_hash", "endpoint_schema_proof"],
+        ["*/task_055_k_kr_*/**/.cache/tushare/*.json"],
+    ),
+    "task055kr_response_acceptance_validation": _definition(
+        "task055kr_response_acceptance_validation",
+        ["schema_version", "status", "evidence_scope", "candidate_checkpoint_content_hash", "acceptance_content_hash", "reservation_content_hash", "receipt_content_hash", "cache_sha256", "request", "item_count", "empty_response_semantics", "content_hash", "generation_id"],
+        _task055kr_patterns("acceptance_validation.json"),
+    ),
+    "task055kr_raw_repair": _definition(
+        "task055kr_raw_repair",
+        ["schema_version", "status", "security_date", "parent_freeze_content_hash", "content_hash", "generation_id"],
+        _task055kr_patterns("raw_repair.json"),
+        optional=["row_hash", "replaced_existing_row", "merged_daily_bars_sha256", "source_transport_hash"],
+    ),
+    "task055kr_parent_freeze_reference": _definition(
+        "task055kr_parent_freeze_reference",
+        ["schema_version", "status", "freeze_content_hash", "content_hash", "generation_id"],
+        _task055kr_patterns("freeze_reference.json"),
+    ),
+    "task055kr_parent_generation_reference": _definition(
+        "task055kr_parent_generation_reference",
+        ["schema_version", "status", "role", "content_hash_reference", "context_root", "content_hash", "generation_id"],
+        _task055kr_patterns("matrix_reference.json", "tensor_reference.json"),
+    ),
+    "task055kr_parent_materializations_reference": _definition(
+        "task055kr_parent_materializations_reference",
+        ["schema_version", "status", "exact20_identity_root", "materialization_root", "content_hash", "generation_id"],
+        _task055kr_patterns("materializations_reference.json"),
+    ),
+    "task055kr_sentinel_reference": _definition(
+        "task055kr_sentinel_reference",
+        ["schema_version", "status", "cache_identity", "sentinel_content_hash", "exact_run_count", "evidence_scope", "content_hash", "generation_id"],
+        _task055kr_patterns("sentinel_reference.json"),
+    ),
+    "task055kr_application_final": _definition(
+        "task055kr_application_final",
+        ["schema_version", "status", "branch", "net_replay_content_hash", "all_in_replay_content_hash", "net_terminal_counts", "all_in_terminal_counts", "net_run_count", "all_in_run_count", "frontier_union", "frontier_union_root", "dynamic_l2_content_hash", "dynamic_l2_status", "candidate_reselection_allowed", "content_hash", "generation_id"],
+        _task055kr_patterns("application_final.json"),
+    ),
+    "task055kr_dynamic_l2_plan": _definition(
+        "task055kr_dynamic_l2_plan",
+        ["schema_version", "status", "parent_truth_content_hash", "parent_replay_content_hash", "requests", "request_count", "network_executed", "resume_authorized", "application_support", "daily_empty_semantics", "content_hash", "generation_id"],
+        _task055kr_patterns("dynamic_l2_plan.json"),
+    ),
+    "task055kr_application_lock_identity": _definition(
+        "task055kr_application_lock_identity",
+        ["st_dev", "st_ino"],
+        _task055kr_patterns("application_lock_identity.json"),
+    ),
+    "task055kr_valuation_blockers": _definition(
+        "task055kr_valuation_blockers",
+        ["ts_code", "trade_date", "reporting_point", "reason"],
+        _task055kr_patterns("blockers.jsonl"),
+        kind="jsonl",
+    ),
+    "task055kr_fee_replay_run_rows": _definition(
+        "task055kr_fee_replay_run_rows",
+        ["factor_id", "scenario", "terminal_state"],
+        _task055kr_patterns("run_rows.jsonl"),
+        kind="jsonl",
+        allow_empty=False,
+    ),
+    "task055kr_fee_replay_held_marks": _definition(
+        "task055kr_fee_replay_held_marks",
+        ["factor_id", "scenario", "ts_code", "trade_date", "reporting_point"],
+        _task055kr_patterns("held_marks.jsonl"),
+        kind="jsonl",
+    ),
+    "task055kr_application_stage": _definition(
+        "task055kr_application_stage",
+        ["schema_version", "status", "stage_name", "ordinal", "application_spec_hash", "evidence_scope", "production_seal_eligible", "input_root", "canonical_input_roots", "validator_fqn", "native_outputs", "native_artifacts", "semantic_summary", "cache_status", "execution_count", "content_hash", "generation_id"],
+        _task055kr_patterns("stage_manifest.json"),
+    ),
+    "task055kr_application_journal": _definition(
+        "task055kr_application_journal",
+        ["schema_version", "status", "application_spec_hash", "evidence_scope", "stages", "stage_count", "final_stage_root", "journal_checkpoint", "stage_execution_counts", "content_hash", "generation_id"],
+        _task055kr_patterns("stage_journal.json"),
+    ),
+    "task055kr_staged_application": _definition(
+        "task055kr_staged_application",
+        ["schema_version", "status", "evidence_scope", "production_seal_eligible", "application_spec_hash", "stage_journal_content_hash", "stage_journal_relative_path", "stage_count", "stages", "final_stage_root", "final_outputs", "terminal_pair_count", "terminal_counts", "candidate_reselection_allowed", "network_executed", "content_hash", "generation_id"],
+        _task055kr_patterns("response_application.json"),
+    ),
+    "task055kr_fee_replay": _definition(
+        "task055kr_fee_replay",
+        ["schema_version", "status", "evidence_scope", "commission_mode", "exact20_ids", "scenarios", "run_count", "terminal_counts", "run_rows_root", "held_mark_root", "frontier_keys", "frontier_root", "truth_content_hash", "matrix_content_hash", "fee_schedule_content_hash", "partitions", "content_hash", "generation_id"],
+        _task055kr_patterns("fee_replay.json"),
+    ),
+    "task055kr_independent_replay_verification": _definition(
+        "task055kr_independent_replay_verification",
+        ["schema_version", "status", "application_content_hash", "application_spec_hash", "truth_content_hash", "matrix_content_hash", "net_run_rows_root", "net_held_mark_root", "net_terminal_counts", "net_frontier_root", "all_in_run_rows_root", "all_in_held_mark_root", "all_in_terminal_counts", "all_in_frontier_root", "frontier_union_root", "producer_consumer_recomputed_from_raw_matrix_truth_fee", "producer_projection_used_as_input", "valuation_projection_recomputed_from_truth_matrix", "independent_causal_implementation", "valuation_surface_root", "net_terminal_pair_count", "all_in_terminal_pair_count", "content_hash", "generation_id"],
+        _task055kr_patterns("independent_replay_verification.json"),
+    ),
+    "task055kr_native_rehearsal": _definition(
+        "task055kr_native_rehearsal",
+        ["schema_version", "status", "evidence_scope", "production_seal_eligible", "candidate_authority_content_hash", "candidate_checkpoint_content_hash", "production_context_root", "positive", "empty", "artifact_catalog", "artifact_catalog_root", "recovery_matrix", "positive_terminal_pair_count", "empty_terminal_pair_count", "primary_sibling_deterministic", "immutable_resume_verified", "network_execution", "content_hash", "generation_id"],
+        _task055kr_patterns("rehearsal_manifest.json"),
+    ),
+    "task055kr_rehearsal_verification": _definition(
+        "task055kr_rehearsal_verification",
+        ["schema_version", "status", "rehearsal_content_hash", "positive_primary_application_content_hash", "positive_sibling_application_content_hash", "empty_primary_application_content_hash", "empty_sibling_application_content_hash", "positive_replay_semantic_root", "empty_replay_semantic_root", "recovery_matrix_root", "artifact_catalog_root", "credential_read_count", "tushare_post_count", "other_http_count", "gpu_job_count", "prospective_holdout_accessed", "content_hash", "generation_id"],
+        _task055kr_patterns("rehearsal_verification.json"),
+    ),
+    "task055kr_final_report": _definition(
+        "task055kr_final_report",
+        ["schema_version", "status", "implementation_commit", "parent_task055j_final_seal_hash", "parent_verification_content_hash", "source_seal_content_hash", "source_root", "historical_supersession_content_hash", "candidate_authority_content_hash", "rehearsal_content_hash", "rehearsal_verification_content_hash", "threat_model_content_hash", "ordered_key_count", "ordered_key_root", "canary", "budgets", "broker_contract_hash", "application_stage_order", "application_role_roots", "positive_terminal_counts", "empty_terminal_counts", "recovery_matrix_root", "engineering_blockers", "engineering_warnings", "operational_state_unproven", "network_authorized", "authorization_eligible", "operator_authorization_required", "network_execution", "certification_blockers", "readiness", "content_hash", "generation_id"],
+        _task055kr_patterns("task055kr_report.json"),
+    ),
+    "task055kr_final_verification": _definition(
+        "task055kr_final_verification",
+        ["schema_version", "status", "top_status", "report_content_hash", "parent_verification_content_hash", "source_seal_content_hash", "historical_supersession_content_hash", "candidate_authority_content_hash", "rehearsal_content_hash", "rehearsal_verification_content_hash", "threat_model_content_hash", "ordered_key_root", "broker_contract_hash", "application_role_roots", "offline_counters", "application_stage_count", "positive_net_terminal_pair_count", "positive_all_in_terminal_pair_count", "empty_net_terminal_pair_count", "empty_all_in_terminal_pair_count", "all_stage_boundaries_tested", "content_hash", "generation_id"],
+        _task055kr_patterns("task055kr_final_verification.json"),
+    ),
+    "task055kr_scrubbed_evidence": _definition(
+        "task055kr_scrubbed_evidence",
+        ["schema_version", "status", "implementation_commit", "baseline_commit", "parent_task055j_final_seal_hash", "ordered_exact_daily_keys", "ordered_key_root", "canary", "budgets", "root_bindings", "source_entries", "source_root", "application_stage_order", "application_role_roots", "synthetic_receipt_attestations", "artifact_catalog", "artifact_catalog_root", "lineage", "artifact_statuses", "cross_lineage", "broker_contract_hash", "threat_model", "network_authorized", "authorization_eligible", "operator_authorization_required", "operational_state_unproven", "engineering_blockers", "engineering_warnings", "certification_blockers", "certification_ready", "portfolio_ready", "optimizer_ready", "paper_ready", "live_ready", "rehearsal_evidence_scope", "production_execution_ancestor", "network_execution", "contains_absolute_paths", "contains_market_values", "contains_credentials", "git_attestation_required", "content_hash"],
+        _task055kr_patterns("task055kr_scrubbed_evidence.json"),
     ),
     "task055f_truth_v2_manifest": _definition(
         "task055f_truth_v2_manifest",

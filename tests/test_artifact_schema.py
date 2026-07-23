@@ -670,3 +670,130 @@ def test_task055h_native_manifest_schemas(tmp_path):
         result = validate_artifact(path, strict=True)
         assert result.valid is True
         assert result.artifact_type == expected
+
+
+def test_registered_declared_artifact_type_overrides_generic_filename(tmp_path):
+    path = tmp_path / "freeze_manifest.json"
+    path.write_text(
+        json.dumps(
+            {
+                "artifact_type": "task_052a_governed_freeze_manifest",
+                "schema_version": "1.0",
+                "generation_id": "freeze_1",
+                "content_hash": "a" * 64,
+                "semantic_hash": "b" * 64,
+                "source_lineage_manifest_sha256": "c" * 64,
+                "artifacts": [],
+                "immutable": True,
+                "publication": "atomic_directory_rename",
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = validate_artifact(path, strict=True)
+    assert result.valid is True
+    assert result.artifact_type == "task_052a_governed_freeze_manifest"
+
+
+def test_task055kr_native_and_intermediate_manifest_schemas(tmp_path):
+    root = tmp_path / "task_055_k_kr_fixture"
+    artifacts = {
+        "acceptance_validation.json": ({
+            "schema_version": "task055kr_response_acceptance_validation_v1", "status": "passed",
+            "evidence_scope": "synthetic_rehearsal_only", "candidate_checkpoint_content_hash": "a",
+            "acceptance_content_hash": "b", "reservation_content_hash": "c", "receipt_content_hash": "d",
+            "cache_sha256": "e", "request": {}, "item_count": 0,
+            "empty_response_semantics": "vendor_absence_only", "content_hash": "f", "generation_id": "g",
+        }, "task055kr_response_acceptance_validation"),
+        "raw_repair.json": ({
+            "schema_version": "task055kr_no_raw_repair_v1", "status": "vendor_daily_absence_no_raw_mutation",
+            "security_date": ["000413.SZ", "20160726"], "parent_freeze_content_hash": "a",
+            "content_hash": "b", "generation_id": "g",
+        }, "task055kr_raw_repair"),
+        "freeze_reference.json": ({
+            "schema_version": "task055kr_parent_freeze_reference_v1", "status": "validated_parent_reference",
+            "freeze_content_hash": "a", "content_hash": "b", "generation_id": "g",
+        }, "task055kr_parent_freeze_reference"),
+        "matrix_reference.json": ({
+            "schema_version": "task055kr_parent_matrix_reference_v1", "status": "validated_parent_reference",
+            "role": "matrix", "content_hash_reference": "a", "context_root": "b",
+            "content_hash": "c", "generation_id": "g",
+        }, "task055kr_parent_generation_reference"),
+        "tensor_reference.json": ({
+            "schema_version": "task055kr_parent_tensor_reference_v1", "status": "validated_parent_reference",
+            "role": "tensor", "content_hash_reference": "a", "context_root": "b",
+            "content_hash": "c", "generation_id": "g",
+        }, "task055kr_parent_generation_reference"),
+        "materializations_reference.json": ({
+            "schema_version": "task055kr_parent_materializations_reference_v1", "status": "validated_parent_reference",
+            "exact20_identity_root": "a", "materialization_root": "b", "content_hash": "c", "generation_id": "g",
+        }, "task055kr_parent_materializations_reference"),
+        "sentinel_reference.json": ({
+            "schema_version": "task055kr_sentinel_reference_v1", "status": "validated_content_cache_reference",
+            "cache_identity": "a", "sentinel_content_hash": "b", "exact_run_count": 12,
+            "evidence_scope": "synthetic_rehearsal_only", "content_hash": "c", "generation_id": "g",
+        }, "task055kr_sentinel_reference"),
+        "application_final.json": ({
+            "schema_version": "task055kr_application_final_v1", "status": "domain_blocked", "branch": "empty",
+            "net_replay_content_hash": "a", "all_in_replay_content_hash": "b",
+            "net_terminal_counts": {}, "all_in_terminal_counts": {}, "net_run_count": 100,
+            "all_in_run_count": 100, "frontier_union": [], "frontier_union_root": "c",
+            "dynamic_l2_content_hash": "d", "dynamic_l2_status": "sealed_not_authorized",
+            "candidate_reselection_allowed": False, "content_hash": "e", "generation_id": "g",
+        }, "task055kr_application_final"),
+        "dynamic_l2_plan.json": ({
+            "schema_version": "task055j_dynamic_exact_suspend_l2_v1", "status": "sealed_not_authorized",
+            "parent_truth_content_hash": "a", "parent_replay_content_hash": "b", "requests": [{}],
+            "request_count": 1, "network_executed": False, "resume_authorized": False,
+            "application_support": "unsupported_waiting_for_separate_authority",
+            "daily_empty_semantics": "vendor_absence_only_not_full_day_suspension_proof",
+            "content_hash": "c", "generation_id": "g",
+        }, "task055kr_dynamic_l2_plan"),
+        "application_lock_identity.json": ({"st_dev": 1, "st_ino": 2}, "task055kr_application_lock_identity"),
+        "current.json": ({
+            "content_hash": "a", "generation_id": "g", "manifest": "generations/g/manifest.json",
+        }, "task055kr_generation_pointer"),
+        "checkpoint.json": ({"name": "journal", "root": "r", "sequence": 1}, "task055kr_durable_journal_checkpoint"),
+    }
+    for filename, (payload, expected) in artifacts.items():
+        path = root / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        result = validate_artifact(path, strict=True)
+        assert result.valid is True
+        assert result.artifact_type == expected
+
+    jsonl = {
+        "events.jsonl": ({
+            "event_id": "e", "event": "stage_started", "sequence": 1,
+            "previous_event_hash": "", "event_hash": "h",
+        }, "task055kr_durable_journal_events"),
+        "blockers.jsonl": ({
+            "ts_code": "000413.SZ", "trade_date": "20160726", "reporting_point": "open_pretrade",
+            "reason": "missing",
+        }, "task055kr_valuation_blockers"),
+        "run_rows.jsonl": ({
+            "factor_id": "factor", "scenario": "baseline", "terminal_state": "causal_valuation_blocked",
+        }, "task055kr_fee_replay_run_rows"),
+        "held_marks.jsonl": ({
+            "factor_id": "factor", "scenario": "baseline", "ts_code": "000413.SZ",
+            "trade_date": "20160726", "reporting_point": "close",
+        }, "task055kr_fee_replay_held_marks"),
+    }
+    for filename, (payload, expected) in jsonl.items():
+        path = root / filename
+        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        result = validate_artifact(path, strict=True)
+        assert result.valid is True
+        assert result.artifact_type == expected
+
+    cache = root / "authority/cache_data/.cache/tushare/abc.json"
+    cache.parent.mkdir(parents=True)
+    cache.write_text(json.dumps({
+        "schema_version": "tushare_cache_envelope.v3", "request": {}, "request_fingerprint": "a",
+        "provider": {}, "response": {}, "records": [], "metadata": {}, "source_code_hash": "b",
+        "code_semantic_hash": "c", "endpoint_schema_proof": {},
+    }), encoding="utf-8")
+    cache_result = validate_artifact(cache, strict=True)
+    assert cache_result.valid is True
+    assert cache_result.artifact_type == "task055kr_tushare_cache_envelope"

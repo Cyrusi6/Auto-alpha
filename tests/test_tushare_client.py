@@ -79,19 +79,17 @@ def test_validated_capability_is_single_use_and_preserves_three_identities():
     params = {"trade_date": "20240102"}
     fields = ["ts_code", "trade_date"]
     identity = _identity("daily", params, fields)
-    capability = _validated_task055k_execution_capability(
-        authority_content_hash="a" * 64,
-        final_execution_seal_hash="b" * 64,
-        api_name="daily",
-        params=params,
-        fields=fields,
-        identity=identity,
-        attempt_id="c" * 64,
-        broker_contract_hash="d" * 64,
-    )
-    capability.authorize("daily", params, fields)
-    with pytest.raises(Exception, match="already_consumed"):
-        capability.authorize("daily", params, fields)
+    with pytest.raises(Exception, match="canonical_transport_gateway"):
+        _validated_task055k_execution_capability(
+            authority_content_hash="a" * 64,
+            final_execution_seal_hash="b" * 64,
+            api_name="daily",
+            params=params,
+            fields=fields,
+            identity=identity,
+            attempt_id="c" * 64,
+            broker_contract_hash="d" * 64,
+        )
 
 
 def test_parser_preserves_observed_empty_response_fields():

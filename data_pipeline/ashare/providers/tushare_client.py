@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
-import urllib.error
 import urllib.request
 import gzip
 from dataclasses import dataclass
@@ -12,8 +10,7 @@ from typing import Any, Iterable, Mapping
 
 from ..config import AShareDataConfig
 from ..network_capability import TushareExecutionCapability
-from ..rate_limit import RateLimitEvent, SimpleRateLimiter
-from ..security import validate_tushare_origin
+from ..rate_limit import SimpleRateLimiter
 from ..request_identity import TushareRequestIdentity
 from ..request_normalization import stable_json_hash, tushare_code_semantic_hash
 
@@ -41,6 +38,14 @@ class TushareNetworkError(TushareApiError):
     """Raised when the HTTP request fails before a valid response is parsed."""
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Fail-closed redirect policy retained for security validation only."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        del req, fp, code, msg, headers, newurl
+        raise TushareNetworkError("Tushare redirect forbidden")
+
+
 @dataclass(frozen=True)
 class TushareResponseEnvelope:
     api_name: str
@@ -59,6 +64,7 @@ class TushareResponseEnvelope:
     endpoint: str = ""
     provider_api_version: str = TUSHARE_PROVIDER_API_VERSION
     response_payload_hash: str = ""
+    response_payload: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -78,6 +84,7 @@ class TushareResponseEnvelope:
             "endpoint": self.endpoint,
             "provider_api_version": self.provider_api_version,
             "response_payload_hash": self.response_payload_hash,
+            "response_payload": self.response_payload,
         }
 
 
@@ -89,15 +96,11 @@ class TushareHttpClient:
         *,
         execution_capability: TushareExecutionCapability | None = None,
     ):
-        if execution_capability is None:
-            raise TushareNetworkError("real_tushare_transport_requires_task055k_execution_capability")
-        self.api_url = validate_tushare_origin(config.tushare_api_url)
-        self.token = config.tushare_token
-        self.timeout_seconds = config.tushare_timeout_seconds
-        self.retry_count = config.tushare_retry_count
-        self.rate_limiter = rate_limiter
-        self.last_rate_limit_event: RateLimitEvent | None = None
-        self._execution_capability = execution_capability
+        del config, rate_limiter, execution_capability
+        raise TushareNetworkError(
+            "task055k_execution_capability_required:"
+            "superseded_by_task055k_transport_broker:task055kr_canonical_transport_gateway"
+        )
 
     def post(
         self,
@@ -105,7 +108,10 @@ class TushareHttpClient:
         params: dict[str, Any] | None = None,
         fields: str | Iterable[str] | None = None,
     ) -> list[dict[str, Any]]:
-        return self.post_with_metadata(api_name, params=params, fields=fields).records
+        del api_name, params, fields
+        raise TushareNetworkError(
+            "superseded_by_task055k_transport_broker:task055kr_canonical_transport_gateway"
+        )
 
     def post_with_metadata(
         self,
@@ -113,51 +119,10 @@ class TushareHttpClient:
         params: dict[str, Any] | None = None,
         fields: str | Iterable[str] | None = None,
     ) -> TushareResponseEnvelope:
-        if not self.token:
-            raise ValueError("TUSHARE_TOKEN is required for provider=tushare")
-        if self.retry_count != 1:
-            raise TushareNetworkError("task055k_single_post_retry_count_must_equal_one")
-        self._execution_capability.authorize(api_name, params, fields)
-
-        request_fields = self._format_fields(fields)
-        request_params = {} if params is None else dict(params)
-        request = serialize_tushare_request(
-            endpoint=self.api_url,
-            api_name=api_name,
-            token=self.token,
-            params=request_params,
-            fields=request_fields,
+        del api_name, params, fields
+        raise TushareNetworkError(
+            "superseded_by_task055k_transport_broker:task055kr_canonical_transport_gateway"
         )
-
-        started = time.perf_counter()
-        self.last_rate_limit_event = None
-        if self.rate_limiter is not None:
-            self.last_rate_limit_event = self.rate_limiter.wait(api_name)
-        response_payload = self._send_once(request)
-        return parse_tushare_response_payload(
-            response_payload,
-            api_name=api_name,
-            params=request_params,
-            requested_fields=request_fields,
-            identity=self._execution_capability.identity,
-            duration_seconds=max(0.0, time.perf_counter() - started),
-            endpoint=self.api_url,
-        )
-
-    def _send_once(self, request: urllib.request.Request) -> dict[str, Any]:
-        try:
-            with _secure_urlopen(request, timeout=self.timeout_seconds) as response:
-                raw = _decode_response_body(response.read(), response)
-            payload = json.loads(raw)
-            if not isinstance(payload, dict):
-                raise TushareSchemaError("Tushare response must be a JSON object")
-            return payload
-        except (TushareApiError, TushareSchemaError):
-            raise
-        except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError) as exc:
-            raise TushareNetworkError(
-                f"Tushare HTTP request failed: {_redact_secret(_safe_error(exc), self.token)}"
-            ) from exc
 
     @staticmethod
     def _format_fields(fields: str | Iterable[str] | None) -> str:
@@ -240,6 +205,7 @@ def parse_tushare_response_payload(
         endpoint=endpoint,
         provider_api_version=TUSHARE_PROVIDER_API_VERSION,
         response_payload_hash=stable_json_hash(dict(response_payload)),
+        response_payload=dict(response_payload),
     )
 
 
@@ -277,12 +243,3 @@ def _decode_response_body(raw: bytes, response: Any) -> str:
     if "gzip" in encoding or raw.startswith(b"\x1f\x8b"):
         raw = gzip.decompress(raw)
     return raw.decode("utf-8")
-
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        raise TushareNetworkError("Tushare redirect forbidden")
-
-
-def _secure_urlopen(request: urllib.request.Request, timeout: int):
-    opener = urllib.request.build_opener(_NoRedirect)
-    return opener.open(request, timeout=timeout)

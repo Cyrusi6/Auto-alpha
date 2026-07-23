@@ -94,6 +94,12 @@ def independently_trace_prepared(
     return _trace(bundle_manifest, prepared, projection, calculator)
 
 
+def prepare_independent_inputs(
+    bundle: Mapping[str, Any], projection: Mapping[str, Any]
+) -> dict[str, Any]:
+    return _prepare(bundle, projection)
+
+
 def _prepare(bundle: Mapping[str, Any], projection: Mapping[str, Any]) -> dict[str, Any]:
     dates = [str(value) for value in bundle["execution_dates"]]
     signal_dates = [str(value) for value in bundle["trade_dates"]]
@@ -259,9 +265,10 @@ def _observe(rows: list[dict[str, Any]], day: int, date: str, reporting_point: s
         if code == 0 or not evidence_id or source_index < 0 or not math.isfinite(price) or price <= 0:
             point = "open_pretrade" if point_index == 0 else "close"
             reason = _projection_reason(projection, asset, date, point)
+            method = METHOD_NAMES.get(code, "UNRESOLVED")
             return {
                 "code": "held_position_mark_unavailable",
-                "detail": f"explicit_valuation_mark_blocked:{date}:{asset}:{point}:missing_method",
+                "detail": f"explicit_valuation_mark_blocked:{date}:{asset}:{point}:{method}",
                 "reason": reason,
                 "reporting_point": point,
                 "trade_date": date,

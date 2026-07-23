@@ -42,7 +42,13 @@ def validate_artifact(
     if definition.json_or_jsonl == "jsonl":
         sidecar = _read_json(Path(f"{target}.schema.json"))
         if sidecar:
-            artifact_type = sidecar.get("artifact_type") or artifact_type
+            declared_type = sidecar.get("artifact_type")
+            declared_definition = active_registry.get(declared_type) if declared_type else None
+            if declared_definition is not None and declared_definition.json_or_jsonl == "jsonl":
+                artifact_type = declared_type
+                definition = declared_definition
+            else:
+                artifact_type = declared_type or artifact_type
             schema_version = sidecar.get("schema_version")
             compatibility_mode = ArtifactCompatibilityMode.strict if artifact_type == definition.artifact_type else ArtifactCompatibilityMode.compatible
         else:
@@ -53,7 +59,13 @@ def validate_artifact(
     else:
         payload = _read_json(target, issues, artifact_type)
         if isinstance(payload, dict):
-            artifact_type = payload.get("artifact_type") or artifact_type
+            declared_type = payload.get("artifact_type")
+            declared_definition = active_registry.get(declared_type) if declared_type else None
+            if declared_definition is not None and declared_definition.json_or_jsonl == "json":
+                artifact_type = declared_type
+                definition = declared_definition
+            else:
+                artifact_type = declared_type or artifact_type
             schema_version = payload.get("schema_version") or definition.schema_version
             if payload.get("schema_version") is None:
                 compatibility_mode = ArtifactCompatibilityMode.legacy

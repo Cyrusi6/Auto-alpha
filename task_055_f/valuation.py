@@ -171,6 +171,56 @@ def load_valuation_projection(
     }
 
 
+def valuation_surface_from_projection(
+    path: str | Path,
+    *,
+    dates: Sequence[str] | None = None,
+    assets: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    projection = load_valuation_projection(path, dates=dates, assets=assets)
+    date_axis = list(projection["dates"])
+
+    def methods(point: str) -> np.ndarray:
+        return np.vectorize(
+            lambda value: METHOD_NAMES[int(value)], otypes=[object]
+        )(projection[f"{point}_method"])
+
+    def source_dates(point: str) -> np.ndarray:
+        return np.vectorize(
+            lambda value: date_axis[int(value)] if int(value) >= 0 else "",
+            otypes=[object],
+        )(projection[f"{point}_source_date"])
+
+    def evidence_ids(point: str) -> np.ndarray:
+        return np.vectorize(
+            lambda value: bytes(value).decode("ascii"), otypes=[object]
+        )(projection[f"{point}_evidence_id"])
+
+    blockers = {
+        (str(row["ts_code"]), str(row["trade_date"]), str(row["reporting_point"])): str(
+            row["reason"]
+        )
+        for row in projection["blockers"]
+    }
+    return {
+        "values": {
+            "open": projection["valuation_open"],
+            "close": projection["valuation_close"],
+        },
+        "metadata": {
+            point: {
+                "method": methods(point),
+                "source_date": source_dates(point),
+                "stale_age": projection[f"{point}_stale_age"],
+                "evidence_id": evidence_ids(point),
+            }
+            for point in ("open", "close")
+        },
+        "blockers": blockers,
+        "projection_content_hash": projection["content_hash"],
+    }
+
+
 def projection_mark_rows(path: str | Path) -> list[dict[str, Any]]:
     """Expand a compact projection for legacy artifact compatibility tests."""
 

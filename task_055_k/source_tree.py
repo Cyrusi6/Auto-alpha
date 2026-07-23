@@ -6,9 +6,10 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from task_055_h.io import canonical_hash, publish_generation, validate_generation
+from task_055_h.io import canonical_hash, validate_generation
 
 from .contracts import SOURCE_SCHEMA
+from .immutable import write_immutable_generation
 
 
 class Task055KSourceTreeError(RuntimeError):
@@ -33,7 +34,7 @@ def publish_git_index_source_seal(
         "source_root": canonical_hash(entries),
         "server_permission_audit": _server_permission_audit(repository, entries),
     }
-    return publish_generation(
+    return write_immutable_generation(
         output_root,
         prefix="task055k_git_index_source",
         manifest_name="source_seal.json",
@@ -120,6 +121,18 @@ def git_index_source_entries(repository: Path, *, treeish: str | None = None) ->
         "task_055_k/contracts.py",
         "task_055_k/source_tree.py",
         "task_055_k/broker.py",
+        "task_055_k/gateway.py",
+        "task_055_k/immutable.py",
+        "task_055_k/stage_machine.py",
+        "task_055_k/application.py",
+        "task_055_k/application_cli.py",
+        "task_055_k/application_components.py",
+        "task_055_k/independent.py",
+        "task_055_k/rehearsal.py",
+        "task_055_k/network_cli.py",
+        "dev_tools/task055kr_harness.py",
+        "dev_tools/task055kr_mutations.py",
+        "data_pipeline/ashare/network_capability.py",
         "data_pipeline/ashare/providers/tushare_client.py",
     }
     if not required.issubset({entry["path"] for entry in entries}):
