@@ -19,6 +19,7 @@ from data_pipeline.ashare.network_capability import (
 from data_pipeline.ashare.providers.tushare_client import TushareHttpClient, TushareNetworkError
 from data_pipeline.ashare.request_identity import TushareRequestIdentity
 from dev_tools.task055kr_harness import (
+    _durable_first_generation_stage_counts,
     _load_or_create_synthetic_accepted_response,
     _lightweight_stages,
     run_lightweight_recovery_matrix,
@@ -104,6 +105,31 @@ def test_rehearsal_restart_reuses_exact_accepted_response(tmp_path: Path) -> Non
     assert second_checkpoint["content_hash"] == first_checkpoint["content_hash"]
     assert len(list((authority_root / "acceptance/generations").iterdir())) == 1
     assert len(list((authority_root / "candidate_checkpoint/generations").iterdir())) == 1
+
+
+def test_durable_first_generation_counts_survive_process_local_resume(
+    tmp_path: Path,
+) -> None:
+    accepted, _checkpoint = _accepted(tmp_path)
+    machine = _machine(tmp_path, accepted, suffix="durable-counts")
+    first = machine.run()
+    resumed = machine.run()
+
+    assert first["resume_summary"] == {
+        "executed_stage_count": 12,
+        "reused_stage_count": 0,
+        "recomputed_stage_count": 0,
+    }
+    assert resumed["resume_summary"] == {
+        "executed_stage_count": 0,
+        "reused_stage_count": 12,
+        "recomputed_stage_count": 0,
+    }
+    assert _durable_first_generation_stage_counts(resumed) == {
+        "executed": 12,
+        "reused": 0,
+        "recomputed": 0,
+    }
 
 
 def test_fixed_canary_has_three_distinct_identities() -> None:

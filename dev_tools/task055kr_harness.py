@@ -555,8 +555,10 @@ def _run_branch(
         ],
         "net_terminal_counts": primary_verification["net_terminal_counts"],
         "all_in_terminal_counts": primary_verification["all_in_terminal_counts"],
-        "first_run_stage_counts": _summary(primary["resume_summary"]),
-        "sibling_first_run_stage_counts": _summary(sibling["resume_summary"]),
+        "first_run_stage_counts": _durable_first_generation_stage_counts(primary),
+        "sibling_first_run_stage_counts": _durable_first_generation_stage_counts(
+            sibling
+        ),
         "resume_stage_counts": _summary(resume["resume_summary"]),
         "stage_journal_content_hash": primary["stage_journal_content_hash"],
         "application_manifest_sha256": sha256_file(primary["manifest_path"]),
@@ -690,6 +692,38 @@ def _summary(row: Mapping[str, Any]) -> dict[str, int]:
         "executed": int(row["executed_stage_count"]),
         "reused": int(row["reused_stage_count"]),
         "recomputed": int(row["recomputed_stage_count"]),
+    }
+
+
+def _durable_first_generation_stage_counts(
+    application: Mapping[str, Any],
+) -> dict[str, int]:
+    application_root = Path(str(application["manifest_path"])).resolve().parents[2]
+    journal = DurableHashJournal(
+        application_root / "stage_journal", name="task055kr_application"
+    )
+    commits = [row for row in journal.rows() if row.get("event") == "stage_committed"]
+    stages = list(application.get("stages") or ())
+    expected_names = list(APPLICATION_STAGES)
+    if (
+        len(commits) != len(expected_names)
+        or len(stages) != len(expected_names)
+        or [row.get("stage") for row in commits] != expected_names
+        or [row.get("stage") for row in stages] != expected_names
+        or any(
+            commit.get("output_content_hash") != stage.get("output_content_hash")
+            or commit.get("cache_status") != stage.get("cache_status")
+            for commit, stage in zip(commits, stages, strict=True)
+        )
+    ):
+        raise RuntimeError("task055kr_durable_first_generation_counts_invalid")
+    return {
+        "executed": len(commits),
+        "reused": 0,
+        "recomputed": sum(
+            row.get("cache_status") == "recomputed_after_incomplete_stage"
+            for row in commits
+        ),
     }
 
 
