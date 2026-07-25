@@ -55,8 +55,9 @@ def run_real_context_offline_rehearsal(
     )
     context = production_context_from_parent(parent)
     context["component_cache_root"] = str(root / "component_cache")
-    positive_accepted, positive_checkpoint = synthetic_accepted_response(
+    positive_accepted, positive_checkpoint = _load_or_create_synthetic_accepted_response(
         authority_root=root / "synthetic_authorities/positive",
+        application_root=root / "applications/positive/primary",
         ordered_keys=parent["ordered_exact_daily_keys"],
         implementation_commit=implementation_commit,
         source_root=source_root,
@@ -74,8 +75,9 @@ def run_real_context_offline_rehearsal(
             ]
         ],
     )
-    empty_accepted, empty_checkpoint = synthetic_accepted_response(
+    empty_accepted, empty_checkpoint = _load_or_create_synthetic_accepted_response(
         authority_root=root / "synthetic_authorities/empty",
+        application_root=root / "applications/empty/primary",
         ordered_keys=parent["ordered_exact_daily_keys"],
         implementation_commit=implementation_commit,
         source_root=source_root,
@@ -137,6 +139,72 @@ def run_real_context_offline_rehearsal(
         "empty_accepted": empty_accepted,
         "context": context,
     }
+
+
+def _load_or_create_synthetic_accepted_response(
+    *,
+    authority_root: str | Path,
+    application_root: str | Path,
+    ordered_keys: Sequence[Mapping[str, Any]],
+    implementation_commit: str,
+    source_root: str,
+    items: list[list[object]],
+) -> tuple[AcceptedResponse, dict[str, Any]]:
+    authority = Path(authority_root).resolve()
+    application = Path(application_root).resolve()
+    acceptance_hash = ""
+    stage_pointer = application / "stages/01_response_acceptance/publication/current.json"
+    if stage_pointer.is_file():
+        pointer = read_json(stage_pointer)
+        stage = read_json(stage_pointer.parent / str(pointer["manifest"]))
+        acceptance_hash = str(
+            (stage.get("canonical_input_roots") or {}).get(
+                "acceptance_content_hash"
+            )
+            or ""
+        )
+    acceptance_candidates = sorted(
+        (authority / "acceptance/generations").glob("*/canary_acceptance.json")
+    )
+    if acceptance_hash:
+        acceptance_candidates = [
+            path
+            for path in acceptance_candidates
+            if read_json(path).get("content_hash") == acceptance_hash
+        ]
+    elif (authority / "acceptance/current.json").is_file():
+        pointer = read_json(authority / "acceptance/current.json")
+        acceptance_candidates = [
+            authority / "acceptance" / str(pointer["manifest"])
+        ]
+    if acceptance_candidates:
+        if len(acceptance_candidates) != 1:
+            raise RuntimeError("task055kr_synthetic_acceptance_cardinality_invalid")
+        acceptance = read_json(acceptance_candidates[0])
+        checkpoint_hash = str(acceptance["candidate_checkpoint_content_hash"])
+        checkpoints = [
+            path
+            for path in (authority / "candidate_checkpoint/generations").glob(
+                "*/candidate_checkpoint.json"
+            )
+            if read_json(path).get("content_hash") == checkpoint_hash
+        ]
+        if len(checkpoints) != 1:
+            raise RuntimeError("task055kr_synthetic_checkpoint_cardinality_invalid")
+        accepted = load_accepted_response(
+            acceptance_path=acceptance_candidates[0],
+            repository_root=Path.cwd(),
+            synthetic_checkpoint_path=checkpoints[0],
+            synthetic_authority_root=authority,
+        )
+        return accepted, accepted.checkpoint
+    return synthetic_accepted_response(
+        authority_root=authority,
+        ordered_keys=ordered_keys,
+        implementation_commit=implementation_commit,
+        source_root=source_root,
+        items=items,
+    )
 
 
 def synthetic_accepted_response(

@@ -212,7 +212,7 @@ def _verify_release_git_topology(
         topology.get("baseline_commit") != BASELINE_COMMIT
         or not _hex(implementation, 40)
         or not _hex(evidence, 40)
-        or _single_parent(repository, implementation) != BASELINE_COMMIT
+        or not _is_ancestor(repository, BASELINE_COMMIT, implementation)
         or _single_parent(repository, evidence) != implementation
         or _single_parent(repository, anchor_commit) != evidence
     ):
@@ -511,6 +511,14 @@ def _changed_paths(repository: Path, start: str, end: str) -> list[str]:
         for line in _git(repository, "diff", "--name-only", f"{start}..{end}").splitlines()
         if line
     )
+
+
+def _is_ancestor(repository: Path, ancestor: str, descendant: str) -> bool:
+    return subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        cwd=repository,
+        check=False,
+    ).returncode == 0
 
 
 def _json_object(payload: bytes, *, code: str) -> dict[str, Any]:

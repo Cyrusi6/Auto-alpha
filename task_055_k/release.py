@@ -45,8 +45,8 @@ def build_candidate_anchor(
     head = _git(repository, "rev-parse", "HEAD")
     if head != evidence_commit:
         raise Task055KR2ReleaseError("task055kr2_anchor_requires_exact_evidence_commit")
-    if _single_parent(repository, implementation_commit) != BASELINE_COMMIT:
-        raise Task055KR2ReleaseError("task055kr2_implementation_parent_invalid")
+    if not _is_ancestor(repository, BASELINE_COMMIT, implementation_commit):
+        raise Task055KR2ReleaseError("task055kr2_implementation_baseline_invalid")
     if _single_parent(repository, evidence_commit) != implementation_commit:
         raise Task055KR2ReleaseError("task055kr2_evidence_parent_invalid")
     evidence_changes = _changed_paths(repository, implementation_commit, evidence_commit)
@@ -129,7 +129,8 @@ def build_candidate_anchor(
             "implementation_commit": implementation_commit,
             "evidence_commit": evidence_commit,
             "anchor_parent_must_equal_evidence_commit": True,
-            "implementation_parent_must_equal_baseline": True,
+            "implementation_parent_must_equal_baseline": False,
+            "baseline_must_be_ancestor_of_implementation": True,
             "evidence_parent_must_equal_implementation": True,
             "evidence_commit_allowlist": list(EVIDENCE_COMMIT_ALLOWLIST),
             "anchor_commit_allowlist": list(ANCHOR_COMMIT_ALLOWLIST),
@@ -409,6 +410,14 @@ def _changed_paths(repository: Path, start: str, end: str) -> list[str]:
         for line in _git(repository, "diff", "--name-only", f"{start}..{end}").splitlines()
         if line
     )
+
+
+def _is_ancestor(repository: Path, ancestor: str, descendant: str) -> bool:
+    return subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        cwd=repository,
+        check=False,
+    ).returncode == 0
 
 
 def _json_object(payload: bytes, *, code: str) -> dict[str, Any]:

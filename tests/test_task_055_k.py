@@ -19,6 +19,7 @@ from data_pipeline.ashare.network_capability import (
 from data_pipeline.ashare.providers.tushare_client import TushareHttpClient, TushareNetworkError
 from data_pipeline.ashare.request_identity import TushareRequestIdentity
 from dev_tools.task055kr_harness import (
+    _load_or_create_synthetic_accepted_response,
     _lightweight_stages,
     run_lightweight_recovery_matrix,
     synthetic_accepted_response,
@@ -82,6 +83,27 @@ def _machine(tmp_path: Path, accepted, *, suffix: str = "app") -> ApplicationSta
         },
         stages=_lightweight_stages(),
     )
+
+
+def test_rehearsal_restart_reuses_exact_accepted_response(tmp_path: Path) -> None:
+    authority_root = tmp_path / "authority"
+    application_root = tmp_path / "application"
+    arguments = {
+        "authority_root": authority_root,
+        "application_root": application_root,
+        "ordered_keys": _ordered_keys(),
+        "implementation_commit": "c" * 40,
+        "source_root": "d" * 64,
+        "items": [],
+    }
+    first, first_checkpoint = _load_or_create_synthetic_accepted_response(**arguments)
+    second, second_checkpoint = _load_or_create_synthetic_accepted_response(**arguments)
+
+    assert second.acceptance["content_hash"] == first.acceptance["content_hash"]
+    assert second.receipt["content_hash"] == first.receipt["content_hash"]
+    assert second_checkpoint["content_hash"] == first_checkpoint["content_hash"]
+    assert len(list((authority_root / "acceptance/generations").iterdir())) == 1
+    assert len(list((authority_root / "candidate_checkpoint/generations").iterdir())) == 1
 
 
 def test_fixed_canary_has_three_distinct_identities() -> None:
