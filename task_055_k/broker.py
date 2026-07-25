@@ -51,7 +51,7 @@ class AcceptedResponse:
 def broker_contract_hash() -> str:
     return canonical_hash(
         {
-            "contract": "canonical_single_exact_daily_signed_receipt_v2",
+            "contract": "canonical_single_exact_daily_signed_receipt_v3",
             "final_https_revalidates_canonical_trust": True,
             "caller_capability_is_not_trust_anchor": True,
             "reservation_public_key_precedes_transport": True,
@@ -63,6 +63,8 @@ def broker_contract_hash() -> str:
             "credential_read_ambiguity_blocks": True,
             "retry_count": 1,
             "credential_reads": 1,
+            "replacement_safe_lease_required": True,
+            "durable_fence_bound_to_reservation_and_receipt": True,
         }
     )
 
@@ -103,6 +105,7 @@ def publish_attempt_reservation(
     evidence_scope: str,
     final_candidate_seal_hash: str | None,
     operator_authorization_hash: str | None,
+    lease_binding: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if evidence_scope not in {"real_production", "synthetic_rehearsal_only"}:
         raise Task055KBrokerError("task055k_attempt_scope_invalid")
@@ -123,6 +126,7 @@ def publish_attempt_reservation(
         "broker_public_key_pem_b64": base64.b64encode(public_key_pem).decode("ascii"),
         "broker_public_key_sha256": stable_json_hash(public_key_pem.decode("ascii")),
         "private_key_persisted": False,
+        "lease_binding": dict(lease_binding or {}),
     }
     return publish_generation(
         Path(authority_root) / "attempt_reservations",
@@ -190,6 +194,7 @@ def publish_signed_transport_receipt(
         "empty_response_semantics": "vendor_absence_only" if not envelope.records else None,
         "contains_credential": False,
         "broker_contract_hash": broker_contract_hash(),
+        "lease_binding": dict(reservation.get("lease_binding") or {}),
     }
     signature = signer.sign(_canonical_bytes(semantic))
     result = publish_generation(
@@ -274,6 +279,7 @@ def publish_canary_acceptance(
         "item_count": receipt["item_count"],
         "empty_response_semantics": receipt.get("empty_response_semantics"),
         "resume_authorized": False,
+        "transport_lease_binding": dict(receipt.get("lease_binding") or {}),
     }
     return publish_generation(
         root / "acceptance",
@@ -355,6 +361,7 @@ def load_accepted_response(
         "item_count": receipt["item_count"],
         "empty_response_semantics": receipt.get("empty_response_semantics"),
         "resume_authorized": False,
+        "transport_lease_binding": dict(receipt.get("lease_binding") or {}),
     }
     if any(acceptance.get(key) != value for key, value in acceptance_expected.items()):
         raise Task055KBrokerError("task055k_acceptance_cross_lineage_invalid")
@@ -423,6 +430,7 @@ def _validate_receipt_against_reservation(
         "operator_authorization_content_hash": reservation.get(
             "operator_authorization_content_hash"
         ),
+        "lease_binding": dict(reservation.get("lease_binding") or {}),
     }
     if any(payload.get(key) != value for key, value in expected.items()):
         raise Task055KBrokerError("task055k_transport_receipt_lineage_invalid")

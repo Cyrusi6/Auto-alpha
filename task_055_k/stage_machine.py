@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import fcntl
-import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +14,7 @@ from .immutable import (
     validate_current_pointer,
     write_immutable_generation,
 )
+from .lease import ReplacementSafeLease, Task055KLeaseError, validate_historical_lease_binding
 
 
 class Task055KStageMachineError(RuntimeError):
@@ -80,22 +79,26 @@ class ApplicationStageMachine:
 
     def run(self, *, crash_point: str | None = None) -> dict[str, Any]:
         self.root.mkdir(parents=True, exist_ok=True)
-        lock_path = self.root / "application.lock"
-        if lock_path.is_symlink():
-            raise Task055KStageMachineError("task055k_application_lock_symlink")
         try:
-            lock_path.touch(exist_ok=False)
-        except FileExistsError:
-            if not lock_path.is_file() or lock_path.is_symlink():
-                raise Task055KStageMachineError("task055k_application_lock_invalid")
-        lock_identity = self._load_or_seal_lock_identity(lock_path)
-        with lock_path.open("r+") as lock:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            lease = ReplacementSafeLease.acquire(
+                parent=self.root,
+                lock_name="application.lock",
+                scope="task055kr2_response_application",
+                root_binding=self.spec_hash,
+                attempt=self.spec_hash,
+                allow_legacy_empty_bootstrap=True,
+            )
+        except Task055KLeaseError as exc:
+            raise Task055KStageMachineError(str(exc)) from None
+        with lease:
             try:
-                self._validate_open_lock(lock_path, lock.fileno(), lock_identity)
-                existing = self._existing_application()
+                lease.checkpoint("application_after_acquisition")
+                existing = self._existing_application(lease)
                 if existing is not None:
+                    lease.checkpoint("application_completed_fast_path_before_validation")
                     payload = self.validate_application(existing)
+                    lease.checkpoint("application_completed_fast_path_after_validation")
+                    lease.checkpoint("application_completed_fast_path_before_return")
                     return payload | {
                         "resume_summary": {
                             "executed_stage_count": 0,
@@ -108,6 +111,7 @@ class ApplicationStageMachine:
                 previous = self.spec_hash
                 executed = reused = recomputed = 0
                 for ordinal, definition in enumerate(self.stages, start=1):
+                    lease.checkpoint(f"stage:{ordinal}:before_start")
                     if crash_point == f"before:{definition.name}":
                         raise Task055KInjectedCrash(f"task055k_crash_before_stage:{definition.name}")
                     stage_root = self.root / "stages" / f"{ordinal:02d}_{definition.name}"
@@ -121,7 +125,24 @@ class ApplicationStageMachine:
                         prior_stages=prior,
                     )
                     current = self._current_stage(stage_root)
+                    starts = [
+                        row
+                        for row in event_rows(journal.rows(), event="stage_started")
+                        if row.get("stage") == definition.name
+                        and row.get("ordinal") == ordinal
+                    ]
+                    commits = [
+                        row
+                        for row in event_rows(journal.rows(), event="stage_committed")
+                        if row.get("stage") == definition.name
+                        and row.get("ordinal") == ordinal
+                    ]
+                    if len(starts) > 1 or len(commits) > 1:
+                        raise Task055KStageMachineError(
+                            f"task055kr2_stage_journal_cardinality_invalid:{definition.name}"
+                        )
                     if current is not None:
+                        lease.checkpoint(f"stage:{ordinal}:before_existing_validation")
                         stage_payload = self._validate_stage(
                             current,
                             definition=definition,
@@ -129,46 +150,67 @@ class ApplicationStageMachine:
                             input_root=previous,
                             runtime=runtime,
                         )
-                        starts = [
-                            row
-                            for row in event_rows(journal.rows(), event="stage_started")
-                            if row.get("stage") == definition.name
-                            and row.get("ordinal") == ordinal
-                        ]
+                        lease.checkpoint(f"stage:{ordinal}:after_existing_validation")
                         if len(starts) != 1:
                             raise Task055KStageMachineError(
                                 f"task055k_stage_pointer_without_start_journal:{definition.name}"
                             )
-                        journal.append(
-                            {
-                                "event_id": f"commit:{ordinal}:{definition.name}",
-                                "event": "stage_committed",
-                                "stage": definition.name,
-                                "ordinal": ordinal,
-                                "input_root": previous,
-                                "output_content_hash": stage_payload["content_hash"],
-                                "cache_status": stage_payload["cache_status"],
-                                "application_spec_hash": self.spec_hash,
-                            }
+                        self._validate_stage_event(
+                            starts[0], event="stage_started", ordinal=ordinal,
+                            definition=definition, input_root=previous,
                         )
+                        if commits:
+                            self._validate_stage_event(
+                                commits[0], event="stage_committed", ordinal=ordinal,
+                                definition=definition, input_root=previous,
+                                output_content_hash=stage_payload["content_hash"],
+                            )
+                        else:
+                            lease.checkpoint(f"stage:{ordinal}:before_recovered_commit")
+                            journal.append(
+                                self._stage_event(
+                                    lease=lease,
+                                    event="stage_committed",
+                                    ordinal=ordinal,
+                                    definition=definition,
+                                    input_root=previous,
+                                    output_content_hash=stage_payload["content_hash"],
+                                    cache_status=stage_payload["cache_status"],
+                                )
+                            )
+                            lease.checkpoint(f"stage:{ordinal}:recovered_commit_fsynced")
                         prior[definition.name] = stage_payload
                         previous = stage_payload["content_hash"]
                         reused += 1
+                        lease.checkpoint(f"stage:{ordinal}:before_next_stage")
                         continue
-                    journal.append(
-                        {
-                            "event_id": f"start:{ordinal}:{definition.name}",
-                            "event": "stage_started",
-                            "stage": definition.name,
-                            "ordinal": ordinal,
-                            "input_root": previous,
-                            "application_spec_hash": self.spec_hash,
-                        }
-                    )
+                    if commits:
+                        raise Task055KStageMachineError(
+                            f"task055kr2_stage_commit_without_pointer:{definition.name}"
+                        )
+                    if not starts:
+                        lease.checkpoint(f"stage:{ordinal}:before_start_journal")
+                        journal.append(
+                            self._stage_event(
+                                lease=lease,
+                                event="stage_started",
+                                ordinal=ordinal,
+                                definition=definition,
+                                input_root=previous,
+                            )
+                        )
+                        lease.checkpoint(f"stage:{ordinal}:start_journal_fsynced")
+                    else:
+                        self._validate_stage_event(
+                            starts[0], event="stage_started", ordinal=ordinal,
+                            definition=definition, input_root=previous,
+                        )
                     incomplete_native_work = runtime.stage_work_root.exists() and any(
                         runtime.stage_work_root.iterdir()
                     )
+                    lease.checkpoint(f"stage:{ordinal}:before_component")
                     native = definition.executor(runtime)
+                    lease.checkpoint(f"stage:{ordinal}:after_component")
                     if incomplete_native_work and native.cache_status == "miss_written":
                         native = NativeStageResult(
                             outputs=native.outputs,
@@ -197,13 +239,17 @@ class ApplicationStageMachine:
                         "semantic_summary": native.semantic_summary,
                         "cache_status": native.cache_status,
                         "execution_count": 1,
+                        "publication_lease_binding": lease.binding(),
                     }
+                    lease.checkpoint(f"stage:{ordinal}:before_artifact_publication")
                     stage_manifest = write_immutable_generation(
                         stage_root / "publication",
                         prefix=f"task055kr_stage_{ordinal:02d}_{definition.name}",
                         manifest_name="stage_manifest.json",
                         semantic=semantic,
                     )
+                    lease.checkpoint(f"stage:{ordinal}:artifact_publication_fsynced")
+                    lease.checkpoint(f"stage:{ordinal}:before_native_validation")
                     self._validate_stage(
                         stage_manifest["manifest_path"],
                         definition=definition,
@@ -211,29 +257,37 @@ class ApplicationStageMachine:
                         input_root=previous,
                         runtime=runtime,
                     )
+                    lease.checkpoint(f"stage:{ordinal}:after_native_validation")
+                    lease.checkpoint(f"stage:{ordinal}:before_stage_pointer")
                     publish_current_pointer(
                         stage_root / "publication",
                         manifest=stage_manifest,
                         manifest_name="stage_manifest.json",
                         pointer_schema="task055kr_application_stage_pointer_v1",
                     )
+                    lease.checkpoint(f"stage:{ordinal}:stage_pointer_fsynced")
+                    if crash_point == f"after_pointer:{definition.name}":
+                        raise Task055KInjectedCrash(
+                            f"task055k_crash_after_stage_pointer:{definition.name}"
+                        )
+                    lease.checkpoint(f"stage:{ordinal}:before_stage_commit")
                     journal.append(
-                        {
-                            "event_id": f"commit:{ordinal}:{definition.name}",
-                            "event": "stage_committed",
-                            "stage": definition.name,
-                            "ordinal": ordinal,
-                            "input_root": previous,
-                            "output_content_hash": stage_manifest["content_hash"],
-                            "cache_status": native.cache_status,
-                            "application_spec_hash": self.spec_hash,
-                        }
+                        self._stage_event(
+                            lease=lease,
+                            event="stage_committed",
+                            ordinal=ordinal,
+                            definition=definition,
+                            input_root=previous,
+                            output_content_hash=stage_manifest["content_hash"],
+                            cache_status=native.cache_status,
+                        )
                     )
+                    lease.checkpoint(f"stage:{ordinal}:stage_commit_fsynced")
                     prior[definition.name] = stage_manifest
                     previous = stage_manifest["content_hash"]
                     if crash_point == f"after_commit:{definition.name}":
                         raise Task055KInjectedCrash(f"task055k_crash_after_commit:{definition.name}")
-                    self._validate_open_lock(lock_path, lock.fileno(), lock_identity)
+                    lease.checkpoint(f"stage:{ordinal}:before_next_stage")
                 stage_rows = [
                     {
                         "stage": definition.name,
@@ -262,12 +316,14 @@ class ApplicationStageMachine:
                         for definition in self.stages
                     },
                 }
+                lease.checkpoint("application_before_journal_snapshot")
                 snapshot = write_immutable_generation(
                     self.root / "journal_snapshots",
                     prefix="task055kr_application_journal",
                     manifest_name="stage_journal.json",
                     semantic=snapshot_semantic,
                 )
+                lease.checkpoint("application_journal_snapshot_fsynced")
                 final_stage = prior[self.stages[-1].name]
                 semantic = {
                     "schema_version": APPLICATION_SCHEMA,
@@ -287,22 +343,33 @@ class ApplicationStageMachine:
                     "terminal_counts": final_stage["semantic_summary"].get("terminal_counts"),
                     "candidate_reselection_allowed": False,
                     "network_executed": False if self.evidence_scope == "synthetic_rehearsal_only" else True,
+                    "publication_lease_binding": lease.binding(),
                 }
+                lease.checkpoint("application_before_generation_publication")
                 application = write_immutable_generation(
                     self.root,
                     prefix="task055kr_response_application",
                     manifest_name="response_application.json",
                     semantic=semantic,
                 )
+                lease.checkpoint("application_generation_fsynced")
                 if crash_point == "before_final_pointer":
                     raise Task055KInjectedCrash("task055k_crash_before_final_pointer")
+                lease.checkpoint("application_before_final_pointer")
                 publish_current_pointer(
                     self.root,
                     manifest=application,
                     manifest_name="response_application.json",
                     pointer_schema="task055kr_response_application_pointer_v1",
                 )
+                lease.checkpoint("application_final_pointer_replaced")
+                _fsync_dir(self.root)
+                lease.checkpoint("application_final_pointer_directory_fsynced")
+                if crash_point == "after_final_pointer":
+                    raise Task055KInjectedCrash("task055k_crash_after_final_pointer")
                 validated = self.validate_application(application["manifest_path"])
+                lease.checkpoint("application_after_final_validation")
+                lease.checkpoint("application_before_completed_return")
                 return validated | {
                     "resume_summary": {
                         "executed_stage_count": executed,
@@ -310,8 +377,8 @@ class ApplicationStageMachine:
                         "recomputed_stage_count": recomputed,
                     }
                 }
-            finally:
-                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+            except Task055KLeaseError as exc:
+                raise Task055KStageMachineError(str(exc)) from None
 
     def validate_application(self, path: str | Path) -> dict[str, Any]:
         payload = validate_generation(path, schema=APPLICATION_SCHEMA, manifest_name="response_application.json")
@@ -322,6 +389,7 @@ class ApplicationStageMachine:
             or payload.get("stage_count") != len(self.stages)
         ):
             raise Task055KStageMachineError("task055k_application_contract_invalid")
+        self._validate_historical_binding(payload.get("publication_lease_binding") or {})
         journal_relative = Path(str(payload.get("stage_journal_relative_path") or ""))
         if journal_relative.is_absolute() or ".." in journal_relative.parts:
             raise Task055KStageMachineError("task055k_application_journal_path_invalid")
@@ -378,6 +446,35 @@ class ApplicationStageMachine:
             )
             prior[definition.name] = row
             previous = row["content_hash"]
+        starts = event_rows(durable.rows(), event="stage_started")
+        commits = event_rows(durable.rows(), event="stage_committed")
+        if len(starts) != len(self.stages) or len(commits) != len(self.stages):
+            raise Task055KStageMachineError("task055kr2_application_stage_event_count_invalid")
+        for ordinal, definition in enumerate(self.stages, start=1):
+            expected_input = self.spec_hash if ordinal == 1 else expected_rows[ordinal - 2][
+                "output_content_hash"
+            ]
+            start = [
+                row for row in starts
+                if row.get("ordinal") == ordinal and row.get("stage") == definition.name
+            ]
+            commit = [
+                row for row in commits
+                if row.get("ordinal") == ordinal and row.get("stage") == definition.name
+            ]
+            if len(start) != 1 or len(commit) != 1:
+                raise Task055KStageMachineError(
+                    f"task055kr2_application_stage_event_cardinality:{definition.name}"
+                )
+            self._validate_stage_event(
+                start[0], event="stage_started", ordinal=ordinal,
+                definition=definition, input_root=expected_input,
+            )
+            self._validate_stage_event(
+                commit[0], event="stage_committed", ordinal=ordinal,
+                definition=definition, input_root=expected_input,
+                output_content_hash=expected_rows[ordinal - 1]["output_content_hash"],
+            )
         if payload.get("stages") != expected_rows or payload.get("final_stage_root") != previous:
             raise Task055KStageMachineError("task055k_application_stage_cross_lineage_invalid")
         if journal.get("stages") != expected_rows or journal.get("final_stage_root") != previous:
@@ -418,6 +515,7 @@ class ApplicationStageMachine:
         ):
             raise Task055KStageMachineError(f"task055k_stage_contract_invalid:{definition.name}")
         definition.validator(payload, runtime)
+        self._validate_historical_binding(payload.get("publication_lease_binding") or {})
         return payload
 
     def _canonical_input_roots(self, previous: str) -> dict[str, str]:
@@ -444,9 +542,10 @@ class ApplicationStageMachine:
             pointer_schema="task055kr_application_stage_pointer_v1",
         )
 
-    def _existing_application(self) -> Path | None:
+    def _existing_application(self, lease: ReplacementSafeLease) -> Path | None:
         pointer = self.root / "current.json"
         if pointer.exists():
+            lease.checkpoint("application_existing_pointer_before_validation")
             return validate_current_pointer(
                 self.root,
                 manifest_name="response_application.json",
@@ -461,46 +560,93 @@ class ApplicationStageMachine:
             raise Task055KStageMachineError("task055k_application_generation_duplicate")
         if len(matches) == 1:
             # Crash after generation write but before current pointer.
+            lease.checkpoint("application_orphan_generation_before_validation")
             validated = self.validate_application(matches[0])
+            lease.checkpoint("application_orphan_generation_after_validation")
+            lease.checkpoint("application_orphan_generation_before_pointer")
             publish_current_pointer(
                 self.root,
                 manifest=validated,
                 manifest_name="response_application.json",
                 pointer_schema="task055kr_response_application_pointer_v1",
             )
+            lease.checkpoint("application_orphan_generation_pointer_fsynced")
             return matches[0]
         return None
 
-    def _load_or_seal_lock_identity(self, lock_path: Path) -> dict[str, int]:
-        identity_path = self.root / "application_lock_identity.json"
-        actual = lock_path.stat()
-        identity = {"st_dev": actual.st_dev, "st_ino": actual.st_ino}
-        if identity_path.is_file():
-            expected = json.loads(identity_path.read_text(encoding="utf-8"))
-            if expected != identity:
-                raise Task055KStageMachineError("task055k_application_lock_inode_replaced")
-            return expected
-        payload = json.dumps(identity, sort_keys=True) + "\n"
-        try:
-            with identity_path.open("x", encoding="utf-8") as handle:
-                handle.write(payload)
-                handle.flush()
-                os.fsync(handle.fileno())
-            return identity
-        except FileExistsError:
-            expected = json.loads(identity_path.read_text(encoding="utf-8"))
-            if expected != identity:
-                raise Task055KStageMachineError("task055k_application_lock_inode_replaced")
-            return expected
+    def _stage_event(
+        self,
+        *,
+        lease: ReplacementSafeLease,
+        event: str,
+        ordinal: int,
+        definition: StageDefinition,
+        input_root: str,
+        output_content_hash: str | None = None,
+        cache_status: str | None = None,
+    ) -> dict[str, Any]:
+        row = {
+            "event_id": (
+                f"start:{ordinal}:{definition.name}"
+                if event == "stage_started"
+                else f"commit:{ordinal}:{definition.name}"
+            ),
+            "event": event,
+            "stage": definition.name,
+            "ordinal": ordinal,
+            "input_root": input_root,
+            "application_spec_hash": self.spec_hash,
+            "lease_binding": lease.binding(),
+        }
+        if output_content_hash is not None:
+            row["output_content_hash"] = output_content_hash
+        if cache_status is not None:
+            row["cache_status"] = cache_status
+        return row
 
-    @staticmethod
-    def _validate_open_lock(lock_path: Path, descriptor: int, expected: Mapping[str, int]) -> None:
-        current = lock_path.stat()
-        opened = os.fstat(descriptor)
-        if (
-            current.st_dev != expected.get("st_dev")
-            or current.st_ino != expected.get("st_ino")
-            or opened.st_dev != current.st_dev
-            or opened.st_ino != current.st_ino
-        ):
-            raise Task055KStageMachineError("task055k_application_lock_inode_replaced")
+    def _validate_stage_event(
+        self,
+        row: Mapping[str, Any],
+        *,
+        event: str,
+        ordinal: int,
+        definition: StageDefinition,
+        input_root: str,
+        output_content_hash: str | None = None,
+    ) -> None:
+        expected = {
+            "event": event,
+            "stage": definition.name,
+            "ordinal": ordinal,
+            "input_root": input_root,
+            "application_spec_hash": self.spec_hash,
+        }
+        if any(row.get(key) != value for key, value in expected.items()):
+            raise Task055KStageMachineError(
+                f"task055kr2_stage_event_contract_invalid:{definition.name}:{event}"
+            )
+        if output_content_hash is not None and row.get("output_content_hash") != output_content_hash:
+            raise Task055KStageMachineError(
+                f"task055kr2_stage_commit_output_invalid:{definition.name}"
+            )
+        self._validate_historical_binding(row.get("lease_binding") or {})
+
+    def _validate_historical_binding(self, binding: Mapping[str, Any]) -> None:
+        if not binding:
+            raise Task055KStageMachineError("task055kr2_application_lease_binding_missing")
+        try:
+            validate_historical_lease_binding(
+                parent=self.root,
+                lock_name="application.lock",
+                binding=binding,
+            )
+        except Task055KLeaseError as exc:
+            raise Task055KStageMachineError(str(exc)) from None
+
+
+def _fsync_dir(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)

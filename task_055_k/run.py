@@ -26,10 +26,14 @@ from .contracts import (
     ENGINEERING_WARNINGS,
     FINAL_REPORT_SCHEMA,
     FINAL_VERIFICATION_SCHEMA,
+    KR2_CANDIDATE_STATUS,
+    KR2_EVIDENCE_SCHEMA,
     READY_STATUS,
     SCRUBBED_SCHEMA,
     TASK055K_AUTHORITY_RELATIVE_ROOT,
     TASK055K_RELATIVE_ROOT,
+    TASK055KR2_AUTHORITY_RELATIVE_ROOT,
+    TASK055KR2_RELATIVE_ROOT,
 )
 from .immutable import write_immutable_generation
 from .rehearsal import independently_verify_rehearsal, validate_rehearsal
@@ -57,7 +61,10 @@ THREAT_MODEL = {
 
 
 def prepare_runtime_foundation(
-    *, repository_root: str | Path, parent_task055j_final_seal: str | Path
+    *,
+    repository_root: str | Path,
+    parent_task055j_final_seal: str | Path,
+    kr2: bool = False,
 ) -> dict[str, Any]:
     repository = Path(repository_root).resolve()
     _require_clean(repository)
@@ -67,8 +74,12 @@ def prepare_runtime_foundation(
         repository_root=repository,
     )
     governed = Path(parent["governed_root"])
-    output = governed / TASK055K_RELATIVE_ROOT
-    authority_root = governed / TASK055K_AUTHORITY_RELATIVE_ROOT
+    task_relative_root = TASK055KR2_RELATIVE_ROOT if kr2 else TASK055K_RELATIVE_ROOT
+    authority_relative_root = (
+        TASK055KR2_AUTHORITY_RELATIVE_ROOT if kr2 else TASK055K_AUTHORITY_RELATIVE_ROOT
+    )
+    output = governed / task_relative_root
+    authority_root = governed / authority_relative_root
     output.mkdir(parents=True, exist_ok=True)
     authority_root.mkdir(parents=True, exist_ok=True)
     parent_verification = publish_parent_verification(
@@ -107,6 +118,9 @@ def prepare_runtime_foundation(
         "source_seal": source,
         "historical_supersession": supersession,
         "candidate_authority": authority,
+        "kr2": kr2,
+        "task_relative_root": task_relative_root,
+        "authority_relative_root": authority_relative_root,
     }
 
 
@@ -115,10 +129,12 @@ def finalize_offline_evidence(
     repository_root: str | Path,
     parent_task055j_final_seal: str | Path,
     rehearsal_manifest: str | Path,
+    kr2: bool = False,
 ) -> dict[str, Any]:
     foundation = prepare_runtime_foundation(
         repository_root=repository_root,
         parent_task055j_final_seal=parent_task055j_final_seal,
+        kr2=kr2,
     )
     repository = Path(foundation["repository"])
     output = Path(foundation["output"])
@@ -146,7 +162,11 @@ def finalize_offline_evidence(
         },
     )
     blockers: list[str] = []
-    status = READY_STATUS if not blockers else BLOCKED_STATUS
+    status = (
+        KR2_CANDIDATE_STATUS
+        if kr2 and not blockers
+        else READY_STATUS if not blockers else BLOCKED_STATUS
+    )
     application_role_roots = _application_role_roots(rehearsal)
     offline_counters = _offline_counters(rehearsal)
     report = write_immutable_generation(
@@ -200,6 +220,8 @@ def finalize_offline_evidence(
             "certification_blockers": list(CERTIFICATION_BLOCKERS),
             "readiness": {
                 "single_canary_engineering_ready": status == READY_STATUS,
+                "candidate_ready_for_independent_audit": status
+                == KR2_CANDIDATE_STATUS,
                 "certification_ready": False,
                 "portfolio_ready": False,
                 "optimizer_ready": False,
@@ -379,10 +401,14 @@ def _publish_scrubbed(
         )
     catalog.sort(key=lambda row: row["role"])
     semantic = {
-        "schema_version": SCRUBBED_SCHEMA,
+        "schema_version": KR2_EVIDENCE_SCHEMA if foundation.get("kr2") else SCRUBBED_SCHEMA,
         "status": report["status"],
         "implementation_commit": report["implementation_commit"],
-        "baseline_commit": "cc44926dda583652c0dad260bacb62a75550cdda",
+        "baseline_commit": (
+            "df24308eadab07128b9efead884355247e58a382"
+            if foundation.get("kr2")
+            else "cc44926dda583652c0dad260bacb62a75550cdda"
+        ),
         "parent_task055j_final_seal_hash": foundation["parent"][
             "parent_final_execution_seal_content_hash"
         ],
@@ -393,8 +419,8 @@ def _publish_scrubbed(
         "canary": foundation["candidate_authority"]["canary"],
         "budgets": foundation["candidate_authority"]["budgets"],
         "root_bindings": {
-            "task_root": TASK055K_RELATIVE_ROOT,
-            "authority_root": TASK055K_AUTHORITY_RELATIVE_ROOT,
+            "task_root": foundation["task_relative_root"],
+            "authority_root": foundation["authority_relative_root"],
             "historical_task055k_root": "validation_runs/task_055_k_20260719",
             "historical_task055k_authority_root": "governance/network_authority/task055k_single_canary_v1",
         },
@@ -449,6 +475,7 @@ def _publish_scrubbed(
         "broker_contract_hash": broker_contract_hash(),
         "threat_model": THREAT_MODEL,
         "network_authorized": False,
+        "executable": False,
         "authorization_eligible": False,
         "operator_authorization_required": True,
         "operational_state_unproven": True,
@@ -462,6 +489,7 @@ def _publish_scrubbed(
         "live_ready": False,
         "rehearsal_evidence_scope": "synthetic_rehearsal_only",
         "production_execution_ancestor": False,
+        "prospective_holdout_accessed": False,
         "network_execution": _offline_counters(rehearsal),
         "contains_absolute_paths": False,
         "contains_market_values": False,
@@ -469,7 +497,12 @@ def _publish_scrubbed(
         "git_attestation_required": True,
     }
     payload = semantic | {"content_hash": canonical_hash(semantic)}
-    path = Path(foundation["output"]) / "scrubbed_evidence/task055kr_scrubbed_evidence.json"
+    evidence_name = (
+        "task055kr2_candidate_evidence.json"
+        if foundation.get("kr2")
+        else "task055kr_scrubbed_evidence.json"
+    )
+    path = Path(foundation["output"]) / f"scrubbed_evidence/{evidence_name}"
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists() and read_json(path) != payload:
         raise Task055KRunError("task055k_scrubbed_evidence_replacement_forbidden")
@@ -521,16 +554,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     foundation = subparsers.add_parser("foundation")
     foundation.add_argument("--repository-root", required=True)
     foundation.add_argument("--parent-task055j-final-seal", required=True)
+    foundation.add_argument("--kr2", action="store_true")
     finalize = subparsers.add_parser("finalize")
     finalize.add_argument("--repository-root", required=True)
     finalize.add_argument("--parent-task055j-final-seal", required=True)
     finalize.add_argument("--rehearsal-manifest", required=True)
+    finalize.add_argument("--kr2", action="store_true")
     args = parser.parse_args(argv)
     try:
         if args.command == "foundation":
             result = prepare_runtime_foundation(
                 repository_root=args.repository_root,
                 parent_task055j_final_seal=args.parent_task055j_final_seal,
+                kr2=args.kr2,
             )
             summary = {
                 "status": "foundation_published",
@@ -545,6 +581,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 repository_root=args.repository_root,
                 parent_task055j_final_seal=args.parent_task055j_final_seal,
                 rehearsal_manifest=args.rehearsal_manifest,
+                kr2=args.kr2,
             )
             summary = {
                 "status": result["status"],

@@ -108,7 +108,10 @@ def _task055kr_patterns(*names: str) -> list[str]:
         for pattern in (
             f"*/task_055_k_kr_*/{name}",
             f"*/task_055_k_kr_*/**/{name}",
+            f"*/task_055_k_kr2_*/{name}",
+            f"*/task_055_k_kr2_*/**/{name}",
             f"*/network_authority/task055k_single_canary_v2/**/{name}",
+            f"*/network_authority/task055k_single_canary_v3/**/{name}",
             f"*/evidence/task_055_k/{name}",
         )
     ]
@@ -1445,16 +1448,19 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         "task055kr_attempt_reservation",
         ["schema_version", "status", "evidence_scope", "production_seal_eligible", "candidate_checkpoint_content_hash", "final_candidate_seal_content_hash", "operator_authorization_content_hash", "attempt_id", "request_fingerprint", "transport_identity", "evidence_use_identity", "broker_contract_hash", "broker_public_key_pem_b64", "broker_public_key_sha256", "private_key_persisted", "content_hash", "generation_id"],
         _task055kr_patterns("attempt_reservation.json"),
+        optional=["artifact_type", "producer", "created_at", "artifact_metadata", "lease_binding"],
     ),
     "task055kr_transport_receipt": _definition(
         "task055kr_transport_receipt",
         ["schema_version", "status", "evidence_scope", "production_seal_eligible", "candidate_checkpoint_content_hash", "final_candidate_seal_content_hash", "operator_authorization_content_hash", "attempt_reservation_content_hash", "attempt_id", "request_fingerprint", "transport_identity", "evidence_use_identity", "api_name", "params", "fields", "tls_attestation", "endpoint", "provider_api_version", "response_code", "response_message", "response_payload_hash", "response_payload", "response_fields", "item_count", "records_hash", "records", "empty_response_semantics", "contains_credential", "broker_contract_hash", "signature", "content_hash", "generation_id"],
         _task055kr_patterns("transport_receipt.json"),
+        optional=["artifact_type", "producer", "created_at", "artifact_metadata", "lease_binding"],
     ),
     "task055kr_canary_acceptance": _definition(
         "task055kr_canary_acceptance",
         ["schema_version", "status", "evidence_scope", "production_seal_eligible", "candidate_checkpoint_content_hash", "final_candidate_seal_content_hash", "operator_authorization_content_hash", "attempt_reservation_content_hash", "transport_receipt_content_hash", "transport_receipt_sha256", "cache_relative_path", "cache_sha256", "request", "item_count", "empty_response_semantics", "resume_authorized", "content_hash", "generation_id"],
         _task055kr_patterns("canary_acceptance.json"),
+        optional=["artifact_type", "producer", "created_at", "artifact_metadata", "transport_lease_binding"],
     ),
     "task055kr_generation_pointer": _definition(
         "task055kr_generation_pointer",
@@ -1548,6 +1554,7 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         "task055kr_application_stage",
         ["schema_version", "status", "stage_name", "ordinal", "application_spec_hash", "evidence_scope", "production_seal_eligible", "input_root", "canonical_input_roots", "validator_fqn", "native_outputs", "native_artifacts", "semantic_summary", "cache_status", "execution_count", "content_hash", "generation_id"],
         _task055kr_patterns("stage_manifest.json"),
+        optional=["artifact_type", "producer", "created_at", "artifact_metadata", "publication_lease_binding"],
     ),
     "task055kr_application_journal": _definition(
         "task055kr_application_journal",
@@ -1558,6 +1565,7 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         "task055kr_staged_application",
         ["schema_version", "status", "evidence_scope", "production_seal_eligible", "application_spec_hash", "stage_journal_content_hash", "stage_journal_relative_path", "stage_count", "stages", "final_stage_root", "final_outputs", "terminal_pair_count", "terminal_counts", "candidate_reselection_allowed", "network_executed", "content_hash", "generation_id"],
         _task055kr_patterns("response_application.json"),
+        optional=["artifact_type", "producer", "created_at", "artifact_metadata", "publication_lease_binding"],
     ),
     "task055kr_fee_replay": _definition(
         "task055kr_fee_replay",
@@ -1593,6 +1601,21 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         "task055kr_scrubbed_evidence",
         ["schema_version", "status", "implementation_commit", "baseline_commit", "parent_task055j_final_seal_hash", "ordered_exact_daily_keys", "ordered_key_root", "canary", "budgets", "root_bindings", "source_entries", "source_root", "application_stage_order", "application_role_roots", "synthetic_receipt_attestations", "artifact_catalog", "artifact_catalog_root", "lineage", "artifact_statuses", "cross_lineage", "broker_contract_hash", "threat_model", "network_authorized", "authorization_eligible", "operator_authorization_required", "operational_state_unproven", "engineering_blockers", "engineering_warnings", "certification_blockers", "certification_ready", "portfolio_ready", "optimizer_ready", "paper_ready", "live_ready", "rehearsal_evidence_scope", "production_execution_ancestor", "network_execution", "contains_absolute_paths", "contains_market_values", "contains_credentials", "git_attestation_required", "content_hash"],
         _task055kr_patterns("task055kr_scrubbed_evidence.json"),
+    ),
+    "task055kr2_candidate_evidence": _definition(
+        "task055kr2_candidate_evidence",
+        ["schema_version", "status", "implementation_commit", "baseline_commit", "ordered_exact_daily_keys", "ordered_key_root", "canary", "budgets", "root_bindings", "artifact_catalog", "artifact_catalog_root", "lineage", "cross_lineage", "network_authorized", "executable", "authorization_eligible", "operational_state_unproven", "contains_credentials", "contains_market_values", "contains_absolute_paths", "prospective_holdout_accessed", "content_hash"],
+        _task055kr_patterns("task055kr2_candidate_evidence.json"),
+    ),
+    "task055kr2_candidate_anchor": _definition(
+        "task055kr2_candidate_anchor",
+        ["schema_version", "status", "release_topology", "source_entries", "source_root", "verifier_entry", "reviewed_evidence_entry", "legacy_evidence_entry", "semantic_expectations", "top_level_artifact_catalog", "rehearsal_artifact_catalog", "application_roots", "application_stage_roots", "broker_public_keys", "network_authorized", "executable", "authorization_eligible", "content_hash"],
+        _task055kr_patterns("task055kr2_candidate_anchor.json"),
+    ),
+    "task055kr2_supersession": _definition(
+        "task055kr2_supersession",
+        ["schema_version", "status", "legacy_evidence", "superseded", "executable", "authorization_eligible", "replacement_candidate_requires_independent_external_anchor_review", "content_hash"],
+        _task055kr_patterns("task055kr2_supersession.json"),
     ),
     "task055f_truth_v2_manifest": _definition(
         "task055f_truth_v2_manifest",

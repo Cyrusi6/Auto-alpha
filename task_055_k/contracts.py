@@ -20,6 +20,8 @@ HISTORICAL_TASK055K_RELATIVE_ROOT = "validation_runs/task_055_k_20260719"
 HISTORICAL_TASK055K_AUTHORITY_RELATIVE_ROOT = "governance/network_authority/task055k_single_canary_v1"
 TASK055K_RELATIVE_ROOT = "validation_runs/task_055_k_kr_20260723"
 TASK055K_AUTHORITY_RELATIVE_ROOT = "governance/network_authority/task055k_single_canary_v2"
+TASK055KR2_RELATIVE_ROOT = "validation_runs/task_055_k_kr2_20260726"
+TASK055KR2_AUTHORITY_RELATIVE_ROOT = "governance/network_authority/task055k_single_canary_v3"
 MAX_DATE = "20260630"
 
 HISTORICAL_READY_EVIDENCE = {
@@ -64,6 +66,7 @@ MAX_CREDENTIAL_READS = 1
 EXPECTED_ORDERED_KEY_ROOT = "5aa5ebbe225c4093ce6b76f8359c34e3cde4a6e3d3fd88ba3ee1f53ebfd92e6f"
 
 READY_STATUS = "task055k_single_canary_engineering_ready_waiting_operator_authorization_no_network_executed"
+KR2_CANDIDATE_STATUS = "task055kr2_candidate_ready_for_independent_audit_no_network_executed"
 BLOCKED_STATUS = "task055k_single_canary_correctness_closure_blocked"
 CHECKPOINT_STATUS = "sealed_candidate_waiting_operator_authorization"
 FINAL_SEAL_STATUS = "engineering_candidate_waiting_operator_authorization"
@@ -87,6 +90,7 @@ REHEARSAL_VERIFICATION_SCHEMA = "task055kr_native_rehearsal_verification_v2"
 FINAL_REPORT_SCHEMA = "task055kr_engineering_report_v2"
 FINAL_VERIFICATION_SCHEMA = "task055kr_independent_final_verification_v2"
 SCRUBBED_SCHEMA = "task055kr_scrubbed_candidate_evidence_v2"
+KR2_EVIDENCE_SCHEMA = "task055kr2_candidate_evidence_v1"
 GIT_ATTESTATION_SCHEMA = "task055kr_git_evidence_attestation_v1"
 
 APPLICATION_STAGES = (

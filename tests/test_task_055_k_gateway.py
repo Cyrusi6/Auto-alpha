@@ -495,6 +495,104 @@ def test_lock_inode_replacement_blocks_before_credential_or_post(
     assert counters == {"credential": 0, "post": 0}
 
 
+def test_lock_replacement_during_credential_blocks_transport(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trust, counters, kwargs = _fixture(tmp_path, monkeypatch)
+    original = gateway._load_credential_file
+
+    def replace_lock_after_credential(*args, **arguments):
+        secret = original(*args, **arguments)
+        lock = Path(trust["authority_root"]) / "single_canary.lock"
+        lock.unlink()
+        lock.write_text("valid-looking-replacement", encoding="utf-8")
+        return secret
+
+    monkeypatch.setattr(gateway, "_load_credential_file", replace_lock_after_credential)
+    with pytest.raises(Exception):
+        gateway.execute_operator_authorized_single_canary(**kwargs)
+    assert counters == {"credential": 1, "post": 0}
+
+
+def test_lock_replacement_after_reservation_blocks_post_intent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trust, counters, kwargs = _fixture(tmp_path, monkeypatch)
+    original = gateway.publish_attempt_reservation
+
+    def replace_after_reservation(**arguments):
+        result = original(**arguments)
+        lock = Path(trust["authority_root"]) / "single_canary.lock"
+        lock.unlink()
+        lock.write_text("replacement", encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(gateway, "publish_attempt_reservation", replace_after_reservation)
+    with pytest.raises(Exception, match="lease_lost"):
+        gateway.execute_operator_authorized_single_canary(**kwargs)
+    assert counters == {"credential": 1, "post": 0}
+
+
+def test_lock_replacement_after_post_intent_is_ambiguous_without_post(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trust, counters, kwargs = _fixture(tmp_path, monkeypatch)
+    original = DurableHashJournal.append
+
+    def replace_after_intent(self, event):
+        result = original(self, event)
+        if self.name == "task055kr_network" and event.get("event") == "attempt_intent":
+            lock = Path(trust["authority_root"]) / "single_canary.lock"
+            lock.unlink()
+            lock.write_text("replacement", encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(DurableHashJournal, "append", replace_after_intent)
+    with pytest.raises(Exception, match="lease_lost"):
+        gateway.execute_operator_authorized_single_canary(**kwargs)
+    assert counters == {"credential": 1, "post": 0}
+
+
+def test_lock_replacement_in_serializer_blocks_immediately_before_transport(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trust, counters, kwargs = _fixture(tmp_path, monkeypatch)
+    original = gateway.serialize_tushare_request
+
+    def replace_during_serialize(**arguments):
+        request = original(**arguments)
+        lock = Path(trust["authority_root"]) / "single_canary.lock"
+        lock.unlink()
+        lock.write_text("replacement", encoding="utf-8")
+        return request
+
+    monkeypatch.setattr(gateway, "serialize_tushare_request", replace_during_serialize)
+    with pytest.raises(Exception, match="lease_lost"):
+        gateway.execute_operator_authorized_single_canary(**kwargs)
+    assert counters == {"credential": 1, "post": 0}
+
+
+def test_lock_replacement_during_transport_blocks_receipt_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trust, counters, kwargs = _fixture(tmp_path, monkeypatch)
+    original_builder = gateway.urllib.request.build_opener
+
+    class ReplacingOpener:
+        def open(self, request, timeout):
+            response = original_builder().open(request, timeout)
+            lock = Path(trust["authority_root"]) / "single_canary.lock"
+            lock.unlink()
+            lock.write_text("replacement", encoding="utf-8")
+            return response
+
+    monkeypatch.setattr(gateway.urllib.request, "build_opener", lambda *_args: ReplacingOpener())
+    with pytest.raises(Exception, match="lease_lost"):
+        gateway.execute_operator_authorized_single_canary(**kwargs)
+    assert counters == {"credential": 1, "post": 1}
+    assert not list((Path(trust["authority_root"]) / "transport_receipts").glob("**/*.json"))
+
+
 def test_two_process_canary_race_produces_one_post(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

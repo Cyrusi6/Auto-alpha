@@ -584,10 +584,6 @@ def _validate_authority_runtime_state(authority_root: Path, payload: Mapping[str
     lock = root / "single_canary.lock"
     if not lock.is_file() or lock.is_symlink():
         raise Task055KAuthorityError("task055k_authority_lock_invalid")
-    lock_stat = lock.stat()
-    expected = (payload.get("root_identities") or {}).get("single_canary_lock") or {}
-    if lock_stat.st_dev != expected.get("st_dev") or lock_stat.st_ino != expected.get("st_ino"):
-        raise Task055KAuthorityError("task055k_authority_lock_identity_invalid")
     root_stat = root.stat()
     expected_root = (payload.get("root_identities") or {}).get("authority_root") or {}
     if root_stat.st_dev != expected_root.get("st_dev") or root_stat.st_ino != expected_root.get("st_ino"):

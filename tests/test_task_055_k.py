@@ -24,6 +24,7 @@ from dev_tools.task055kr_harness import (
     synthetic_accepted_response,
 )
 from task_055_h.io import canonical_hash, read_json
+from task_055_j.ledger import DurableHashJournal
 from task_055_f.valuation import (
     publish_valuation_projection,
     valuation_surface_from_projection,
@@ -42,7 +43,11 @@ from task_055_k.contracts import CANARY
 from task_055_k.immutable import write_immutable_generation
 from task_055_k import network_cli
 from task_055_k.source_tree import git_index_source_entries
-from task_055_k.stage_machine import ApplicationStageMachine, Task055KStageMachineError
+from task_055_k.stage_machine import (
+    ApplicationStageMachine,
+    StageDefinition,
+    Task055KStageMachineError,
+)
 
 
 def _ordered_keys() -> list[dict]:
@@ -309,6 +314,45 @@ def test_all_stage_boundaries_and_final_pointer_recover(tmp_path: Path) -> None:
     )
     assert result["case_count"] == 37
     assert result["all_stage_boundaries_tested"] is True
+
+
+def test_lock_replacement_during_native_work_cannot_commit_stage(tmp_path: Path) -> None:
+    accepted, _checkpoint = _accepted(tmp_path)
+    stages = list(_lightweight_stages())
+    first = stages[0]
+
+    def replace_lock(runtime):
+        result = first.executor(runtime)
+        lock = runtime.application_root / "application.lock"
+        lock.unlink()
+        lock.write_text("valid-looking-replacement", encoding="utf-8")
+        return result
+
+    stages[0] = StageDefinition(
+        name=first.name,
+        executor=replace_lock,
+        validator=first.validator,
+        validator_fqn=first.validator_fqn,
+    )
+    machine = ApplicationStageMachine(
+        application_root=tmp_path / "lease-loss-app",
+        application_spec_hash=canonical_hash(["fixture", "lease-loss-app"]),
+        evidence_scope="synthetic_rehearsal_only",
+        accepted=accepted,
+        context={
+            "context_root": canonical_hash("fixture-context"),
+            "runtime_semantic_source_hash": canonical_hash("fixture-source"),
+        },
+        stages=stages,
+    )
+    with pytest.raises(Exception):
+        machine.run()
+    journal = DurableHashJournal(
+        tmp_path / "lease-loss-app" / "stage_journal",
+        name="task055kr_application",
+    )
+    assert not [row for row in journal.rows() if row.get("event") == "stage_committed"]
+    assert not (tmp_path / "lease-loss-app" / "current.json").exists()
 
 
 @pytest.mark.parametrize("target", ["lock", "pointer", "journal", "artifact"])

@@ -92,10 +92,10 @@ def validate_rehearsal(path: str | Path) -> dict[str, Any]:
     _validate_branch_summary("empty", payload.get("empty") or {})
     root = Path(payload["manifest_path"]).parents[3].resolve()
     catalog = payload.get("artifact_catalog") or []
-    if canonical_hash(catalog) != payload.get("artifact_catalog_root") or len(catalog) != 8:
+    if canonical_hash(catalog) != payload.get("artifact_catalog_root") or len(catalog) != 12:
         raise Task055KRehearsalError("task055k_rehearsal_artifact_catalog_invalid")
     roles = {row.get("role") for row in catalog}
-    if len(roles) != 8:
+    if len(roles) != 12:
         raise Task055KRehearsalError("task055k_rehearsal_artifact_role_duplicate")
     for row in catalog:
         relative = Path(str(row.get("relative_path") or ""))
@@ -282,6 +282,8 @@ def _scrub_branch_paths(
     catalog = []
     paths = row.get("artifact_paths") or {}
     expected = {
+        "attempt_reservation",
+        "transport_receipt",
         "primary_application",
         "sibling_application",
         "primary_independent_verification",

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import fcntl
 import gzip
 import json
 import os
@@ -40,6 +39,11 @@ from .broker import (
     request_from_checkpoint,
 )
 from .contracts import OPERATOR_AUTHORIZATION_SCHEMA
+from .lease import (
+    ReplacementSafeLease,
+    Task055KLeaseError,
+    validate_historical_lease_binding,
+)
 from .signing import EphemeralReceiptSigner
 
 
@@ -64,30 +68,48 @@ def execute_operator_authorized_single_canary(
         repository_root=repository_root,
     )
     authority_root = Path(trust["authority_root"])
-    lock_path = authority_root / "single_canary.lock"
-    _validate_lock_identity(lock_path, trust["final_seal"])
-    with lock_path.open("r+") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    request = request_from_checkpoint(trust["checkpoint"])
+    attempt_id = canonical_hash(
+        [trust["final_seal"]["content_hash"], request["transport_identity"], "physical_attempt", 1]
+    )
+    try:
+        lease = ReplacementSafeLease.acquire(
+            parent=authority_root,
+            lock_name="single_canary.lock",
+            scope="task055kr2_single_canary_transport",
+            root_binding=trust["final_seal"]["content_hash"],
+            attempt=attempt_id,
+            expected_parent_identity=(
+                trust["final_seal"].get("root_identities", {}).get("authority_root")
+                or {}
+            ),
+            allow_legacy_empty_bootstrap=True,
+        )
+    except Task055KLeaseError as exc:
+        message = str(exc)
+        if message == "task055kr2_unsealed_existing_lock":
+            message = f"task055k_single_flight_lock_inode_drift:{message}"
+        raise Task055KGatewayError(message) from None
+    with lease:
         try:
-            _validate_lock_identity(lock_path, trust["final_seal"], open_fd=lock.fileno())
+            lease.checkpoint("gateway_after_acquisition")
             network = DurableHashJournal(authority_root / "network_journal", name="task055kr_network")
             spend = DurableHashJournal(authority_root / "transport_spend_journal", name="task055kr_spend")
             network.checkpoint()
             spend.checkpoint()
             network.assert_ancestor(trust["final_seal"]["initial_network_journal"])
             spend.assert_ancestor(trust["final_seal"]["initial_transport_spend"])
-            request = request_from_checkpoint(trust["checkpoint"])
-            attempt_id = canonical_hash(
-                [trust["final_seal"]["content_hash"], request["transport_identity"], "physical_attempt", 1]
-            )
+            lease.checkpoint("gateway_before_recovery")
             recovered = _recover_if_possible(
                 trust=trust,
                 attempt_id=attempt_id,
                 network=network,
                 spend=spend,
                 repository_root=repository_root,
+                lease=lease,
             )
             if recovered is not None:
+                lease.checkpoint("gateway_recovered_before_success")
                 return recovered
             if event_rows(network.rows(), event="attempt_intent", attempt_id=attempt_id):
                 raise Task055KGatewayError("task055k_post_intent_without_canonical_receipt_ambiguous")
@@ -98,8 +120,10 @@ def execute_operator_authorized_single_canary(
                     "task055k_credential_read_intent_without_transport_ambiguous"
                 )
             _assert_budget(network, spend)
+            lease.checkpoint("gateway_before_tls")
             tls = tls_preflight()
             _validate_tls(tls)
+            lease.checkpoint("gateway_before_credential_intent")
             network.append(
                 {
                     "event_id": f"credential:{attempt_id}",
@@ -115,8 +139,11 @@ def execute_operator_authorized_single_canary(
                     "operator_authorization_content_hash": trust[
                         "operator_authorization"
                     ]["content_hash"],
+                    "lease_binding": lease.binding(),
                 }
             )
+            lease.checkpoint("gateway_credential_intent_fsynced")
+            lease.checkpoint("gateway_before_credential_provider")
             secret = _load_credential_file(
                 Path(credential_file),
                 forbidden_roots=[
@@ -125,7 +152,9 @@ def execute_operator_authorized_single_canary(
                     authority_root,
                 ],
             )
+            lease.checkpoint("gateway_after_credential_provider")
             signer = EphemeralReceiptSigner.generate()
+            lease.checkpoint("gateway_before_attempt_reservation")
             reservation = publish_attempt_reservation(
                 checkpoint=trust["checkpoint"],
                 authority_root=authority_root,
@@ -134,7 +163,9 @@ def execute_operator_authorized_single_canary(
                 evidence_scope="real_production",
                 final_candidate_seal_hash=trust["final_seal"]["content_hash"],
                 operator_authorization_hash=trust["operator_authorization"]["content_hash"],
+                lease_binding=lease.binding(),
             )
+            lease.checkpoint("gateway_after_attempt_reservation")
             common = {
                 "attempt_id": attempt_id,
                 "request_fingerprint": request["request_fingerprint"],
@@ -143,7 +174,9 @@ def execute_operator_authorized_single_canary(
                 "final_candidate_seal_content_hash": trust["final_seal"]["content_hash"],
                 "operator_authorization_content_hash": trust["operator_authorization"]["content_hash"],
                 "attempt_reservation_content_hash": reservation["content_hash"],
+                "lease_binding": lease.binding(),
             }
+            lease.checkpoint("gateway_before_post_intent")
             network.append(
                 {
                     "event_id": f"intent:{attempt_id}",
@@ -152,6 +185,8 @@ def execute_operator_authorized_single_canary(
                     **common,
                 }
             )
+            lease.checkpoint("gateway_post_intent_fsynced")
+            lease.checkpoint("gateway_before_transport_spend_intent")
             spend.append(
                 {
                     "event_id": f"spend:{attempt_id}",
@@ -160,6 +195,7 @@ def execute_operator_authorized_single_canary(
                     **common,
                 }
             )
+            lease.checkpoint("gateway_transport_spend_fsynced")
             try:
                 revalidated = _validate_execution_trust(
                     final_candidate_seal=trust["final_seal"]["manifest_path"],
@@ -178,8 +214,10 @@ def execute_operator_authorized_single_canary(
                     final_seal=revalidated["final_seal"],
                     operator_authorization=revalidated["operator_authorization"],
                     attempt_id=attempt_id,
+                    expected_lease_binding=lease.binding(),
                 )
                 _validate_tls(tls)
+                lease.checkpoint("gateway_final_pre_transport")
                 canonical_request = request_from_checkpoint(revalidated["checkpoint"])
                 serialized = serialize_tushare_request(
                     endpoint=CANONICAL_ORIGIN,
@@ -188,6 +226,7 @@ def execute_operator_authorized_single_canary(
                     params=canonical_request["params"],
                     fields=canonical_request["fields"],
                 )
+                lease.checkpoint("gateway_immediate_pre_transport_call")
                 started = time.perf_counter()
                 try:
                     with urllib.request.build_opener(_NoRedirect).open(
@@ -217,6 +256,7 @@ def execute_operator_authorized_single_canary(
                     raise TushareNetworkError(
                         "Tushare HTTPS request failed after canonical Task055-KR authorization"
                     ) from exc
+                lease.checkpoint("gateway_transport_return_first_control")
                 if not isinstance(payload, dict):
                     raise TushareNetworkError(
                         "Tushare HTTPS response must be a JSON object"
@@ -236,6 +276,7 @@ def execute_operator_authorized_single_canary(
                 )
             except Exception as exc:
                 raise Task055KGatewayError(_scrub_exception(exc, secret)) from None
+            lease.checkpoint("gateway_before_receipt_publication")
             receipt = publish_signed_transport_receipt(
                 reservation=reservation,
                 checkpoint=trust["checkpoint"],
@@ -244,11 +285,15 @@ def execute_operator_authorized_single_canary(
                 authority_root=authority_root,
                 tls_attestation=tls,
             )
+            lease.checkpoint("gateway_receipt_publication_fsynced")
+            lease.checkpoint("gateway_before_cache_publication")
             cache = publish_validated_cache(
                 authority_root=authority_root,
                 checkpoint=trust["checkpoint"],
                 receipt=receipt,
             )
+            lease.checkpoint("gateway_cache_publication_fsynced")
+            lease.checkpoint("gateway_before_acceptance_publication")
             acceptance = publish_canary_acceptance(
                 authority_root=authority_root,
                 checkpoint=trust["checkpoint"],
@@ -256,6 +301,7 @@ def execute_operator_authorized_single_canary(
                 receipt=receipt,
                 cache_path=cache,
             )
+            lease.checkpoint("gateway_acceptance_publication_fsynced")
             terminal = {
                 **common,
                 "transport_receipt_content_hash": receipt["content_hash"],
@@ -263,7 +309,9 @@ def execute_operator_authorized_single_canary(
                 "cache_sha256": sha256_file(cache),
                 "canary_acceptance_content_hash": acceptance["content_hash"],
                 "item_count": receipt["item_count"],
+                "transport_lease_binding": dict(receipt.get("lease_binding") or {}),
             }
+            lease.checkpoint("gateway_before_transport_completion")
             spend.append(
                 {
                     "event_id": f"post-complete:{attempt_id}",
@@ -272,6 +320,8 @@ def execute_operator_authorized_single_canary(
                     **terminal,
                 }
             )
+            lease.checkpoint("gateway_transport_completion_fsynced")
+            lease.checkpoint("gateway_before_request_terminal")
             network.append(
                 {
                     "event_id": f"terminal:{attempt_id}",
@@ -280,13 +330,16 @@ def execute_operator_authorized_single_canary(
                     **terminal,
                 }
             )
-            return load_accepted_response(
+            lease.checkpoint("gateway_request_terminal_fsynced")
+            accepted = load_accepted_response(
                 acceptance_path=acceptance["manifest_path"],
                 final_candidate_seal_path=final_candidate_seal,
                 repository_root=repository_root,
             )
-        finally:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+            lease.checkpoint("gateway_before_success_return")
+            return accepted
+        except Task055KLeaseError as exc:
+            raise Task055KGatewayError(str(exc)) from None
 
 
 def _validate_execution_trust(
@@ -330,6 +383,7 @@ def _recover_if_possible(
     network: DurableHashJournal,
     spend: DurableHashJournal,
     repository_root: str | Path,
+    lease: ReplacementSafeLease,
 ) -> AcceptedResponse | None:
     intents = event_rows(network.rows(), event="attempt_intent", attempt_id=attempt_id)
     if not intents:
@@ -343,6 +397,14 @@ def _recover_if_possible(
         raise Task055KGatewayError("task055k_ambiguous_attempt_missing_canonical_reservation")
     reservation = _canonical_reservation(
         Path(trust["authority_root"]), read_json(reservations[0])["content_hash"]
+    )
+    transport_binding = dict(reservation.get("lease_binding") or {})
+    if not transport_binding:
+        raise Task055KGatewayError("task055kr2_recovery_transport_lease_missing")
+    validate_historical_lease_binding(
+        parent=trust["authority_root"],
+        lock_name="single_canary.lock",
+        binding=transport_binding,
     )
     receipts = list(
         (Path(trust["authority_root"]) / "transport_receipts" / "generations").glob(
@@ -362,11 +424,13 @@ def _recover_if_possible(
         request["api_name"], params=request["params"], fields=request["fields"]
     )
     if cached is None or not cached.hit:
+        lease.checkpoint("gateway_recovery_before_cache_publication")
         cache_path = publish_validated_cache(
             authority_root=trust["authority_root"],
             checkpoint=trust["checkpoint"],
             receipt=receipt,
         )
+        lease.checkpoint("gateway_recovery_cache_publication_fsynced")
     else:
         if cached.records != receipt["records"]:
             raise Task055KGatewayError("task055k_recovery_cache_receipt_conflict")
@@ -384,6 +448,7 @@ def _recover_if_possible(
     if len(matches) > 1:
         raise Task055KGatewayError("task055k_ambiguous_attempt_duplicate_acceptance")
     if not matches:
+        lease.checkpoint("gateway_recovery_before_acceptance_publication")
         acceptance = publish_canary_acceptance(
             authority_root=trust["authority_root"],
             checkpoint=trust["checkpoint"],
@@ -391,6 +456,7 @@ def _recover_if_possible(
             receipt=receipt,
             cache_path=cache_path,
         )
+        lease.checkpoint("gateway_recovery_acceptance_publication_fsynced")
         matches = [Path(acceptance["manifest_path"])]
     acceptance_payload = read_json(matches[0])
     request = request_from_checkpoint(trust["checkpoint"])
@@ -408,10 +474,13 @@ def _recover_if_possible(
         "canary_acceptance_content_hash": acceptance_payload["content_hash"],
         "item_count": receipt["item_count"],
         "recovered_without_new_post": True,
+        "transport_lease_binding": transport_binding,
+        "recovery_lease_binding": lease.binding(),
     }
     if not event_rows(spend.rows(), event="physical_post_started", attempt_id=attempt_id):
         raise Task055KGatewayError("task055k_recovery_spend_start_missing")
     if not event_rows(spend.rows(), event="physical_post_completed", attempt_id=attempt_id):
+        lease.checkpoint("gateway_recovery_before_transport_completion")
         spend.append(
             {
                 "event_id": f"post-complete:{attempt_id}",
@@ -420,7 +489,9 @@ def _recover_if_possible(
                 **terminal,
             }
         )
+        lease.checkpoint("gateway_recovery_transport_completion_fsynced")
     if not event_rows(network.rows(), event="request_terminal", attempt_id=attempt_id):
+        lease.checkpoint("gateway_recovery_before_request_terminal")
         network.append(
             {
                 "event_id": f"terminal:{attempt_id}",
@@ -429,6 +500,7 @@ def _recover_if_possible(
                 **terminal,
             }
         )
+        lease.checkpoint("gateway_recovery_request_terminal_fsynced")
     return load_accepted_response(
         acceptance_path=matches[0],
         final_candidate_seal_path=trust["final_seal"]["manifest_path"],
@@ -460,6 +532,7 @@ def _validate_reservation_for_transport(
     final_seal: Mapping[str, Any],
     operator_authorization: Mapping[str, Any],
     attempt_id: str,
+    expected_lease_binding: Mapping[str, Any],
 ) -> None:
     request = request_from_checkpoint(checkpoint)
     expected = {
@@ -475,6 +548,7 @@ def _validate_reservation_for_transport(
         "evidence_use_identity": request["evidence_use_identity"],
         "broker_contract_hash": broker_contract_hash(),
         "private_key_persisted": False,
+        "lease_binding": dict(expected_lease_binding),
     }
     if any(reservation.get(key) != value for key, value in expected.items()):
         raise Task055KGatewayError("task055k_final_transport_reservation_invalid")
@@ -497,19 +571,6 @@ def _assert_budget(network: DurableHashJournal, spend: DurableHashJournal) -> No
         or event_rows(spend.rows(), event="physical_post_started")
     ):
         raise Task055KGatewayError("task055k_single_canary_budget_already_consumed")
-
-
-def _validate_lock_identity(path: Path, final_seal: Mapping[str, Any], *, open_fd: int | None = None) -> None:
-    if not path.is_file() or path.is_symlink():
-        raise Task055KGatewayError("task055k_single_flight_lock_invalid")
-    actual = path.stat()
-    expected = final_seal.get("root_identities", {}).get("single_canary_lock") or {}
-    if actual.st_dev != expected.get("st_dev") or actual.st_ino != expected.get("st_ino"):
-        raise Task055KGatewayError("task055k_single_flight_lock_inode_drift")
-    if open_fd is not None:
-        opened = os.fstat(open_fd)
-        if opened.st_dev != actual.st_dev or opened.st_ino != actual.st_ino:
-            raise Task055KGatewayError("task055k_single_flight_open_lock_replaced")
 
 
 def _validate_tls(payload: Mapping[str, Any]) -> None:

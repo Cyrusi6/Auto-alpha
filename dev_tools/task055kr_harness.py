@@ -508,6 +508,8 @@ def _run_branch(
             "empty_response_semantics": accepted.receipt["empty_response_semantics"],
         },
         "artifact_paths": {
+            "attempt_reservation": accepted.reservation["manifest_path"],
+            "transport_receipt": accepted.receipt["manifest_path"],
             "primary_application": primary["manifest_path"],
             "sibling_application": sibling["manifest_path"],
             "primary_independent_verification": primary_verification["manifest_path"],
