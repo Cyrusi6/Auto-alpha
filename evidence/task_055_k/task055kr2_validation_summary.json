@@ -1,0 +1,143 @@
+{
+  "baseline_commit": "df24308eadab07128b9efead884355247e58a382",
+  "build": {
+    "sdist_sha256": "c5179c9b627383aee2c3aa77267ee932ed2929c32a31f874ff0e0f8136c1c63e",
+    "status": "passed",
+    "wheel_file_count": 828,
+    "wheel_package_boundary": "passed",
+    "wheel_sha256": "7384bc800e832b7556fb441ec9da39e105cd2091b37dd5474805b64ea2df1e72"
+  },
+  "candidate": {
+    "artifact_catalog_root": "0c12f93a6b891f678962c54dba9610cb8dafd5e12d529a9e970b52acff0de874",
+    "authority_content_hash": "fc452d9009ae70d53ce5d2636ad3e3ed710d7a5fd06ca7a28551f7483f93bb4b",
+    "candidate_checkpoint_content_hash": "253566f8a2f09f082800bf2ac8d2dfe93b7b915a308be6eb9520766ba1ca6ae5",
+    "evidence_content_hash": "319781e137c48bd56c99682c9ebc9f549eb9755ecff69c9a404bd540dd28050f",
+    "final_candidate_seal_content_hash": "b3538644f175019a514c7297bb98692656677b6de56664282102cdb5ec2ac6b5",
+    "final_verification_content_hash": "b109353ca866b2bb276e976aa81fba83cf0b342f0177c8b4f4c84e147bd3ae45",
+    "report_content_hash": "fc323593759b3e1249e071d07c25dc9563812822eb9d4642d9a28cd194e25a47",
+    "source_root": "18c0310adfb84fb17d2cbd2598c807ad3b336e607732f6a91bbe3bf26daed944",
+    "status": "task055kr2_candidate_ready_for_independent_audit_no_network_executed"
+  },
+  "implementation_commit": "964b219a796a98784a23bb0f5f9e062830016d41",
+  "implementation_validation": {
+    "collection": {
+      "deselected": 0,
+      "skipped": 0,
+      "tests": 903,
+      "xfail": 0
+    },
+    "focused": "93 passed in 33.08s",
+    "full_pytest": "903 passed, 2 existing risk-model warnings",
+    "local_ci_full": {
+      "command_count": 60,
+      "failed_command_count": 0,
+      "status": "passed"
+    },
+    "replacement_regressions": "2 passed",
+    "stress": {
+      "lease_acquisitions": 256,
+      "stage_fast_path_interleavings": 64,
+      "unique_fences_and_nonces": 256,
+      "winner_generation_count": 1,
+      "winner_reused_stage_count": 768
+    }
+  },
+  "native_rehearsal": {
+    "artifact_catalog_root": "1a43ced388babbb15569c9e5f343d163dfedc5ba2ea5c7c0ff60e8d580d8251a",
+    "content_hash": "b65eaa091ff0acf606ace5001d83ee2fda8b4f9cea6ceee291ac409e5a3361f9",
+    "empty": {
+      "all_in_terminal_counts": {
+        "causal_valuation_blocked": 100
+      },
+      "net_terminal_counts": {
+        "causal_valuation_blocked": 100
+      },
+      "primary_first": {
+        "executed": 12,
+        "recomputed": 0,
+        "reused": 0
+      },
+      "resume": {
+        "executed": 0,
+        "recomputed": 0,
+        "reused": 12
+      },
+      "sibling_first": {
+        "executed": 12,
+        "recomputed": 0,
+        "reused": 0
+      }
+    },
+    "independent_verification_content_hash": "555c7582bb07009f3adbcd1d329d1b6356966bc602a9d4e95b8e476227fc0a66",
+    "positive": {
+      "all_in_terminal_counts": {
+        "causal_valuation_blocked": 100
+      },
+      "net_terminal_counts": {
+        "causal_valuation_blocked": 100
+      },
+      "primary_first": {
+        "executed": 12,
+        "recomputed": 0,
+        "reused": 0
+      },
+      "resume": {
+        "executed": 0,
+        "recomputed": 0,
+        "reused": 12
+      },
+      "sibling_first": {
+        "executed": 12,
+        "recomputed": 0,
+        "reused": 0
+      }
+    },
+    "recovery_case_count": 47,
+    "recovery_cases_root": "913cc58bca84a882cf20f73d81e2f09173dad906a59656d4496f1410ef9c5fb9"
+  },
+  "offline_boundary": {
+    "credential_read_count": 0,
+    "gpu_job_count": 0,
+    "max_read_date": "20260630",
+    "other_http_count": 0,
+    "prospective_holdout_accessed": false,
+    "read_ledger_file_count": 24,
+    "read_ledger_row_count": 240,
+    "tushare_post_count": 0
+  },
+  "prior_immutable_attempts": [
+    {
+      "name": "native_rehearsal_527d054",
+      "reason": "restart acceptance identity drift",
+      "status": "superseded_partial"
+    },
+    {
+      "name": "native_rehearsal_1a86c4c",
+      "reason": "process-local first-run count misclassified restart",
+      "status": "superseded_non_executable"
+    },
+    {
+      "name": "native_rehearsal_c9de628",
+      "reason": "final seal canonical-root resolver mismatch",
+      "status": "superseded_non_executable"
+    },
+    {
+      "name": "native_rehearsal_e903f37",
+      "reason": "nested rehearsal catalog resolved against governed root",
+      "status": "superseded_non_executable"
+    },
+    {
+      "name": "native_rehearsal_fd2de77",
+      "reason": "fixed scrubbed-evidence pathname collided with prior immutable output",
+      "status": "superseded_non_executable"
+    }
+  ],
+  "schema_validation": {
+    "native_threat_model": "passed",
+    "registered_artifact_count": 23,
+    "strict_error_count": 0,
+    "strict_unknown_count": 0,
+    "strict_warning_count": 0
+  },
+  "schema_version": "task055kr2_validation_summary_v1"
+}
