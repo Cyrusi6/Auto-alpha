@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -502,13 +505,84 @@ def _publish_scrubbed(
         if foundation.get("kr2")
         else "task055kr_scrubbed_evidence.json"
     )
-    path = Path(foundation["output"]) / f"scrubbed_evidence/{evidence_name}"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists() and read_json(path) != payload:
-        raise Task055KRunError("task055k_scrubbed_evidence_replacement_forbidden")
-    if not path.exists():
-        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path = _publish_content_addressed_evidence(
+        root=Path(foundation["output"]) / "scrubbed_evidence",
+        evidence_name=evidence_name,
+        payload=payload,
+    )
     return payload | {"manifest_path": str(path)}
+
+
+def _publish_content_addressed_evidence(
+    *,
+    root: str | Path,
+    evidence_name: str,
+    payload: Mapping[str, Any],
+) -> Path:
+    output = Path(root).resolve()
+    encoded = (json.dumps(dict(payload), indent=2, sort_keys=True) + "\n").encode()
+    content_hash = str(payload.get("content_hash") or "")
+    if len(content_hash) != 64:
+        raise Task055KRunError("task055k_scrubbed_evidence_content_hash_invalid")
+    generation_id = f"{Path(evidence_name).stem}_{content_hash[:24]}"
+    target = output / "generations" / generation_id
+    manifest = target / evidence_name
+    if target.exists():
+        _validate_content_addressed_evidence(
+            target=target,
+            evidence_name=evidence_name,
+            encoded=encoded,
+        )
+        return manifest
+    target.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{generation_id}.", dir=target.parent))
+    try:
+        staged_manifest = staging / evidence_name
+        with staged_manifest.open("wb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.rename(staging, target)
+            _fsync_directory(target.parent)
+        except OSError:
+            if not target.exists():
+                raise
+            _validate_content_addressed_evidence(
+                target=target,
+                evidence_name=evidence_name,
+                encoded=encoded,
+            )
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
+    return manifest
+
+
+def _validate_content_addressed_evidence(
+    *,
+    target: Path,
+    evidence_name: str,
+    encoded: bytes,
+) -> None:
+    manifest = target / evidence_name
+    if (
+        target.is_symlink()
+        or not target.is_dir()
+        or sorted(path.name for path in target.iterdir()) != [evidence_name]
+        or manifest.is_symlink()
+        or not manifest.is_file()
+        or manifest.read_bytes() != encoded
+    ):
+        raise Task055KRunError("task055k_scrubbed_evidence_generation_collision")
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _offline_counters(rehearsal: Mapping[str, Any]) -> dict[str, Any]:

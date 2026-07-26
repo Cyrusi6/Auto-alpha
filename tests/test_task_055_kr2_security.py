@@ -19,6 +19,7 @@ from task_055_k.verifier import (
     verify_scrubbed_evidence,
 )
 from task_055_k.release import _load_rehearsal_release_catalog
+from task_055_k.run import _publish_content_addressed_evidence
 from dev_tools.task055kr_harness import _lightweight_stages, synthetic_accepted_response
 from task_055_k.authority import normalize_ordered_keys
 from task_055_h.io import read_json
@@ -337,6 +338,37 @@ def test_nested_rehearsal_catalog_resolves_from_rehearsal_generation_root(
     )
     assert rehearsal["artifact_catalog"] == catalog
     assert resolved_root == rehearsal_root
+
+
+def test_content_addressed_evidence_preserves_legacy_flat_file(tmp_path: Path) -> None:
+    root = tmp_path / "scrubbed_evidence"
+    root.mkdir()
+    legacy = root / "task055kr2_candidate_evidence.json"
+    legacy.write_text('{"historical":true}\n', encoding="utf-8")
+    first = {"status": "first", "content_hash": "a" * 64}
+    second = {"status": "second", "content_hash": "b" * 64}
+
+    first_path = _publish_content_addressed_evidence(
+        root=root,
+        evidence_name=legacy.name,
+        payload=first,
+    )
+    repeated_path = _publish_content_addressed_evidence(
+        root=root,
+        evidence_name=legacy.name,
+        payload=first,
+    )
+    second_path = _publish_content_addressed_evidence(
+        root=root,
+        evidence_name=legacy.name,
+        payload=second,
+    )
+
+    assert first_path == repeated_path
+    assert first_path != second_path
+    assert legacy.read_text(encoding="utf-8") == '{"historical":true}\n'
+    assert json.loads(first_path.read_text(encoding="utf-8")) == first
+    assert json.loads(second_path.read_text(encoding="utf-8")) == second
 
 
 def _hash(value) -> str:
