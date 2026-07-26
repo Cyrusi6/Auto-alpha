@@ -1,0 +1,80 @@
+{
+  "baseline_commit": "df24308eadab07128b9efead884355247e58a382",
+  "build": {
+    "sdist_sha256": "13fc817214dc90afea55a4a1056a67b1812785079602e8be657f37cf9f2026a5",
+    "status": "passed",
+    "wheel_file_count": 828,
+    "wheel_package_boundary": "passed",
+    "wheel_sha256": "a1b2d1b95c8bdd1f80ea961b04e02a4e4affbc4c3412c8877d1c94abac43e5a9"
+  },
+  "candidate": {
+    "artifact_catalog_root": "072364327007b54a2065eac168c9c1487a610ca7cf8d01b98b1b7904be368814",
+    "authority_content_hash": "171388ea41367e450de2868f66f8bd370803f3bc8fa81f7cdfe0683485b54ef4",
+    "candidate_checkpoint_content_hash": "459e90f37e4f396b164b70d1ff59a1c62e511b6675510b6b340a1df82ba4cb98",
+    "evidence_content_hash": "7ef28651849bfe4607c3afcb76b08465914334e686c41b9d766cc655d2c978ec",
+    "final_candidate_seal_content_hash": "d66b9ea0994db4326f8d5031b4a96ecf71a4c527808f54b143974f0b73fe9d60",
+    "final_verification_content_hash": "7decfbc4828e5be38c2797ca1f63f14f8263914a8e40f8997f89c121e839fa65",
+    "report_content_hash": "1d6f20a6918a4b840626efa9084dca297f9043829127572bd91ce8946870e7fa",
+    "source_root": "7b564e800e1c7346c8520f6f547ed852f5c3c58646fed72be73f57ced1ae7ba6",
+    "status": "task055kr2_candidate_ready_for_independent_audit_no_network_executed"
+  },
+  "implementation_commit": "e903f3765eda39449d975ea30f7c7ce796f4f5aa",
+  "implementation_validation": {
+    "collection": {"deselected": 0, "skipped": 0, "tests": 901, "xfail": 0},
+    "focused": "91 passed in 34.87s",
+    "full_pytest": "901 passed, 2 existing risk-model warnings",
+    "local_ci_full": {"command_count": 60, "failed_command_count": 0, "status": "passed"},
+    "replacement_regressions": "2 passed",
+    "stress": {
+      "lease_acquisitions": 256,
+      "stage_fast_path_interleavings": 64,
+      "unique_fences_and_nonces": 256,
+      "winner_generation_count": 1,
+      "winner_reused_stage_count": 768
+    }
+  },
+  "native_rehearsal": {
+    "artifact_catalog_root": "f5630ed5277a8ada8f30ed3000fe086f344160681a1781d33617e4cda7cb803b",
+    "content_hash": "2b4c875a891a18310362713c9542640a8ae5a8680a689956571891a71ea7cc2d",
+    "empty": {
+      "all_in_terminal_counts": {"causal_valuation_blocked": 100},
+      "net_terminal_counts": {"causal_valuation_blocked": 100},
+      "primary_first": {"executed": 12, "recomputed": 0, "reused": 0},
+      "resume": {"executed": 0, "recomputed": 0, "reused": 12},
+      "sibling_first": {"executed": 12, "recomputed": 0, "reused": 0}
+    },
+    "independent_verification_content_hash": "337753b9da3842f8ed8bb0f995d9dc89d94ede2ef8e8dd3033f4bd871744ce3b",
+    "positive": {
+      "all_in_terminal_counts": {"causal_valuation_blocked": 100},
+      "net_terminal_counts": {"causal_valuation_blocked": 100},
+      "primary_first": {"executed": 12, "recomputed": 0, "reused": 0},
+      "resume": {"executed": 0, "recomputed": 0, "reused": 12},
+      "sibling_first": {"executed": 12, "recomputed": 0, "reused": 0}
+    },
+    "recovery_case_count": 47,
+    "recovery_cases_root": "0190c2834976a5fa4591217153ce6845a9ec3f9d818242b71717359d40ae1ed5"
+  },
+  "offline_boundary": {
+    "credential_read_count": 0,
+    "gpu_job_count": 0,
+    "max_read_date": "20260630",
+    "other_http_count": 0,
+    "prospective_holdout_accessed": false,
+    "read_ledger_file_count": 24,
+    "read_ledger_row_count": 240,
+    "tushare_post_count": 0
+  },
+  "prior_immutable_attempts": [
+    {"name": "native_rehearsal_527d054", "reason": "restart acceptance identity drift", "status": "superseded_partial"},
+    {"name": "native_rehearsal_1a86c4c", "reason": "process-local first-run count misclassified restart", "status": "superseded_non_executable"},
+    {"name": "native_rehearsal_c9de628", "reason": "final seal canonical-root resolver mismatch", "status": "superseded_non_executable"}
+  ],
+  "schema_validation": {
+    "native_threat_model": "passed",
+    "registered_artifact_count": 23,
+    "strict_error_count": 0,
+    "strict_unknown_count": 0,
+    "strict_warning_count": 0
+  },
+  "schema_version": "task055kr2_validation_summary_v1"
+}

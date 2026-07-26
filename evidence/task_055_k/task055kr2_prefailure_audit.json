@@ -1,0 +1,26 @@
+{
+  "baseline_commit": "df24308eadab07128b9efead884355247e58a382",
+  "collection_count": 2,
+  "command": ".venv/bin/python -m pytest -q tests/test_task_055_k_gateway.py::test_lock_replacement_during_credential_blocks_transport tests/test_task_055_k.py::test_lock_replacement_during_native_work_cannot_commit_stage",
+  "exit_code": 1,
+  "failed_count": 2,
+  "gateway_failure": {
+    "durable_state": "transport boundary reached after lease pathname replacement",
+    "fake_credential_call_count": 1,
+    "fake_transport_call_count": 1,
+    "first_breach": "post_credential_lease_check_failed_to_block_transport",
+    "injection_point": "credential_provider_returned_after_same_path_lock_replacement"
+  },
+  "reproduced_on_clean_baseline_runtime": true,
+  "schema_version": "task055kr2_prefailure_audit_v1",
+  "skipped_count": 0,
+  "stage_failure": {
+    "completed_fast_path_reused_stage_count": 12,
+    "durable_stage_commit_count": 12,
+    "final_pointer_published": true,
+    "first_breach": "component_returned_after_lock_replacement_then_stage_commit_accepted",
+    "injection_point": "first_stage_component_returned_after_same_path_lock_replacement"
+  },
+  "status": "reproduced",
+  "xfail_count": 0
+}
