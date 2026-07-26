@@ -69,8 +69,8 @@ def verify_release_candidate(
     evidence_bytes = _git_path_bytes(repository, anchor_commit, CANDIDATE_EVIDENCE_PATH)
     evidence = _json_object(evidence_bytes, code="candidate_evidence")
     verify_candidate_semantics(anchor=anchor, candidate=evidence)
-    _verify_artifact_closure(anchor=anchor, governed=governed)
-    _verify_receipt_signatures(anchor=anchor, governed=governed)
+    rehearsal_root = _verify_artifact_closure(anchor=anchor, governed=governed)
+    _verify_receipt_signatures(anchor=anchor, governed=rehearsal_root)
     _verify_no_sensitive_content(anchor_bytes, evidence_bytes)
     return {
         "status": "passed",
@@ -257,34 +257,50 @@ def _verify_source_tree(*, repository: Path, anchor: Mapping[str, Any]) -> None:
         raise Task055KVerifierError("task055kr2_executing_verifier_not_implementation_blob")
 
 
-def _verify_artifact_closure(*, anchor: Mapping[str, Any], governed: Path) -> None:
-    for catalog_name, count_name in (
-        ("top_level_artifact_catalog", "top_level_artifact_role_count"),
-        ("rehearsal_artifact_catalog", "rehearsal_artifact_role_count"),
+def _verify_artifact_closure(*, anchor: Mapping[str, Any], governed: Path) -> Path:
+    top_catalog = anchor.get("top_level_artifact_catalog") or []
+    if not isinstance(top_catalog, list) or len(top_catalog) != anchor.get(
+        "top_level_artifact_role_count"
     ):
-        expected = anchor.get(catalog_name) or []
-        if not isinstance(expected, list) or len(expected) != anchor.get(count_name):
-            raise Task055KVerifierError(f"task055kr2_{catalog_name}_count_invalid")
-        roles = [row.get("role") for row in expected]
-        if len(roles) != len(set(roles)):
-            raise Task055KVerifierError(f"task055kr2_{catalog_name}_roles_invalid")
-        for row in expected:
-            _verify_artifact_row(governed=governed, row=row)
+        raise Task055KVerifierError("task055kr2_top_level_artifact_catalog_count_invalid")
+    top_roles = [row.get("role") for row in top_catalog]
+    if len(top_roles) != len(set(top_roles)):
+        raise Task055KVerifierError("task055kr2_top_level_artifact_catalog_roles_invalid")
+    for row in top_catalog:
+        _verify_artifact_row(governed=governed, row=row)
     rehearsal_row = next(
         row
-        for row in anchor["top_level_artifact_catalog"]
+        for row in top_catalog
         if row["role"] == "native_rehearsal"
     )
+    rehearsal_path = (governed / rehearsal_row["relative_path"]).resolve()
+    try:
+        rehearsal_root = rehearsal_path.parents[3]
+    except IndexError:
+        raise Task055KVerifierError("task055kr2_rehearsal_layout_invalid") from None
+    if governed.resolve() not in rehearsal_root.parents:
+        raise Task055KVerifierError("task055kr2_rehearsal_root_escape")
     rehearsal = _json_object(
-        (governed / rehearsal_row["relative_path"]).read_bytes(),
+        rehearsal_path.read_bytes(),
         code="native_rehearsal",
     )
     actual_rehearsal_catalog = sorted(
         [dict(row) for row in rehearsal.get("artifact_catalog") or ()],
         key=lambda row: str(row["role"]),
     )
-    if actual_rehearsal_catalog != anchor["rehearsal_artifact_catalog"]:
+    expected_rehearsal_catalog = anchor.get("rehearsal_artifact_catalog") or []
+    if (
+        not isinstance(expected_rehearsal_catalog, list)
+        or len(expected_rehearsal_catalog)
+        != anchor.get("rehearsal_artifact_role_count")
+        or actual_rehearsal_catalog != expected_rehearsal_catalog
+    ):
         raise Task055KVerifierError("task055kr2_rehearsal_catalog_invalid")
+    rehearsal_roles = [row.get("role") for row in expected_rehearsal_catalog]
+    if len(rehearsal_roles) != len(set(rehearsal_roles)):
+        raise Task055KVerifierError("task055kr2_rehearsal_artifact_catalog_roles_invalid")
+    for row in expected_rehearsal_catalog:
+        _verify_artifact_row(governed=rehearsal_root, row=row)
     expected_apps = anchor.get("application_roots") or {}
     expected_stages = anchor.get("application_stage_roots") or {}
     actual_apps: dict[str, str] = {}
@@ -294,7 +310,7 @@ def _verify_artifact_closure(*, anchor: Mapping[str, Any], governed: Path) -> No
         if not role.endswith("_application"):
             continue
         payload = _json_object(
-            (governed / row["relative_path"]).read_bytes(), code=role
+            (rehearsal_root / row["relative_path"]).read_bytes(), code=role
         )
         actual_apps[role] = str(payload.get("content_hash") or "")
         actual_stages[role] = [dict(stage) for stage in payload.get("stages") or ()]
@@ -306,6 +322,7 @@ def _verify_artifact_closure(*, anchor: Mapping[str, Any], governed: Path) -> No
             row.get("ordinal") for row in stages
         ] != list(range(1, 13)):
             raise Task055KVerifierError(f"task055kr2_application_stage_order_invalid:{role}")
+    return rehearsal_root
 
 
 def _verify_artifact_row(*, governed: Path, row: Mapping[str, Any]) -> None:

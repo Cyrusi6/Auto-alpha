@@ -15,6 +15,7 @@ from task_055_k.lease import ReplacementSafeLease, Task055KLeaseError
 from task_055_k.stage_machine import ApplicationStageMachine, StageDefinition
 from task_055_k.verifier import (
     Task055KVerifierError,
+    _verify_artifact_closure,
     verify_candidate_semantics,
     verify_scrubbed_evidence,
 )
@@ -369,6 +370,70 @@ def test_content_addressed_evidence_preserves_legacy_flat_file(tmp_path: Path) -
     assert legacy.read_text(encoding="utf-8") == '{"historical":true}\n'
     assert json.loads(first_path.read_text(encoding="utf-8")) == first
     assert json.loads(second_path.read_text(encoding="utf-8")) == second
+
+
+def test_verifier_resolves_nested_rehearsal_catalog_from_generation_root(
+    tmp_path: Path,
+) -> None:
+    governed = tmp_path / "governed"
+    rehearsal_root = governed / "validation_runs/task/native_rehearsal"
+    stage_order = [f"stage-{ordinal}" for ordinal in range(1, 13)]
+    application_roots = {}
+    application_stages = {}
+    nested_catalog = []
+    for branch in ("positive", "empty"):
+        for replica in ("primary", "sibling"):
+            role = f"{branch}_{replica}_application"
+            stages = [
+                {"ordinal": ordinal, "stage": stage}
+                for ordinal, stage in enumerate(stage_order, start=1)
+            ]
+            semantic = {"schema_version": "fixture_v1", "stages": stages}
+            payload = semantic | {"content_hash": _hash(semantic)}
+            path = rehearsal_root / f"applications/{role}.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            nested_catalog.append(
+                {
+                    "role": role,
+                    "relative_path": path.relative_to(rehearsal_root).as_posix(),
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                    "content_hash": payload["content_hash"],
+                }
+            )
+            application_roots[role] = payload["content_hash"]
+            application_stages[role] = stages
+    nested_catalog.sort(key=lambda row: row["role"])
+    rehearsal_semantic = {
+        "schema_version": "fixture_v1",
+        "artifact_catalog": nested_catalog,
+    }
+    rehearsal = rehearsal_semantic | {"content_hash": _hash(rehearsal_semantic)}
+    rehearsal_path = (
+        rehearsal_root
+        / "report/generations/task055kr_native_rehearsal_fixture/rehearsal_manifest.json"
+    )
+    rehearsal_path.parent.mkdir(parents=True)
+    rehearsal_path.write_text(json.dumps(rehearsal), encoding="utf-8")
+    top_catalog = [
+        {
+            "role": "native_rehearsal",
+            "relative_path": rehearsal_path.relative_to(governed).as_posix(),
+            "sha256": hashlib.sha256(rehearsal_path.read_bytes()).hexdigest(),
+            "content_hash": rehearsal["content_hash"],
+        }
+    ]
+    anchor = {
+        "top_level_artifact_catalog": top_catalog,
+        "top_level_artifact_role_count": 1,
+        "rehearsal_artifact_catalog": nested_catalog,
+        "rehearsal_artifact_role_count": 4,
+        "application_roots": application_roots,
+        "application_stage_roots": application_stages,
+        "semantic_expectations": {"application_stage_order": stage_order},
+    }
+
+    assert _verify_artifact_closure(anchor=anchor, governed=governed) == rehearsal_root
 
 
 def _hash(value) -> str:
