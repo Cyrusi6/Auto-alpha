@@ -33,6 +33,7 @@ from task_055_f.valuation import (
 )
 from task_055_k.application import APPLICATION_STAGES, runtime_semantic_source_hash
 from task_055_k.authority import (
+    _resolve_task055k_roots,
     normalize_ordered_keys,
     publish_historical_supersession,
     validate_candidate_checkpoint,
@@ -142,6 +143,26 @@ def test_fixed_canary_has_three_distinct_identities() -> None:
             CANARY["evidence_use_identity"],
         }
     ) == 3
+
+
+def test_final_seal_root_resolver_accepts_only_canonical_k_or_kr2_roots(
+    tmp_path: Path,
+) -> None:
+    governed = tmp_path / "governed"
+    legacy_authority = governed / "governance/network_authority/task055k_single_canary_v2"
+    kr2_authority = governed / "governance/network_authority/task055k_single_canary_v3"
+    assert _resolve_task055k_roots(legacy_authority) == (
+        governed,
+        governed / "validation_runs/task_055_k_kr_20260723",
+    )
+    assert _resolve_task055k_roots(kr2_authority) == (
+        governed,
+        governed / "validation_runs/task_055_k_kr2_20260726",
+    )
+    with pytest.raises(Exception, match="final_candidate_authority_root_invalid"):
+        _resolve_task055k_roots(
+            governed / "governance/network_authority/task055k_single_canary_v3_shadow"
+        )
 
 
 def test_all_python_capability_and_generic_client_paths_fail_closed() -> None:

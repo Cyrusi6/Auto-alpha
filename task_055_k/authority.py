@@ -33,6 +33,8 @@ from .contracts import (
     SUPERSESSION_SCHEMA,
     TASK055K_AUTHORITY_RELATIVE_ROOT,
     TASK055K_RELATIVE_ROOT,
+    TASK055KR2_AUTHORITY_RELATIVE_ROOT,
+    TASK055KR2_RELATIVE_ROOT,
     TASK055J_AUTHORIZATION_HASH,
     TASK055J_AUTHORITY_RELATIVE_ROOT,
     TASK055J_FINAL_SEAL_HASH,
@@ -516,10 +518,7 @@ def validate_final_candidate_seal(
     ):
         raise Task055KAuthorityError("task055k_final_candidate_seal_contract_invalid")
     authority_root = Path(payload["manifest_path"]).parents[3].resolve()
-    governed = _derive_governed(authority_root, TASK055K_AUTHORITY_RELATIVE_ROOT)
-    if authority_root != governed / TASK055K_AUTHORITY_RELATIVE_ROOT:
-        raise Task055KAuthorityError("task055k_final_candidate_authority_root_invalid")
-    task_root = governed / TASK055K_RELATIVE_ROOT
+    governed, task_root = _resolve_task055k_roots(authority_root)
     lineage = payload.get("execution_lineage") or {}
     expected = {
         "source_seal": (task_root / "source_seal", "source_seal.json", SOURCE_SCHEMA),
@@ -773,3 +772,18 @@ def _derive_governed(path: Path, relative: str) -> Path:
     for _ in Path(relative).parts:
         current = current.parent
     return current.resolve()
+
+
+def _resolve_task055k_roots(authority_root: Path) -> tuple[Path, Path]:
+    resolved = authority_root.resolve()
+    matches: list[tuple[Path, Path]] = []
+    for authority_relative, task_relative in (
+        (TASK055K_AUTHORITY_RELATIVE_ROOT, TASK055K_RELATIVE_ROOT),
+        (TASK055KR2_AUTHORITY_RELATIVE_ROOT, TASK055KR2_RELATIVE_ROOT),
+    ):
+        governed = _derive_governed(resolved, authority_relative)
+        if resolved == governed / authority_relative:
+            matches.append((governed, governed / task_relative))
+    if len(matches) != 1:
+        raise Task055KAuthorityError("task055k_final_candidate_authority_root_invalid")
+    return matches[0]
