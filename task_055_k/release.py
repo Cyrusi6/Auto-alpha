@@ -67,20 +67,16 @@ def build_candidate_anchor(
     top_catalog = _validate_artifact_catalog(
         evidence.get("artifact_catalog"), governed=governed
     )
-    rehearsal_row = next(
-        row for row in top_catalog if row["role"] == "native_rehearsal"
-    )
-    rehearsal_path = governed / rehearsal_row["relative_path"]
-    rehearsal = _json_object(rehearsal_path.read_bytes(), code="native_rehearsal")
-    rehearsal_catalog = _validate_artifact_catalog(
-        rehearsal.get("artifact_catalog"), governed=governed
+    rehearsal, rehearsal_catalog, rehearsal_root = _load_rehearsal_release_catalog(
+        governed=governed,
+        top_catalog=top_catalog,
     )
     stage_roots, application_roots = _application_roots(
-        governed=governed,
+        governed=rehearsal_root,
         rehearsal_catalog=rehearsal_catalog,
     )
     public_keys = _reservation_public_keys(
-        governed=governed,
+        governed=rehearsal_root,
         rehearsal_catalog=rehearsal_catalog,
     )
     legacy_entry = _git_blob_entry(repository, BASELINE_COMMIT, LEGACY_EVIDENCE_PATH)
@@ -300,6 +296,30 @@ def _application_roots(
         stage_roots[role] = stages
         application_roots[role] = str(payload["content_hash"])
     return stage_roots, application_roots
+
+
+def _load_rehearsal_release_catalog(
+    *,
+    governed: Path,
+    top_catalog: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]], Path]:
+    rehearsal_row = next(
+        (row for row in top_catalog if row["role"] == "native_rehearsal"),
+        None,
+    )
+    if rehearsal_row is None:
+        raise Task055KR2ReleaseError("task055kr2_native_rehearsal_role_missing")
+    rehearsal_path = governed / str(rehearsal_row["relative_path"])
+    rehearsal = _json_object(rehearsal_path.read_bytes(), code="native_rehearsal")
+    try:
+        rehearsal_root = rehearsal_path.parents[3]
+    except IndexError:
+        raise Task055KR2ReleaseError("task055kr2_rehearsal_layout_invalid") from None
+    rehearsal_catalog = _validate_artifact_catalog(
+        rehearsal.get("artifact_catalog"),
+        governed=rehearsal_root,
+    )
+    return rehearsal, rehearsal_catalog, rehearsal_root
 
 
 def _reservation_public_keys(

@@ -18,6 +18,7 @@ from task_055_k.verifier import (
     verify_candidate_semantics,
     verify_scrubbed_evidence,
 )
+from task_055_k.release import _load_rehearsal_release_catalog
 from dev_tools.task055kr_harness import _lightweight_stages, synthetic_accepted_response
 from task_055_k.authority import normalize_ordered_keys
 from task_055_h.io import read_json
@@ -297,6 +298,45 @@ def test_legacy_verifier_cannot_self_authorize_without_external_anchor(tmp_path:
             tmp_path / "candidate.json",
             repository_root=tmp_path,
         )
+
+
+def test_nested_rehearsal_catalog_resolves_from_rehearsal_generation_root(
+    tmp_path: Path,
+) -> None:
+    governed = tmp_path / "governed"
+    rehearsal_root = governed / "validation_runs/task/native_rehearsal"
+    artifact = rehearsal_root / "artifacts/child.json"
+    artifact.parent.mkdir(parents=True)
+    child_semantic = {"schema_version": "fixture_v1", "status": "passed"}
+    child = child_semantic | {"content_hash": _hash(child_semantic)}
+    artifact.write_text(json.dumps(child), encoding="utf-8")
+    rehearsal_path = (
+        rehearsal_root
+        / "report/generations/task055kr_native_rehearsal_fixture/rehearsal_manifest.json"
+    )
+    rehearsal_path.parent.mkdir(parents=True)
+    rehearsal_path.write_text(
+        json.dumps(
+            {
+                "artifact_catalog": [
+                    {
+                        "role": "child",
+                        "relative_path": "artifacts/child.json",
+                        "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+                        "content_hash": child["content_hash"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    relative = rehearsal_path.relative_to(governed).as_posix()
+    rehearsal, catalog, resolved_root = _load_rehearsal_release_catalog(
+        governed=governed,
+        top_catalog=[{"role": "native_rehearsal", "relative_path": relative}],
+    )
+    assert rehearsal["artifact_catalog"] == catalog
+    assert resolved_root == rehearsal_root
 
 
 def _hash(value) -> str:

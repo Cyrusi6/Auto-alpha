@@ -564,9 +564,3 @@ Positive/empty 两个 production-shaped rehearsal 的 primary 与 sibling 都实
 最终状态为 `task055k_single_canary_engineering_ready_waiting_operator_authorization_no_network_executed`。candidate authority/checkpoint/final seal/rehearsal/report root 分别为 `9960eafb...5981`、`9fded99c...e6d4`、`0b371a92...062e`、`679754fc...ed76`、`ab691932...a6f4`。credential、Tushare POST、其他 HTTP、GPU、prospective holdout access 均为 0，最大读取日期为 `2026-06-30`；`network_authorized=false`、`authorization_eligible=false`、`operational_state_unproven=true`，所有认证和实盘 readiness 继续为 false。
 
 新的 Git-safe evidence 位于 `evidence/task_055_k/task055kr_scrubbed_evidence.json`，使用 `python task_055_k/verifier.py evidence/task_055_k/task055kr_scrubbed_evidence.json --repository-root .` 做标准库离线验证；该命令不授权真实请求。31 项重算自哈希 mutation 和 clean-clone 篡改验证均按预期 fail closed。
-
-## Task 055-KR2 Candidate Audit Boundary
-
-Task 055-KR2 replaces pathname/inode-only locking with a descriptor-first lease, sealed nonce identity, durable monotonic fencing, owner-safe release, and commit-time reservation checks across the gateway and all 12 application stages. Same-path replacement, inode reuse, truncate/rewrite, parent replacement, ABA, stale-owner resurrection, unsafe cleanup, and completed-fast-path replacement all fail closed.
-
-The release candidate uses a non-circular `I → E → A` trust topology. Exact `A` and its digest must be fixed outside the repository before the standard-library verifier can treat the checkout as data. The checked-in candidate is explicitly non-executable and network-unauthorized; self-checks, mutation tests, or internally consistent hashes do not constitute independent authorization.
