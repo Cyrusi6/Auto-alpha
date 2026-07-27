@@ -1,0 +1,164 @@
+{
+  "baseline_commit": "df24308eadab07128b9efead884355247e58a382",
+  "build": {
+    "sdist_sha256": "377faba076d8132608394afa5ff51ba69a100967d6be3a12597d033e4c669135",
+    "status": "passed",
+    "wheel_file_count": 828,
+    "wheel_package_boundary": "passed_from_clean_python_3_11_venv",
+    "wheel_sha256": "8ab8ceb2ea85c0d009604bd4c5130c517f1f29806b344b0ccca6885b56197797"
+  },
+  "candidate": {
+    "artifact_catalog_root": "25bdce1a166fc57bdd11774e298862dd81bb76848b635ef53cf65b69df11f2be",
+    "authority_content_hash": "c0a9c2dca723e6b98771d009232485fc8ad6502f3cd239ceac4bde0b39ee7930",
+    "candidate_checkpoint_content_hash": "e57827076b40235364d56bdc3002fb86f64194d731528891908adeae49e578f8",
+    "evidence_content_hash": "50bf5d4d917fb00af98d1597c5c9cb5719d8fcc84493438e26c15bee7e6a0a10",
+    "final_candidate_seal_content_hash": "0aafd4ffea5563b1040c2c5a68cfefb6ae2560e6c41e289578d355a8486b410c",
+    "final_verification_content_hash": "c3e9a8611a53c592065abdd94ed5c0c68b7884c9bb514b65346f4ef4fcaaec6f",
+    "report_content_hash": "76a4154912031cafcf50641e518311e8684f40779fd31cd4e21ab039ca476259",
+    "source_root": "5a78778f930e7cf09b701cda4a08e3ce9f1789ca9b6531883b7ebbbbd5e27cab",
+    "status": "task055kr2_candidate_ready_for_independent_audit_no_network_executed"
+  },
+  "implementation_commit": "276b02fc64bd5e71a7cbfa4866fdbdf11794f378",
+  "implementation_validation": {
+    "collection": {
+      "deselected": 0,
+      "skipped": 0,
+      "tests": 905,
+      "xfail": 0
+    },
+    "focused": "95 passed in 32.34s",
+    "full_pytest": "905 passed, 2 existing risk-model warnings",
+    "local_ci_full": {
+      "command_count": 60,
+      "failed_command_count": 0,
+      "pytest_count": 905,
+      "status": "passed"
+    },
+    "replacement_regressions": {
+      "gateway_fake_credential_calls": 1,
+      "gateway_fake_transport_calls": 0,
+      "stage_commit_count": 0,
+      "stage_final_pointer_published": false,
+      "status": "2 passed"
+    },
+    "stress": {
+      "canonical_generation_count": 1,
+      "lease_acquisitions": 256,
+      "stage_fast_path_interleavings": 64,
+      "unique_fences": 256,
+      "unique_nonces": 256,
+      "winner_reused_stage_count": 768
+    }
+  },
+  "native_rehearsal": {
+    "artifact_catalog_root": "1094d7e0f6c296f6db2f63db03ec83ea6ca602f9a4a80749b1a73b3b63e8efb8",
+    "content_hash": "de898d13a679e8ea18344d2131f2efe04176a5413429e9a189ab2829f2528ff9",
+    "empty": {
+      "all_in_terminal_counts": {
+        "causal_valuation_blocked": 100
+      },
+      "net_terminal_counts": {
+        "causal_valuation_blocked": 100
+      },
+      "primary_first": {
+        "executed": 12,
+        "recomputed": 0,
+        "reused": 0
+      },
+      "resume": {
+        "executed": 0,
+        "recomputed": 0,
+        "reused": 12
+      },
+      "sibling_first": {
+        "executed": 12,
+        "recomputed": 0,
+        "reused": 0
+      }
+    },
+    "independent_artifact_catalog_root": "1094d7e0f6c296f6db2f63db03ec83ea6ca602f9a4a80749b1a73b3b63e8efb8",
+    "independent_recovery_matrix_root": "4a96e476e60685df0b2c2229e6353eb48d3a564034366bd495929a5c2477f0ef",
+    "independent_verification_content_hash": "c41371f691ea936ce65ea23519b06f0a860cadf6f5f517ff5f097a0c87942eef",
+    "positive": {
+      "all_in_terminal_counts": {
+        "causal_valuation_blocked": 100
+      },
+      "net_terminal_counts": {
+        "causal_valuation_blocked": 100
+      },
+      "primary_first": {
+        "executed": 12,
+        "recomputed": 0,
+        "reused": 0
+      },
+      "resume": {
+        "executed": 0,
+        "recomputed": 0,
+        "reused": 12
+      },
+      "sibling_first": {
+        "executed": 12,
+        "recomputed": 0,
+        "reused": 0
+      }
+    },
+    "recovery_case_count": 47,
+    "recovery_cases_root": "0c916e4a63e8fa3ac92148611498f09b10938e338685eac807bcd027de0e9dce"
+  },
+  "offline_boundary": {
+    "credential_read_count": 0,
+    "gpu_job_count": 0,
+    "max_read_date": "20260630",
+    "other_http_count": 0,
+    "prospective_holdout_accessed": false,
+    "read_ledger_file_count": 24,
+    "read_ledger_root": "faf506578a5fb6d1293c6a4a8daf6900a4540ad38dc6c8c2902df24542908538",
+    "read_ledger_row_count": 240,
+    "tushare_post_count": 0
+  },
+  "prior_immutable_attempts": [
+    {
+      "name": "native_rehearsal_527d054",
+      "reason": "restart acceptance identity drift",
+      "status": "superseded_partial"
+    },
+    {
+      "name": "native_rehearsal_1a86c4c",
+      "reason": "process-local first-run count misclassified restart",
+      "status": "superseded_non_executable"
+    },
+    {
+      "name": "native_rehearsal_c9de628",
+      "reason": "final seal canonical-root resolver mismatch",
+      "status": "superseded_non_executable"
+    },
+    {
+      "name": "native_rehearsal_e903f37",
+      "reason": "release publisher resolved nested rehearsal catalog against governed root",
+      "status": "superseded_non_executable"
+    },
+    {
+      "name": "native_rehearsal_fd2de77",
+      "reason": "fixed scrubbed-evidence pathname collided with prior immutable output",
+      "status": "superseded_non_executable"
+    },
+    {
+      "name": "native_rehearsal_964b219",
+      "reason": "authoritative verifier resolved nested rehearsal catalog against governed root",
+      "status": "superseded_non_executable"
+    },
+    {
+      "name": "native_rehearsal_96f25cf",
+      "reason": "fixed anchor mutation oracle did not bind candidate source_root",
+      "status": "superseded_non_executable"
+    }
+  ],
+  "schema_validation": {
+    "native_threat_model": "passed",
+    "registered_artifact_count": 23,
+    "strict_error_count": 0,
+    "strict_unknown_count": 0,
+    "strict_warning_count": 0
+  },
+  "schema_version": "task055kr2_validation_summary_v1"
+}
