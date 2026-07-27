@@ -242,6 +242,16 @@ def _candidate_and_anchor() -> tuple[dict, dict]:
         "canary": dict(CANARY),
         "budgets": {"limits": {"physical_attempts": 160}},
         "root_bindings": {"task_root": "validation_runs/task"},
+        "source_entries": [
+            {
+                "path": "task_055_k/verifier.py",
+                "git_blob_id": "1" * 40,
+                "git_index_mode": "100644",
+                "sha256": "3" * 64,
+                "size_bytes": 1,
+            }
+        ],
+        "source_root": "4" * 64,
         "artifact_catalog": catalog,
         "artifact_catalog_root": _hash(catalog),
         "lineage": {"candidate_authority": "2" * 64},
@@ -291,6 +301,16 @@ def test_fixed_anchor_semantic_positive_and_fully_rehashed_mutation() -> None:
         {key: value for key, value in candidate.items() if key != "content_hash"}
     )
     with pytest.raises(Task055KVerifierError, match="semantic_mismatch:implementation_commit"):
+        verify_candidate_semantics(anchor=anchor, candidate=candidate)
+
+
+def test_fixed_anchor_rejects_rehashed_candidate_source_root() -> None:
+    candidate, anchor = _candidate_and_anchor()
+    candidate["source_root"] = "6" * 64
+    candidate["content_hash"] = _hash(
+        {key: value for key, value in candidate.items() if key != "content_hash"}
+    )
+    with pytest.raises(Task055KVerifierError, match="semantic_mismatch:source_root"):
         verify_candidate_semantics(anchor=anchor, candidate=candidate)
 
 

@@ -92,6 +92,8 @@ def build_candidate_anchor(
         "canary": evidence["canary"],
         "budgets": evidence["budgets"],
         "root_bindings": evidence["root_bindings"],
+        "source_entries": evidence["source_entries"],
+        "source_root": evidence["source_root"],
         "artifact_catalog": top_catalog,
         "artifact_catalog_root": _hash(top_catalog),
         "lineage": evidence["lineage"],

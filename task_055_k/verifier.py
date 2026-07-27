@@ -109,6 +109,8 @@ def verify_candidate_semantics(
         "canary",
         "budgets",
         "root_bindings",
+        "source_entries",
+        "source_root",
         "artifact_catalog",
         "artifact_catalog_root",
         "lineage",
