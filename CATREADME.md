@@ -564,3 +564,11 @@ Positive/empty 两个 production-shaped rehearsal 的 primary 与 sibling 都实
 最终状态为 `task055k_single_canary_engineering_ready_waiting_operator_authorization_no_network_executed`。candidate authority/checkpoint/final seal/rehearsal/report root 分别为 `9960eafb...5981`、`9fded99c...e6d4`、`0b371a92...062e`、`679754fc...ed76`、`ab691932...a6f4`。credential、Tushare POST、其他 HTTP、GPU、prospective holdout access 均为 0，最大读取日期为 `2026-06-30`；`network_authorized=false`、`authorization_eligible=false`、`operational_state_unproven=true`，所有认证和实盘 readiness 继续为 false。
 
 新的 Git-safe evidence 位于 `evidence/task_055_k/task055kr_scrubbed_evidence.json`，使用 `python task_055_k/verifier.py evidence/task_055_k/task055kr_scrubbed_evidence.json --repository-root .` 做标准库离线验证；该命令不授权真实请求。31 项重算自哈希 mutation 和 clean-clone 篡改验证均按预期 fail closed。
+
+### Task 055-KR2 Replacement-Safe Lease 与外部发布锚
+
+Task 055-KR2 用 descriptor-first lease 替换 pathname/inode-only 锁：持续持有 canonical parent 与 lease fd，身份绑定不可预测 nonce、sealed bytes、xattr instance、scope/root/attempt/owner 和递增 durable fence，并在 credential、transport、receipt、stage commit、pointer publication 与 owner-safe release 的每个副作用边界复验。same-path 替换、inode 复用、truncate/rewrite、parent 替换、ABA、旧 owner 复活、unsafe cleanup 和 completed fast path 锁替换均 fail closed。
+
+发布信任采用 implementation (`I`) → evidence-only (`E`) → final anchor (`A`) 的非循环拓扑。最终 `I` 为 `96f25cf5d637a3eb16461b0e52b691b506f6a0e8`，source root 为 `1c716160e267909e8896e44cc12e497ae5a45b22d50844f498f6602e2ddc89a1`。authoritative verifier 必须从精确 `I` 提取，并由调用方提供仓库外固定的精确 `A` OID 与 digest；本轮 candidate self-check 不等于独立审计，更不授予网络执行资格。
+
+最终离线 production-shaped rehearsal 为 `e7f3673a807c601bad9801b75c4f9e36bb3e086e963bcc7e8eed5af3e5423e3f`。Positive/empty 的 primary 与独立 sibling 均执行 12/12，primary resume 均复用 12/12，47 个 crash/recovery case 全部通过；每分支 net 100 与 all-in 100 均如实为 `causal_valuation_blocked`。候选 evidence 位于 `evidence/task_055_k/task055kr2_candidate_evidence.json`，保持 non-executable、network-unauthorized，仅可进入下一轮 independent audit。
