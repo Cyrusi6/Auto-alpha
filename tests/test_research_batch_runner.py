@@ -64,7 +64,7 @@ def test_batch_runner_generates_reports_and_skips_duplicate_hashes(tmp_path):
     assert "lookback" in markdown
     assert "generation" in markdown
     assert first.results
-    assert any(result.status in {"approved", "rejected"} for result in first.results)
+    assert any(result.status in {"validation_candidate", "research_rejected"} for result in first.results)
     assert first.composite_factor_id is None or first.composite_factor_id.startswith("factor_")
     assert all(result.status == "skipped_existing" for result in second.results)
     assert len(store.load_factors()) == initial_factor_count
@@ -90,4 +90,4 @@ def test_batch_runner_continues_after_bad_candidate(tmp_path):
     result = BatchFactorResearchRunner(config=config, candidates=[bad, good]).run()
 
     assert result.results[0].status == "error"
-    assert result.results[1].status in {"approved", "rejected"}
+    assert result.results[1].status in {"validation_candidate", "research_rejected"}

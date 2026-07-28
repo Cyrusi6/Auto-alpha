@@ -8,7 +8,7 @@ from research.composite import (
 )
 
 
-def _save_factor(store, factor_id, names, values, score=1.0, status="approved"):
+def _save_factor(store, factor_id, names, values, score=1.0, status="validation_candidate"):
     formula_hash = stable_formula_hash([], names, "ashare_features_v1", "ashare_ops_v1")
     store.save_factor(
         FactorRecord(
@@ -23,6 +23,17 @@ def _save_factor(store, factor_id, names, values, score=1.0, status="approved"):
             status=status,
             metrics={"score": score},
             factor_type="single",
+            metadata={
+                "gate_decision": {
+                    "passed": status == "validation_candidate",
+                    "checks": {
+                        "oos_evidence_positive": status == "validation_candidate",
+                        "test_evaluable_date_count": 2.0,
+                        "test_valid_observation_count": 6.0,
+                        "test_rank_ic_mean": 0.1,
+                    },
+                }
+            },
         )
     )
     store.save_factor_values(factor_id, ["000001.SZ", "600000.SH", "830000.BJ"], ["20240103", "20240104"], values)
@@ -56,7 +67,8 @@ def test_composite_factor_methods_and_registration(tmp_path):
     records = store.load_factors()
     composite = [record for record in records if record.factor_id == info["factor_id"]][0]
 
-    assert composite.status == "approved"
+    assert composite.status == "composite_unvalidated"
+    assert composite.metadata["validation_admission"] == "blocked_pending_independent_oos_evidence"
     assert composite.factor_type == "composite"
     assert composite.parent_factor_ids == selected
     assert composite.metadata["component_factor_ids"] == selected

@@ -225,8 +225,8 @@ def _run_smoke(output_dir: str | Path) -> dict:
 def _write_fake_factor_store(store_dir: Path, idx: int) -> None:
     store = LocalFactorStore(store_dir)
     rows = [
-        ("duplicate_hash", "factor_duplicate_a" if idx == 0 else "factor_duplicate_b", "approved" if idx == 1 else "candidate", 0.7 + idx * 0.1),
-        (f"unique_hash_{idx}", f"factor_unique_{idx}", "approved", 0.5 + idx * 0.1),
+        ("duplicate_hash", "factor_duplicate_a" if idx == 0 else "factor_duplicate_b", "validation_candidate" if idx == 1 else "research_evaluated", 0.7 + idx * 0.1),
+        (f"unique_hash_{idx}", f"factor_unique_{idx}", "validation_candidate", 0.5 + idx * 0.1),
     ]
     for formula_hash, factor_id, status, score in rows:
         store.save_factor(
@@ -241,7 +241,20 @@ def _write_fake_factor_store(store_dir: Path, idx: int) -> None:
                 created_at="2026-07-03T00:00:00Z",
                 status=status,
                 metrics={"score": score, "coverage": 1.0, "turnover": 0.1},
-                metadata={"formula_complexity": 1, "novelty_score": 0.2, "alpha_family_tags": ["return"]},
+                metadata={
+                    "formula_complexity": 1,
+                    "novelty_score": 0.2,
+                    "alpha_family_tags": ["return"],
+                    "gate_decision": {
+                        "passed": status == "validation_candidate",
+                        "checks": {
+                            "oos_evidence_positive": status == "validation_candidate",
+                            "test_evaluable_date_count": 2.0,
+                            "test_valid_observation_count": 4.0,
+                            "test_rank_ic_mean": 0.1,
+                        },
+                    },
+                },
             )
         )
         store.save_factor_values(factor_id, ["000001.SZ", "000002.SZ"], ["20240102", "20240103"], [[1.0, 2.0], [2.0, 3.0]])

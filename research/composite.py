@@ -9,7 +9,7 @@ from typing import Any
 import torch
 
 from factor_engine.correlation import factor_correlation
-from factor_store import FactorRecord, LocalFactorStore, make_factor_id, stable_formula_hash
+from factor_store import FactorRecord, LocalFactorStore, has_positive_oos_evidence, make_factor_id, stable_formula_hash
 from factor_store.lifecycle import FactorLifecycleStatus
 
 
@@ -29,7 +29,7 @@ def select_approved_factors(
     approved = [
         record
         for record in store.load_factors()
-        if record.status == "approved" and (record.factor_type in {None, "single"})
+        if has_positive_oos_evidence(record) and (record.factor_type in {None, "single"})
     ]
     approved.sort(key=lambda record: _factor_score(record), reverse=True)
     selected: list[FactorRecord] = []

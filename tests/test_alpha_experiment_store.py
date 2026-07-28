@@ -21,7 +21,20 @@ def _write_factor(store_dir, factor_id, formula_hash, status, score):
             created_at="2026-07-03T00:00:00Z",
             status=status,
             metrics={"score": score, "coverage": 1.0, "turnover": 0.1},
-            metadata={"formula_complexity": 1, "novelty_score": 0.2, "alpha_family_tags": ["return"]},
+            metadata={
+                "formula_complexity": 1,
+                "novelty_score": 0.2,
+                "alpha_family_tags": ["return"],
+                "gate_decision": {
+                    "passed": status == "validation_candidate",
+                    "checks": {
+                        "oos_evidence_positive": status == "validation_candidate",
+                        "test_evaluable_date_count": 2.0,
+                        "test_valid_observation_count": 4.0,
+                        "test_rank_ic_mean": 0.1,
+                    },
+                },
+            },
         )
     )
     store.save_factor_values(factor_id, ["000001.SZ"], ["20240102", "20240103"], [[1.0, 2.0]])
@@ -31,8 +44,8 @@ def test_alpha_experiment_store_consolidates_dedupes_and_writes_pool(tmp_path):
     shard_a = tmp_path / "shard_a" / "factor_store"
     shard_b = tmp_path / "shard_b" / "factor_store"
     _write_factor(shard_a, "factor_dup_a", "hash_dup", "candidate", 0.2)
-    _write_factor(shard_b, "factor_dup_b", "hash_dup", "approved", 0.8)
-    _write_factor(shard_b, "factor_unique", "hash_unique", "approved", 0.5)
+    _write_factor(shard_b, "factor_dup_b", "hash_dup", "validation_candidate", 0.8)
+    _write_factor(shard_b, "factor_unique", "hash_unique", "validation_candidate", 0.5)
 
     merged = tmp_path / "merged"
     report = consolidate_factor_stores([shard_a, shard_b], merged, experiment_id="exp1", campaign_id="camp1", report_dir=tmp_path / "store")
@@ -43,7 +56,7 @@ def test_alpha_experiment_store_consolidates_dedupes_and_writes_pool(tmp_path):
 
     factors = LocalFactorStore(merged).load_factors()
     assert len(factors) == 2
-    assert any(item.formula_hash == "hash_dup" and item.status == "approved" for item in factors)
+    assert any(item.formula_hash == "hash_dup" and item.status == "validation_candidate" for item in factors)
 
     store = LocalAlphaExperimentStore(tmp_path / "store")
     store.write_consolidated_factors(report["consolidated_factors"])

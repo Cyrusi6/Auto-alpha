@@ -61,12 +61,12 @@ def test_engine_dry_run_register_with_transform_gate_and_universe(tmp_path, caps
     assert payload["n_stocks"] == 3
     assert payload["universe_name"] == "all_a_sample"
     assert payload["transform_method"] == "winsorize_zscore"
-    assert payload["gate_decision"]["status"] == "approved"
-    assert payload["status"] == "approved"
+    assert payload["gate_decision"]["status"] == "research_rejected"
+    assert payload["status"] == "research_rejected"
     assert factor_record.transform_method == "winsorize_zscore"
-    assert factor_record.gate_status == "approved"
+    assert factor_record.gate_status == "research_rejected"
     assert factor_record.metadata["max_abs_correlation"] == payload["max_abs_correlation"]
-    assert json.loads((report_dir / "factor_report.json").read_text(encoding="utf-8"))["status"] == "approved"
+    assert json.loads((report_dir / "factor_report.json").read_text(encoding="utf-8"))["status"] == "research_rejected"
 
     values = LocalFactorStore(store_dir).load_factor_values(payload["factor_id"])
     matrix = factor_values_to_matrix(values, ["000001.SZ", "600000.SH", "830000.BJ"], ["20240102", "20240103", "20240104"])
@@ -98,9 +98,9 @@ def test_engine_disable_gate_keeps_candidate_status(tmp_path, capsys):
     factor_record = LocalFactorStore(store_dir).load_factors()[-1]
 
     assert result == 0
-    assert payload["status"] == "candidate"
+    assert payload["status"] == "research_evaluated"
     assert payload["gate_decision"] is None
-    assert factor_record.status == "candidate"
+    assert factor_record.status == "research_evaluated"
 
 
 def test_engine_training_registers_with_transform_and_gate(tmp_path, capsys):
@@ -136,5 +136,6 @@ def test_engine_training_registers_with_transform_and_gate(tmp_path, capsys):
     assert result == 0
     assert payload["factor_id"].startswith("factor_")
     assert payload["transform_method"] == "winsorize_zscore"
-    assert payload["gate_decision"]["passed"] is True
+    assert payload["gate_decision"]["passed"] is False
+    assert payload["status"] == "research_rejected"
     assert (tmp_path / "out" / "best_factor_formula.json").exists()

@@ -178,7 +178,7 @@ class FormulaSearchRunner:
         approved_factor_ids = _unique(
             str(item.get("factor_id"))
             for item in all_results
-            if item.get("factor_id") and item.get("status") == "approved"
+            if item.get("factor_id") and item.get("status") == "validation_candidate"
         )
         best = sorted(all_results, key=lambda item: float(item.get("score", 0.0) or 0.0), reverse=True)[: self.search_config.top_k]
         paths = {

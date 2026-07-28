@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from research_suite import ResearchSuiteConfig, ResearchSuiteRunner
@@ -33,22 +34,22 @@ def _suite_config(tmp_path, **overrides):
     return ResearchSuiteConfig(**payload)
 
 
-def test_research_suite_workflow_runs_sample_end_to_end(tmp_path):
+def test_research_suite_sample_fails_closed_without_positive_oos_factor(tmp_path):
     config = _suite_config(tmp_path)
     result = ResearchSuiteRunner(config).run()
     stage_statuses = {stage.name: stage.status for stage in result.stages}
 
-    assert result.status == "success"
-    assert result.selected_factor_id
-    assert all(status == "success" for status in stage_statuses.values())
+    assert result.status == "failed"
+    assert result.selected_factor_id is None
     assert stage_statuses["data_sync"] == "success"
     assert stage_statuses["formula_search"] == "success"
-    assert stage_statuses["walk_forward"] == "success"
-    assert stage_statuses["promotion"] == "success"
+    assert stage_statuses["backtest"] == "failed"
     assert (tmp_path / "suite" / "suite_result.json").exists()
     assert (tmp_path / "suite" / "suite_report.md").exists()
     assert (tmp_path / "suite" / "artifact_catalog.json").exists()
-    assert (tmp_path / "suite" / "promotion_decision.json").exists()
+    promotion = json.loads((tmp_path / "suite" / "promotion_decision.json").read_text(encoding="utf-8"))
+    assert promotion["artifact_type"] == "promotion_decision"
+    assert "passed" not in promotion
 
 
 def test_research_suite_workflow_records_failed_stage(tmp_path):
@@ -78,7 +79,7 @@ def test_research_suite_workflow_supports_hybrid_search(tmp_path):
     result = ResearchSuiteRunner(config).run()
     formula_stage = next(stage for stage in result.stages if stage.name == "formula_search")
 
-    assert result.status == "success"
+    assert result.status == "failed"
     assert formula_stage.summary["search_mode"] == "hybrid"
     assert "neural_search_result" in formula_stage.output_paths
     assert (Path(formula_stage.output_paths["neural_search_result"])).exists()
@@ -102,12 +103,8 @@ def test_research_suite_can_register_model_and_create_review_package(tmp_path):
     result = ResearchSuiteRunner(config).run()
     stage_statuses = {stage.name: stage.status for stage in result.stages}
 
-    assert result.status == "success"
-    assert stage_statuses["model_registry"] == "success"
-    assert stage_statuses["model_lifecycle"] == "success"
-    assert result.summary["model_version_id"]
-    assert result.summary["model_approval_id"]
-    assert (tmp_path / "model_registry" / "model_versions.jsonl").exists()
-    assert (tmp_path / "model_registry" / "model_registry_report.json").exists()
-    assert (tmp_path / "model_lifecycle" / "model_review_package.json").exists()
-    assert (tmp_path / "approvals" / "approvals" / f"{result.summary['model_approval_id']}.json").exists()
+    assert result.status == "failed"
+    assert stage_statuses["backtest"] == "failed"
+    assert "model_registry" not in stage_statuses
+    assert "model_lifecycle" not in stage_statuses
+    assert not (tmp_path / "model_registry" / "model_versions.jsonl").exists()

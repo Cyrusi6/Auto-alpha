@@ -39,7 +39,7 @@ def test_walk_forward_evaluates_sample_factor(tmp_path):
         correlation_threshold=0.99,
         min_coverage=0.5,
     ).run()
-    factor_id = result.composite_factor_id or result.approved_factor_ids[0]
+    factor_id = LocalFactorStore(store_dir).load_factors()[0].factor_id
     loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
     windows = build_walk_forward_windows(loader.trade_dates, 1, 1, 1)
     wf = evaluate_factor_walk_forward(loader, LocalFactorStore(store_dir), factor_id, windows)
@@ -48,3 +48,4 @@ def test_walk_forward_evaluates_sample_factor(tmp_path):
     assert wf.windows
     assert summary["n_windows"] >= 1
     assert all(math.isfinite(value) for value in summary.values())
+    assert result.approved_factor_ids == []

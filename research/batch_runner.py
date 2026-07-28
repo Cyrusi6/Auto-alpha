@@ -296,7 +296,7 @@ class BatchFactorResearchRunner:
             return CandidateRunResult(
                 candidate=candidate,
                 factor_id=None,
-                status="rejected",
+                status="research_rejected",
                 metrics_by_split={},
                 score=0.0,
                 gate_reasons=promotion_errors,

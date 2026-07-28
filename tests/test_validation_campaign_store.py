@@ -19,6 +19,17 @@ def _prepare_candidate_pool(tmp_path):
     loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
     store = LocalFactorStore(tmp_path / "store")
     rows = []
+    gate_decision = {
+        "passed": True,
+        "status": "validation_candidate",
+        "reasons": [],
+        "checks": {
+            "oos_evidence_positive": True,
+            "test_evaluable_date_count": 3.0,
+            "test_valid_observation_count": 30.0,
+            "test_rank_ic_mean": 0.1,
+        },
+    }
     for idx, name in enumerate(["RET_1D", "RET_5D"]):
         tokens = [idx]
         formula_hash = stable_formula_hash(tokens, [name], "ashare_features_v1", "ashare_ops_v1")
@@ -33,8 +44,9 @@ def _prepare_candidate_pool(tmp_path):
                 operator_version="ashare_ops_v1",
                 lookback_days=1,
                 created_at="2026-06-28T00:00:00Z",
-                status="approved",
+                status="validation_candidate",
                 metrics={"score": 0.5 - idx * 0.1, "rank_ic": 0.1},
+                metadata={"gate_decision": gate_decision},
                 factor_type="single",
             )
         )
@@ -56,6 +68,8 @@ def _prepare_candidate_pool(tmp_path):
                 "factor_store_dir": str(tmp_path / "store"),
                 "factor_values_path": str(tmp_path / "store" / "factor_values" / f"{factor_id}.jsonl"),
                 "family": "return" if idx == 0 else "momentum",
+                "factor_status": "validation_candidate",
+                "metadata": {"gate_decision": gate_decision},
             }
         )
     pool_path = tmp_path / "alpha_validation_candidate_pool.jsonl"

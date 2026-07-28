@@ -12,7 +12,7 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 
-from factor_store import LocalFactorStore
+from factor_store import LocalFactorStore, has_positive_oos_evidence
 from formula_search.models import FormulaCandidate
 from model_core.alphagpt import AlphaGPT, StableRankMonitor
 from model_core.vm import StackVM
@@ -173,7 +173,7 @@ class NeuralFormulaTrainer:
         approved = [
             record.factor_id
             for record in self.store.load_factors()
-            if record.status == "approved" and (record.batch_id or "").startswith(search_id)
+            if has_positive_oos_evidence(record) and (record.batch_id or "").startswith(search_id)
         ]
         result = NeuralSearchResult(
             search_id=search_id,

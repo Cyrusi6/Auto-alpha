@@ -10,6 +10,8 @@ def _metrics(**overrides):
         "rank_ic_ir": 0.2,
         "score": 0.5,
         "turnover": 0.2,
+        "evaluable_date_count": 3.0,
+        "valid_observation_count": 30.0,
     }
     base.update(overrides)
     return {"train": base, "valid": base, "test": base, "all": base}
@@ -19,7 +21,8 @@ def test_factor_gate_passes_normal_metrics():
     decision = evaluate_factor_gate(_metrics(), max_abs_corr=0.1, config=FactorGateConfig())
 
     assert decision.passed is True
-    assert decision.status == "approved"
+    assert decision.status == "validation_candidate"
+    assert decision.checks["oos_evidence_positive"] is True
     json.dumps(decision.to_dict())
 
 
@@ -42,3 +45,13 @@ def test_factor_gate_rejects_high_correlation():
 
     assert decision.passed is False
     assert "correlation_above_threshold" in decision.reasons
+
+
+def test_factor_gate_rejects_metrics_without_positive_oos_samples():
+    metrics = _metrics(evaluable_date_count=0.0, valid_observation_count=0.0, rank_ic_mean=0.0)
+
+    decision = evaluate_factor_gate(metrics, max_abs_corr=0.1, config=FactorGateConfig())
+
+    assert decision.status == "research_rejected"
+    assert decision.passed is False
+    assert decision.checks["oos_evidence_positive"] is False

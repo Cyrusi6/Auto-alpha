@@ -48,7 +48,7 @@ def test_alpha_factory_campaign_generates_multistage_shortlist_and_schema_valida
     assert result.status == "success"
     assert result.summary["alpha_campaign_id"] == result.campaign_id
     assert result.summary["candidates_generated"] == 12
-    assert result.summary["shortlist_count"] > 0
+    assert result.summary["shortlist_count"] == 0
     assert result.summary["feature_set_name"] == FEATURE_SET_V2
     assert result.summary["feature_count"] > 11
     assert (output_dir / "alpha_candidates.jsonl").exists()
@@ -228,7 +228,7 @@ def test_alpha_factory_readiness_gate_blocks_without_loading_data(tmp_path, caps
     assert (tmp_path / "blocked" / "alpha_factory_report.json").exists()
 
 
-def test_formula_search_can_use_alpha_shortlist_as_seed(tmp_path, capsys):
+def test_formula_search_does_not_seed_from_shortlist_without_oos_evidence(tmp_path, capsys):
     data_dir = _prepare_sample_data(tmp_path)
     alpha_result = AlphaFactoryRunner(
         AlphaCampaignConfig(
@@ -249,7 +249,7 @@ def test_formula_search_can_use_alpha_shortlist_as_seed(tmp_path, capsys):
             seed=11,
         )
     ).run()
-    assert alpha_result.summary["shortlist_count"] > 0
+    assert alpha_result.summary["shortlist_count"] == 0
 
     exit_code = run_search_main(
         [
@@ -295,7 +295,7 @@ def test_formula_search_can_use_alpha_shortlist_as_seed(tmp_path, capsys):
     assert payload["config"]["search_mode"] == "random"
     assert (tmp_path / "search" / "search_candidates.jsonl").exists()
     candidates_text = (tmp_path / "search" / "search_candidates.jsonl").read_text(encoding="utf-8")
-    assert "alpha_factory" in candidates_text
+    assert "alpha_factory" not in candidates_text
 
 
 def test_dashboard_service_reads_alpha_and_feature_artifacts(tmp_path):
@@ -336,4 +336,4 @@ def test_dashboard_service_reads_alpha_and_feature_artifacts(tmp_path):
     assert not service.load_alpha_candidates().empty
     assert not service.load_alpha_static_checks().empty
     assert not service.load_alpha_proxy_eval().empty
-    assert not service.load_alpha_shortlist().empty
+    assert service.load_alpha_shortlist().empty
