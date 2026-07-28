@@ -1,4 +1,4 @@
-import json
+import pytest
 
 from backtest import run_backtest
 from data_pipeline.ashare import AShareDataConfig, AShareDataManager
@@ -39,68 +39,46 @@ def _prepare_batch(tmp_path):
         composite_method="rank_average",
     )
     result = BatchFactorResearchRunner(config=config, candidates=default_candidates()[:5]).run()
-    assert result.composite_factor_id is not None
-    return data_dir, tmp_path / "store", result.composite_factor_id
+    assert result.composite_factor_id is None
+    return data_dir, tmp_path / "store"
 
 
-def test_backtest_can_select_latest_approved_composite(tmp_path, capsys):
-    data_dir, store_dir, composite_factor_id = _prepare_batch(tmp_path)
+def test_backtest_rejects_unvalidated_composite(tmp_path, capsys):
+    data_dir, store_dir = _prepare_batch(tmp_path)
     capsys.readouterr()
 
-    exit_code = run_backtest.main(
-        [
-            "--data-dir",
-            str(data_dir),
-            "--factor-store-dir",
-            str(store_dir),
-            "--output-dir",
-            str(tmp_path / "backtest"),
-            "--latest-approved",
-            "--factor-type",
-            "composite",
-            "--top-n",
-            "2",
-            "--max-weight",
-            "0.10",
-            "--pretty",
-        ]
-    )
-    payload = json.loads(capsys.readouterr().out)
-
-    assert exit_code == 0
-    assert payload["factor_id"] == composite_factor_id
-    assert payload["factor_type"] == "composite"
-    assert payload["component_factor_ids"]
+    with pytest.raises(ValueError, match="no explicitly approved factor"):
+        run_backtest.main(
+            [
+                "--data-dir",
+                str(data_dir),
+                "--factor-store-dir",
+                str(store_dir),
+                "--output-dir",
+                str(tmp_path / "backtest"),
+                "--latest-approved",
+                "--factor-type",
+                "composite",
+            ]
+        )
 
 
-def test_strategy_can_select_latest_approved_composite(tmp_path, capsys):
-    data_dir, store_dir, composite_factor_id = _prepare_batch(tmp_path)
+def test_strategy_rejects_unvalidated_composite(tmp_path, capsys):
+    data_dir, store_dir = _prepare_batch(tmp_path)
     capsys.readouterr()
 
-    exit_code = strategy_runner.main(
-        [
-            "--data-dir",
-            str(data_dir),
-            "--factor-store-dir",
-            str(store_dir),
-            "--output-dir",
-            str(tmp_path / "orders"),
-            "--latest-approved",
-            "--factor-type",
-            "composite",
-            "--top-n",
-            "2",
-            "--max-weight",
-            "0.10",
-            "--portfolio-value",
-            "1000000",
-            "--pretty",
-        ]
-    )
-    payload = json.loads(capsys.readouterr().out)
-
-    assert exit_code == 0
-    assert payload["factor_id"] == composite_factor_id
-    assert payload["factor_type"] == "composite"
-    assert payload["component_factor_ids"]
-    assert (tmp_path / "orders" / "paper_fills.jsonl").exists()
+    with pytest.raises(ValueError, match="no explicitly approved factor"):
+        strategy_runner.main(
+            [
+                "--data-dir",
+                str(data_dir),
+                "--factor-store-dir",
+                str(store_dir),
+                "--output-dir",
+                str(tmp_path / "orders"),
+                "--latest-approved",
+                "--factor-type",
+                "composite",
+            ]
+        )
+    assert not (tmp_path / "orders" / "paper_fills.jsonl").exists()

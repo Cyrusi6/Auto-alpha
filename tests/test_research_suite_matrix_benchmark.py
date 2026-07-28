@@ -56,9 +56,9 @@ def test_research_suite_builds_matrix_cache_and_benchmark(tmp_path, capsys):
     payload = json.loads(capsys.readouterr().out)
     stage_names = {stage["name"] for stage in payload["stages"]}
 
-    assert exit_code == 0
-    assert payload["status"] == "success"
-    assert {"matrix_cache", "benchmark"} <= stage_names
+    assert exit_code == 1
+    assert payload["status"] == "blocked"
+    assert {"matrix_cache", "benchmark", "research_admission"} <= stage_names
     assert (tmp_path / "data" / "matrix_cache" / "metadata.json").exists()
     assert (tmp_path / "data" / "matrix_cache" / "matrix_validation_report.json").exists()
     assert (tmp_path / "suite_benchmark" / "benchmark_result.json").exists()

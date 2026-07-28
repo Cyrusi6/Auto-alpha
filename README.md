@@ -429,6 +429,10 @@ Alpha Factory and formula search can generate many candidates, so production pro
 
 The implementation is intentionally local and conservative. PBO, deflated IC-like scores, and multiple-testing penalties are approximate diagnostics for review, not proof of future profitability.
 
+Research admission is fail closed. A factor enters validation only with status `validation_candidate` and explicit positive, evaluable OOS evidence; generated, merely evaluated, rejected, data-blocked, and unvalidated composite records remain outside the normal validation queue. Retrospective contaminated probes use a separate explicit admission mode and cannot be promoted by that replay.
+
+Production research requires a strict historical-PIT matrix, canonical v3 values plus validity, a governed target-availability mask, immutable lineage, compact materialization, and CUDA execution. Sample/lenient providers, CPU execution, JSONL materialization, missing target validity, or legacy/non-PIT loader fallback are smoke-only or blocked and are not valid production research commands. Purge/embargo must cover at least the label horizon and any longer effective formula lookback.
+
 `validation_campaign_store/` turns `alpha_validation_candidate_pool.jsonl` into a resumable campaign: ingest and dedupe candidates, create shard input files, call `validation_lab` per shard, consolidate shard reports, rank `validation_leaderboard.jsonl`, and write `factor_certification_queue.jsonl` for the small set of candidates worth certification.
 
 ```bash
@@ -708,7 +712,7 @@ The factor engine can be constrained to a local universe with `--universe-name` 
 
 The formula DSL exposes operator arity, lookback, and complexity metadata. StackVM can explain invalid formulas, estimate formula complexity and lookback, and produce stable canonical formula names. Batch research is available through `python -m research.run_batch`. The default candidate set includes at least 20 reproducible formula factors covering returns, valuation, profitability, growth, rolling time-series operators, cross-sectional operators, and simple combined expressions.
 
-Search-style research is available through `python -m formula_search.run_search`. It generates legal RPN formulas, mutates and crosses over formulas across generations, filters duplicate hashes, calls the same batch research gate/composite path, and writes `search_result.json`, `search_candidates.jsonl`, `search_report.json`, and `search_report.md`. Backtest and strategy CLIs can select the newest approved composite factor with `--latest-approved --factor-type composite`.
+Search-style research is available through `python -m formula_search.run_search`. It generates legal RPN formulas, mutates and crosses over formulas across generations, filters duplicate hashes, calls the same batch research gate/composite path, and writes `search_result.json`, `search_candidates.jsonl`, `search_report.json`, and `search_report.md`. A newly built composite is `composite_unvalidated`; backtest or strategy selection with `--latest-approved --factor-type composite` succeeds only after a separate governed process explicitly promotes it.
 
 Neural-guided research is available through `python -m neural_search.run_neural_search`. It trains AlphaGPT with supervised warm-start sequences, samples formulas through a StackVM-aware action mask, updates policy parameters from research rewards, writes checkpoints, and produces `neural_search_result.json`, `neural_training_history.jsonl`, and `neural_search_report.md`:
 
@@ -734,7 +738,7 @@ uv run python -m neural_search.run_neural_search \
 
 `formula_search.run_search` supports `--search-mode random|neural|hybrid`. Hybrid mode runs a neural branch and the existing random/mutation/crossover branch against the same factor store, then records neural metadata and checkpoint paths in `search_result.json`. `model_core.engine --train-mode neural` provides a lightweight neural training entry while preserving the existing fixed-candidate engine mode.
 
-The suite runner is available through `python -m research_suite.run_suite`. It orchestrates data sync, universe construction, formula search, composite backtest, paper order export, walk-forward robustness evaluation, promotion decision, suite report, and `artifact_catalog.json`. When promotion passes, the selected composite factor is updated to `production_candidate` in the factor store with the promotion decision in metadata.
+The suite runner is available through `python -m research_suite.run_suite`. It orchestrates data sync, universe construction, formula search, governed research admission, and—only after positive OOS admission—downstream backtest, paper order export, validation, and lifecycle stages. If no admitted factor exists, it stops at `research_admission` and does not auto-approve a composite or start promotion/model-registration stages.
 
 Suites can also register the selected factor as a governed model version and create a human review package:
 

@@ -1,3 +1,13 @@
+## 2026-07-28 — Task 056-A research and backtest correctness hardening
+
+- The daily next-open simulator now derives limit-up/down tradability from the actual open and governed limit prices. Close-limit flags no longer stand in for open execution state, and tests keep open-board and close-board cases separate.
+- Portfolio weights now drift with realized open-to-open returns before each rebalance. The simulator persists pre-trade, target, and post-trade weights so turnover can be independently recomputed.
+- Target returns retain unavailable cells as `NaN`; `target_available` is mandatory in strict research, includes endpoint maturity, and is consumed by proxy, full evaluation, materialization quality, and validation metrics.
+- Production research requires CUDA, strict historical PIT matrix/tensor lineage, canonical feature values plus validity, and non-JSONL factor materialization. Sample providers, CPU execution, legacy matrix fallback, and missing PIT proof fail closed before data evaluation.
+- Factor admission now uses an explicit lifecycle. Only `validation_candidate` records with positive evaluable OOS RankIC evidence enter validation; composites begin as `composite_unvalidated`, retrospective probes use a separate contaminated-engineering admission mode, and legacy `approved` no longer grants research admission.
+- Neural rewards no longer include fixed status bonuses, production embargo is at least the label horizon, and PIT regressions cover financial announcement availability, adjustment timing, corporate actions, target tails, open-limit execution, and weight drift.
+- Validation/regime metrics are NaN-aware and preserve data blockers. Sample research suites stop at `research_admission` instead of silently continuing into backtest, certification, model registration, or promotion.
+
 ## 2026-07-16 — Task 055-D secure remediation baseline
 
 - Tushare production origin is now HTTPS-only with token-free DNS/TLS/certificate/hostname preflight, redirect rejection, governed environment/file credentials, and exact-sentinel leak scanning. HTTP defaults were removed from A-share profiles and backfill planning.

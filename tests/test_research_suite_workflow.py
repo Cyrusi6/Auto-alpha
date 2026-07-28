@@ -39,11 +39,12 @@ def test_research_suite_sample_fails_closed_without_positive_oos_factor(tmp_path
     result = ResearchSuiteRunner(config).run()
     stage_statuses = {stage.name: stage.status for stage in result.stages}
 
-    assert result.status == "failed"
+    assert result.status == "blocked"
     assert result.selected_factor_id is None
     assert stage_statuses["data_sync"] == "success"
     assert stage_statuses["formula_search"] == "success"
-    assert stage_statuses["backtest"] == "failed"
+    assert stage_statuses["research_admission"] == "blocked"
+    assert "backtest" not in stage_statuses
     assert (tmp_path / "suite" / "suite_result.json").exists()
     assert (tmp_path / "suite" / "suite_report.md").exists()
     assert (tmp_path / "suite" / "artifact_catalog.json").exists()
@@ -79,7 +80,7 @@ def test_research_suite_workflow_supports_hybrid_search(tmp_path):
     result = ResearchSuiteRunner(config).run()
     formula_stage = next(stage for stage in result.stages if stage.name == "formula_search")
 
-    assert result.status == "failed"
+    assert result.status == "blocked"
     assert formula_stage.summary["search_mode"] == "hybrid"
     assert "neural_search_result" in formula_stage.output_paths
     assert (Path(formula_stage.output_paths["neural_search_result"])).exists()
@@ -103,8 +104,8 @@ def test_research_suite_can_register_model_and_create_review_package(tmp_path):
     result = ResearchSuiteRunner(config).run()
     stage_statuses = {stage.name: stage.status for stage in result.stages}
 
-    assert result.status == "failed"
-    assert stage_statuses["backtest"] == "failed"
+    assert result.status == "blocked"
+    assert stage_statuses["research_admission"] == "blocked"
     assert "model_registry" not in stage_statuses
     assert "model_lifecycle" not in stage_statuses
     assert not (tmp_path / "model_registry" / "model_versions.jsonl").exists()

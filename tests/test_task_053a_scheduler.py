@@ -63,6 +63,8 @@ def _campaign(tmp_path: Path):
                     "transform_method": "raw",
                     "rank": index + 1,
                     "factor_store_dir": str(tmp_path / "factor_store"),
+                    "selection_data_reused": True,
+                    "evidence_level": "retrospective_engineering_only",
                 }
             ) + "\n"
             for index in range(20)
@@ -70,7 +72,13 @@ def _campaign(tmp_path: Path):
         encoding="utf-8",
     )
     store = tmp_path / "store"
-    ingest_candidate_pool(store, pool, validation_campaign_id="task053a", shard_count=4)
+    ingest_candidate_pool(
+        store,
+        pool,
+        validation_campaign_id="task053a",
+        shard_count=4,
+        admission_mode="retrospective_engineering_probe",
+    )
     inputs = {}
     for name in ("data", "factor_store", "freeze", "matrix"):
         root = tmp_path / name

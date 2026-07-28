@@ -71,13 +71,14 @@ def test_research_suite_formula_corpus_pretrain_batch_eval(tmp_path, capsys):
     )
     payload = json.loads(capsys.readouterr().out)
 
-    assert exit_code == 0
-    assert payload["status"] == "success"
+    assert exit_code == 1
+    assert payload["status"] == "blocked"
     stage_names = [stage["name"] for stage in payload["stages"]]
     assert "formula_corpus" in stage_names
     assert "alphagpt_pretrain" in stage_names
     assert "formula_batch_eval" in stage_names
     assert "compute_experiment" in stage_names
+    assert "research_admission" in stage_names
     assert (tmp_path / "suite" / "formula_corpus" / "formula_corpus.jsonl").exists()
     assert (tmp_path / "suite" / "alphagpt_pretrain" / "checkpoint_manifest.json").exists()
     assert (tmp_path / "suite" / "formula_batch_eval" / "formula_batch_eval_result.json").exists()

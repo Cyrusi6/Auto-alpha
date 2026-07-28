@@ -189,7 +189,21 @@ def test_validation_scheduler_flag_creates_four_cuda_shards(tmp_path, monkeypatc
         rows.append({"factor_id": f"factor_{idx}", "formula_hash": f"hash_{idx}", "formula_names": ["RET_1D"], "feature_version": "v3", "rank": idx + 1, "final_score": 1.0, "factor_store_dir": str(tmp_path / "store")})
     pool.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
     store_dir = tmp_path / "validation_store"
-    ingest_candidate_pool(store_dir, pool, validation_campaign_id="campaign", shard_count=4)
+    rows = [json.loads(line) for line in pool.read_text(encoding="utf-8").splitlines() if line.strip()]
+    pool.write_text(
+        "".join(
+            json.dumps(row | {"selection_data_reused": True, "evidence_level": "retrospective_engineering_only"}) + "\n"
+            for row in rows
+        ),
+        encoding="utf-8",
+    )
+    ingest_candidate_pool(
+        store_dir,
+        pool,
+        validation_campaign_id="campaign",
+        shard_count=4,
+        admission_mode="retrospective_engineering_probe",
+    )
     captured = []
 
     class FakeReport:

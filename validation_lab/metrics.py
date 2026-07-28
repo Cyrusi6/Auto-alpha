@@ -132,8 +132,9 @@ def summarize_window_results(
     rank_ics = [_finite(item.test_metrics["rank_ic_mean"]) for item in results if item.test_metrics.get("evaluable")]
     icirs = [_finite(item.test_metrics["icir"]) for item in results if item.test_metrics.get("evaluable")]
     train_scores = [_finite(item.train_metrics["out_of_sample_score"]) for item in results if item.train_metrics.get("evaluable")]
-    if not test_scores:
-        issues = list(issues or []) + [ValidationIssue("blocker", "no_oos_windows", "no out-of-sample windows were evaluated")]
+    issue_rows = issues if issues is not None else []
+    if not test_scores and not any(issue.code == "no_oos_windows" for issue in issue_rows):
+        issue_rows.append(ValidationIssue("blocker", "no_oos_windows", "no out-of-sample windows were evaluated"))
     avg_score = float(mean(test_scores)) if test_scores else 0.0
     score_std = float(pstdev(test_scores)) if len(test_scores) > 1 else 0.0
     pass_ratio = float(sum(score >= 0.0 for score in test_scores) / len(test_scores)) if test_scores else 0.0
@@ -148,7 +149,6 @@ def summarize_window_results(
         threshold_failures.append(("window_pass_ratio_below_policy", pass_ratio, policy.min_window_pass_ratio))
     if train_test_decay > policy.max_train_test_decay:
         threshold_failures.append(("train_test_decay_above_policy", train_test_decay, policy.max_train_test_decay))
-    issue_rows = list(issues or [])
     issue_rows.extend(ValidationIssue("blocker", code, f"policy threshold failed: {value} vs {threshold}", {"value": value, "threshold": threshold, "policy_id": policy.policy_id}) for code, value, threshold in threshold_failures)
     blocker_count = sum(1 for issue in issue_rows if issue.severity == "blocker")
     warning_count = sum(1 for issue in issue_rows if issue.severity == "warning")

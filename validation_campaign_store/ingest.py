@@ -35,12 +35,21 @@ def ingest_candidate_pool(
     matrix_cache_path: str | None = None,
     stratified: bool = True,
     seed: int = 42,
+    admission_mode: str = "positive_oos_only",
 ) -> dict[str, Any]:
     store = LocalValidationCampaignStore(store_dir)
     rows = _read_jsonl(candidate_pool_path)
     source_row_count = len(rows)
-    inadmissible = [row for row in rows if not _candidate_has_positive_oos_evidence(row)]
-    rows = [row for row in rows if _candidate_has_positive_oos_evidence(row)]
+    if admission_mode not in {"positive_oos_only", "retrospective_engineering_probe"}:
+        raise ValueError(f"unsupported validation admission mode: {admission_mode}")
+    if admission_mode == "retrospective_engineering_probe":
+        invalid_probes = [row for row in rows if not _is_retrospective_engineering_probe(row)]
+        if invalid_probes:
+            raise ValueError("retrospective engineering probes require selection_data_reused and retrospective evidence")
+        inadmissible = []
+    else:
+        inadmissible = [row for row in rows if not _candidate_has_positive_oos_evidence(row)]
+        rows = [row for row in rows if _candidate_has_positive_oos_evidence(row)]
     filtered = _filter_rows(rows, max_candidates=max_candidates, rank_range=rank_range, family_filter=family_filter, source_filter=source_filter)
     if stratified:
         filtered = _stratified_rows(filtered, max_candidates=max_candidates, seed=seed)
@@ -60,7 +69,12 @@ def ingest_candidate_pool(
         shard_count=max(1, int(shard_count or 1)),
         status="registered",
         created_at=_utc_now(),
-        metadata={"duplicates": duplicates, "source_rows": source_row_count, "inadmissible_rows": len(inadmissible)},
+        metadata={
+            "duplicates": duplicates,
+            "source_rows": source_row_count,
+            "inadmissible_rows": len(inadmissible),
+            "admission_mode": admission_mode,
+        },
     )
     store.register_campaign(record)
     candidate_records = [
@@ -76,7 +90,7 @@ def ingest_candidate_pool(
             feature_version=str(row.get("feature_version") or ""),
             factor_store_dir=str(row.get("factor_store_dir") or ""),
             factor_values_path=str(row.get("factor_values_path") or ""),
-            status="pending",
+            status="retrospective_probe_pending" if admission_mode == "retrospective_engineering_probe" else "pending",
             metadata={"source_candidate": row},
         )
         for idx, row in enumerate(candidates)
@@ -88,6 +102,7 @@ def ingest_candidate_pool(
         "source_candidate_pool_path": str(candidate_pool_path),
         "source_candidate_count": source_row_count,
         "inadmissible_candidate_count": len(inadmissible),
+        "admission_mode": admission_mode,
         "candidate_count": len(candidate_records),
         "duplicate_count": len(duplicates),
         "shard_count": record.shard_count,
@@ -117,6 +132,13 @@ def _candidate_has_positive_oos_evidence(row: dict[str, Any]) -> bool:
         and float(checks.get("test_valid_observation_count", 0.0) or 0.0) > 0.0
         and float(checks.get("test_rank_ic_mean", 0.0) or 0.0) > 0.0
     )
+
+
+def _is_retrospective_engineering_probe(row: dict[str, Any]) -> bool:
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    selection_reused = row.get("selection_data_reused", metadata.get("selection_data_reused"))
+    evidence_level = str(row.get("evidence_level") or metadata.get("evidence_level") or "")
+    return selection_reused is True and evidence_level == "retrospective_engineering_only"
 
 
 def _filter_rows(

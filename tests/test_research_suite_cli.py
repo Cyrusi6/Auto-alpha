@@ -52,8 +52,9 @@ def test_run_suite_cli_sample_workflow(tmp_path, capsys):
     )
     payload = json.loads(capsys.readouterr().out)
 
-    assert exit_code == 0
-    assert payload["status"] == "success"
+    assert exit_code == 1
+    assert payload["status"] == "blocked"
+    assert payload["stages"][-1]["name"] == "research_admission"
     assert (tmp_path / "suite" / "suite_result.json").exists()
 
 
@@ -96,8 +97,8 @@ def test_run_suite_write_default_config_and_config_json(tmp_path, capsys):
     exit_code = run_suite.main(["--config-json", str(config_path)])
     payload = json.loads(capsys.readouterr().out)
 
-    assert exit_code == 0
-    assert payload["status"] == "success"
+    assert exit_code == 1
+    assert payload["status"] == "blocked"
     assert "orders" not in {stage["name"] for stage in payload["stages"]}
     assert "promotion" not in {stage["name"] for stage in payload["stages"]}
 
@@ -150,7 +151,7 @@ def test_run_suite_cli_neural_search_mode(tmp_path, capsys):
     payload = json.loads(capsys.readouterr().out)
     formula_stage = next(stage for stage in payload["stages"] if stage["name"] == "formula_search")
 
-    assert exit_code == 0
-    assert payload["status"] == "success"
+    assert exit_code == 1
+    assert payload["status"] == "blocked"
     assert formula_stage["summary"]["search_mode"] == "neural"
     assert (tmp_path / "suite" / "search" / "neural_search_result.json").exists()

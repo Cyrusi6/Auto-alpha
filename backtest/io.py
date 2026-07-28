@@ -26,6 +26,7 @@ def select_factor_id(
         approved = [record for record in factors if record.status in {"approved", "production_candidate"}]
         if approved:
             return approved[-1].factor_id
+        raise ValueError("no explicitly approved factor matches the requested factor type")
     if not factors:
         raise ValueError("factor store is empty; register a factor before running a portfolio simulation")
     return factors[-1].factor_id

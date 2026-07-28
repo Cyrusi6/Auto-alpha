@@ -97,7 +97,7 @@ Planned sync splits large daily datasets by date windows and splits index consti
 
 `validation_campaign_store/` is the bridge from large Alpha candidate pools to certification. It ingests `alpha_validation_candidate_pool.jsonl`, deduplicates candidates, records campaign and shard state, runs or plans `validation_lab` shard jobs, consolidates validation artifacts, writes a validation leaderboard, and emits `factor_certification_queue.jsonl`. Real large validation should wait for research readiness; blocked readiness produces a plan/runbook with no compute jobs.
 
-`validation_lab/` is the out-of-sample and anti-overfit governance layer. It builds deterministic walk-forward, purged/embargo, and CSCV-style splits; evaluates train/test decay, OOS score, IC stability, turnover, and robustness; summarizes multiple-testing exposure from Alpha Factory/search/batch artifacts; estimates PBO and deflated IC-like scores; and runs placebo, regime, sensitivity, and stress-backtest checks. Sample data is only a smoke path; real promotion-grade validation should be tied to a data-lake freeze.
+`validation_lab/` is the out-of-sample and anti-overfit governance layer. It builds deterministic walk-forward, purged/embargo, and CSCV-style splits; evaluates train/test decay, OOS score, IC stability, turnover, and robustness; summarizes multiple-testing exposure from Alpha Factory/search/batch artifacts; estimates PBO and deflated IC-like scores; and runs placebo, regime, sensitivity, and stress-backtest checks. Normal admission requires a `validation_candidate` with explicit positive evaluable OOS evidence. Sample data is only a fail-closed smoke path; production research requires strict historical-PIT matrix/tensor lineage, target validity, compact materialization, CUDA, and embargo covering label horizon plus effective lookback.
 
 `factor_certification/` converts validation, data-freeze, PIT/leakage, Alpha Factory, stress, settlement, risk-control, EOD reconciliation, and lifecycle artifacts into a policy scorecard and certification decision. Profiles include `sample_lenient_certification`, `research_standard`, and `production_strict`. Certification gates promotion and review; it is not a performance guarantee.
 
@@ -105,7 +105,7 @@ Planned sync splits large daily datasets by date windows and splits index consti
 
 `portfolio_campaign_store/` starts from `certified_factor_pool.jsonl`, runs or plans portfolio lab/certification items, consolidates selected policy and certification artifacts, and writes `production_candidate_bundle.jsonl` plus `optimizer_policy_activation_queue.jsonl`. The bundle is not activation; model registry, factor lifecycle, approval, and production gates remain required.
 
-`research/` orchestrates batch factor experiments. It loads default or JSON-defined candidate formulas, executes StackVM, applies transforms and gates, skips duplicate formula hashes, writes per-factor reports, ranks candidates, and can register a composite factor. Composite methods include equal weight, score weight, and rank average.
+`research/` orchestrates batch factor experiments. It loads candidate formulas, executes StackVM, applies transforms and OOS gates, skips duplicate formula hashes, writes per-factor reports, and ranks candidates. Composite methods include equal weight, score weight, and rank average, but a new composite is stored as `composite_unvalidated` and cannot enter validation or portfolio paths without separate positive OOS evidence.
 
 `formula_search/` adds local formula discovery. It uses StackVM metadata to generate legal RPN formulas, estimate arity/lookback/complexity, mutate formulas, cross over parent formulas, remove duplicate hashes, and run multi-generation search through the same batch research pipeline.
 
@@ -201,9 +201,7 @@ Neural search writes:
 
 `formula_search.run_search --search-mode neural` delegates to neural search. `--search-mode hybrid` runs the neural branch and the random/mutation/crossover branch together, then records neural metadata and checkpoint paths in the search result. `research_suite.run_suite --search-mode neural|hybrid` uses the same path in the one-click workflow.
 
-Composite factor records use `factor_type=composite` and store component factor ids in metadata.
-
-Promotion can update a passing composite factor to `status=production_candidate`. The promotion decision is stored as JSON and also merged into factor metadata.
+Composite factor records use `factor_type=composite`, store component factor ids in metadata, and begin at `status=composite_unvalidated`. Legacy `approved` labels and composite construction alone do not satisfy research admission.
 
 ## Portfolio Simulation
 
@@ -213,7 +211,7 @@ Promotion can update a passing composite factor to `status=production_candidate`
 - `equity_curve.jsonl`
 - `trades.jsonl`
 
-Returns are based on `adjusted_close`; simulated fills use raw `close`. The simulator applies suspension, limit up/down, T+1 selling, board-lot rounding, volume participation, and cost rules, with rejected and partial fills recorded in `trades.jsonl`.
+The formal daily contract is next-trade-day open execution with open-to-open accounting. Open tradability is derived from the actual open versus governed up/down limit prices, not close-limit flags. Holdings drift with realized returns before rebalance; pre-trade, target, and post-trade weights are persisted so turnover is independently reproducible.
 
 Backtest supports `--portfolio-method equal_weight` and `--portfolio-method risk_aware`. Risk-aware mode calls the optimizer on each rebalance date, records tracking error, active share, HHI, top weight, industry active exposure, and risk constraint violations, and can write a risk report directory. With `--use-factor-risk-model --attribution`, it also writes `risk_exposures.jsonl`, `risk_decomposition.jsonl`, `return_attribution.jsonl`, and `risk_model_report.json/md`.
 

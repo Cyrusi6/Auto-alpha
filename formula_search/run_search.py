@@ -14,7 +14,7 @@ from neural_search.models import NeuralSearchConfig
 from neural_search.trainer import NeuralFormulaTrainer
 from research.composite import COMPOSITE_METHODS
 from experiment_orchestrator.merge import merge_formula_search_results
-from factor_store import LocalFactorStore
+from factor_store import LocalFactorStore, has_positive_oos_evidence
 from validation_lab.run_validation import main as run_validation_main
 from factor_certification.run_certify import main as run_certify_main
 
@@ -493,8 +493,16 @@ def _attach_search_trial_summary(payload: dict[str, object]) -> None:
 
 
 def _latest_composite(factor_store_dir: str) -> str | None:
-    record = LocalFactorStore(factor_store_dir).load_latest_factor(status="approved", factor_type="composite")
-    return record.factor_id if record else None
+    records = LocalFactorStore(factor_store_dir).load_factors()
+    record = next(
+        (
+            item
+            for item in reversed(records)
+            if item.factor_type == "composite" and has_positive_oos_evidence(item)
+        ),
+        None,
+    )
+    return record.factor_id if record is not None else None
 
 
 def _run_child_json(main_func, argv: list[str]) -> dict[str, object]:

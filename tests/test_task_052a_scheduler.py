@@ -25,6 +25,8 @@ def _prepare_campaign(tmp_path: Path, candidate_count: int = 20):
                     "rank": index + 1,
                     "final_score": 1.0 - index / 100.0,
                     "factor_store_dir": str(tmp_path / "factor_store"),
+                    "selection_data_reused": True,
+                    "evidence_level": "retrospective_engineering_only",
                 }
             )
             + "\n"
@@ -33,7 +35,13 @@ def _prepare_campaign(tmp_path: Path, candidate_count: int = 20):
         encoding="utf-8",
     )
     store_dir = tmp_path / "validation_store"
-    ingest_candidate_pool(store_dir, source_pool, validation_campaign_id="task052a", shard_count=4)
+    ingest_candidate_pool(
+        store_dir,
+        source_pool,
+        validation_campaign_id="task052a",
+        shard_count=4,
+        admission_mode="retrospective_engineering_probe",
+    )
     strict = {}
     for name in (
         "feature_manifest",

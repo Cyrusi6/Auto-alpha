@@ -123,7 +123,8 @@ def test_validation_metrics_multiple_testing_and_null_diagnostics_are_serializab
     }
     json.dumps(payload, ensure_ascii=False)
 
-    assert summary.split_count == len(splits)
+    assert summary.split_count == 0
+    assert any(issue.code in {"no_oos_windows", "no_evaluable_windows"} for issue in issues)
     assert multiple_testing.effective_trial_count >= 1
     assert 0.0 <= overfit.pbo_estimate <= 1.0
     assert 0.0 <= placebo.candidate_vs_placebo_percentile <= 1.0

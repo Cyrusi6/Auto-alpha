@@ -90,6 +90,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--replay-generation-label", default="primary")
     parser.add_argument("--replay-reference-evidence-path")
     parser.add_argument("--force-uncached-replay", action="store_true")
+    parser.add_argument("--retrospective-engineering-probes", action="store_true")
     parser.add_argument("--top-k", type=int, default=100)
     parser.add_argument("--top-k-certification-queue", type=int, default=20)
     parser.add_argument("--certification-policy-profile", default="sample_lenient_certification")
@@ -107,6 +108,13 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run(args: argparse.Namespace) -> dict:
+    retrospective_probe_mode = bool(
+        args.retrospective_engineering_probes
+        or args.task_052a_replay
+        or args.task_053a_replay
+        or args.task_054a_replay
+        or args.task_054c_replay
+    )
     if args.source_campaign_root:
         artifacts = resolve_campaign_artifacts(args.source_campaign_root)
         args.source_candidate_pool_path = args.source_candidate_pool_path or artifacts.candidate_pool_path
@@ -142,6 +150,7 @@ def _run(args: argparse.Namespace) -> dict:
             source_filter=args.source_filter,
             shard_count=args.shard_count,
             split_method=args.split_method,
+            admission_mode="retrospective_engineering_probe" if retrospective_probe_mode else "positive_oos_only",
         )
     elif args.command == "plan":
         campaign_id = _campaign_id(args, store)
@@ -162,6 +171,7 @@ def _run(args: argparse.Namespace) -> dict:
                 max_candidates=args.max_candidates or None,
                 shard_count=args.shard_count,
                 split_method=args.split_method,
+                admission_mode="retrospective_engineering_probe" if retrospective_probe_mode else "positive_oos_only",
             )
         payload = run_validation_shards(
             args.validation_campaign_store_dir,

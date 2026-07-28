@@ -50,14 +50,14 @@ def test_research_suite_runs_validation_and_certification_before_promotion(tmp_p
     result = ResearchSuiteRunner(config).run()
     stage_statuses = {stage.name: stage.status for stage in result.stages}
 
-    assert result.status == "success"
-    assert stage_statuses["validation_lab"] == "success"
-    assert stage_statuses["factor_certification"] == "success"
-    assert stage_statuses["promotion"] == "success"
-    assert result.summary["validation_lab_enabled"] is True
-    assert result.summary["certification_status"] in {"certified", "conditional"}
-    assert (tmp_path / "validation" / "validation_lab_report.json").exists()
-    assert (tmp_path / "cert" / "factor_certification_decision.json").exists()
+    assert result.status == "blocked"
+    assert stage_statuses["research_admission"] == "blocked"
+    assert "validation_lab" not in stage_statuses
+    assert "factor_certification" not in stage_statuses
+    assert "promotion" not in stage_statuses
+    assert result.summary["validation_lab_enabled"] is False
+    assert not (tmp_path / "validation" / "validation_lab_report.json").exists()
+    assert not (tmp_path / "cert" / "factor_certification_decision.json").exists()
     assert (tmp_path / "suite" / "artifact_catalog.json").exists()
 
 

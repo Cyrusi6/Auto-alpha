@@ -56,12 +56,8 @@ def test_research_suite_risk_aware_flow(tmp_path, capsys):
     catalog = json.loads((tmp_path / "suite" / "artifact_catalog.json").read_text(encoding="utf-8"))
     names = {entry["name"] for entry in catalog["entries"]}
 
-    assert result == 0
-    assert payload["status"] == "success"
-    assert "risk_report" in names
-    assert "optimization_result" in names
-    assert "risk_exposures" in names
-    assert "risk_decomposition" in names
-    assert "return_attribution" in names
-    assert payload["promotion_decision"]["checks"]["tracking_error"] >= 0
-    assert "max_active_style_exposure_abs" in payload["promotion_decision"]["checks"]
+    assert result == 1
+    assert payload["status"] == "blocked"
+    assert "risk_report" not in names
+    assert "optimization_result" not in names
+    assert payload["promotion_decision"] is None

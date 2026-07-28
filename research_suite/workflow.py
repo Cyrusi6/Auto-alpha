@@ -14,7 +14,7 @@ from typing import Any, Callable
 from backtest import run_backtest
 from corporate_actions.run_actions import main as run_corporate_actions_main
 from data_pipeline import run_pipeline
-from factor_store import LocalFactorStore
+from factor_store import LocalFactorStore, has_positive_oos_evidence
 from factor_lifecycle.run_lifecycle import main as run_lifecycle_main
 from formula_batch_eval.run_batch_eval import main as run_formula_batch_eval_main
 from formula_corpus.run_corpus import main as run_formula_corpus_main
@@ -121,32 +121,46 @@ class ResearchSuiteRunner:
             if self.config.run_alpha_factory:
                 self._append_stage("alpha_factory", self._stage_alpha_factory)
             self._append_stage("formula_search", self._stage_formula_search)
-            self._append_stage("backtest", self._stage_backtest)
-            if self.config.run_leakage_audit:
-                self._append_stage("leakage_audit", self._stage_leakage_audit)
-            if not self.config.skip_orders:
-                self._append_stage("orders", self._stage_orders)
-            self._append_stage("walk_forward", self._stage_walk_forward)
-            if self.config.run_validation_lab:
-                self._append_stage("validation_lab", self._stage_validation_lab)
-            if self.config.run_validation_campaign_store:
-                self._append_stage("validation_campaign_store", self._stage_validation_campaign_store)
-            if self.config.run_factor_certification_campaign_store:
-                self._append_stage("factor_certification_campaign_store", self._stage_factor_certification_campaign_store)
-            if self.config.run_factor_certification:
-                self._append_stage("factor_certification", self._stage_factor_certification)
-            if self.config.run_portfolio_campaign_store:
-                self._append_stage("portfolio_campaign_store", self._stage_portfolio_campaign_store)
-            if self.config.run_portfolio_lab:
-                self._append_stage("portfolio_lab", self._stage_portfolio_lab)
-            if self.config.run_portfolio_certification:
-                self._append_stage("portfolio_certification", self._stage_portfolio_certification)
-            if not self.config.disable_promotion and self.config.promote_latest_composite:
-                self._append_stage("promotion", self._stage_promotion)
-            if self.config.register_model_version:
-                self._append_stage("model_registry", self._stage_model_registry)
-            if self.config.create_model_review_package or self.config.require_model_approval:
-                self._append_stage("model_lifecycle", self._stage_model_lifecycle)
+            if not self.selected_factor_id:
+                now = _utc_now()
+                self.stages.append(
+                    SuiteStageResult(
+                        name="research_admission",
+                        status="blocked",
+                        started_at=now,
+                        finished_at=now,
+                        error="positive_oos_composite_evidence_missing",
+                        summary={"validation_candidate_count": 0, "downstream_stages_started": False},
+                    )
+                )
+                status = "blocked"
+            else:
+                self._append_stage("backtest", self._stage_backtest)
+                if self.config.run_leakage_audit:
+                    self._append_stage("leakage_audit", self._stage_leakage_audit)
+                if not self.config.skip_orders:
+                    self._append_stage("orders", self._stage_orders)
+                self._append_stage("walk_forward", self._stage_walk_forward)
+                if self.config.run_validation_lab:
+                    self._append_stage("validation_lab", self._stage_validation_lab)
+                if self.config.run_validation_campaign_store:
+                    self._append_stage("validation_campaign_store", self._stage_validation_campaign_store)
+                if self.config.run_factor_certification_campaign_store:
+                    self._append_stage("factor_certification_campaign_store", self._stage_factor_certification_campaign_store)
+                if self.config.run_factor_certification:
+                    self._append_stage("factor_certification", self._stage_factor_certification)
+                if self.config.run_portfolio_campaign_store:
+                    self._append_stage("portfolio_campaign_store", self._stage_portfolio_campaign_store)
+                if self.config.run_portfolio_lab:
+                    self._append_stage("portfolio_lab", self._stage_portfolio_lab)
+                if self.config.run_portfolio_certification:
+                    self._append_stage("portfolio_certification", self._stage_portfolio_certification)
+                if not self.config.disable_promotion and self.config.promote_latest_composite:
+                    self._append_stage("promotion", self._stage_promotion)
+                if self.config.register_model_version:
+                    self._append_stage("model_registry", self._stage_model_registry)
+                if self.config.create_model_review_package or self.config.require_model_approval:
+                    self._append_stage("model_lifecycle", self._stage_model_lifecycle)
         except Exception:
             status = "failed"
 
@@ -234,7 +248,8 @@ class ResearchSuiteRunner:
                 "alpha_family_distribution": self.alpha_summary.get("family_distribution", {}),
                 "alpha_compute_run_report_path": self.alpha_summary.get("compute_run_report_path"),
                 "alpha_factory_report_path": self.alpha_summary.get("alpha_factory_report_path"),
-                "validation_lab_enabled": self.config.run_validation_lab,
+                "validation_lab_requested": self.config.run_validation_lab,
+                "validation_lab_enabled": bool(self.validation_summary),
                 "validation_status": self.validation_summary.get("status"),
                 "validation_blocker_count": self.validation_summary.get("validation_blocker_count", 0),
                 "pbo_estimate": self.validation_summary.get("pbo_estimate", 0.0),
@@ -1105,7 +1120,8 @@ class ResearchSuiteRunner:
             self.config.factor_store_dir,
             "--output-dir",
             self.config.backtest_dir,
-            "--latest-approved",
+            "--factor-id",
+            str(self.selected_factor_id),
             "--factor-type",
             "composite",
             "--top-n",
@@ -1288,7 +1304,8 @@ class ResearchSuiteRunner:
             self.config.factor_store_dir,
             "--output-dir",
             self.config.orders_dir,
-            "--latest-approved",
+            "--factor-id",
+            str(self.selected_factor_id),
             "--factor-type",
             "composite",
             "--top-n",
@@ -2128,7 +2145,15 @@ def _run_json_main(main_func: Callable[[list[str] | None], int], argv: list[str]
 
 
 def _select_latest_composite(factor_store_dir: str) -> str | None:
-    record = LocalFactorStore(factor_store_dir).load_latest_factor(status="approved", factor_type="composite")
+    records = LocalFactorStore(factor_store_dir).load_factors()
+    record = next(
+        (
+            item
+            for item in reversed(records)
+            if item.factor_type == "composite" and has_positive_oos_evidence(item)
+        ),
+        None,
+    )
     return record.factor_id if record is not None else None
 
 
