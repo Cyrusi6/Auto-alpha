@@ -41,6 +41,17 @@ class AShareTradingRules:
             return False, "invalid_price"
         return True, ""
 
+    @staticmethod
+    def is_open_at_limit(price: float, limit_price: float, *, direction: str) -> bool:
+        if price <= 0 or limit_price <= 0:
+            return False
+        tolerance = max(abs(limit_price) * 1e-4, 1e-4)
+        if direction == "up":
+            return price >= limit_price - tolerance
+        if direction == "down":
+            return price <= limit_price + tolerance
+        raise ValueError("direction must be up or down")
+
     def clamp_weight(self, weight: float) -> float:
         return max(0.0, min(float(weight), self.max_position_weight))
 

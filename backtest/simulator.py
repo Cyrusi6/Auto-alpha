@@ -121,8 +121,8 @@ class AShareBacktestSimulator:
         open_price = loader.raw_data_cache["open"].detach().cpu()
         volume = loader.raw_data_cache.get("volume", torch.zeros_like(open_price)).detach().cpu()
         is_suspended = loader.raw_data_cache.get("is_suspended", torch.zeros_like(open_price)).detach().cpu()
-        limit_up = loader.raw_data_cache.get("limit_up_flag", torch.zeros_like(open_price)).detach().cpu()
-        limit_down = loader.raw_data_cache.get("limit_down_flag", torch.zeros_like(open_price)).detach().cpu()
+        open_at_up_limit = _open_limit_matrix(loader.raw_data_cache, open_price, "up")
+        open_at_down_limit = _open_limit_matrix(loader.raw_data_cache, open_price, "down")
         active_mask = loader.raw_data_cache.get("active_mask", torch.ones_like(open_price)).detach().cpu()
         target_ret = loader.target_ret.detach().cpu()
         if self.portfolio_method == "equal_weight":
@@ -143,12 +143,15 @@ class AShareBacktestSimulator:
         prev_equity = self.initial_cash
         snapshots: list[PortfolioSnapshot] = []
         fills: list[TradeFill] = []
+        rebalance_audit: list[dict[str, object]] = []
         total_cost = 0.0
         optimizer = PortfolioOptimizer(self.optimization_config)
         risk_metric_rows: list[dict[str, float]] = []
         factor_risk_model = None
 
         for date_idx, trade_date in enumerate(loader.trade_dates):
+            realized_return = 0.0
+            open_to_open = torch.zeros(len(loader.ts_codes), dtype=torch.float32)
             risk_as_of_index = max(0, date_idx - 1)
             covariance = estimate_return_covariance(loader, lookback=self.risk_model_lookback, shrinkage=self.risk_model_shrinkage, as_of_index=risk_as_of_index)
             factor_risk_model = None
@@ -162,15 +165,32 @@ class AShareBacktestSimulator:
             if date_idx > 0:
                 prior_open = open_price[:, date_idx - 1]
                 current_open = open_price[:, date_idx]
-                valid_open = torch.isfinite(prior_open) & torch.isfinite(current_open) & (prior_open > 0)
+                valid_open = (
+                    torch.isfinite(prior_open)
+                    & torch.isfinite(current_open)
+                    & (prior_open > 0)
+                    & (current_open > 0)
+                )
                 open_to_open = torch.where(valid_open, current_open / prior_open - 1.0, torch.zeros_like(current_open))
                 realized_return = float((current_weights * open_to_open).sum().item())
                 equity *= 1.0 + realized_return
+                current_weights = _drift_weights(current_weights, open_to_open, realized_return)
+
+            pre_trade_weights = current_weights.clone()
 
             if self.portfolio_method == "risk_aware":
                 benchmark = benchmark_weights_from_index_members(loader, self.index_code, trade_date)
                 if self.use_factor_risk_model and factor_risk_model is None:
                     desired_weights = current_weights.clone()
+                    rebalance_audit.append(
+                        _rebalance_audit_row(
+                            trade_date,
+                            loader.ts_codes,
+                            pre_trade_weights,
+                            desired_weights,
+                            current_weights,
+                        )
+                    )
                     snapshots.append(
                         PortfolioSnapshot(
                             trade_date=trade_date,
@@ -274,11 +294,20 @@ class AShareBacktestSimulator:
                 equity = max(equity - day_cost, 0.0)
                 total_cost += day_cost
                 current_weights = adjusted_weights
+                turnover = float(torch.abs(current_weights - pre_trade_weights).sum().item())
+                rebalance_audit.append(
+                    _rebalance_audit_row(
+                        trade_date,
+                        loader.ts_codes,
+                        pre_trade_weights,
+                        desired_weights,
+                        current_weights,
+                    )
+                )
                 invested_weight = float(current_weights.sum().item())
                 positions_value = equity * invested_weight
                 cash = equity - positions_value
                 daily_return = (equity / prev_equity - 1.0) if prev_equity > 0 else 0.0
-                turnover = float(day_traded_value / max(equity, 1e-6))
                 snapshots.append(
                     PortfolioSnapshot(
                         trade_date=trade_date,
@@ -301,8 +330,8 @@ class AShareBacktestSimulator:
                 price = float(open_price[stock_idx, date_idx].item())
                 active = bool(active_mask[stock_idx, date_idx].item() > 0.5)
                 suspended = bool(is_suspended[stock_idx, date_idx].item() > 0.5)
-                is_limit_up = bool(limit_up[stock_idx, date_idx].item() > 0.5)
-                is_limit_down = bool(limit_down[stock_idx, date_idx].item() > 0.5)
+                is_limit_up = bool(open_at_up_limit[stock_idx, date_idx].item() > 0.5)
+                is_limit_down = bool(open_at_down_limit[stock_idx, date_idx].item() > 0.5)
                 if not active:
                     allowed, reason = False, "inactive_security"
                 elif side == "BUY":
@@ -378,11 +407,20 @@ class AShareBacktestSimulator:
             equity = max(equity - day_cost, 0.0)
             total_cost += day_cost
             current_weights = adjusted_weights
+            turnover = float(torch.abs(current_weights - pre_trade_weights).sum().item())
+            rebalance_audit.append(
+                _rebalance_audit_row(
+                    trade_date,
+                    loader.ts_codes,
+                    pre_trade_weights,
+                    desired_weights,
+                    current_weights,
+                )
+            )
             invested_weight = float(current_weights.sum().item())
             positions_value = equity * invested_weight
             cash = equity - positions_value
             daily_return = (equity / prev_equity - 1.0) if prev_equity > 0 else 0.0
-            turnover = float(day_traded_value / max(equity, 1e-6))
             snapshots.append(
                 PortfolioSnapshot(
                     trade_date=trade_date,
@@ -411,7 +449,12 @@ class AShareBacktestSimulator:
             metrics.update(_average_factor_risk_metrics(self.risk_decomposition_rows, self.risk_exposure_rows))
         if self.execution_plan_results:
             metrics.update(_average_execution_quality(self.execution_plan_results))
-        return PortfolioBacktestResult(snapshots=snapshots, fills=fills, metrics=metrics)
+        return PortfolioBacktestResult(
+            snapshots=snapshots,
+            fills=fills,
+            metrics=metrics,
+            rebalance_audit=rebalance_audit,
+        )
 
     def _execute_capacity_aware_day(
         self,
@@ -646,3 +689,63 @@ def _avg_capacity(results: list[ExecutionPlanResult], key: str) -> float:
             if isinstance(record, dict):
                 values.append(float(record.get(key, 0.0) or 0.0))
     return sum(values) / len(values) if values else 0.0
+
+
+def _open_limit_matrix(
+    raw_data_cache: dict[str, torch.Tensor],
+    open_price: torch.Tensor,
+    direction: str,
+) -> torch.Tensor:
+    explicit_name = "open_at_up_limit" if direction == "up" else "open_at_down_limit"
+    explicit = raw_data_cache.get(explicit_name)
+    if explicit is not None:
+        return explicit.detach().cpu().to(dtype=torch.float32)
+    limit_name = "up_limit" if direction == "up" else "down_limit"
+    limit = raw_data_cache.get(limit_name)
+    if limit is None:
+        return torch.zeros_like(open_price)
+    limit = limit.detach().cpu()
+    valid = torch.isfinite(open_price) & torch.isfinite(limit) & (open_price > 0) & (limit > 0)
+    tolerance = torch.clamp(limit.abs() * 1e-4, min=1e-4)
+    if direction == "up":
+        result = valid & (open_price >= limit - tolerance)
+    else:
+        result = valid & (open_price <= limit + tolerance)
+    return result.to(dtype=torch.float32)
+
+
+def _drift_weights(
+    current_weights: torch.Tensor,
+    asset_returns: torch.Tensor,
+    portfolio_return: float,
+) -> torch.Tensor:
+    gross_return = 1.0 + float(portfolio_return)
+    if gross_return <= 0:
+        raise ValueError("portfolio gross return must remain positive")
+    drifted = current_weights * (1.0 + asset_returns) / gross_return
+    return torch.where(torch.isfinite(drifted), drifted, torch.zeros_like(drifted))
+
+
+def _rebalance_audit_row(
+    trade_date: str,
+    ts_codes: list[str],
+    pre_trade_weights: torch.Tensor,
+    target_weights: torch.Tensor,
+    post_trade_weights: torch.Tensor,
+) -> dict[str, object]:
+    def sparse(values: torch.Tensor) -> dict[str, float]:
+        return {
+            ts_code: float(values[index].item())
+            for index, ts_code in enumerate(ts_codes)
+            if abs(float(values[index].item())) > 1e-12
+        }
+
+    turnover = float(torch.abs(post_trade_weights - pre_trade_weights).sum().item())
+    return {
+        "trade_date": trade_date,
+        "pre_trade_weights": sparse(pre_trade_weights),
+        "target_weights": sparse(target_weights),
+        "post_trade_weights": sparse(post_trade_weights),
+        "turnover": turnover,
+        "turnover_contract": "l1_post_trade_minus_drifted_pre_trade",
+    }

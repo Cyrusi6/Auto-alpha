@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 
 @dataclass(frozen=True)
@@ -61,11 +61,13 @@ class PortfolioBacktestResult:
     snapshots: list[PortfolioSnapshot]
     fills: list[TradeFill]
     metrics: dict[str, object]
+    rebalance_audit: list[dict[str, object]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
         return {
             "snapshots": [asdict(snapshot) for snapshot in self.snapshots],
             "fills": [asdict(fill) for fill in self.fills],
+            "rebalance_audit": self.rebalance_audit,
             "metrics": {
                 key: float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else value
                 for key, value in self.metrics.items()

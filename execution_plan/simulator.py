@@ -26,8 +26,10 @@ def simulate_child_orders(
     prices = loader.raw_data_cache[price_field].detach().cpu()
     volume = loader.raw_data_cache.get("volume").detach().cpu()
     is_suspended = loader.raw_data_cache.get("is_suspended").detach().cpu()
-    limit_up = loader.raw_data_cache.get("limit_up_flag").detach().cpu()
-    limit_down = loader.raw_data_cache.get("limit_down_flag").detach().cpu()
+    up_limit = loader.raw_data_cache.get("up_limit")
+    down_limit = loader.raw_data_cache.get("down_limit")
+    open_at_up_limit = loader.raw_data_cache.get("open_at_up_limit")
+    open_at_down_limit = loader.raw_data_cache.get("open_at_down_limit")
     bucket_count = max(len(schedule.buckets), 1)
     fills: list[ExecutionFill] = []
     same_day_buys: set[str] = set()
@@ -36,17 +38,35 @@ def simulate_child_orders(
         stock_idx = loader.ts_codes.index(child.ts_code)
         side = child.side.upper()
         price = float(prices[stock_idx, date_idx].item())
+        at_up_limit = (
+            bool(open_at_up_limit.detach().cpu()[stock_idx, date_idx].item() > 0.5)
+            if open_at_up_limit is not None
+            else trading_rules.is_open_at_limit(
+                price,
+                float(up_limit.detach().cpu()[stock_idx, date_idx].item()) if up_limit is not None else 0.0,
+                direction="up",
+            )
+        )
+        at_down_limit = (
+            bool(open_at_down_limit.detach().cpu()[stock_idx, date_idx].item() > 0.5)
+            if open_at_down_limit is not None
+            else trading_rules.is_open_at_limit(
+                price,
+                float(down_limit.detach().cpu()[stock_idx, date_idx].item()) if down_limit is not None else 0.0,
+                direction="down",
+            )
+        )
         if side == "BUY":
             allowed, reason = trading_rules.can_buy(
                 price,
                 is_suspended=bool(is_suspended[stock_idx, date_idx].item() > 0.5),
-                is_limit_up=bool(limit_up[stock_idx, date_idx].item() > 0.5),
+                is_limit_up=at_up_limit,
             )
         else:
             allowed, reason = trading_rules.can_sell(
                 price,
                 is_suspended=bool(is_suspended[stock_idx, date_idx].item() > 0.5),
-                is_limit_down=bool(limit_down[stock_idx, date_idx].item() > 0.5),
+                is_limit_down=at_down_limit,
             )
             if allowed and child.ts_code in same_day_buys:
                 allowed, reason = False, "t_plus_one"

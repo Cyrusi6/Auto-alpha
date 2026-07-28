@@ -73,6 +73,12 @@ def test_backtest_simulator_applies_limit_and_volume_constraints(tmp_path):
     factors[code_index["600000.SH"], 0] = 10.0
     factors[code_index["000001.SZ"], 1] = 10.0
     factors[code_index["830000.BJ"], 2] = 10.0
+    loader.raw_data_cache["open"][code_index["000001.SZ"], 1] = loader.raw_data_cache[
+        "up_limit"
+    ][code_index["000001.SZ"], 1]
+    loader.raw_data_cache["open"][code_index["600000.SH"], 1] = loader.raw_data_cache[
+        "down_limit"
+    ][code_index["600000.SH"], 1]
 
     result = AShareBacktestSimulator(
         top_n=1,
