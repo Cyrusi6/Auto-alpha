@@ -23,6 +23,8 @@ class FactorEvaluationResult:
     coverage: float
     turnover: float
     score: float
+    valid_observation_count: int
+    evaluable_date_count: int
 
     def to_dict(self) -> dict[str, float]:
         return {
@@ -37,6 +39,8 @@ class FactorEvaluationResult:
             "coverage": float(self.coverage),
             "turnover": float(self.turnover),
             "score": float(self.score),
+            "valid_observation_count": int(self.valid_observation_count),
+            "evaluable_date_count": int(self.evaluable_date_count),
         }
 
 
@@ -52,8 +56,11 @@ class AShareFactorEvaluator:
     ) -> FactorEvaluationResult:
         clean_factors = torch.nan_to_num(factors, nan=0.0, posinf=0.0, neginf=0.0)
         clean_target = torch.nan_to_num(target_ret, nan=0.0, posinf=0.0, neginf=0.0)
-        valid = torch.isfinite(factors) & torch.isfinite(target_ret)
-        coverage = valid.float().mean().item() if valid.numel() else 0.0
+        eligible = _evaluation_eligibility(raw_data, factors)
+        valid = eligible & torch.isfinite(factors) & torch.isfinite(target_ret)
+        eligible_count = int(eligible.sum().item())
+        valid_observation_count = int(valid.sum().item())
+        coverage = valid_observation_count / eligible_count if eligible_count else 0.0
 
         rank_ics = []
         spreads = []
@@ -109,6 +116,8 @@ class AShareFactorEvaluator:
             coverage=float(coverage),
             turnover=float(turnover),
             score=float(score),
+            valid_observation_count=valid_observation_count,
+            evaluable_date_count=len(rank_ics),
         )
 
     @staticmethod
@@ -146,3 +155,11 @@ class AShareFactorEvaluator:
             denom = max(len(prev | curr), 1)
             changes.append(1.0 - len(prev & curr) / denom)
         return float(sum(changes) / len(changes)) if changes else 0.0
+
+
+def _evaluation_eligibility(raw_data: dict[str, torch.Tensor], factors: torch.Tensor) -> torch.Tensor:
+    for name in ("validation_common_cells", "target_available_mask", "signal_candidate_cells", "pit_available_mask"):
+        value = raw_data.get(name)
+        if isinstance(value, torch.Tensor) and value.shape == factors.shape:
+            return value.to(device=factors.device, dtype=torch.bool)
+    return torch.ones_like(factors, dtype=torch.bool)

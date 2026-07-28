@@ -71,6 +71,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--holdout-start-date", default="20240531")
     parser.add_argument("--label-horizon", type=int, default=2)
     parser.add_argument("--eligible-date-hash")
+    parser.add_argument("--canonical-feature-tensor-path")
+    parser.add_argument("--canonical-feature-validity-tensor-path")
+    parser.add_argument("--production-research", action="store_true")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -78,6 +81,10 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if args.production_research and args.requests_jsonl:
+        parser.error("production research forbids JSONL formula request input")
+    if args.production_research and args.corpus_path and str(args.corpus_path).lower().endswith(".jsonl"):
+        parser.error("production research forbids JSONL corpus input")
     if args.merge_shards:
         payload = merge_shard_outputs(args.shard_dir, args.merge_output_dir or args.output_dir)
         print(json.dumps(payload, ensure_ascii=False, indent=2 if args.pretty else None))
@@ -131,6 +138,9 @@ def main(argv: list[str] | None = None) -> int:
         holdout_start_date=args.holdout_start_date,
         label_horizon=args.label_horizon,
         eligible_date_hash=args.eligible_date_hash,
+        canonical_feature_tensor_path=args.canonical_feature_tensor_path,
+        canonical_feature_validity_tensor_path=args.canonical_feature_validity_tensor_path,
+        production_research=args.production_research,
     )
     result = FormulaBatchEvaluator(config).run(requests)
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))

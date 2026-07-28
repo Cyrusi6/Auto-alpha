@@ -52,6 +52,9 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--build-feature-set", action="store_true")
     parser.add_argument("--feature-output-dir")
     parser.add_argument("--provider", default="sample")
+    parser.add_argument("--production-research", action="store_true")
+    parser.add_argument("--canonical-feature-tensor-path")
+    parser.add_argument("--canonical-feature-validity-tensor-path")
     parser.add_argument("--universe-name")
     parser.add_argument("--universe-file")
     parser.add_argument("--factor-transform", default="raw")
@@ -211,6 +214,10 @@ def main(argv: list[str] | None = None) -> int:
         leaderboard_top_k=args.leaderboard_top_k,
         dedupe_across_campaigns=args.dedupe_across_campaigns,
         previous_experiment_dirs=list(args.previous_experiment_dir or []),
+        provider=args.provider,
+        production_research=args.production_research,
+        canonical_feature_tensor_path=args.canonical_feature_tensor_path,
+        canonical_feature_validity_tensor_path=args.canonical_feature_validity_tensor_path,
     )
     result = AlphaFactoryRunner(config).run()
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))

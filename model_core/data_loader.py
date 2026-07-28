@@ -43,6 +43,7 @@ class AShareDataLoader:
         label_horizon: int = 1,
         canonical_feature_tensor_path: str | Path | None = None,
         canonical_feature_validity_tensor_path: str | Path | None = None,
+        production_research: bool = False,
     ):
         self.data_dir = Path(data_dir) if data_dir is not None else Path(ModelConfig.DATA_DIR)
         self.device = torch.device(device) if device is not None else ModelConfig.DEVICE
@@ -68,6 +69,7 @@ class AShareDataLoader:
         self.label_horizon = int(label_horizon)
         self.canonical_feature_tensor_path = Path(canonical_feature_tensor_path) if canonical_feature_tensor_path else None
         self.canonical_feature_validity_tensor_path = Path(canonical_feature_validity_tensor_path) if canonical_feature_validity_tensor_path else None
+        self.production_research = bool(production_research)
         self.date_firewall = DateFirewall(research_end_date, holdout_start_date, label_horizon) if research_end_date else None
         self.firewall_source_trade_dates: list[str] = []
         self.ts_codes: list[str] = []
@@ -85,7 +87,29 @@ class AShareDataLoader:
         self.target_ret: torch.Tensor | None = None
         self.physical_research_projection = False
 
+    def _validate_production_research_contract(self) -> None:
+        if not self.production_research:
+            return
+        blockers: list[str] = []
+        if self.device.type != "cuda":
+            blockers.append("cuda_device_required")
+        if not self.use_matrix_cache:
+            blockers.append("strict_matrix_cache_required")
+        if not self.point_in_time:
+            blockers.append("point_in_time_required")
+        if not (self.matrix_cache_dir / "task_052a_strict_matrix_manifest.json").is_file():
+            blockers.append("strict_matrix_manifest_missing")
+        if self.feature_set_manifest_path is None or not self.feature_set_manifest_path.is_file():
+            blockers.append("feature_manifest_missing")
+        if self.canonical_feature_tensor_path is None or not self.canonical_feature_tensor_path.is_file():
+            blockers.append("canonical_feature_tensor_missing")
+        if self.canonical_feature_validity_tensor_path is None or not self.canonical_feature_validity_tensor_path.is_file():
+            blockers.append("canonical_feature_validity_missing")
+        if blockers:
+            raise RuntimeError("production research contract blocked: " + ",".join(blockers))
+
     def load_data(self) -> "AShareDataLoader":
+        self._validate_production_research_contract()
         if self.use_matrix_cache:
             return self._load_from_matrix_cache()
 
@@ -177,7 +201,10 @@ class AShareDataLoader:
         if self.point_in_time:
             self._attach_point_in_time_masks(securities)
         self.feat_tensor = self._compute_feature_tensor()
-        self.target_ret = self._compute_target_ret(self._target_price_matrix(), self.label_horizon)
+        target_price = self._target_price_matrix()
+        self.target_ret = self._compute_target_ret(target_price, self.label_horizon)
+        self.target_available = self._compute_target_available(target_price, self.label_horizon)
+        self.raw_data_cache["target_available_mask"] = self.target_available
         self._apply_research_view()
         return self
 
@@ -185,6 +212,8 @@ class AShareDataLoader:
         strict_manifest_path = self.matrix_cache_dir / "task_052a_strict_matrix_manifest.json"
         if strict_manifest_path.exists():
             return self._load_from_strict_engineering_matrix(strict_manifest_path)
+        if self.production_research:
+            raise RuntimeError("production research requires a strict engineering matrix manifest")
         if not (self.matrix_cache_dir / "metadata.json").exists():
             raise FileNotFoundError(f"matrix cache metadata not found: {self.matrix_cache_dir / 'metadata.json'}")
 
@@ -241,12 +270,19 @@ class AShareDataLoader:
             self._attach_point_in_time_masks(None)
 
         self.feat_tensor = self._compute_feature_tensor()
-        self.target_ret = self._compute_target_ret(self._target_price_matrix(), self.label_horizon)
+        target_price = self._target_price_matrix()
+        self.target_ret = self._compute_target_ret(target_price, self.label_horizon)
+        self.target_available = self._compute_target_available(target_price, self.label_horizon)
+        self.raw_data_cache["target_available_mask"] = self.target_available
         self._apply_research_view()
         return self
 
     def _load_from_strict_engineering_matrix(self, manifest_path: Path) -> "AShareDataLoader":
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if self.production_research:
+            universe_mode = str(manifest.get("universe_mode") or "")
+            if not universe_mode.startswith("daily_") or manifest.get("historical_constituent_proof") is not True:
+                raise RuntimeError("production research requires validated daily PIT constituent proof")
         self.physical_research_projection = bool(manifest.get("physical_research_projection", False))
         self.ts_codes = [str(item) for item in json.loads((self.matrix_cache_dir / "ts_codes.json").read_text(encoding="utf-8"))]
         self.trade_dates = [str(item) for item in json.loads((self.matrix_cache_dir / "trade_dates.json").read_text(encoding="utf-8"))]
@@ -321,6 +357,11 @@ class AShareDataLoader:
             self.target_available = self.target_available.index_select(
                 1, torch.tensor(selected, dtype=torch.long, device=self.device)
             )
+        target = torch.where(
+            self.target_available & torch.isfinite(target),
+            target,
+            torch.full_like(target, float("nan")),
+        )
         self.raw_data_cache["target_available_mask"] = self.target_available
         if self.canonical_feature_tensor_path is not None or self.canonical_feature_validity_tensor_path is not None:
             if self.canonical_feature_tensor_path is None or self.canonical_feature_validity_tensor_path is None:
@@ -385,6 +426,8 @@ class AShareDataLoader:
         self.feature_v3_extended_summary = attach_extended_feature_matrices(self, manifest)
 
     def _read_jsonl(self, dataset: str, ts_codes: set[str] | None = None) -> list[dict[str, object]]:
+        if self.production_research:
+            raise RuntimeError("production research forbids JSONL/raw-loader fallback")
         path = self.data_dir / dataset / "records.jsonl"
         if not path.exists():
             raise FileNotFoundError(f"missing A-share dataset file: {path}")
@@ -667,13 +710,31 @@ class AShareDataLoader:
 
     @staticmethod
     def _compute_target_ret(close: torch.Tensor, horizon: int = 1) -> torch.Tensor:
-        target = torch.zeros_like(close)
+        target = torch.full_like(close, float("nan"))
         horizon = max(1, int(horizon))
         if close.shape[1] > horizon:
-            current = torch.clamp(close[:, :-horizon], min=1e-6)
-            endpoint = torch.clamp(close[:, horizon:], min=1e-6)
-            target[:, :-horizon] = torch.log(endpoint / current)
-        return torch.nan_to_num(target, nan=0.0, posinf=0.0, neginf=0.0).to(dtype=torch.float32)
+            current = close[:, :-horizon]
+            endpoint = close[:, horizon:]
+            valid = torch.isfinite(current) & torch.isfinite(endpoint) & (current > 0.0) & (endpoint > 0.0)
+            computed = torch.full_like(current, float("nan"))
+            computed[valid] = torch.log(endpoint[valid] / current[valid])
+            target[:, :-horizon] = computed
+        return target.to(dtype=torch.float32)
+
+    @staticmethod
+    def _compute_target_available(close: torch.Tensor, horizon: int = 1) -> torch.Tensor:
+        available = torch.zeros_like(close, dtype=torch.bool)
+        horizon = max(1, int(horizon))
+        if close.shape[1] > horizon:
+            current = close[:, :-horizon]
+            endpoint = close[:, horizon:]
+            available[:, :-horizon] = (
+                torch.isfinite(current)
+                & torch.isfinite(endpoint)
+                & (current > 0.0)
+                & (endpoint > 0.0)
+            )
+        return available
 
     def _apply_research_view(self) -> None:
         if self.date_firewall is None:

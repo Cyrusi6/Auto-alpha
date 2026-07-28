@@ -84,6 +84,7 @@ class BatchResearchConfig:
     feature_promotion_denylist_path: str | None = None
     require_feature_promotion: bool = False
     allow_risk_filter_features: bool = False
+    label_horizon: int = 1
 
 
 @dataclass(frozen=True)

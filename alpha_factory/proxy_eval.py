@@ -186,7 +186,11 @@ def _loader_target_available(loader) -> torch.Tensor:
     validity = getattr(loader, "target_available", None)
     if validity is None:
         validity = getattr(loader, "raw_data_cache", {}).get("target_available_mask")
-    return validity.bool() if validity is not None else torch.isfinite(loader.target_ret)
+    if validity is None:
+        raise RuntimeError("strict target availability is required for proxy evaluation")
+    if validity.shape != loader.target_ret.shape:
+        raise RuntimeError("target availability shape mismatch")
+    return validity.bool()
 
 
 def _loader_signal_eligibility(loader) -> torch.Tensor:
@@ -194,6 +198,8 @@ def _loader_signal_eligibility(loader) -> torch.Tensor:
     for name in ("signal_eligible_at_close", "signal_eligible", "pit_available_mask"):
         if name in raw:
             return raw[name].bool()
+    if getattr(loader, "production_research", False):
+        raise RuntimeError("production proxy evaluation requires PIT signal eligibility")
     return torch.ones_like(loader.target_ret, dtype=torch.bool)
 
 

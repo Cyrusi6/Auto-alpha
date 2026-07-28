@@ -771,7 +771,7 @@ def _screening_reproduction(
         AShareFactorEvaluator(),
         factors,
         {},
-        torch.nan_to_num(target_ret, nan=0.0, posinf=0.0, neginf=0.0),
+        target_ret,
         trade_dates,
         split_trade_dates(trade_dates),
     )

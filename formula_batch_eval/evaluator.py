@@ -52,6 +52,7 @@ OPERATOR_VERSION = "ashare_ops_v1"
 class FormulaBatchEvaluator:
     def __init__(self, config: FormulaBatchEvalConfig):
         self.config = config
+        _validate_production_config(config)
         self.output_dir = Path(config.output_dir)
         self.store = LocalFactorStore(config.factor_store_dir)
         self.device = _resolve_device(config.device, config.strict_device)
@@ -73,6 +74,8 @@ class FormulaBatchEvaluator:
             label_horizon=config.label_horizon,
             canonical_feature_tensor_path=config.canonical_feature_tensor_path,
             canonical_feature_validity_tensor_path=config.canonical_feature_validity_tensor_path,
+            point_in_time=config.production_research,
+            production_research=config.production_research,
         )
         self.feature_version = (self.feature_manifest.feature_version if self.feature_manifest is not None else config.feature_set_name) or FEATURE_VERSION
         self.cache_dir = Path(config.eval_cache_dir) if config.eval_cache_dir else self.output_dir / "eval_cache"
@@ -236,6 +239,7 @@ class FormulaBatchEvaluator:
             self.loader.trade_dates,
             train_ratio=self.config.train_ratio,
             valid_ratio=self.config.valid_ratio,
+            embargo_size=self.config.label_horizon,
         )
         research = FactorResearchPipeline(
             evaluator=self.evaluator,
@@ -249,20 +253,22 @@ class FormulaBatchEvaluator:
             factors=transformed_factors,
             raw_data=self.loader.raw_data_cache,
             target_ret=evaluation_target,
+            target_available=target_available,
             trade_dates=self.loader.trade_dates,
             ts_codes=self.loader.ts_codes,
             store=self.store,
             transform_method="raw",
             train_ratio=self.config.train_ratio,
             valid_ratio=self.config.valid_ratio,
+            label_horizon=self.config.label_horizon,
         )
         research = replace(research, transform_method=self.config.factor_transform)
         gate_reasons = research.gate_decision.reasons if research.gate_decision is not None else []
         factor_id = make_factor_id(formula_hash)
         report_json_path = None
         report_md_path = None
-        should_register = self.config.register_approved and research.status == "approved"
-        if should_register or (self.config.register_approved and existing is None and research.status == "candidate"):
+        should_register = self.config.register_approved and research.status == "validation_candidate"
+        if should_register:
             experiment_id = make_experiment_id(factor_id, created_at)
             gate_payload = research.gate_decision.to_dict() if research.gate_decision is not None else None
             metadata = {
@@ -273,6 +279,7 @@ class FormulaBatchEvaluator:
                 "max_abs_correlation": float(research.max_abs_correlation),
                 "similar_factors": research.similar_factors,
                 "gate_decision": gate_payload,
+                "metrics_by_split": research.metrics_by_split,
                 "evaluation_lineage": self.lineage,
                 "evaluation_lineage_hash": self.lineage["lineage_hash"],
                 "formula_valid_count": int(formula_validity.sum().item()),
@@ -357,6 +364,7 @@ class FormulaBatchEvaluator:
             family_tags=(request.metadata or {}).get("alpha_family_tags"),
             proxy_score=(request.metadata or {}).get("proxy_score"),
             final_score=(request.metadata or {}).get("final_score"),
+            gate_decision=research.gate_decision.to_dict() if research.gate_decision is not None else None,
         )
         if self.config.use_eval_cache:
             self._cache[cache_key] = result.to_dict()
@@ -648,8 +656,8 @@ def _summary(results: list[FormulaEvalResult]) -> dict[str, Any]:
         "score_distribution": _distribution(scores),
         "train_valid_test_metric_summary": split_summary,
         "status_counts": counts,
-        "approved": counts.get("approved", 0),
-        "rejected": counts.get("rejected", 0),
+        "validation_candidates": counts.get("validation_candidate", 0),
+        "research_rejected": counts.get("research_rejected", 0),
         "errors": counts.get("error", 0),
         "cache_hits": sum(1 for result in results if result.cache_hit),
         "top": [
@@ -750,7 +758,35 @@ def _loader_target_available(loader) -> torch.Tensor:
     validity = getattr(loader, "target_available", None)
     if validity is None:
         validity = getattr(loader, "raw_data_cache", {}).get("target_available_mask")
-    return validity.bool() if validity is not None else torch.isfinite(loader.target_ret)
+    if validity is None:
+        raise RuntimeError("strict target availability is required for formula evaluation")
+    if validity.shape != loader.target_ret.shape:
+        raise RuntimeError("target availability shape mismatch")
+    return validity.bool()
+
+
+def _validate_production_config(config: FormulaBatchEvalConfig) -> None:
+    if not config.production_research:
+        return
+    blockers: list[str] = []
+    if not config.use_matrix_cache or not config.matrix_cache_dir:
+        blockers.append("strict_matrix_cache_required")
+    if not str(config.device).startswith("cuda"):
+        blockers.append("cuda_device_required")
+    if not config.strict_device:
+        blockers.append("strict_device_required")
+    if not config.feature_set_manifest_path:
+        blockers.append("feature_manifest_required")
+    if not config.canonical_feature_tensor_path or not config.canonical_feature_validity_tensor_path:
+        blockers.append("canonical_tensor_and_validity_required")
+    if config.register_approved:
+        blockers.append("jsonl_factor_value_registration_forbidden")
+    if not config.enable_gate:
+        blockers.append("oos_gate_required")
+    if int(config.label_horizon) < 1:
+        blockers.append("positive_label_horizon_required")
+    if blockers:
+        raise RuntimeError("production formula evaluation blocked: " + ",".join(blockers))
 
 
 def _loader_signal_eligibility(loader) -> torch.Tensor:
@@ -758,6 +794,8 @@ def _loader_signal_eligibility(loader) -> torch.Tensor:
     for name in ("signal_eligible_at_close", "signal_eligible", "pit_available_mask"):
         if name in raw:
             return raw[name].bool()
+    if getattr(loader, "production_research", False):
+        raise RuntimeError("production formula evaluation requires PIT signal eligibility")
     return torch.ones_like(loader.target_ret, dtype=torch.bool)
 
 

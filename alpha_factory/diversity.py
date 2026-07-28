@@ -10,7 +10,7 @@ from artifact_schema.writer import write_json_artifact, write_jsonl_artifact
 
 def select_shortlist(candidates, *, top_k: int, max_per_family: int, min_novelty_score: float) -> tuple[list, list, dict]:
     ranked = sorted(
-        [item for item in candidates if item.status != "rejected" and item.novelty_score >= min_novelty_score],
+        [item for item in candidates if item.status == "validation_candidate" and item.novelty_score >= min_novelty_score],
         key=lambda item: item.final_score,
         reverse=True,
     )
@@ -29,7 +29,7 @@ def select_shortlist(candidates, *, top_k: int, max_per_family: int, min_novelty
         shortlist.append(replace(candidate, status="shortlisted", diversity_group=family))
     selected_ids = {item.alpha_candidate_id for item in shortlist}
     for candidate in candidates:
-        if candidate.alpha_candidate_id not in selected_ids and candidate.status == "rejected":
+        if candidate.alpha_candidate_id not in selected_ids and candidate.status != "validation_candidate":
             rejected.append(candidate)
     report = {
         "shortlist_count": len(shortlist),

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from artifact_schema.writer import write_jsonl_artifact
-from factor_store import FactorRecord, LocalFactorStore
+from factor_store import FactorRecord, LocalFactorStore, has_positive_oos_evidence, validation_admission_reason
 
 from .models import AlphaLeaderboardRecord
 
@@ -50,6 +50,7 @@ def build_leaderboard(
                 "feature_version": factor.feature_version,
                 "formula_names": list(factor.formula),
                 "factor_values_path": str(Path(factor_store_dir) / "factor_values" / f"{factor.factor_id}.jsonl") if factor_store_dir else "",
+                "factor_status": factor.status,
             }
         )
         rows.append(
@@ -59,7 +60,7 @@ def build_leaderboard(
                 formula_hash=factor.formula_hash,
                 final_score=float(final),
                 score_components=components,
-                validation_ready=factor.status in {"approved", "candidate", "production_candidate"},
+                validation_ready=has_positive_oos_evidence(factor),
                 reason=_leaderboard_reason(factor, components),
                 metadata=metadata,
             )
@@ -119,6 +120,7 @@ def write_validation_candidate_pool(
                 "recommended_validation_split": "walk_forward_long_history",
                 "family": family,
                 "metadata": metadata,
+                "factor_status": metadata.get("factor_status", ""),
             }
         )
         if len(records) >= max(0, int(max_candidates)):
@@ -153,8 +155,9 @@ def _score_components(factor: FactorRecord) -> dict[str, float]:
 
 
 def _leaderboard_reason(factor: FactorRecord, components: dict[str, float]) -> str:
-    if factor.status not in {"approved", "candidate", "production_candidate"}:
-        return f"status={factor.status}"
+    admission_reason = validation_admission_reason(factor)
+    if admission_reason != "validation_candidate_admitted":
+        return admission_reason
     if components["correlation_penalty"] > 0:
         return "correlation penalty applied"
     if components["pit_penalty"] > 0:

@@ -36,6 +36,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--continue-on-error", action="store_true")
     parser.add_argument("--train-ratio", type=float, default=0.6)
     parser.add_argument("--valid-ratio", type=float, default=0.2)
+    parser.add_argument("--label-horizon", type=int, default=1)
     parser.add_argument("--point-in-time", action="store_true")
     parser.add_argument("--feature-cutoff-mode", default="same_day_after_close")
     parser.add_argument("--min-listing-days", type=int, default=0)
@@ -83,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         composite_method=args.composite_method,
         train_ratio=args.train_ratio,
         valid_ratio=args.valid_ratio,
+        label_horizon=args.label_horizon,
         continue_on_error=args.continue_on_error,
         disable_composite=args.disable_composite,
         point_in_time=args.point_in_time,

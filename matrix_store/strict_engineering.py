@@ -253,7 +253,7 @@ class StrictEngineeringPITMatrixBuilder:
         target_available &= signal_eligible_at_close
         target_available &= membership
         target_available &= membership_known
-        target[~target_available] = 0.0
+        target[~target_available] = np.nan
         validation_common_cells = (
             signal_candidate_cells
             & target_available

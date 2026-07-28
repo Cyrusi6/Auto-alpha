@@ -16,10 +16,15 @@ from .models import AlphaConsolidatedFactorRecord
 
 
 STATUS_PRIORITY = {
+    "validation_candidate": 6,
+    "historical_replay_passed": 5,
     "approved": 5,
     "production_candidate": 5,
+    "research_evaluated": 4,
     "candidate": 4,
+    "research_rejected": 3,
     "rejected": 3,
+    "composite_unvalidated": 2,
     "error": 2,
     "skipped": 1,
 }

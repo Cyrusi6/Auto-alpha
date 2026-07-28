@@ -13,12 +13,8 @@ def formula_reward_from_research_result(result: Any, invalid_reward: float = INV
         return float(invalid_reward)
     status = getattr(result, "status", None)
     score = float(getattr(result, "score", 0.0) or 0.0)
-    if status == "approved":
-        return float(1.0 + score)
-    if status == "rejected":
-        return float(0.25 + score)
-    if status == "skipped_existing":
-        return float(0.1 + score)
     if status == "error":
         return float(invalid_reward)
+    if status == "skipped_existing":
+        return 0.0
     return float(score)

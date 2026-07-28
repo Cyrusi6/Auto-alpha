@@ -39,6 +39,7 @@ from .static_checks import run_static_checks
 
 class AlphaFactoryRunner:
     def __init__(self, config: AlphaCampaignConfig):
+        _validate_production_research_config(config)
         self.config = config
         self.output_dir = Path(config.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -110,6 +111,9 @@ class AlphaFactoryRunner:
             research_end_date=self.config.research_end_date,
             holdout_start_date=self.config.holdout_start_date,
             label_horizon=self.config.label_horizon,
+            canonical_feature_tensor_path=self.config.canonical_feature_tensor_path,
+            canonical_feature_validity_tensor_path=self.config.canonical_feature_validity_tensor_path,
+            production_research=self.config.production_research,
         ).load_data()
         candidates, proxy_rows, proxy_summary = self._load_or_run_proxy(candidates, loader)
         full_rows, full_summary = self._run_full_eval(candidates, data_dir, campaign)
@@ -296,6 +300,9 @@ class AlphaFactoryRunner:
                 research_end_date=self.config.research_end_date,
                 holdout_start_date=self.config.holdout_start_date,
                 label_horizon=self.config.label_horizon,
+                canonical_feature_tensor_path=self.config.canonical_feature_tensor_path,
+                canonical_feature_validity_tensor_path=self.config.canonical_feature_validity_tensor_path,
+                production_research=self.config.production_research,
             ).load_data()
             result = build_feature_tensor_artifacts(
                 loader,
@@ -457,6 +464,7 @@ class AlphaFactoryRunner:
                     and any((Path(self.config.matrix_cache_dir) / name).exists() for name in ("task_052a_strict_matrix_manifest.json", "metadata.json"))
                 ),
                 device=self.config.batch_eval_device,
+                strict_device=self.config.production_research,
                 factor_transform=self.config.factor_transform,
                 enable_gate=self.config.enable_gate,
                 correlation_threshold=self.config.correlation_threshold,
@@ -478,6 +486,9 @@ class AlphaFactoryRunner:
                 research_end_date=self.config.research_end_date,
                 holdout_start_date=self.config.holdout_start_date,
                 label_horizon=self.config.label_horizon,
+                canonical_feature_tensor_path=self.config.canonical_feature_tensor_path,
+                canonical_feature_validity_tensor_path=self.config.canonical_feature_validity_tensor_path,
+                production_research=self.config.production_research,
             )
         ).run(requests)
         rows = [item.to_dict() for item in result.results]
@@ -513,13 +524,14 @@ class AlphaFactoryRunner:
         eval_dir.mkdir(parents=True, exist_ok=True)
         request_payloads = [request.to_dict() for request in requests]
         requests_json = eval_dir / "alpha_full_eval_requests.json"
-        requests_jsonl = eval_dir / "alpha_full_eval_requests.jsonl"
         requests_json.write_text(json.dumps({"requests": request_payloads}, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
-        with requests_jsonl.open("w", encoding="utf-8") as handle:
-            for row in request_payloads:
-                handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
         self.paths["alpha_full_eval_requests_json_path"] = str(requests_json)
-        self.paths["alpha_full_eval_requests_jsonl_path"] = str(requests_jsonl)
+        if not self.config.production_research:
+            requests_jsonl = eval_dir / "alpha_full_eval_requests.jsonl"
+            with requests_jsonl.open("w", encoding="utf-8") as handle:
+                for row in request_payloads:
+                    handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+            self.paths["alpha_full_eval_requests_jsonl_path"] = str(requests_jsonl)
 
         shard_count = max(1, int(self.config.shard_count or 1))
         shard_root = eval_dir / "shards"
@@ -589,6 +601,17 @@ class AlphaFactoryRunner:
                 args.append("--enable-gate")
             else:
                 args.append("--disable-gate")
+            if self.config.production_research:
+                args.extend(
+                    [
+                        "--production-research",
+                        "--strict-device",
+                        "--canonical-feature-tensor-path",
+                        str(self.config.canonical_feature_tensor_path),
+                        "--canonical-feature-validity-tensor-path",
+                        str(self.config.canonical_feature_validity_tensor_path),
+                    ]
+                )
             if self.config.universe_name:
                 args.extend(["--universe-name", self.config.universe_name])
             if self.config.universe_file:
@@ -704,6 +727,7 @@ class AlphaFactoryRunner:
                 "novelty_score": candidate.novelty_score,
                 "final_score": candidate.final_score,
                 "metrics_by_split": metrics_by_split,
+                "gate_decision": row.get("gate_decision"),
                 "max_abs_correlation": float(row.get("max_abs_correlation", 0.0) or 0.0),
                 "factor_values_materialized": False,
                 "registration_mode": "shortlist_metadata_only",
@@ -712,7 +736,7 @@ class AlphaFactoryRunner:
                 "canonical_max_raw_lag": candidate.metadata.get("canonical_max_raw_lag"),
                 "required_observations": candidate.metadata.get("required_observations"),
             }
-            status = str(row.get("status") or "candidate")
+            status = str(row.get("status") or "research_evaluated")
             self.store.save_factor(
                 FactorRecord(
                     factor_id=str(row.get("factor_id") or make_factor_id(formula_hash)),
@@ -909,6 +933,36 @@ def _truthy(value: Any) -> bool:
     if isinstance(value, str):
         return value.lower() in {"1", "true", "yes", "ready", "pass", "ok"}
     return False
+
+
+def _validate_production_research_config(config: AlphaCampaignConfig) -> None:
+    if not config.production_research:
+        return
+    blockers: list[str] = []
+    if str(config.provider).lower() in {"sample", "fake", "synthetic"} or "lenient" in str(config.provider).lower():
+        blockers.append("sample_or_lenient_provider_forbidden")
+    if not str(config.device).startswith("cuda"):
+        blockers.append("cuda_device_required")
+    if not config.use_batch_eval or not str(config.batch_eval_device).startswith("cuda"):
+        blockers.append("cuda_batch_evaluation_required")
+    if not config.point_in_time:
+        blockers.append("point_in_time_required")
+    if not config.require_data_freeze or not config.data_freeze_dir:
+        blockers.append("immutable_data_freeze_required")
+    if not config.matrix_cache_dir or not (Path(config.matrix_cache_dir) / "task_052a_strict_matrix_manifest.json").is_file():
+        blockers.append("strict_matrix_manifest_required")
+    if not config.feature_set_manifest_path:
+        blockers.append("feature_manifest_required")
+    if not config.canonical_feature_tensor_path or not config.canonical_feature_validity_tensor_path:
+        blockers.append("canonical_tensor_and_validity_required")
+    if config.build_feature_set:
+        blockers.append("runtime_feature_rebuild_forbidden")
+    if not config.enable_gate:
+        blockers.append("positive_oos_gate_required")
+    if int(config.label_horizon) < 1:
+        blockers.append("positive_label_horizon_required")
+    if blockers:
+        raise RuntimeError("production research blocked: " + ",".join(blockers))
 
 
 def _distribution(values: list[float]) -> dict[str, float]:

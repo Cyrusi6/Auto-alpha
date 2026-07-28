@@ -212,6 +212,7 @@ class FactorMiningEngine:
             self.loader.trade_dates,
             train_ratio=train_ratio,
             valid_ratio=valid_ratio,
+            embargo_size=self.loader.label_horizon,
         )
         research = FactorResearchPipeline(
             evaluator=self.evaluator,
@@ -222,12 +223,14 @@ class FactorMiningEngine:
             factors=factors,
             raw_data=self.loader.raw_data_cache,
             target_ret=self.loader.target_ret,
+            target_available=self.loader.target_available,
             trade_dates=self.loader.trade_dates,
             ts_codes=self.loader.ts_codes,
             store=store,
             transform_method=factor_transform,
             train_ratio=train_ratio,
             valid_ratio=valid_ratio,
+            label_horizon=self.loader.label_horizon,
         )
         metrics_by_split = research.metrics_by_split
         gate_decision_payload = research.gate_decision.to_dict() if research.gate_decision is not None else None
@@ -250,6 +253,7 @@ class FactorMiningEngine:
                 "max_abs_correlation": float(research.max_abs_correlation),
                 "similar_factors": research.similar_factors,
                 "gate_decision": gate_decision_payload,
+                "metrics_by_split": metrics_by_split,
                 "universe_name": self.universe_name,
                 "universe_file": str(self.universe_file) if self.universe_file is not None else None,
                 "canonical_semantics_hash": formula_semantics.semantics_hash,

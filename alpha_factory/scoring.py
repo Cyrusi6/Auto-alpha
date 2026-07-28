@@ -37,8 +37,17 @@ def score_candidates(candidates, proxy_rows, full_eval_rows, novelty_scores) -> 
         final = full_score + 0.5 * proxy_percentile + 0.2 * novelty - complexity_penalty - lookback_penalty
         status = candidate.status
         reject_reason = candidate.reject_reason
-        if status not in {"rejected"} and proxy.get("status") == "proxy_passed":
-            status = "scored"
+        full_status = str(full.get("status") or "")
+        if status != "rejected" and proxy.get("status") == "proxy_passed":
+            if full_status == "validation_candidate":
+                status = "validation_candidate"
+                reject_reason = None
+            elif full_status:
+                status = "research_rejected"
+                reject_reason = "full_eval_oos_gate_not_passed"
+            else:
+                status = "research_evaluated"
+                reject_reason = "positive_oos_evidence_missing"
         row = candidate.to_dict() | {
             "proxy_score": proxy_score,
             "full_eval_score": full_score,
@@ -52,6 +61,9 @@ def score_candidates(candidates, proxy_rows, full_eval_rows, novelty_scores) -> 
                 "complexity_penalty": complexity_penalty,
                 "lookback_penalty": lookback_penalty,
             },
+            "status": status,
+            "reject_reason": reject_reason,
+            "validation_status": full_status or "not_evaluated",
         }
         scored_rows.append(row)
         updated.append(
@@ -62,8 +74,13 @@ def score_candidates(candidates, proxy_rows, full_eval_rows, novelty_scores) -> 
                 novelty_score=novelty,
                 final_score=float(final),
                 status=status,
+                validation_status=full_status or "not_evaluated",
                 reject_reason=reject_reason,
-                metadata={**candidate.metadata, "score_components": row["score_components"]},
+                metadata={
+                    **candidate.metadata,
+                    "score_components": row["score_components"],
+                    "gate_decision": full.get("gate_decision") if isinstance(full, dict) else None,
+                },
             )
         )
     return updated, scored_rows

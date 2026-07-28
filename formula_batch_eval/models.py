@@ -43,6 +43,7 @@ class FormulaEvalResult:
     family_tags: list[str] | None = None
     proxy_score: float | None = None
     final_score: float | None = None
+    gate_decision: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -87,6 +88,7 @@ class FormulaBatchEvalConfig:
     canonical_feature_tensor_path: str | None = None
     canonical_feature_validity_tensor_path: str | None = None
     research_computation_identity: str | None = None
+    production_research: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

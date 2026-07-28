@@ -9,6 +9,7 @@ import torch
 
 from evaluation import evaluate_by_splits, split_trade_dates
 from factor_store import LocalFactorStore
+from factor_store.lifecycle import FactorLifecycleStatus
 from model_core.backtest import AShareFactorEvaluator
 
 from .correlation import find_similar_factors, load_existing_factor_matrices, max_abs_correlation
@@ -55,20 +56,43 @@ class FactorResearchPipeline:
         factors: torch.Tensor,
         raw_data: dict[str, torch.Tensor],
         target_ret: torch.Tensor,
+        target_available: torch.Tensor | None,
         trade_dates: list[str],
         ts_codes: list[str],
         store: LocalFactorStore,
         transform_method: str = "raw",
         train_ratio: float = 0.6,
         valid_ratio: float = 0.2,
+        label_horizon: int = 1,
+        embargo_size: int | None = None,
     ) -> FactorResearchResult:
+        governed_target_available = target_available
+        if governed_target_available is None:
+            candidate = raw_data.get("target_available_mask")
+            governed_target_available = candidate if isinstance(candidate, torch.Tensor) else None
+        if governed_target_available is None or governed_target_available.shape != target_ret.shape:
+            raise ValueError("strict target availability mask is required for factor research")
+        governed_target_available = governed_target_available.to(device=target_ret.device, dtype=torch.bool)
+        evaluation_target = torch.where(
+            governed_target_available & torch.isfinite(target_ret),
+            target_ret,
+            torch.full_like(target_ret, float("nan")),
+        )
+        evaluation_raw = dict(raw_data)
+        evaluation_raw["target_available_mask"] = governed_target_available
         transformed = preprocess_factor(factors, raw_data, transform_method)
-        split_result = split_trade_dates(trade_dates, train_ratio=train_ratio, valid_ratio=valid_ratio)
+        effective_embargo = max(int(label_horizon), int(embargo_size or 0))
+        split_result = split_trade_dates(
+            trade_dates,
+            train_ratio=train_ratio,
+            valid_ratio=valid_ratio,
+            embargo_size=effective_embargo,
+        )
         metrics_by_split = evaluate_by_splits(
             self.evaluator,
             transformed,
-            raw_data,
-            target_ret,
+            evaluation_raw,
+            evaluation_target,
             trade_dates,
             split_result,
         )
@@ -94,7 +118,7 @@ class FactorResearchPipeline:
         )
 
         gate_decision: FactorGateDecision | None = None
-        status = "candidate"
+        status = FactorLifecycleStatus.research_evaluated.value
         if self.enable_gate:
             gate_decision = evaluate_factor_gate(metrics_by_split, max_corr, self.gate_config)
             status = gate_decision.status

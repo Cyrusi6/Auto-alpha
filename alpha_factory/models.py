@@ -147,6 +147,10 @@ class AlphaCampaignConfig:
     holdout_start_date: str | None = None
     label_horizon: int = 2
     previous_experiment_dirs: list[str] = field(default_factory=list)
+    provider: str = "sample"
+    production_research: bool = False
+    canonical_feature_tensor_path: str | None = None
+    canonical_feature_validity_tensor_path: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

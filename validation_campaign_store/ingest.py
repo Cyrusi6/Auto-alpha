@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from artifact_schema.writer import write_json_artifact
+from factor_store.lifecycle import VALIDATION_ADMISSION_STATUS
 
 from .models import ValidationCampaignRecord, ValidationCandidateRecord
 from .registry import LocalValidationCampaignStore
@@ -37,6 +38,9 @@ def ingest_candidate_pool(
 ) -> dict[str, Any]:
     store = LocalValidationCampaignStore(store_dir)
     rows = _read_jsonl(candidate_pool_path)
+    source_row_count = len(rows)
+    inadmissible = [row for row in rows if not _candidate_has_positive_oos_evidence(row)]
+    rows = [row for row in rows if _candidate_has_positive_oos_evidence(row)]
     filtered = _filter_rows(rows, max_candidates=max_candidates, rank_range=rank_range, family_filter=family_filter, source_filter=source_filter)
     if stratified:
         filtered = _stratified_rows(filtered, max_candidates=max_candidates, seed=seed)
@@ -56,7 +60,7 @@ def ingest_candidate_pool(
         shard_count=max(1, int(shard_count or 1)),
         status="registered",
         created_at=_utc_now(),
-        metadata={"duplicates": duplicates, "source_rows": len(rows)},
+        metadata={"duplicates": duplicates, "source_rows": source_row_count, "inadmissible_rows": len(inadmissible)},
     )
     store.register_campaign(record)
     candidate_records = [
@@ -82,7 +86,8 @@ def ingest_candidate_pool(
         "status": "success",
         "validation_campaign_id": campaign_id,
         "source_candidate_pool_path": str(candidate_pool_path),
-        "source_candidate_count": len(rows),
+        "source_candidate_count": source_row_count,
+        "inadmissible_candidate_count": len(inadmissible),
         "candidate_count": len(candidate_records),
         "duplicate_count": len(duplicates),
         "shard_count": record.shard_count,
@@ -97,6 +102,21 @@ def _read_jsonl(path: str | Path) -> list[dict[str, Any]]:
     if not target.exists():
         return []
     return [json.loads(line) for line in target.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _candidate_has_positive_oos_evidence(row: dict[str, Any]) -> bool:
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    status = str(row.get("factor_status") or metadata.get("factor_status") or "")
+    gate = metadata.get("gate_decision") if isinstance(metadata.get("gate_decision"), dict) else {}
+    checks = gate.get("checks") if isinstance(gate.get("checks"), dict) else {}
+    return bool(
+        status == VALIDATION_ADMISSION_STATUS
+        and gate.get("passed") is True
+        and checks.get("oos_evidence_positive") is True
+        and float(checks.get("test_evaluable_date_count", 0.0) or 0.0) > 0.0
+        and float(checks.get("test_valid_observation_count", 0.0) or 0.0) > 0.0
+        and float(checks.get("test_rank_ic_mean", 0.0) or 0.0) > 0.0
+    )
 
 
 def _filter_rows(

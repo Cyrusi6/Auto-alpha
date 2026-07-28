@@ -74,6 +74,7 @@ class BatchFactorResearchRunner:
             corporate_action_cash_field=config.corporate_action_cash_field,
             feature_set_name=config.feature_set_name,
             feature_set_manifest_path=config.feature_set_manifest_path,
+            label_horizon=config.label_horizon,
         )
         self.feature_manifest = (
             load_feature_manifest(config.feature_set_manifest_path)
@@ -124,12 +125,12 @@ class BatchFactorResearchRunner:
         approved_ids = [
             result.factor_id
             for result in results
-            if result.factor_id is not None and result.status == "approved"
+            if result.factor_id is not None and result.status == "validation_candidate"
         ]
         rejected_ids = [
             result.factor_id
             for result in results
-            if result.factor_id is not None and result.status == "rejected"
+            if result.factor_id is not None and result.status == "research_rejected"
         ]
         composite_info: dict[str, Any] | None = None
         if not self.config.disable_composite:
@@ -225,8 +226,16 @@ class BatchFactorResearchRunner:
             )
             for item in eval_result.results
         ]
-        approved_ids = [result.factor_id for result in results if result.factor_id is not None and result.status == "approved"]
-        rejected_ids = [result.factor_id for result in results if result.factor_id is not None and result.status == "rejected"]
+        approved_ids = [
+            result.factor_id
+            for result in results
+            if result.factor_id is not None and result.status == "validation_candidate"
+        ]
+        rejected_ids = [
+            result.factor_id
+            for result in results
+            if result.factor_id is not None and result.status == "research_rejected"
+        ]
         self.loader = AShareDataLoader(
             data_dir=self.effective_data_dir,
             device="cpu",
@@ -244,6 +253,7 @@ class BatchFactorResearchRunner:
             corporate_action_cash_field=self.config.corporate_action_cash_field,
             feature_set_name=self.config.feature_set_name,
             feature_set_manifest_path=self.config.feature_set_manifest_path,
+            label_horizon=self.config.label_horizon,
         )
         self.loader.load_data()
         composite_info = None if self.config.disable_composite else self._build_composite(batch_id, created_at)
@@ -322,6 +332,7 @@ class BatchFactorResearchRunner:
             self.loader.trade_dates,
             train_ratio=self.config.train_ratio,
             valid_ratio=self.config.valid_ratio,
+            embargo_size=self.config.label_horizon,
         )
         gate_config = FactorGateConfig(
             min_coverage=self.config.min_coverage,
@@ -336,12 +347,14 @@ class BatchFactorResearchRunner:
             factors=raw_factors,
             raw_data=self.loader.raw_data_cache,
             target_ret=self.loader.target_ret,
+            target_available=self.loader.target_available,
             trade_dates=self.loader.trade_dates,
             ts_codes=self.loader.ts_codes,
             store=self.store,
             transform_method=self.config.factor_transform,
             train_ratio=self.config.train_ratio,
             valid_ratio=self.config.valid_ratio,
+            label_horizon=self.config.label_horizon,
         )
 
         factor_id = make_factor_id(formula_hash)
@@ -374,6 +387,7 @@ class BatchFactorResearchRunner:
                 "max_abs_correlation": float(research.max_abs_correlation),
                 "similar_factors": research.similar_factors,
                 "gate_decision": gate_payload,
+                "metrics_by_split": research.metrics_by_split,
                 "batch_id": batch_id,
                 "universe_name": self.config.universe_name,
                 "universe_file": self.config.universe_file,

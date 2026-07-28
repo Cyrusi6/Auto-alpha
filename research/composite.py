@@ -10,6 +10,7 @@ import torch
 
 from factor_engine.correlation import factor_correlation
 from factor_store import FactorRecord, LocalFactorStore, make_factor_id, stable_formula_hash
+from factor_store.lifecycle import FactorLifecycleStatus
 
 
 FEATURE_VERSION = "ashare_features_v1"
@@ -107,13 +108,14 @@ def register_composite_factor(
             operator_version=OPERATOR_VERSION,
             lookback_days=1,
             created_at=created_at,
-            status="approved",
+            status=FactorLifecycleStatus.composite_unvalidated.value,
             description=f"Composite factor built with {method}",
             metrics=metrics,
             metadata={
                 "type": "composite",
                 "component_factor_ids": factor_ids,
                 "composite_method": method,
+                "validation_admission": "blocked_pending_independent_oos_evidence",
             },
             parent_factor_ids=factor_ids,
             factor_type="composite",
