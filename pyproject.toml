@@ -241,9 +241,5 @@ include = [
     "environment.yml",
 ]
 exclude = [
-    "assets",
-    "paper",
-    "lord",
     "tests",
-    "times.py",
 ]

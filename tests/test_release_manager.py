@@ -87,5 +87,5 @@ def test_pyproject_packaging_config_excludes_non_platform_dirs():
     assert '"factor_lifecycle"' in text
     assert '"compute_cluster"' in text
     assert '"experiment_orchestrator"' in text
-    assert '"times.py"' in text
+    assert '"times.py"' not in text
     assert '"tests"' in text

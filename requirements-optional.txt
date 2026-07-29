@@ -1,7 +1,4 @@
-# AlphaGPT - Optional Dependencies
-# These are only needed for experimental/research scripts:
-#   - times.py (Chinese stock market backtesting)
-#   - lord/experiment.py (LoRD regularization experiments)
+# Optional research and visualization dependencies.
 
 # Data & Visualization for Research Scripts
 matplotlib>=3.7.0

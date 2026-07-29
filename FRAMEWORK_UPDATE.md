@@ -2277,6 +2277,13 @@
 - Vectorize v3 rolling feature tensor generation before running expanded Feature Factory on real full-market data.
 - Repair or review expanded-data blockers before enabling `can_run_expanded_alpha`.
 
+## Repository Structure Cleanup - Generated And Legacy Material
+
+- Removed ignored pytest, CI, artifact-schema, and distribution build outputs from the working directory. These generated files are reproducible and are not source-controlled.
+- Removed the unreferenced legacy `assets/`, `paper/`, and `lord/` materials plus the superseded standalone `times.py` experiment.
+- Removed the dedicated `times.py` secret-regression test and stale optional-dependency/package-exclusion references. Platform-level Tushare secret and network-gating tests remain in place.
+- Kept governed A-share modules, local environment configuration, and real data outside the repository unchanged.
+
 ## Real CSI300 V3 Feature Tensor And Rolling Vectorization
 
 - Replaced the duplicated Python date loops used by v2/v3 rolling mean, sum, standard deviation, and z-score features with cumulative-statistics tensor operations. The vectorized path preserves expanding prefixes, limits non-finite propagation to the active window, and is shared by the core and expanded v3 builders.
