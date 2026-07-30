@@ -1,18 +1,12 @@
-"""Multi-objective Alpha Factory scoring."""
+"""Dimensionless multi-objective Alpha Factory scoring."""
 
 from __future__ import annotations
 
-from bisect import bisect_right
 from dataclasses import replace
 
 
 def score_candidates(candidates, proxy_rows, full_eval_rows, novelty_scores) -> tuple[list, list[dict]]:
     proxy_by_id = {row.get("alpha_candidate_id"): row for row in proxy_rows}
-    ranked_proxy_scores = sorted(
-        float(row.get("proxy_score", 0.0) or 0.0)
-        for row in proxy_rows
-        if row.get("status") == "proxy_passed"
-    )
     full_by_hash = {}
     for row in full_eval_rows:
         request = row.get("request", {}) if isinstance(row.get("request"), dict) else {}
@@ -26,15 +20,8 @@ def score_candidates(candidates, proxy_rows, full_eval_rows, novelty_scores) -> 
         full = full_by_hash.get(candidate.formula_hash, {})
         full_score = float(full.get("score", 0.0) or 0.0)
         proxy_score = float(proxy.get("proxy_score", candidate.proxy_score) or 0.0)
-        proxy_percentile = (
-            float(bisect_right(ranked_proxy_scores, proxy_score) / len(ranked_proxy_scores))
-            if ranked_proxy_scores and proxy.get("status") == "proxy_passed"
-            else 0.0
-        )
         novelty = float(novelty_scores.get(candidate.alpha_candidate_id, 0.5))
-        complexity_penalty = 0.01 * float(candidate.complexity)
-        lookback_penalty = 0.002 * float(candidate.lookback)
-        final = full_score + 0.5 * proxy_percentile + 0.2 * novelty - complexity_penalty - lookback_penalty
+        final = float(0.8 * full_score + 0.2 * proxy_score) if full else float(proxy_score)
         status = candidate.status
         reject_reason = candidate.reject_reason
         full_status = str(full.get("status") or "")
@@ -42,9 +29,12 @@ def score_candidates(candidates, proxy_rows, full_eval_rows, novelty_scores) -> 
             if full_status == "validation_candidate":
                 status = "validation_candidate"
                 reject_reason = None
+            elif full_status == "data_blocked":
+                status = "data_blocked"
+                reject_reason = ";".join(full.get("gate_reasons") or full.get("data_blockers") or ["full_research_data_blocked"])
             elif full_status:
                 status = "research_rejected"
-                reject_reason = "full_eval_oos_gate_not_passed"
+                reject_reason = ";".join(full.get("gate_reasons") or ["full_eval_oos_gate_not_passed"])
             else:
                 status = "research_evaluated"
                 reject_reason = "positive_oos_evidence_missing"
@@ -56,10 +46,11 @@ def score_candidates(candidates, proxy_rows, full_eval_rows, novelty_scores) -> 
             "score_components": {
                 "full_eval_score": full_score,
                 "proxy_score": proxy_score,
-                "proxy_percentile": proxy_percentile,
+                "proxy_normalized_objectives": proxy.get("normalized_objectives") or {},
+                "full_normalized_objectives": full.get("normalized_objectives") or {},
                 "novelty_score": novelty,
-                "complexity_penalty": complexity_penalty,
-                "lookback_penalty": lookback_penalty,
+                "aggregation": "0.8*full_standardized+0.2*proxy_standardized" if full else "proxy_standardized_only",
+                "score_method": "dimensionless_cohort_multi_objective_v1",
             },
             "status": status,
             "reject_reason": reject_reason,

@@ -54,6 +54,10 @@ def test_alpha_factory_campaign_generates_multistage_shortlist_and_schema_valida
     assert (output_dir / "alpha_candidates.jsonl").exists()
     assert (output_dir / "alpha_static_checks.jsonl").exists()
     assert (output_dir / "alpha_proxy_eval.jsonl").exists()
+    assert (output_dir / "alpha_research_policy.json").exists()
+    assert (output_dir / "alpha_proxy_shortlist.jsonl").exists()
+    assert (output_dir / "alpha_trial_ledger.jsonl").exists()
+    assert (output_dir / "alpha_selection_bias_report.json").exists()
     assert (output_dir / "alpha_shortlist.jsonl").exists()
     assert (tmp_path / "features" / "feature_set_manifest.json").exists()
 
@@ -336,4 +340,7 @@ def test_dashboard_service_reads_alpha_and_feature_artifacts(tmp_path):
     assert not service.load_alpha_candidates().empty
     assert not service.load_alpha_static_checks().empty
     assert not service.load_alpha_proxy_eval().empty
+    assert service.load_alpha_research_policy()["policy_hash"]
+    assert not service.load_alpha_trial_ledger().empty
+    assert service.load_alpha_selection_bias_report()["trial_count"] > 0
     assert service.load_alpha_shortlist().empty

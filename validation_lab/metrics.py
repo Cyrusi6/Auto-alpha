@@ -7,6 +7,8 @@ from statistics import mean, pstdev
 
 import torch
 
+from evaluation.multi_objective import bounded_factor_score
+
 from .models import FactorValidationSummary, FactorValidationWindowResult, ValidationIssue, ValidationSplit
 from .policy import EngineeringRobustnessPolicy, load_validation_policy
 
@@ -272,14 +274,28 @@ def _metrics_for_dates(
     spread_mean = float(mean(spreads)) if spreads else 0.0
     turnover = float(mean(turnovers)) if turnovers else 0.0
     monotonicity = 1.0 if spread_mean >= 0 else -1.0
-    score = rank_mean + spread_mean + 0.1 * monotonicity - 0.1 * turnover
+    rank_hit_rate = sum(value > 0 for value in rank_ics) / len(rank_ics)
+    score, _ = bounded_factor_score(
+        {
+            "rank_ic_ir": icir,
+            "rank_ic_t_stat": (
+                rank_mean / (rank_std / math.sqrt(len(rank_ics)))
+                if rank_std > 1e-12 and len(rank_ics) > 1
+                else rank_mean
+            ),
+            "rank_ic_positive_ratio": rank_hit_rate,
+            "monotonicity": monotonicity,
+            "coverage": float(mean(coverages)) if coverages else 0.0,
+            "turnover": turnover,
+        }
+    )
     t_stat = rank_mean / (rank_std / math.sqrt(len(rank_ics))) if rank_std > 1e-12 and len(rank_ics) > 1 else rank_mean
     return {
         "evaluable": True,
         "rank_ic_mean": _finite(rank_mean),
         "rank_ic_std": _finite(rank_std),
         "rank_ic_t_stat": _finite(t_stat),
-        "rank_ic_hit_rate": _finite(sum(value > 0 for value in rank_ics) / len(rank_ics)),
+        "rank_ic_hit_rate": _finite(rank_hit_rate),
         "icir": _finite(icir),
         "quantile_spread": _finite(spread_mean),
         "quantile_monotonicity_score": _finite(monotonicity),
@@ -298,6 +314,34 @@ def _metrics_for_dates(
         "n_dates": float(len(rank_ics)),
         "n_observations": float(obs),
     }
+
+
+def evaluate_factor_dates(
+    factors: torch.Tensor,
+    target_ret: torch.Tensor,
+    trade_dates: list[str],
+    selected_dates: list[str],
+    *,
+    validity: torch.Tensor | None = None,
+    active_mask: torch.Tensor | None = None,
+    target_available_mask: torch.Tensor | None = None,
+    index_member_mask: torch.Tensor | None = None,
+    validation_common_mask: torch.Tensor | None = None,
+    min_breadth: int = 2,
+) -> dict[str, float]:
+    return _metrics_for_dates(
+        factors,
+        target_ret,
+        selected_dates,
+        {date: index for index, date in enumerate(trade_dates)},
+        validity,
+        active_mask,
+        target_available_mask,
+        index_member_mask,
+        validation_common_mask,
+        min_breadth,
+        {},
+    )
 
 
 def _empty_metrics() -> dict[str, float | bool | None]:

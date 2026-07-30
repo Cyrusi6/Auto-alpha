@@ -28,13 +28,16 @@ from feature_promotion import load_promotion_gate
 
 from .diversity import select_shortlist, write_diversity_outputs
 from .generators import generate_alpha_candidates
+from .full_research import run_full_research
 from .models import AlphaCampaignConfig, AlphaCampaignManifest, AlphaFactoryReport
 from .novelty import score_novelty
 from .proxy_eval import run_proxy_eval
+from .research_policy import load_alpha_research_policy
 from research_firewall.lineage import build_loader_lineage
 from .report import write_artifact_catalog, write_campaign_report, write_generation_stats, write_jsonl
 from .scoring import score_candidates
 from .static_checks import run_static_checks
+from .trial_ledger import write_trial_ledger
 
 
 class AlphaFactoryRunner:
@@ -47,6 +50,10 @@ class AlphaFactoryRunner:
         self.paths: dict[str, str] = {}
         self.warnings: list[str] = []
         self.current_feature_manifest = None
+        self.research_policy = load_alpha_research_policy(
+            config.research_policy_id,
+            production_research=config.production_research,
+        )
 
     def run(self) -> AlphaFactoryReport:
         created_at = _utc_now()
@@ -76,6 +83,20 @@ class AlphaFactoryRunner:
             allow_risk_filter_features=self.config.allow_risk_filter_features,
         )
         campaign = self._campaign_manifest(created_at, freeze, manifest)
+        self.paths["alpha_research_policy_path"] = str(
+            write_json_artifact(
+                self.output_dir / "alpha_research_policy.json",
+                {
+                    "policy_id": self.research_policy.policy_id,
+                    "policy_hash": self.research_policy.policy_hash,
+                    "policy": self.research_policy.to_dict(),
+                    "parameters_locked": self.research_policy.parameters_locked,
+                    "certification_supported": False,
+                },
+                "alpha_research_policy",
+                "alpha_factory",
+            )
+        )
         self.paths["alpha_campaign_manifest_path"] = str(
             write_json_artifact(
                 self.output_dir / "alpha_campaign_manifest.json",
@@ -120,9 +141,17 @@ class AlphaFactoryRunner:
             canonical_feature_validity_tensor_path=self.config.canonical_feature_validity_tensor_path,
             production_research=self.config.production_research,
         ).load_data()
-        candidates, proxy_rows, proxy_summary = self._load_or_run_proxy(candidates, loader)
-        full_rows, full_summary = self._run_full_eval(candidates, data_dir, campaign)
         novelty = score_novelty(candidates, self.store.load_factors())
+        reference_matrices, reference_root = self._proxy_reference_matrices(loader)
+        proxy_context_hash = _proxy_context_hash(candidates, novelty, reference_root, self.research_policy.policy_hash)
+        candidates, proxy_rows, proxy_summary = self._load_or_run_proxy(
+            candidates,
+            loader,
+            novelty,
+            reference_matrices,
+            proxy_context_hash,
+        )
+        full_rows, full_summary = self._run_full_eval(candidates, loader, data_dir, campaign)
         candidates, scored_rows = score_candidates(candidates, proxy_rows, full_rows, novelty)
         if self.config.use_batch_eval:
             evaluated_hashes = {
@@ -164,6 +193,20 @@ class AlphaFactoryRunner:
             min_novelty_score=self.config.min_novelty_score,
         )
         self.paths.update(write_diversity_outputs(shortlist, rejected, diversity_report, self.output_dir))
+        trial_paths, selection_bias_summary = write_trial_ledger(
+            candidates=candidates,
+            static_rows=static_rows,
+            proxy_rows=proxy_rows,
+            full_rows=full_rows,
+            scored_rows=scored_rows,
+            shortlist=shortlist,
+            campaign_id=campaign.campaign_id,
+            policy_id=self.research_policy.policy_id,
+            policy_hash=self.research_policy.policy_hash,
+            output_dir=self.output_dir,
+        )
+        self.paths.update(trial_paths)
+        full_summary["selection_bias"] = selection_bias_summary
         if self.config.register_shortlist:
             full_summary["registered_shortlist_factors"] = self._register_shortlist_metadata(
                 shortlist,
@@ -374,13 +417,19 @@ class AlphaFactoryRunner:
         self.paths["alpha_generation_stats_path"] = str(self.output_dir / "alpha_generation_stats.json")
         return candidates
 
-    def _load_or_run_proxy(self, candidates, loader):
+    def _load_or_run_proxy(self, candidates, loader, novelty, reference_matrices, proxy_context_hash):
         proxy_path = self.output_dir / "alpha_proxy_eval.jsonl"
         report_path = self.output_dir / "alpha_proxy_eval_report.json"
         expected_lineage = build_loader_lineage(
             loader,
             stage="alpha_proxy_eval",
-            extra={"max_dates": int(max(self.config.proxy_max_dates, 1)), "seed": int(self.config.seed)},
+            extra={
+                "max_dates": int(max(self.config.proxy_max_dates, 1)),
+                "seed": int(self.config.seed),
+                "research_policy_hash": self.research_policy.policy_hash,
+                "existing_factor_count": len(reference_matrices),
+                "proxy_context_hash": proxy_context_hash,
+            },
         )
         if proxy_path.exists() and report_path.exists() and not self.config.refresh_proxy:
             rows = [json.loads(line) for line in proxy_path.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -413,6 +462,10 @@ class AlphaFactoryRunner:
             max_dates=max(self.config.proxy_max_dates, 1),
             vocab=make_formula_vocab_from_manifest(self.current_feature_manifest) if self.current_feature_manifest is not None else None,
             seed=self.config.seed,
+            policy=self.research_policy,
+            family_novelty_scores=novelty,
+            existing_factor_matrices=reference_matrices,
+            proxy_context_hash=proxy_context_hash,
         )
         self.paths["alpha_proxy_eval_path"] = str(write_jsonl_artifact(proxy_path, rows, "alpha_proxy_eval", "alpha_factory"))
         self.paths["alpha_proxy_eval_report_path"] = str(
@@ -420,7 +473,49 @@ class AlphaFactoryRunner:
         )
         return candidates, rows, summary
 
-    def _run_full_eval(self, candidates, data_dir: str, campaign) -> tuple[list[dict], dict[str, Any]]:
+    def _proxy_reference_matrices(self, loader) -> tuple[list[Any], str]:
+        records = self.store.load_factors()
+        if not records:
+            return [], hashlib.sha256(b"empty_reference_factor_set").hexdigest()
+        if not self.config.production_research:
+            from factor_engine.correlation import load_existing_factor_matrices
+
+            matrices = list(
+                load_existing_factor_matrices(
+                    self.store,
+                    [record.factor_id for record in records],
+                    ts_codes=loader.ts_codes,
+                    trade_dates=loader.trade_dates,
+                    device=loader.feat_tensor.device,
+                ).values()
+            )
+            digest = hashlib.sha256()
+            for matrix in matrices:
+                digest.update(matrix.detach().float().cpu().contiguous().numpy().tobytes())
+            return matrices, digest.hexdigest()
+        from validation_lab.materialization import load_materialized_factor
+
+        matrices = []
+        manifest_hashes = []
+        missing = []
+        for record in records:
+            metadata = record.metadata or {}
+            manifest_path = metadata.get("materialization_manifest_path")
+            if not manifest_path and isinstance(metadata.get("materialization_manifest"), dict):
+                manifest_path = metadata["materialization_manifest"].get("manifest_path")
+            if not manifest_path:
+                missing.append(record.factor_id)
+                continue
+            values, _, _ = load_materialized_factor(manifest_path)
+            if tuple(values.shape) != tuple(loader.target_ret.shape):
+                raise RuntimeError(f"reference factor axis mismatch: {record.factor_id}")
+            matrices.append(values.to(device=loader.feat_tensor.device))
+            manifest_hashes.append(_file_hash(str(manifest_path)))
+        if missing:
+            raise RuntimeError("production reference factors require compact materialization: " + ",".join(sorted(missing)))
+        return matrices, hashlib.sha256("\n".join(sorted(str(value) for value in manifest_hashes)).encode("utf-8")).hexdigest()
+
+    def _run_full_eval(self, candidates, loader, data_dir: str, campaign) -> tuple[list[dict], dict[str, Any]]:
         eligible = [item for item in candidates if item.status == "proxy_passed"]
         selected = sorted(eligible, key=lambda item: (-float(item.proxy_score), item.alpha_candidate_id))
         if self.config.full_eval_max_candidates > 0:
@@ -430,13 +525,90 @@ class AlphaFactoryRunner:
             "selected_for_full_eval": len(selected),
             "full_eval_max_candidates": self.config.full_eval_max_candidates,
         }
-        if not self.config.use_batch_eval or not selected:
-            summary = {"enabled": bool(self.config.use_batch_eval), "evaluated": 0, **selection_summary}
+        self.paths["alpha_proxy_shortlist_path"] = str(
+            write_jsonl_artifact(
+                self.output_dir / "alpha_proxy_shortlist.jsonl",
+                [
+                    item.to_dict()
+                    | {
+                        "proxy_rank": rank,
+                        "selection_stage": "cheap_proxy_shortlist",
+                        "research_policy_id": self.research_policy.policy_id,
+                        "research_policy_hash": self.research_policy.policy_hash,
+                    }
+                    for rank, item in enumerate(selected, start=1)
+                ],
+                "alpha_proxy_shortlist",
+                "alpha_factory",
+            )
+        )
+        if not self.config.use_batch_eval:
+            summary = {
+                "enabled": False,
+                "evaluated": 0,
+                "research_policy_id": self.research_policy.policy_id,
+                "research_policy_hash": self.research_policy.policy_hash,
+                "score_method": "dimensionless_cohort_multi_objective_v1",
+                "normalization": {"method": "empirical_cdf_average_ties_v1", "candidate_count": 0, "reference_hash": hashlib.sha256(b"full_research_disabled").hexdigest()},
+                "multiple_testing": {"method": "benjamini_hochberg_and_holm_v1", "total_generated_trials": len(candidates), "full_research_trials": 0},
+                "selection_bias": {"total_trials": len(candidates), "full_research_trials": 0, "selection_fraction": 0.0, "selection_data_reused": True, "untouched_holdout": False},
+                "certification_ready": False,
+                **selection_summary,
+            }
             self.paths["alpha_full_eval_summary_path"] = str(
                 write_json_artifact(self.output_dir / "alpha_full_eval_summary.json", summary, "alpha_full_eval_summary", "alpha_factory")
             )
             return [], summary
         eval_dir = Path(self.config.batch_eval_dir) if self.config.batch_eval_dir else self.output_dir / "batch_eval"
+        if not selected:
+            eval_dir.mkdir(parents=True, exist_ok=True)
+            empty_summary = {
+                "total": 0,
+                "evaluated_trial_count": 0,
+                "unique_formula_hash_count": 0,
+                "status_counts": {},
+                "validation_candidates": 0,
+                "research_rejected": 0,
+                "errors": 0,
+                "cache_hits": 0,
+                "top": [],
+                "enabled": True,
+                "evaluated": 0,
+                "research_policy_id": self.research_policy.policy_id,
+                "research_policy_hash": self.research_policy.policy_hash,
+                "score_method": "dimensionless_cohort_multi_objective_v1",
+                "normalization": {"method": "empirical_cdf_average_ties_v1", "candidate_count": 0, "reference_hash": hashlib.sha256(b"empty_full_research").hexdigest()},
+                "multiple_testing": {"method": "benjamini_hochberg_and_holm_v1", "total_generated_trials": len(candidates), "full_research_trials": 0},
+                "selection_bias": {"total_trials": len(candidates), "full_research_trials": 0, "selection_fraction": 0.0, "selection_data_reused": True, "untouched_holdout": False},
+                "certification_ready": False,
+                **selection_summary,
+            }
+            result_path = write_json_artifact(
+                eval_dir / "formula_batch_eval_result.json",
+                {
+                    "batch_id": campaign.campaign_id,
+                    "status": "success",
+                    "results": [],
+                    "summary": empty_summary,
+                    "paths": {},
+                    "cache_manifest": {"enabled": bool(self.config.use_eval_cache), "cache_hits": 0, "cache_writes": 0},
+                    "benchmark": {"formulas_requested": 0, "formulas_evaluated": 0, "formulas_per_second": 0.0},
+                },
+                "formula_batch_eval_result",
+                "alpha_factory",
+            )
+            results_path = write_jsonl_artifact(
+                eval_dir / "formula_eval_results.jsonl",
+                [],
+                "formula_eval_results",
+                "alpha_factory",
+            )
+            self.paths["formula_batch_eval_result_path"] = str(result_path)
+            self.paths["formula_eval_results_path"] = str(results_path)
+            self.paths["alpha_full_eval_summary_path"] = str(
+                write_json_artifact(self.output_dir / "alpha_full_eval_summary.json", empty_summary, "alpha_full_eval_summary", "alpha_factory")
+            )
+            return [], empty_summary
         requests = [
             FormulaEvalRequest(
                 name=item.alpha_candidate_id,
@@ -458,8 +630,14 @@ class AlphaFactoryRunner:
             for item in selected
         ]
         if self._should_run_full_eval_with_scheduler():
-            rows, summary = self._run_full_eval_with_scheduler(requests, data_dir, campaign, eval_dir)
-            return rows, summary | selection_summary
+            execution_rows, execution_summary = self._run_full_eval_with_scheduler(requests, data_dir, campaign, eval_dir)
+            return self._run_governed_full_research(
+                selected,
+                loader,
+                execution_rows,
+                execution_summary | selection_summary,
+                len(candidates),
+            )
         result = FormulaBatchEvaluator(
             FormulaBatchEvalConfig(
                 data_dir=data_dir,
@@ -501,19 +679,115 @@ class AlphaFactoryRunner:
                 production_research=self.config.production_research,
             )
         ).run(requests)
-        rows = [item.to_dict() for item in result.results]
-        summary = result.summary | {
+        execution_rows = [item.to_dict() for item in result.results]
+        execution_summary = result.summary | {
             "enabled": True,
-            "evaluated": len(rows),
+            "evaluated": len(execution_rows),
             "batch_id": result.batch_id,
             "formula_batch_eval_result_path": result.paths.get("formula_batch_eval_result_path"),
             **selection_summary,
         }
-        self.paths["alpha_full_eval_summary_path"] = str(
-            write_json_artifact(self.output_dir / "alpha_full_eval_summary.json", summary, "alpha_full_eval_summary", "alpha_factory")
-        )
         self.paths["formula_batch_eval_result_path"] = result.paths.get("formula_batch_eval_result_path", "")
         self.paths["formula_eval_results_path"] = result.paths.get("formula_eval_results_path", "")
+        return self._run_governed_full_research(
+            selected,
+            loader,
+            execution_rows,
+            execution_summary,
+            len(candidates),
+        )
+
+    def _run_governed_full_research(self, selected, loader, execution_rows, execution_summary, total_trial_count):
+        execution_by_hash = {
+            str((row.get("request") or {}).get("formula_hash") or ""): row
+            for row in execution_rows
+            if isinstance(row, dict) and isinstance(row.get("request"), dict)
+        }
+        executable = [
+            candidate
+            for candidate in selected
+            if str((execution_by_hash.get(candidate.formula_hash) or {}).get("status") or "")
+            not in {"", "invalid", "error"}
+        ]
+        rows, research_summary = run_full_research(
+            executable,
+            loader,
+            policy=self.research_policy,
+            vocab=make_formula_vocab_from_manifest(self.current_feature_manifest),
+            factor_transform=self.config.factor_transform,
+            total_trial_count=int(total_trial_count),
+            seed=self.config.seed,
+        )
+        by_hash = {str(row.get("formula_hash") or ""): row for row in rows}
+        for candidate in selected:
+            execution = execution_by_hash.get(candidate.formula_hash)
+            if candidate.formula_hash not in by_hash:
+                rows.append(
+                    {
+                        "alpha_candidate_id": candidate.alpha_candidate_id,
+                        "factor_id": make_factor_id(candidate.formula_hash),
+                        "formula_hash": candidate.formula_hash,
+                        "request": {
+                            "name": candidate.alpha_candidate_id,
+                            "formula_hash": candidate.formula_hash,
+                            "formula_tokens": candidate.formula_tokens,
+                            "formula_names": candidate.formula_names,
+                            "lookback": candidate.lookback,
+                            "complexity": candidate.complexity,
+                        },
+                        "status": "data_blocked",
+                        "score": 0.0,
+                        "data_blockers": ["formula_execution_not_completed"],
+                        "gate_reasons": ["formula_execution_not_completed"],
+                        "certification_supported": False,
+                    }
+                )
+                by_hash[candidate.formula_hash] = rows[-1]
+            by_hash[candidate.formula_hash]["formula_execution"] = {
+                "status": (execution or {}).get("status"),
+                "cache_hit": bool((execution or {}).get("cache_hit", False)),
+                "elapsed_seconds": float((execution or {}).get("elapsed_seconds", 0.0) or 0.0),
+                "device": execution_summary.get("device") or execution_summary.get("scheduler_status"),
+            }
+        summary = {
+            **execution_summary,
+            **research_summary,
+            "formula_execution_count": len(execution_rows),
+            "evaluated": len(rows),
+            "governed_full_research": True,
+        }
+        status_counts: dict[str, int] = {}
+        for row in rows:
+            status = str(row.get("status") or "unknown")
+            status_counts[status] = status_counts.get(status, 0) + 1
+        summary["status_counts"] = status_counts
+        summary["semantic_content_hash"] = hashlib.sha256(
+            json.dumps(
+                [
+                    {key: value for key, value in row.items() if key != "formula_execution"}
+                    | {"formula_execution_status": (row.get("formula_execution") or {}).get("status")}
+                    for row in rows
+                ],
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        self.paths["alpha_full_eval_results_path"] = str(
+            write_jsonl_artifact(
+                self.output_dir / "alpha_full_eval_results.jsonl",
+                rows,
+                "alpha_full_eval_results",
+                "alpha_factory",
+            )
+        )
+        self.paths["alpha_full_eval_summary_path"] = str(
+            write_json_artifact(
+                self.output_dir / "alpha_full_eval_summary.json",
+                summary,
+                "alpha_full_eval_summary",
+                "alpha_factory",
+            )
+        )
         return rows, summary
 
     def _should_run_full_eval_with_scheduler(self) -> bool:
@@ -736,6 +1010,8 @@ class AlphaFactoryRunner:
                 "full_eval_score": candidate.full_eval_score,
                 "novelty_score": candidate.novelty_score,
                 "final_score": candidate.final_score,
+                "score_components": candidate.metadata.get("score_components") or {},
+                "score_method": "dimensionless_cohort_multi_objective_v1",
                 "metrics_by_split": metrics_by_split,
                 "gate_decision": row.get("gate_decision"),
                 "max_abs_correlation": float(row.get("max_abs_correlation", 0.0) or 0.0),
@@ -812,6 +1088,16 @@ class AlphaFactoryRunner:
             "best_score": float(best_score),
             "score_distribution": _distribution(scores),
             "proxy_score_distribution": _distribution(proxy_scores),
+            "research_policy_id": self.research_policy.policy_id,
+            "research_policy_hash": self.research_policy.policy_hash,
+            "score_method": "dimensionless_cohort_multi_objective_v1",
+            "proxy_normalization_reference_hash": (proxy_summary.get("normalization") or {}).get("reference_hash"),
+            "full_normalization_reference_hash": (full_summary.get("normalization") or {}).get("reference_hash"),
+            "multiple_testing": full_summary.get("multiple_testing") or {},
+            "selection_bias": full_summary.get("selection_bias") or {},
+            "selection_data_reused": True,
+            "untouched_holdout": False,
+            "certification_ready": False,
             "source_budgets": {
                 "template": self.config.template_budget,
                 "random": self.config.random_budget,
@@ -1019,6 +1305,8 @@ def _validate_production_research_config(config: AlphaCampaignConfig) -> None:
         blockers.append("runtime_feature_rebuild_forbidden")
     if not config.enable_gate:
         blockers.append("positive_oos_gate_required")
+    if config.research_policy_id not in {None, "alpha_factory_two_stage_oos_v1"}:
+        blockers.append("production_two_stage_policy_required")
     if int(config.label_horizon) < 1:
         blockers.append("positive_label_horizon_required")
     if blockers:
@@ -1035,3 +1323,23 @@ def _distribution(values: list[float]) -> dict[str, float]:
         "median": float(ordered[len(ordered) // 2]),
         "max": float(ordered[-1]),
     }
+
+
+def _proxy_context_hash(candidates, novelty: dict[str, float], reference_root: str, policy_hash: str) -> str:
+    payload = {
+        "candidates": [
+            {
+                "alpha_candidate_id": item.alpha_candidate_id,
+                "formula_hash": item.formula_hash,
+                "formula_tokens": item.formula_tokens,
+                "formula_names": item.formula_names,
+                "lookback": item.lookback,
+                "complexity": item.complexity,
+            }
+            for item in candidates
+        ],
+        "novelty": novelty,
+        "reference_root": reference_root,
+        "policy_hash": policy_hash,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()

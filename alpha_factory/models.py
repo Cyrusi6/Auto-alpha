@@ -152,6 +152,7 @@ class AlphaCampaignConfig:
     canonical_feature_tensor_path: str | None = None
     canonical_feature_validity_tensor_path: str | None = None
     canonical_research_view_manifest_path: str | None = None
+    research_policy_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

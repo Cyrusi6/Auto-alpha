@@ -68,6 +68,11 @@ def _markdown(payload: dict[str, Any]) -> str:
         f"- full_eval_count: {summary.get('full_eval_count')}",
         f"- shortlist_count: {summary.get('shortlist_count')}",
         f"- best_score: {summary.get('best_score')}",
+        f"- research_policy: `{summary.get('research_policy_id')}`",
+        f"- score_method: `{summary.get('score_method')}`",
+        f"- multiple_testing_method: `{(summary.get('multiple_testing') or {}).get('method')}`",
+        f"- selection_data_reused: {summary.get('selection_data_reused')}",
+        f"- certification_ready: {summary.get('certification_ready')}",
         "",
     ]
     return "\n".join(lines)

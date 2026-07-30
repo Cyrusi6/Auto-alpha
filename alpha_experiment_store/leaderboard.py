@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from artifact_schema.writer import write_jsonl_artifact
+from evaluation import bounded_factor_score
 from factor_store import FactorRecord, LocalFactorStore, has_positive_oos_evidence, validation_admission_reason
 
 from .models import AlphaLeaderboardRecord
@@ -32,16 +33,7 @@ def build_leaderboard(
     rows: list[AlphaLeaderboardRecord] = []
     for factor in factors:
         components = _score_components(factor)
-        final = (
-            components["base_score"]
-            + 0.15 * components["coverage"]
-            + 0.10 * components["novelty"]
-            + 0.05 * components["diversity"]
-            - 0.05 * components["turnover"]
-            - 0.01 * components["complexity"]
-            - 0.10 * components["correlation_penalty"]
-            - 0.10 * components["pit_penalty"]
-        )
+        final = components["standardized_final_score"]
         metadata = dict(factor.metadata or {})
         metadata.update(
             {
@@ -142,8 +134,15 @@ def _score_components(factor: FactorRecord) -> dict[str, float]:
     complexity = float(metadata.get("formula_complexity", metadata.get("complexity", len(factor.formula_tokens))) or 0.0)
     max_corr = abs(float(metadata.get("max_abs_correlation", 0.0) or 0.0))
     leakage_status = str(metadata.get("leakage_status", metadata.get("pit_status", "passed")) or "passed")
+    campaign_score = metadata.get("final_score")
+    score_method = str(((metadata.get("score_components") or {}).get("score_method") or ""))
+    if campaign_score is not None and score_method == "dimensionless_cohort_multi_objective_v1":
+        standardized = float(campaign_score)
+    else:
+        standardized, _ = bounded_factor_score(metrics)
     return {
-        "base_score": float(metrics.get("score", metrics.get("rank_ic_ir", metadata.get("full_eval_score", 0.0))) or 0.0),
+        "standardized_final_score": float(standardized),
+        "base_score": float(standardized),
         "coverage": float(metrics.get("coverage", metrics.get("coverage_ratio", 0.0)) or 0.0),
         "turnover": float(metrics.get("turnover", 0.0) or 0.0),
         "complexity": complexity,

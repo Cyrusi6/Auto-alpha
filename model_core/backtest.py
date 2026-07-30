@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 import torch
 
+from evaluation.multi_objective import bounded_factor_score
+
 from .config import ModelConfig
 from .ops import cs_rank
 
@@ -102,7 +104,16 @@ class AShareFactorEvaluator:
         top_bottom_win_rate = float(sum(1.0 for spread in spreads if spread > 0) / len(spreads)) if spreads else 0.0
         monotonicity = float(sum(monotonicity_values) / len(monotonicity_values)) if monotonicity_values else 0.0
         turnover = self._turnover(top_sets)
-        score = rank_ic_ir + top_bottom_spread + 0.1 * monotonicity - 0.1 * turnover
+        score, _ = bounded_factor_score(
+            {
+                "rank_ic_ir": rank_ic_ir,
+                "rank_ic_t_stat": rank_ic_t_stat,
+                "rank_ic_positive_ratio": rank_ic_positive_ratio,
+                "monotonicity": monotonicity,
+                "coverage": coverage,
+                "turnover": turnover,
+            }
+        )
 
         return FactorEvaluationResult(
             rank_ic_mean=float(rank_ic_mean),

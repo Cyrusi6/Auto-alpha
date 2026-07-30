@@ -350,8 +350,23 @@ class AshareDashboardService:
     def load_alpha_proxy_eval_report(self) -> dict[str, Any]:
         return self._read_first_json(self._alpha_artifact_candidates("alpha_proxy_eval_report.json"))
 
+    def load_alpha_research_policy(self) -> dict[str, Any]:
+        return self._read_first_json(self._alpha_artifact_candidates("alpha_research_policy.json"))
+
+    def load_alpha_proxy_shortlist(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._alpha_artifact_candidates("alpha_proxy_shortlist.jsonl"))
+
     def load_alpha_full_eval_summary(self) -> dict[str, Any]:
         return self._read_first_json(self._alpha_artifact_candidates("alpha_full_eval_summary.json"))
+
+    def load_alpha_full_eval_results(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._alpha_artifact_candidates("alpha_full_eval_results.jsonl"))
+
+    def load_alpha_trial_ledger(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._alpha_artifact_candidates("alpha_trial_ledger.jsonl"))
+
+    def load_alpha_selection_bias_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._alpha_artifact_candidates("alpha_selection_bias_report.json"))
 
     def load_alpha_scored_candidates(self) -> pd.DataFrame:
         return self._read_first_jsonl(self._alpha_artifact_candidates("alpha_scored_candidates.jsonl"))

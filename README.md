@@ -1932,3 +1932,9 @@ The final offline production-shaped rehearsal is `de898d13a679e8ea18344d2131f2ef
 ## Canonical A-share research freeze (Task 056-C)
 
 Production research now requires the content-addressed freeze and physically bounded research view from `data_lake.canonical_freeze`. Bootstrap/research observations are separated from validation, retrospective-test, and sealed partitions; the search view contains no sealed locator and no unredacted raw payload. Existing data through 2026-06-30 is explicitly historical/contaminated evidence, not an untouched holdout. See `docs/TASK_056_C_CANONICAL_FREEZE.md`.
+
+## Two-stage Alpha Factory research (Task 056-D)
+
+Alpha Factory now performs a cheap PIT-safe proxy screen followed by governed full research only for the proxy shortlist. Proxy and full-stage ranking use cohort-normalized, dimensionless objectives instead of directly adding ICIR, raw spread, monotonicity, and turnover. Full research fixes purged rolling walk-forward policy, label-aware embargo, regime/placebo/sensitivity diagnostics, exposure checks, modeled cost/capacity stress, multiple-testing correction, and an exact trial ledger. Only explicit positive OOS evidence can create a `validation_candidate`. See `docs/TASK_056_D_TWO_STAGE_ALPHA_FACTORY.md`.
+
+The current Task 056-C canonical freeze still has `alpha_search_authorized=false`; production search therefore fails closed and no real discovery campaign is launched by this task.

@@ -116,6 +116,8 @@ def preprocess_factor_with_validity(
             continue
         date_raw: dict[str, torch.Tensor] = {}
         for key, value in raw_data.items():
+            if not isinstance(value, torch.Tensor):
+                continue
             aligned = _align_matrix(value, factors)
             date_raw[key] = aligned[date_valid, date_index : date_index + 1]
         transformed = preprocess_factor(masked[date_valid, date_index : date_index + 1], date_raw, method)

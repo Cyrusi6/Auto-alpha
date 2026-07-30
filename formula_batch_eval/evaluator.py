@@ -239,7 +239,7 @@ class FormulaBatchEvaluator:
             self.loader.trade_dates,
             train_ratio=self.config.train_ratio,
             valid_ratio=self.config.valid_ratio,
-            embargo_size=self.config.label_horizon,
+            embargo_size=int(request.lookback or 0) + int(self.config.label_horizon),
         )
         research = FactorResearchPipeline(
             evaluator=self.evaluator,
@@ -261,6 +261,7 @@ class FormulaBatchEvaluator:
             train_ratio=self.config.train_ratio,
             valid_ratio=self.config.valid_ratio,
             label_horizon=self.config.label_horizon,
+            embargo_size=int(request.lookback or 0) + int(self.config.label_horizon),
         )
         research = replace(research, transform_method=self.config.factor_transform)
         gate_reasons = research.gate_decision.reasons if research.gate_decision is not None else []

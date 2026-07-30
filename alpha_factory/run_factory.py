@@ -56,6 +56,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--canonical-feature-tensor-path")
     parser.add_argument("--canonical-feature-validity-tensor-path")
     parser.add_argument("--canonical-research-view-manifest-path")
+    parser.add_argument("--research-policy-id")
     parser.add_argument("--universe-name")
     parser.add_argument("--universe-file")
     parser.add_argument("--factor-transform", default="raw")
@@ -220,6 +221,7 @@ def main(argv: list[str] | None = None) -> int:
         canonical_feature_tensor_path=args.canonical_feature_tensor_path,
         canonical_feature_validity_tensor_path=args.canonical_feature_validity_tensor_path,
         canonical_research_view_manifest_path=args.canonical_research_view_manifest_path,
+        research_policy_id=args.research_policy_id,
     )
     result = AlphaFactoryRunner(config).run()
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2 if args.pretty else None))

@@ -573,3 +573,9 @@ Task 055-KR2 用 descriptor-first lease 替换 pathname/inode-only 锁：持续�
 ## Task 056-C：唯一真实数据冻结
 
 `data_lake.canonical_freeze` 从 reviewed raw index 自动解析全量 A 股源，逐文件重算 SHA，按字段记录 availability/effective date，并将 bootstrap/research 与 validation、retrospective test、sealed holdout 物理分区。生产 Alpha Factory 只能消费经过原生校验的 `search_view/research_view_manifest.json`，不能回退完整 raw lake 或 manifest-only freeze。当前 2025-01-01 至 2026-06-30 已被历史流程观察，只能物理封存，不能称为 untouched holdout。
+
+## Task 056-D：两级真实 Alpha Factory 研究
+
+Alpha Factory 现在先执行便宜的 PIT proxy，再只对 proxy shortlist 执行正式 full research。代理层记录中性化 RankIC、稳定性、覆盖率、换手代理、复杂度、递归 lookback、已有因子相关性、family novelty 和多 universe 方向一致性；完整层使用固定 purged rolling walk-forward、lookback+label-horizon embargo、市场状态、placebo、时间/参数敏感性、成本容量压力、风格暴露、BH/Holm correction 和完整 trial ledger。
+
+评分改为候选 cohort 内的无量纲多目标标准化，原始 spread 仅保留诊断，不再与 ICIR、monotonicity 和 turnover 直接相加。只有显式正样本外证据才可进入 `validation_candidate`；缺失、空窗或失败均 fail closed。当前 Task 056-C 的 `alpha_search_authorized=false` 仍阻断真实搜索，因此本任务不启动新 campaign 或 GPU 作业。

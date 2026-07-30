@@ -87,6 +87,11 @@ def _code_semantic_hash() -> str:
         root / "model_core" / "vm.py",
         root / "model_core" / "validity.py",
         root / "alpha_factory" / "proxy_eval.py",
+        root / "alpha_factory" / "full_research.py",
+        root / "alpha_factory" / "research_policy.py",
+        root / "alpha_factory" / "scoring.py",
+        root / "evaluation" / "multi_objective.py",
+        root / "validation_lab" / "metrics.py",
         root / "formula_batch_eval" / "evaluator.py",
         root / "research_firewall" / "firewall.py",
     ]

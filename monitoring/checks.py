@@ -1769,6 +1769,9 @@ def check_alpha_factory_campaign(report_path: str | Path | None, manifest_path: 
     alerts: list[MonitoringAlert] = []
     if report and status not in {"success", "partial"}:
         alerts.append(MonitoringAlert("warning", "alpha_factory_campaign", "alpha campaign did not finish successfully", {"status": status}))
+    score_method = str(summary.get("score_method") or "")
+    if report and status in {"success", "partial"} and score_method != "dimensionless_cohort_multi_objective_v1":
+        alerts.append(MonitoringAlert("error", "alpha_factory_unscaled_score", "alpha campaign did not use the governed dimensionless score", {"score_method": score_method}))
     return {
         "exists": bool(report or manifest),
         "alpha_campaign_id": report.get("campaign_id") or manifest.get("campaign_id"),
@@ -1783,6 +1786,12 @@ def check_alpha_factory_campaign(report_path: str | Path | None, manifest_path: 
         "alpha_feature_count": int(summary.get("feature_count", 0) or 0),
         "alpha_family_count": len(summary.get("family_distribution", {}) or {}),
         "alpha_compute_run_report_path": summary.get("compute_run_report_path"),
+        "alpha_research_policy_id": summary.get("research_policy_id"),
+        "alpha_research_policy_hash": summary.get("research_policy_hash"),
+        "alpha_score_method": score_method,
+        "alpha_multiple_testing": summary.get("multiple_testing") or {},
+        "alpha_selection_bias": summary.get("selection_bias") or {},
+        "alpha_certification_ready": bool(summary.get("certification_ready", False)),
     }, alerts
 
 
