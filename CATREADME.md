@@ -570,3 +570,6 @@ Task 055-KR2 用 descriptor-first lease 替换 pathname/inode-only 锁：持续�
 发布信任采用 implementation (`I`) → evidence-only (`E`) → final anchor (`A`) 的非循环拓扑。最终 `I` 为 `276b02fc64bd5e71a7cbfa4866fdbdf11794f378`，source root 为 `5a78778f930e7cf09b701cda4a08e3ce9f1789ca9b6531883b7ebbbbd5e27cab`。authoritative verifier 必须从精确 `I` 提取，并由调用方提供仓库外固定的精确 `A` OID 与 digest；本轮 candidate self-check 不等于独立审计，更不授予网络执行资格。
 
 最终离线 production-shaped rehearsal 为 `de898d13a679e8ea18344d2131f2efe04176a5413429e9a189ab2829f2528ff9`。Positive/empty 的 primary 与独立 sibling 均执行 12/12，primary resume 均复用 12/12，47 个 crash/recovery case 全部通过；每分支 net 100 与 all-in 100 均如实为 `causal_valuation_blocked`。候选 evidence 位于 `evidence/task_055_k/task055kr2_candidate_evidence.json`，保持 non-executable、network-unauthorized，仅可进入下一轮 independent audit。
+## Task 056-C：唯一真实数据冻结
+
+`data_lake.canonical_freeze` 从 reviewed raw index 自动解析全量 A 股源，逐文件重算 SHA，按字段记录 availability/effective date，并将 bootstrap/research 与 validation、retrospective test、sealed holdout 物理分区。生产 Alpha Factory 只能消费经过原生校验的 `search_view/research_view_manifest.json`，不能回退完整 raw lake 或 manifest-only freeze。当前 2025-01-01 至 2026-06-30 已被历史流程观察，只能物理封存，不能称为 untouched holdout。

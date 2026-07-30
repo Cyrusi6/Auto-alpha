@@ -50,4 +50,49 @@ def validate_research_input(
             content_hash=None,
             created_at="",
         )
+    canonical_manifest = Path(data_freeze_dir) / "canonical_freeze_manifest.json"
+    if canonical_manifest.is_file():
+        try:
+            from .canonical_freeze import validate_canonical_research_freeze
+
+            payload = validate_canonical_research_freeze(canonical_manifest)
+        except Exception as exc:
+            return FreezeValidationReport(
+                freeze_id=None,
+                freeze_dir=str(data_freeze_dir),
+                status="error",
+                checked_files=0,
+                error_count=1,
+                warning_count=0,
+                issues=[
+                    FreezeValidationIssue(
+                        "error",
+                        "canonical_freeze_validation_failed",
+                        f"{type(exc).__name__}: {exc}",
+                        str(canonical_manifest),
+                    )
+                ],
+                content_hash=None,
+                created_at="",
+            )
+        blockers = list(payload.get("blockers") or [])
+        warnings = list(payload.get("warnings") or [])
+        return FreezeValidationReport(
+            freeze_id=str(payload.get("generation_id") or ""),
+            freeze_dir=str(data_freeze_dir),
+            status="passed" if not blockers else "error",
+            checked_files=int(payload.get("partition_count", 0) or 0),
+            error_count=len(blockers),
+            warning_count=len(warnings),
+            issues=[
+                FreezeValidationIssue("error", "canonical_freeze_blocker", blocker, str(canonical_manifest))
+                for blocker in blockers
+            ]
+            + [
+                FreezeValidationIssue("warning", "canonical_freeze_warning", warning, str(canonical_manifest))
+                for warning in warnings
+            ],
+            content_hash=str(payload.get("content_hash") or ""),
+            created_at="",
+        )
     return validate_freeze(data_freeze_dir)

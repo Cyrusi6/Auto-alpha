@@ -52,6 +52,7 @@ source = { editable = "." }
 dependencies = [
     { name = "numpy" },
     { name = "pandas" },
+    { name = "pyarrow" },
     { name = "plotly" },
     { name = "streamlit" },
     { name = "torch" },
@@ -75,6 +76,7 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'research'", specifier = ">=3.7.0" },
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "pandas", specifier = ">=2.0.0" },
+    { name = "pyarrow", specifier = ">=14.0.0" },
     { name = "plotly", specifier = ">=5.17.0" },
     { name = "seaborn", marker = "extra == 'research'", specifier = ">=0.12.0" },
     { name = "streamlit", specifier = ">=1.28.0" },

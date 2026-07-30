@@ -60,7 +60,12 @@ class AlphaFactoryRunner:
         )
         if freeze.error_count:
             raise RuntimeError(f"data freeze validation failed: {freeze.status}")
-        data_dir = _resolve_data_dir(self.config.data_dir, self.config.data_freeze_dir)
+        data_dir = _resolve_data_dir(
+            self.config.data_dir,
+            self.config.data_freeze_dir,
+            self.config.canonical_research_view_manifest_path,
+            production_research=self.config.production_research,
+        )
         manifest = self._feature_manifest(freeze)
         self.current_feature_manifest = manifest
         promotion_gate = load_promotion_gate(
@@ -285,7 +290,12 @@ class AlphaFactoryRunner:
         )
         if self.config.build_feature_set or self.config.feature_set_name != "ashare_features_v1":
             feature_dir = Path(self.config.feature_output_dir) if self.config.feature_output_dir else self.output_dir / "features"
-            data_dir = _resolve_data_dir(self.config.data_dir, self.config.data_freeze_dir)
+            data_dir = _resolve_data_dir(
+                self.config.data_dir,
+                self.config.data_freeze_dir,
+                self.config.canonical_research_view_manifest_path,
+                production_research=self.config.production_research,
+            )
             loader = AShareDataLoader(
                 data_dir=data_dir,
                 device=None if self.config.device == "auto" else self.config.device,
@@ -844,7 +854,20 @@ def _campaign_id(name: str, created_at: str, seed: int) -> str:
     return f"alpha_{safe}_{digest}"
 
 
-def _resolve_data_dir(data_dir: str, data_freeze_dir: str | None) -> str:
+def _resolve_data_dir(
+    data_dir: str,
+    data_freeze_dir: str | None,
+    canonical_research_view_manifest_path: str | None = None,
+    *,
+    production_research: bool = False,
+) -> str:
+    if production_research:
+        if not canonical_research_view_manifest_path:
+            raise RuntimeError("production research blocked: physical_research_view_required")
+        from data_lake.canonical_freeze import validate_physical_research_view
+
+        view = validate_physical_research_view(canonical_research_view_manifest_path)
+        return str(Path(view["view_root"]) / "data")
     if not data_freeze_dir:
         return data_dir
     freeze_root = Path(data_freeze_dir)
@@ -949,6 +972,43 @@ def _validate_production_research_config(config: AlphaCampaignConfig) -> None:
         blockers.append("point_in_time_required")
     if not config.require_data_freeze or not config.data_freeze_dir:
         blockers.append("immutable_data_freeze_required")
+    canonical_manifest = (
+        Path(config.data_freeze_dir) / "canonical_freeze_manifest.json"
+        if config.data_freeze_dir
+        else None
+    )
+    if canonical_manifest is None or not canonical_manifest.is_file():
+        blockers.append("canonical_freeze_manifest_required")
+    if not config.canonical_research_view_manifest_path:
+        blockers.append("physical_research_view_required")
+    elif canonical_manifest is not None and canonical_manifest.is_file():
+        try:
+            from data_lake.canonical_freeze import (
+                validate_canonical_research_freeze,
+                validate_physical_research_view,
+            )
+
+            freeze = validate_canonical_research_freeze(canonical_manifest)
+            view = validate_physical_research_view(config.canonical_research_view_manifest_path)
+            if view.get("freeze_content_hash") != freeze.get("content_hash"):
+                blockers.append("physical_research_view_freeze_lineage_mismatch")
+            if not freeze.get("alpha_search_authorized") or not view.get("alpha_search_authorized"):
+                blockers.append("canonical_freeze_research_gate_blocked")
+            research_end = str(config.research_end_date or "")
+            if not research_end or research_end > str(view.get("max_availability_date") or ""):
+                blockers.append("research_cutoff_exceeds_physical_view")
+            view_root = Path(str(view["view_root"])).resolve()
+            for raw_path in (
+                config.matrix_cache_dir,
+                config.feature_set_manifest_path,
+                config.canonical_feature_tensor_path,
+                config.canonical_feature_validity_tensor_path,
+            ):
+                if raw_path and not Path(raw_path).resolve().is_relative_to(view_root):
+                    blockers.append("derived_research_artifact_outside_physical_view")
+                    break
+        except Exception as exc:
+            blockers.append(f"canonical_freeze_validation_failed:{type(exc).__name__}")
     if not config.matrix_cache_dir or not (Path(config.matrix_cache_dir) / "task_052a_strict_matrix_manifest.json").is_file():
         blockers.append("strict_matrix_manifest_required")
     if not config.feature_set_manifest_path:
