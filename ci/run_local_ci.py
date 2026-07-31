@@ -1028,68 +1028,6 @@ def main(argv: list[str] | None = None) -> int:
             ],
         ),
         (
-            "portfolio_lab_smoke",
-            [
-                sys.executable,
-                "-m",
-                "portfolio_lab.run_portfolio_lab",
-                "run",
-                "--data-dir",
-                str(sample_data_dir),
-                "--factor-store-dir",
-                str(quick_dir / "factor_store"),
-                "--factor-id",
-                "factor_ff245859feeec1e6",
-                "--factor-type",
-                "any",
-                "--output-dir",
-                str(quick_dir / "portfolio_lab"),
-                "--portfolio-methods",
-                "equal_weight,risk_aware",
-                "--risk-aversions",
-                "0.5",
-                "--turnover-penalties",
-                "0.0",
-                "--max-weight-values",
-                "0.10",
-                "--max-names-values",
-                "2",
-                "--top-n-values",
-                "2",
-                "--max-trials",
-                "2",
-                "--pretty",
-            ],
-        ),
-        (
-            "portfolio_certification_smoke",
-            [
-                sys.executable,
-                "-m",
-                "portfolio_certification.run_portfolio_certify",
-                "run",
-                "--factor-store-dir",
-                str(quick_dir / "factor_store"),
-                "--factor-id",
-                "factor_ff245859feeec1e6",
-                "--factor-type",
-                "any",
-                "--output-dir",
-                str(quick_dir / "portfolio_certification"),
-                "--portfolio-policy-path",
-                str(quick_dir / "portfolio_lab" / "selected_portfolio_policy.json"),
-                "--portfolio-lab-report-path",
-                str(quick_dir / "portfolio_lab" / "portfolio_lab_report.json"),
-                "--portfolio-robustness-report-path",
-                str(quick_dir / "portfolio_lab" / "portfolio_robustness_report.json"),
-                "--factor-certification-decision-path",
-                str(quick_dir / "factor_certification" / "factor_certification_decision.json"),
-                "--policy-profile",
-                "sample_lenient_portfolio",
-                "--pretty",
-            ],
-        ),
-        (
             "model_lifecycle_smoke",
             [
                 sys.executable,
@@ -1311,7 +1249,12 @@ def main(argv: list[str] | None = None) -> int:
         ),
     ]
     if mode == "full" and not args.skip_build:
-        commands.append(("package_build", ["uv", "build"]))
+        commands.append(
+            (
+                "package_build",
+                [sys.executable, "-m", "hatchling", "build", "-d", str(output_dir / "dist")],
+            )
+        )
     if mode == "full" and not args.skip_pytest:
         commands.append(
             (

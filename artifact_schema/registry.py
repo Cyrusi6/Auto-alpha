@@ -2427,6 +2427,93 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         ],
         ["task056e_preflight_summary.json"],
     ),
+    "portfolio_research_bundle": _definition(
+        "portfolio_research_bundle",
+        [
+            "schema_version", "status", "source_lineage", "source_lineage_root",
+            "factor_ids", "formula_hashes", "stock_axis_hash", "date_axis_hash",
+            "factor_axis_hash", "universe_names", "benchmark_names", "regime_names",
+            "fee_schedule_relative_path", "fee_schedule_content_hash", "artifacts",
+            "fallback_allowed", "factor_values_storage", "factor_validity_storage",
+            "content_hash", "generation_id",
+        ],
+        ["portfolio_research_bundle_manifest.json"],
+    ),
+    "portfolio_research_report": _definition(
+        "portfolio_research_report",
+        [
+            "status", "policy_id", "policy_hash", "factor_ids", "formula_hashes",
+            "factor_certified_count", "effective_embargo", "walk_forward_window_count",
+            "universe_count", "benchmark_count", "scenario_count", "universe_summaries",
+            "gate", "lineage", "shadow_ready", "independent_audit_required_for_paper",
+            "certification_ready", "portfolio_ready", "paper_ready", "live_ready",
+            "certification_supported", "direct_live_forbidden", "content_hash",
+        ],
+        ["portfolio_research_report.json"],
+        optional=["blockers"],
+    ),
+    "portfolio_factor_weights": _definition(
+        "portfolio_factor_weights",
+        [
+            "universe", "split_id", "fit_hash", "factor_ids", "families", "cluster_ids",
+            "weights", "mean_rank_ic", "icir", "training_observations", "train_start",
+            "train_end", "validation_rank_ic", "test_rank_ic",
+        ],
+        ["portfolio_factor_weights.jsonl"],
+        kind="jsonl",
+        allow_empty=True,
+    ),
+    "portfolio_walk_forward_windows": _definition(
+        "portfolio_walk_forward_windows",
+        [
+            "universe", "split_id", "effective_embargo", "valid_test_date_count",
+            "validation_rank_ic", "test_rank_ic", "scenarios",
+        ],
+        ["portfolio_walk_forward_windows.jsonl"],
+        kind="jsonl",
+        allow_empty=True,
+    ),
+    "portfolio_simulation_run": _definition(
+        "portfolio_simulation_run",
+        ["summary", "orders", "fills", "rejections", "settlements", "nav", "event_ledger", "run_hash"],
+        ["simulation_runs/*.json"],
+    ),
+    "portfolio_simulation_catalog": _definition(
+        "portfolio_simulation_catalog",
+        ["run_count", "runs", "catalog_root"],
+        ["portfolio_simulation_catalog.json"],
+    ),
+    "portfolio_shadow_queue": _definition(
+        "portfolio_shadow_queue",
+        [
+            "portfolio_research_content_hash", "status", "shadow_only", "paper_ready",
+            "live_ready", "reason",
+        ],
+        ["portfolio_shadow_queue.jsonl"],
+        kind="jsonl",
+        allow_empty=True,
+    ),
+    "portfolio_research_manifest": _definition(
+        "portfolio_research_manifest",
+        [
+            "status", "result_content_hash", "policy_id", "policy_hash",
+            "factor_certified_count", "walk_forward_window_count", "simulation_run_count",
+            "shadow_queue_count", "shadow_only", "independent_audit_required_for_paper",
+            "certification_ready", "portfolio_ready", "paper_ready", "live_ready",
+            "content_hash", "generation_id",
+        ],
+        ["portfolio_research_manifest.json"],
+    ),
+    "task056f_preflight_summary": _definition(
+        "task056f_preflight_summary",
+        [
+            "status", "origin_main", "factor_certified_count", "portfolio_research_executed",
+            "shadow_queue_count", "paper_queue_count", "live_queue_count", "blockers",
+            "certification_ready", "portfolio_ready", "paper_ready", "live_ready",
+            "content_hash",
+        ],
+        ["task056f_preflight_summary.json"],
+    ),
 }
 
 

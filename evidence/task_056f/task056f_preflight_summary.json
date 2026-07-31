@@ -1,0 +1,33 @@
+{
+  "artifact_metadata": {
+    "artifact_type": "task056f_preflight_summary",
+    "created_at": "2026-07-31T00:00:00Z",
+    "extra": {
+      "scope": "repository_and_committed_governance_artifacts_only"
+    },
+    "producer": "portfolio_research",
+    "schema_version": "1.0"
+  },
+  "artifact_type": "task056f_preflight_summary",
+  "blockers": [
+    "factor_certified_pool_not_present",
+    "portfolio_research_bundle_not_present",
+    "sealed_period_already_observed",
+    "sealed_period_not_untouched"
+  ],
+  "certification_ready": false,
+  "content_hash": "2821fad3266d57c841c00b324c38ac6bf288a3b5adce95ef777f43489bcaccab",
+  "created_at": "2026-07-31T00:00:00Z",
+  "factor_certified_count": 0,
+  "live_queue_count": 0,
+  "live_ready": false,
+  "origin_main": "c9ef778b243c2b50179782c4f97bc79462fc68d1",
+  "paper_queue_count": 0,
+  "paper_ready": false,
+  "portfolio_ready": false,
+  "portfolio_research_executed": false,
+  "producer": "portfolio_research",
+  "schema_version": "1.0",
+  "shadow_queue_count": 0,
+  "status": "task056f_portfolio_research_blocked_no_factor_certified"
+}

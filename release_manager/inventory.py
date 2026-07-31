@@ -63,6 +63,7 @@ PLATFORM_MODULES = [
     "portfolio_campaign_store",
     "portfolio_certification",
     "portfolio_lab",
+    "portfolio_research",
     "portfolio_optimizer",
     "post_download_orchestrator",
     "program_trading_compliance",

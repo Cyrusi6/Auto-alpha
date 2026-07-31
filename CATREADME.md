@@ -103,7 +103,7 @@ Planned sync splits large daily datasets by date windows and splits index consti
 
 `certification_campaign_store/` is the campaign warehouse for `factor_certification_queue.jsonl`. It ingests queue items, records item state, supports dry-run/execute/resume, calls `factor_certification` for actual decisions, consolidates decisions, and writes `certified_factor_pool.jsonl` plus `certified_factor_leaderboard.jsonl`.
 
-`portfolio_campaign_store/` starts from `certified_factor_pool.jsonl`, runs or plans portfolio lab/certification items, consolidates selected policy and certification artifacts, and writes `production_candidate_bundle.jsonl` plus `optimizer_policy_activation_queue.jsonl`. The bundle is not activation; model registry, factor lifecycle, approval, and production gates remain required.
+`portfolio_campaign_store/` 仅保留为历史 artifact reader/planner。它只接受 `factor_certified`，且 consolidation 永远保持 production candidate 与 optimizer activation queue 为空；新组合研究统一走 `portfolio_research/` 的 shadow-only 路径。
 
 `research/` orchestrates batch factor experiments. It loads candidate formulas, executes StackVM, applies transforms and OOS gates, skips duplicate formula hashes, writes per-factor reports, and ranks candidates. Composite methods include equal weight, score weight, and rank average, but a new composite is stored as `composite_unvalidated` and cannot enter validation or portfolio paths without separate positive OOS evidence.
 
@@ -148,7 +148,9 @@ When enabled, `research_suite.run_suite --run-validation-lab --run-factor-certif
 
 `portfolio_lab/` runs portfolio policy grids against scenarios such as base, higher cost, lower capacity, stricter turnover, settlement, and risk-control assumptions. It writes `portfolio_lab_report.json/md`, `portfolio_policy_grid.json`, `portfolio_scenarios.json`, trial JSONL files, `portfolio_robustness_report.json/md`, and `selected_portfolio_policy.json`.
 
-`portfolio_certification/` turns the selected policy plus lab, validation, factor certification, data-freeze, PIT, settlement, risk-control, and reconciliation artifacts into a portfolio scorecard and decision. Passing certification writes `certified_portfolio_policy.json` and can create a `portfolio_policy_activation` approval. Applying that approval activates an `optimizer_policy` model version in `model_registry/`.
+`portfolio_research/` 是唯一正式因子组合入口。它只接受 `factor_certified` 因子和内容寻址 bundle，在训练窗内执行相关性聚类、残差化、rolling IC/ICIR 权重、收缩、family/cluster/factor 限额及权重稳定约束；OOS 使用 Task 055 事件账本、Fee Schedule v2、PIT universe、严格成交/估值 mask，并真实重跑基线、2× modeled cost、成交量下降与极端波动场景。终态最多进入 `shadow_candidate`，独立审计前 `paper_ready=false`、`live_ready=false`。
+
+`portfolio_certification/` 只读兼容旧 scorecard/artifact。注册、activation approval 和 apply activation 命令已 fail closed；正式 `portfolio_research` 通过后也只能进入 shadow，独立审计通过前不能进入 paper，更不能直接进入 live。
 
 A certified factor and a certified portfolio policy are intentionally separate: the factor gate reviews signal quality; the portfolio gate reviews optimizer parameters and deployment assumptions. Sample certification is a smoke path only, not a return guarantee.
 

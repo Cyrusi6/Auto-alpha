@@ -30,6 +30,9 @@ def run_portfolio_lab(
     output_dir.mkdir(parents=True, exist_ok=True)
     store = LocalFactorStore(config.factor_store_dir)
     factor_id = select_factor_id(store, config.factor_id, latest_approved=config.latest_approved, factor_type=config.factor_type)
+    record = next((item for item in store.load_factors() if item.factor_id == factor_id), None)
+    if record is None or record.status != "factor_certified":
+        raise RuntimeError("portfolio_lab_requires_factor_certified; use portfolio_research for combinations")
     policies = policies or generate_portfolio_policy_grid(
         factor_id=factor_id,
         index_code=config.index_code,

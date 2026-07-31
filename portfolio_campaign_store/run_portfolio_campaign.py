@@ -127,7 +127,7 @@ def _smoke(args: argparse.Namespace) -> dict:
             "certified_factor_pool_id": "cfp_smoke_0001",
             "factor_id": "factor_smoke_0001",
             "formula_hash": "hash_smoke_0001",
-            "certification_status": "conditional",
+            "certification_status": "factor_certified",
             "validation_score": 1.0,
             "certification_score": 1.5,
             "priority": 1,

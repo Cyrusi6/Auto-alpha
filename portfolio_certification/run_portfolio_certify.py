@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from approval import ApprovalBatch, LocalApprovalStore
 from backtest.io import select_factor_id
 from factor_store import LocalFactorStore
 from portfolio_optimizer import load_portfolio_policy
@@ -91,8 +90,14 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     store = LocalFactorStore(args.factor_store_dir)
-    if args.command == "apply-approved-activation":
-        return _apply_approved_activation(args, store)
+    if args.command in {
+        "register",
+        "register-policy",
+        "propose-activation",
+        "create-activation-approval",
+        "apply-approved-activation",
+    } or args.register_policy or args.create_activation_approval:
+        raise ValueError("portfolio_activation_requires_independent_shadow_audit; legacy activation path disabled")
     factor_id = select_factor_id(store, args.factor_id, latest_approved=args.latest_approved or not args.factor_id, factor_type=args.factor_type)
     certification_policy = load_portfolio_certification_policy(args.policy_path, args.policy_profile)
     if args.command == "init-policy":
@@ -130,45 +135,10 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     )
     paths = write_portfolio_certification_artifacts(output_dir, portfolio_policy, certification_policy, scorecard, decision, package)
     model_version_id = None
-    if args.register_policy or args.command in {"register", "register-policy"}:
-        from model_registry import LocalModelRegistry
-
-        if not args.model_registry_dir:
-            raise ValueError("model_registry_dir is required to register portfolio policy")
-        registry = LocalModelRegistry(args.model_registry_dir)
-        model = registry.register_portfolio_policy(
-            json.loads(Path(paths["certified_portfolio_policy_path"]).read_text(encoding="utf-8")),
-            source_artifacts=paths,
-            metadata={"portfolio_certification_decision": decision.to_dict()},
-            lifecycle_status="approved" if decision.passed else "research_candidate",
-        )
-        model_version_id = model.model_version_id
     approval_id = None
     approval_status = None
-    if args.create_activation_approval or args.command in {"propose-activation", "create-activation-approval"}:
-        if not args.approval_store_dir:
-            raise ValueError("approval_store_dir is required to create portfolio policy activation approval")
-        batch = ApprovalBatch(
-            approval_id=args.approval_id or f"portfolio_policy_activation_{portfolio_policy.policy_id[-8:]}",
-            created_at=decision.created_at,
-            factor_id=factor_id,
-            factor_type="optimizer_policy",
-            rebalance_date="",
-            portfolio_method=str(portfolio_policy.portfolio_method),
-            orders=[],
-            approval_type="portfolio_policy_activation",
-            model_version_id=model_version_id,
-            model_lifecycle_action="activate_optimizer_policy",
-            metadata={
-                "portfolio_policy_id": portfolio_policy.policy_id,
-                "portfolio_certification_decision_path": paths["portfolio_certification_decision_path"],
-                "certified_portfolio_policy_path": paths["certified_portfolio_policy_path"],
-                "portfolio_certification_status": decision.status,
-            },
-        )
-        LocalApprovalStore(args.approval_store_dir).save_batch(batch)
-        approval_id = batch.approval_id
-        approval_status = batch.status
+    approval_id = None
+    approval_status = None
     return {
         "factor_id": factor_id,
         "portfolio_policy_id": portfolio_policy.policy_id,
@@ -187,45 +157,7 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _apply_approved_activation(args: argparse.Namespace, store: LocalFactorStore) -> dict[str, Any]:
-    if not args.model_registry_dir:
-        raise ValueError("model_registry_dir is required to apply portfolio policy activation")
-    if not args.approval_store_dir or not args.approval_id:
-        raise ValueError("approval_store_dir and approval_id are required to apply portfolio policy activation")
-    from model_registry import LocalModelRegistry
-
-    approval = LocalApprovalStore(args.approval_store_dir).load_batch(args.approval_id)
-    if approval.status != "approved":
-        raise ValueError(f"portfolio policy activation approval must be approved: {approval.approval_id} is {approval.status}")
-    if approval.approval_type != "portfolio_policy_activation":
-        raise ValueError(f"approval is not portfolio_policy_activation: {approval.approval_type}")
-    registry = LocalModelRegistry(args.model_registry_dir)
-    model_version_id = approval.model_version_id
-    if not model_version_id:
-        certified_path = approval.metadata.get("certified_portfolio_policy_path") if isinstance(approval.metadata, dict) else None
-        if not certified_path:
-            raise ValueError("approval does not contain model_version_id or certified_portfolio_policy_path")
-        certified_payload = json.loads(Path(certified_path).read_text(encoding="utf-8"))
-        model = registry.register_portfolio_policy(
-            certified_payload,
-            source_artifacts={"certified_portfolio_policy_path": str(certified_path)},
-            lifecycle_status="approved",
-        )
-        model_version_id = model.model_version_id
-    model, deployment = registry.activate(
-        model_version_id,
-        approval_id=approval.approval_id,
-        actor=getattr(args, "actor", None) or "portfolio_policy_reviewer",
-        reason=getattr(args, "reason", None) or "approved portfolio policy activation",
-        explicit_override=True,
-    )
-    return {
-        "model_version": model.to_dict(),
-        "deployment": deployment.to_dict(),
-        "optimizer_policy_model_version_id": model.model_version_id,
-        "portfolio_policy_id": model.factor_id,
-        "approval_id": approval.approval_id,
-        "status": "active",
-    }
+    raise ValueError("portfolio_activation_requires_independent_shadow_audit; legacy activation path disabled")
 
 
 def _default_selected_policy_path(args: argparse.Namespace) -> str | None:

@@ -174,6 +174,7 @@ from .checks import (
     check_validation_campaign_store,
     check_validation_large_campaign_plan,
     check_portfolio_campaign,
+    check_portfolio_research,
     check_production_candidate_bundle,
     check_optimizer_policy_activation_queue,
     check_settlement_fee_tax,
@@ -351,6 +352,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--factor-certification-decision-path")
     parser.add_argument("--factor-certification-scorecard-path")
     parser.add_argument("--portfolio-lab-report-path")
+    parser.add_argument("--portfolio-research-report-path")
     parser.add_argument("--portfolio-robustness-report-path")
     parser.add_argument("--portfolio-policy-trials-path")
     parser.add_argument("--selected-portfolio-policy-path")
@@ -651,6 +653,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.selected_portfolio_policy_path,
             ),
         ),
+        ("portfolio_research", lambda: check_portfolio_research(args.portfolio_research_report_path)),
         (
             "portfolio_certification",
             lambda: check_portfolio_certification(

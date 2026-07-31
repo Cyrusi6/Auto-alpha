@@ -27,7 +27,11 @@ def ingest_certified_factor_pool(
     scenario_profile: str = "sample",
 ) -> dict[str, Any]:
     path = Path(certified_factor_pool_path)
-    rows = [row for row in _read_jsonl(path) if row.get("selected_for_portfolio_lab", True)]
+    source_rows = _read_jsonl(path)
+    invalid = [row for row in source_rows if str(row.get("certification_status") or "") != "factor_certified"]
+    if invalid:
+        raise ValueError("portfolio campaign accepts only factor_certified records")
+    rows = [row for row in source_rows if row.get("selected_for_portfolio_lab", True)]
     rows = _apply_rank_range(rows, rank_range)
     rows = _apply_family_filter(rows, family_filter)
     rows = _apply_source_filter(rows, source_filter)

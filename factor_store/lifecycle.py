@@ -15,6 +15,7 @@ class FactorLifecycleStatus(StrEnum):
     statistically_rejected = "statistically_rejected"
     historical_replay_passed = "historical_replay_passed"
     clean_holdout_passed = "clean_holdout_passed"
+    factor_certified = "factor_certified"
     composite_unvalidated = "composite_unvalidated"
 
 

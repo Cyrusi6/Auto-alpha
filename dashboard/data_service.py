@@ -764,6 +764,18 @@ class AshareDashboardService:
     def load_portfolio_lab_report(self) -> dict[str, Any]:
         return self._read_first_json(self._portfolio_lab_artifact_candidates("portfolio_lab_report.json"))
 
+    def load_portfolio_research_report(self) -> dict[str, Any]:
+        return self._read_first_json(self._portfolio_research_artifact_candidates("portfolio_research_report.json"))
+
+    def load_portfolio_research_manifest(self) -> dict[str, Any]:
+        return self._read_first_json(self._portfolio_research_artifact_candidates("portfolio_research_manifest.json"))
+
+    def load_portfolio_factor_weights(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._portfolio_research_artifact_candidates("portfolio_factor_weights.jsonl"))
+
+    def load_portfolio_shadow_queue(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._portfolio_research_artifact_candidates("portfolio_shadow_queue.jsonl"))
+
     def load_portfolio_robustness_report(self) -> dict[str, Any]:
         return self._read_first_json(self._portfolio_lab_artifact_candidates("portfolio_robustness_report.json"))
 
@@ -2775,6 +2787,15 @@ class AshareDashboardService:
             self.config.portfolio_lab_dir / filename,
             root / "portfolio_lab" / filename,
             root / "suite" / "portfolio_lab" / filename,
+        ]
+
+    def _portfolio_research_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        return [
+            self.config.portfolio_research_dir / filename,
+            self.config.portfolio_research_dir / "generations" / filename,
+            root / "portfolio_research" / filename,
+            root / "suite" / "portfolio_research" / filename,
         ]
 
     def _portfolio_certification_artifact_candidates(self, filename: str) -> list[Path]:

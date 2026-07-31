@@ -24,7 +24,7 @@ def consolidate_factor_certification_campaign(store_dir: str | Path) -> dict[str
         scorecard = _read_json(scorecard_path)
         status = str(decision.get("status") or "needs_review")
         blocker_count = int((scorecard.get("summary") or {}).get("blocker_count", 0) or 0)
-        if status not in {"certified", "conditional"} or blocker_count > 0:
+        if status != "certified" or blocker_count > 0:
             continue
         queue_item = (item.get("metadata") or {}).get("queue_item", {}) if isinstance(item.get("metadata"), dict) else {}
         metadata = queue_item.get("metadata", {}) if isinstance(queue_item.get("metadata"), dict) else {}
@@ -40,7 +40,7 @@ def consolidate_factor_certification_campaign(store_dir: str | Path) -> dict[str
                 certified_factor_pool_id=f"cfp_{len(pool)+1:04d}_{item.get('factor_id')}",
                 factor_id=str(item.get("factor_id")),
                 formula_hash=str(item.get("formula_hash") or ""),
-                certification_status=status,
+                certification_status="factor_certified",
                 validation_score=float(item.get("validation_score", 0.0) or 0.0),
                 certification_score=score,
                 priority=int(item.get("validation_rank", len(pool) + 1) or len(pool) + 1),
@@ -48,7 +48,7 @@ def consolidate_factor_certification_campaign(store_dir: str | Path) -> dict[str
                 validation_artifacts={key: str(value) for key, value in validation_artifacts.items()},
                 certification_artifacts=certification_artifacts,
                 selected_for_portfolio_lab=True,
-                reason="certification passed",
+                reason="strict factor certification passed",
                 metadata={"campaign_item": item, "decision": decision, "scorecard_summary": scorecard.get("summary", {})},
             )
         )

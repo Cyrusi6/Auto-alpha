@@ -174,6 +174,6 @@ def test_factor_certification_apply_status_updates_factor_store(tmp_path, capsys
 
     assert exit_code == 0
     factor = LocalFactorStore(tmp_path / "store").load_factors()[0]
-    assert factor.status == "certified"
+    assert factor.status == "factor_certified"
     assert factor.metadata
     assert "promotion_decision" in factor.metadata

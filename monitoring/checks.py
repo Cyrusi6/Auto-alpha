@@ -3473,6 +3473,27 @@ def check_shadow_calibration_suggestions(suggestions_path: str | Path | None) ->
     return {"exists": bool(payload), "calibration_suggestion_count": len(suggestions)}, alerts
 
 
+def check_portfolio_research(report_path: str | Path | None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    payload = _read_json(Path(report_path)) if report_path else {}
+    status = str(payload.get("status") or "")
+    alerts: list[MonitoringAlert] = []
+    if status == "data_blocked":
+        alerts.append(MonitoringAlert("error", "portfolio_research", "portfolio research is data blocked", {"blockers": payload.get("blockers", [])}))
+    elif status == "portfolio_rejected":
+        alerts.append(MonitoringAlert("warning", "portfolio_research", "portfolio research was statistically rejected", {"reasons": (payload.get("gate") or {}).get("reasons", [])}))
+    if payload and (payload.get("paper_ready") is not False or payload.get("live_ready") is not False):
+        alerts.append(MonitoringAlert("error", "portfolio_research_boundary", "portfolio research bypassed shadow-only boundary"))
+    return {
+        "exists": bool(payload),
+        "portfolio_research_status": status,
+        "factor_certified_count": int(payload.get("factor_certified_count", 0) or 0),
+        "walk_forward_window_count": int(payload.get("walk_forward_window_count", 0) or 0),
+        "shadow_ready": bool(payload.get("shadow_ready", False)),
+        "paper_ready": bool(payload.get("paper_ready", False)),
+        "live_ready": bool(payload.get("live_ready", False)),
+    }, alerts
+
+
 def check_live_readiness(decision_path: str | Path | None, scorecard_path: str | Path | None = None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     decision = _read_json(Path(decision_path)) if decision_path else {}
     scorecard = _read_json(Path(scorecard_path)) if scorecard_path else {}

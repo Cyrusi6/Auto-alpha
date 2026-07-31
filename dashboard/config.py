@@ -58,6 +58,7 @@ class DashboardConfig:
     factor_certification_dir: Path = Path("artifacts/factor_certification")
     factor_certification_campaign_dir: Path = Path("artifacts/factor_certification_campaign")
     portfolio_lab_dir: Path = Path("artifacts/portfolio_lab")
+    portfolio_research_dir: Path = Path("artifacts/portfolio_research")
     portfolio_certification_dir: Path = Path("artifacts/portfolio_certification")
     portfolio_campaign_dir: Path = Path("artifacts/portfolio_campaign")
     pretrain_dir: Path = Path("artifacts/alphagpt_pretrain")
@@ -136,6 +137,7 @@ class DashboardConfig:
                 os.getenv("ASHARE_DASHBOARD_FACTOR_CERTIFICATION_CAMPAIGN_DIR") or "artifacts/factor_certification_campaign"
             ),
             portfolio_lab_dir=Path(os.getenv("ASHARE_DASHBOARD_PORTFOLIO_LAB_DIR") or "artifacts/portfolio_lab"),
+            portfolio_research_dir=Path(os.getenv("ASHARE_DASHBOARD_PORTFOLIO_RESEARCH_DIR") or "artifacts/portfolio_research"),
             portfolio_certification_dir=Path(os.getenv("ASHARE_DASHBOARD_PORTFOLIO_CERTIFICATION_DIR") or "artifacts/portfolio_certification"),
             portfolio_campaign_dir=Path(os.getenv("ASHARE_DASHBOARD_PORTFOLIO_CAMPAIGN_DIR") or "artifacts/portfolio_campaign"),
             pretrain_dir=Path(os.getenv("ASHARE_DASHBOARD_PRETRAIN_DIR") or "artifacts/alphagpt_pretrain"),

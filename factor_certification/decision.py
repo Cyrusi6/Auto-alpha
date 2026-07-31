@@ -26,7 +26,7 @@ def make_certification_decision(
         status = CertificationStatus.conditional
     else:
         status = CertificationStatus.certified
-    passed = status in {CertificationStatus.certified, CertificationStatus.conditional}
+    passed = status == CertificationStatus.certified
     remediation = [f"review_{name}" for name in reasons] if status == CertificationStatus.conditional else list(reasons)
     return FactorCertificationDecision(
         factor_id=scorecard.factor_id,

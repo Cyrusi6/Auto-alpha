@@ -86,10 +86,10 @@ def run_benchmark(
         _run_item("alpha_factory_full_small", lambda: _bench_alpha_factory(data_path, output_path, cache_path)),
         _run_item("validation_lab_small", lambda: _bench_validation_lab(data_path, output_path)),
         _run_item("factor_certification_small", lambda: _bench_factor_certification(data_path, output_path)),
-        _run_item("portfolio_policy_grid_small", lambda: _bench_portfolio_policy_grid(output_path)),
-        _run_item("portfolio_lab_small", lambda: _bench_portfolio_lab(data_path, output_path)),
-        _run_item("portfolio_certification_scorecard_small", lambda: _bench_portfolio_certification(data_path, output_path)),
-        _run_item("portfolio_backtest_stress_bundle_small", lambda: _bench_portfolio_lab(data_path, output_path / "portfolio_stress")),
+        _run_item("portfolio_policy_grid_small", lambda: _bench_portfolio_policy_grid(output_path), skip=True),
+        _run_item("portfolio_lab_small", lambda: _bench_portfolio_lab(data_path, output_path), skip=True),
+        _run_item("portfolio_certification_scorecard_small", lambda: _bench_portfolio_certification(data_path, output_path), skip=True),
+        _run_item("portfolio_backtest_stress_bundle_small", lambda: _bench_portfolio_lab(data_path, output_path / "portfolio_stress"), skip=True),
         _run_item("cpu_formula_batch_eval_baseline", lambda: _bench_formula_batch_eval(data_path, output_path / "cpu_baseline", cache_path)),
         _run_item("gpu_formula_batch_eval_single_device", lambda: _bench_formula_batch_eval(data_path, output_path / "gpu_single", cache_path), skip=not run_gpu or (skip_gpu_if_unavailable and not snapshot.cuda_available)),
         _run_item("gpu_formula_batch_eval_sharded", lambda: _bench_formula_batch_eval(data_path, output_path / "gpu_sharded", cache_path), skip=not run_gpu or (skip_gpu_if_unavailable and not snapshot.cuda_available)),
@@ -137,7 +137,7 @@ def run_benchmark(
         "portfolio_lab_total_seconds": item_map.get("portfolio_lab_small").wall_time_seconds if item_map.get("portfolio_lab_small") else 0.0,
         "certification_checks_per_second": item_map.get("portfolio_certification_scorecard_small").throughput_estimate if item_map.get("portfolio_certification_scorecard_small") else 0.0,
         "selected_policy_score": 0.0,
-        "skipped_portfolio_reason": "",
+        "skipped_portfolio_reason": "legacy_portfolio_lab_superseded_by_governed_portfolio_research_bundle",
     }
     result = BenchmarkResult(
         data_dir=str(data_path),

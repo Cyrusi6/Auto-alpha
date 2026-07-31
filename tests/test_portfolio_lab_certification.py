@@ -28,7 +28,7 @@ def _prepare_factor(tmp_path):
             operator_version="ashare_ops_v1",
             lookback_days=1,
             created_at="2026-06-28T00:00:00Z",
-            status="approved",
+            status="factor_certified",
             metrics={"score": 0.5},
             factor_type="composite",
             parent_factor_ids=["factor_component"],
@@ -114,9 +114,6 @@ def test_portfolio_lab_and_certification_cli(tmp_path, capsys):
                 str(tmp_path / "cert"),
                 "--policy-profile",
                 "sample_lenient_portfolio",
-                "--register-policy",
-                "--model-registry-dir",
-                str(tmp_path / "registry"),
                 "--pretty",
             ]
         )
@@ -125,6 +122,9 @@ def test_portfolio_lab_and_certification_cli(tmp_path, capsys):
     cert_payload = json.loads(capsys.readouterr().out)
 
     assert cert_payload["certification_status"] in {"certified", "conditional"}
-    assert cert_payload["model_version_id"]
+    assert cert_payload["model_version_id"] is None
     assert (tmp_path / "cert" / "certified_portfolio_policy.json").exists()
-    assert (tmp_path / "cert" / "portfolio_policy_activation_request.json").exists()
+    activation = json.loads((tmp_path / "cert" / "portfolio_policy_activation_request.json").read_text())
+    assert activation["status"] == "forbidden_until_independent_shadow_audit"
+    assert activation["paper_ready"] is False
+    assert activation["live_ready"] is False

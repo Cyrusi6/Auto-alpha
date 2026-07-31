@@ -36,9 +36,12 @@ def write_portfolio_certification_artifacts(
     activation_request = {
         "portfolio_policy_id": certified_policy.policy_id,
         "factor_id": decision.factor_id,
-        "status": "pending",
-        "requested_action": "activate_optimizer_policy",
+        "status": "forbidden_until_independent_shadow_audit",
+        "requested_action": "independent_shadow_audit",
         "certification_status": decision.status,
+        "shadow_only": True,
+        "paper_ready": False,
+        "live_ready": False,
     }
     paths = {
         "portfolio_certification_policy_path": root / "portfolio_certification_policy.json",

@@ -244,7 +244,7 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def _status_to_factor_status(status: str) -> str:
     if status == "certified":
-        return "certified"
+        return "factor_certified"
     if status == "conditional":
         return "conditional_candidate"
     if status == "rejected":

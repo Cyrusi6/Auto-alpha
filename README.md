@@ -44,6 +44,7 @@ Task 052-A adds governed historical-union repairs for `suspend_d`, `stock_st`, a
 - `risk_controls/`: Pre-trade risk limits, kill switch state, order gate artifacts, override approval hooks, and local audit logs.
 - `portfolio_optimizer/`: Deterministic long-only benchmark-aware portfolio optimizer and serializable portfolio policies.
 - `portfolio_lab/`: Portfolio policy grids, scenario trials, robustness ranking, and selected policy artifacts for certified factors.
+- `portfolio_research/`: The formal factor-certified combination path: train-only clustering/residualization/IC weighting, strict event-ledger walk-forward, multi-universe and benchmark validation, governed fee/capacity stress, and shadow-only output.
 - `portfolio_certification/`: Portfolio policy scorecards, certification decisions, certified policy packages, and optimizer-policy activation requests.
 - `portfolio_campaign_store/`: Batch portfolio campaign warehouse for certified factor pools, portfolio lab/certification item state, production candidate bundles, and optimizer policy activation queues.
 - `capacity_model/`: Local capacity, participation, and impact-cost estimates from amount, volume, turnover, and volatility.
@@ -463,7 +464,7 @@ uv run python -m certification_campaign_store.run_certification_campaign run \
   --pretty
 ```
 
-`portfolio_campaign_store/` takes `certified_factor_pool.jsonl` into portfolio policy trials and portfolio certification, then writes `production_candidate_bundle.jsonl` and `optimizer_policy_activation_queue.jsonl`. These artifacts are review inputs only. They do not activate a model or deploy trading logic; activation still requires approval, model registry, factor lifecycle, and production gates.
+`portfolio_campaign_store/` is a legacy artifact reader/planner. It accepts only exact `factor_certified` pool records and its consolidator always leaves production and optimizer activation queues empty. New combination research uses `portfolio_research` and can emit only a shadow-audit queue.
 
 ```bash
 uv run python -m portfolio_campaign_store.run_portfolio_campaign run \
@@ -512,41 +513,7 @@ uv run python -m factor_certification.run_certify run \
 
 Certification policy profiles are `sample_lenient_certification`, `research_standard`, and `production_strict`. Certification is a governance gate and review artifact; it does not guarantee returns. Large real-data validation should run against an immutable `data_lake` research freeze.
 
-Portfolio certification is a separate gate after factor certification. A certified factor answers whether the signal is acceptable for promotion; a certified portfolio policy answers whether optimizer settings, cost/capacity assumptions, settlement assumptions, risk constraints, and scenario robustness are acceptable for local paper deployment.
-
-```bash
-uv run python -m portfolio_lab.run_portfolio_lab run \
-  --data-dir /tmp/auto-alpha-demo/data \
-  --factor-store-dir /tmp/auto-alpha-demo/store \
-  --latest-approved \
-  --factor-type composite \
-  --output-dir /tmp/auto-alpha-demo/portfolio_lab \
-  --portfolio-methods risk_aware,equal_weight \
-  --risk-aversions 0.5,1.0 \
-  --turnover-penalties 0.05,0.1 \
-  --max-weight-values 0.05,0.10 \
-  --max-names-values 2,3 \
-  --top-n-values 2,3 \
-  --scenario-profile sample \
-  --pretty
-
-uv run python -m portfolio_certification.run_portfolio_certify run \
-  --factor-store-dir /tmp/auto-alpha-demo/store \
-  --latest-approved \
-  --factor-type composite \
-  --model-registry-dir /tmp/auto-alpha-demo/model_registry \
-  --output-dir /tmp/auto-alpha-demo/portfolio_certification \
-  --portfolio-lab-report-path /tmp/auto-alpha-demo/portfolio_lab/portfolio_lab_report.json \
-  --portfolio-robustness-report-path /tmp/auto-alpha-demo/portfolio_lab/portfolio_robustness_report.json \
-  --selected-portfolio-policy-path /tmp/auto-alpha-demo/portfolio_lab/selected_portfolio_policy.json \
-  --policy-profile sample_lenient_portfolio \
-  --register-policy \
-  --create-activation-approval \
-  --approval-store-dir /tmp/auto-alpha-demo/portfolio_policy_approvals \
-  --pretty
-```
-
-Approving the generated `portfolio_policy_activation` batch and running `portfolio_certification.run_portfolio_certify apply-approved-activation` activates an `optimizer_policy` in `model_registry/`. `backtest.run_backtest`, `strategy_manager.runner`, and `operations.run_daily` can then use `--active-optimizer-policy` and enforce `--require-certified-portfolio-policy`.
+The former `portfolio_lab` single-factor grid and `portfolio_certification` activation commands are retained only for historical artifact reading and focused legacy tests. They are not a production research path: `portfolio_lab` now rejects every status except exact `factor_certified`, and optimizer registration/activation commands fail closed until a separate independent shadow audit exists. Use the formal `portfolio_research` command documented below.
 
 Before using a real data token in production, run the data source smoke validator. It is offline by default and can use fake Tushare scenarios without network access:
 
@@ -1940,6 +1907,20 @@ Alpha Factory now performs a cheap PIT-safe proxy screen followed by governed fu
 ## One-shot sealed holdout (Task 056-E)
 
 `validation_red_team` freezes the complete candidate identity, research values/validity hashes, metrics, selection order, trial count, and selection-policy hash before any holdout payload is opened. A hash-chained capability grants exactly one candidate-bound future view to the Validation Red-Team principal; the same view cannot be reused for an adjusted formula or another pool. Rejected/data-blocked candidates are archived for a later holdout generation or shadow observation, and Alpha Factory rejects any configured path below a Red-Team feedback-firewall sentinel.
+
+## Factor-certified portfolio research
+
+Formal factor combination uses `portfolio_research`, not the legacy single-factor policy grid. The input is one validated, content-addressed bundle; bare factor stores, `latest-approved`, JSONL factor values, missing validity, embedded fee fallback, and single-universe evidence are rejected. Only exact `factor_certified` records are admitted.
+
+The locked production policy applies correlation clustering, within-cluster residualization, rolling train-only RankIC/ICIR weights, shrinkage, family/cluster/factor caps, and weight-change limits. Portfolio OOS evidence is generated by the strict next-open event ledger under baseline, 2× modeled cost, 50% lagged-volume, and extreme-volatility scenarios across at least two PIT universes and two governed benchmarks.
+
+```bash
+uv run python -m portfolio_research.run_portfolio_research \
+  --bundle-manifest /governed/portfolio_bundle/generations/<id>/portfolio_research_bundle_manifest.json \
+  --output-dir /governed/portfolio_research/task056f
+```
+
+A successful result is only `shadow_candidate`. The generated shadow queue requires an independent audit; paper and live readiness remain false. See `docs/TASK_056_F_FACTOR_PORTFOLIO_RESEARCH.md`.
 
 Holdout thresholds are locked per universe, holding period, neutralization, and rebalance profile. Results never feed search and do not by themselves support certification. The current governed 2025–2026 partition is already historically observed and not untouched, so the real preflight is blocked and no holdout capability or evaluation was created. See `docs/TASK_056_E_SEALED_HOLDOUT.md`.
 
