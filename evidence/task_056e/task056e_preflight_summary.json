@@ -1,0 +1,25 @@
+{
+  "artifact_type": "task056e_preflight_summary",
+  "blockers": [
+    "sealed_period_already_observed",
+    "sealed_period_not_untouched",
+    "candidate_pool_not_frozen"
+  ],
+  "candidate_pool_frozen": false,
+  "canonical_freeze_content_hash": "125cb21b9efdd7c6f0ec559b80c2fb45be8e97a6251e7456919c0b1670143c0a",
+  "canonical_freeze_manifest_sha256": "8b5ee1635096df80c19af101cf65ce8050ab669f29d32db8f824292b39b088df",
+  "certification_ready": false,
+  "content_hash": "159b1176c47b19144f3e0ddf3375fc803804489797b02086153fe8fca875990d",
+  "holdout_capability_issuable": false,
+  "holdout_evaluation_executed": false,
+  "holdout_market_values_read": false,
+  "network_request_count": 0,
+  "portfolio_ready": false,
+  "preflight_manifest_sha256": "5408b83cc28d8caf3b02d1dbaa2c50b4878ab20534c19d6a3601af7c5ba9758d",
+  "producer": "validation_red_team",
+  "schema_version": "1.0",
+  "sealed_period": "20250101-20260630",
+  "sealed_period_historically_observed": true,
+  "sealed_period_untouched": false,
+  "status": "blocked_no_future_untouched_holdout"
+}

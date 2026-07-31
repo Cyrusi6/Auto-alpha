@@ -132,6 +132,7 @@ packages = [
     "validation_campaign_store",
     "live_readiness",
     "validation_lab",
+    "validation_red_team",
 ]
 
 [tool.hatch.build.targets.sdist]
@@ -233,6 +234,7 @@ include = [
     "validation_campaign_store",
     "live_readiness",
     "validation_lab",
+    "validation_red_team",
     "README.md",
     "CATREADME.md",
     "FRAMEWORK_UPDATE.md",

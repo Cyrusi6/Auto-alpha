@@ -374,6 +374,24 @@ class AshareDashboardService:
     def load_alpha_shortlist(self) -> pd.DataFrame:
         return self._read_first_jsonl(self._alpha_artifact_candidates("alpha_shortlist.jsonl"))
 
+    def load_sealed_holdout_candidate_pool(self) -> dict[str, Any]:
+        return self._read_first_json(self._sealed_holdout_artifact_candidates("candidate_pool_manifest.json"))
+
+    def load_sealed_holdout_policy(self) -> dict[str, Any]:
+        return self._read_first_json(self._sealed_holdout_artifact_candidates("sealed_holdout_policy.json"))
+
+    def load_sealed_holdout_preflight(self) -> dict[str, Any]:
+        return self._read_first_json(self._sealed_holdout_artifact_candidates("sealed_holdout_preflight.json"))
+
+    def load_sealed_holdout_result_manifest(self) -> dict[str, Any]:
+        return self._read_first_json(self._sealed_holdout_artifact_candidates("sealed_holdout_result_manifest.json"))
+
+    def load_sealed_holdout_candidate_results(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._sealed_holdout_artifact_candidates("sealed_holdout_candidate_results.jsonl"))
+
+    def load_sealed_holdout_candidate_archive(self) -> pd.DataFrame:
+        return self._read_first_jsonl(self._sealed_holdout_artifact_candidates("candidate_holdout_archive.jsonl"))
+
     def load_alpha_rejected(self) -> pd.DataFrame:
         return self._read_first_jsonl(self._alpha_artifact_candidates("alpha_rejected.jsonl"))
 
@@ -2651,6 +2669,18 @@ class AshareDashboardService:
             root / "suite" / "validation_campaign_store" / filename,
             root / "experiment" / filename,
         ]
+
+    def _sealed_holdout_artifact_candidates(self, filename: str) -> list[Path]:
+        root = self.config.report_dir.parent
+        candidates = [
+            self.config.validation_red_team_dir / filename,
+            root / "validation_red_team" / filename,
+            root / "sealed_holdout" / filename,
+        ]
+        for search_root in (self.config.validation_red_team_dir, root / "validation_red_team"):
+            if search_root.is_dir():
+                candidates.extend(sorted(search_root.glob(f"**/{filename}"), reverse=True))
+        return list(dict.fromkeys(candidates))
 
     def _task055g_artifact_candidates(self, filename: str) -> list[Path]:
         root = self.config.report_dir.parent

@@ -1825,6 +1825,58 @@ def check_alpha_shortlist(path: str | Path | None) -> tuple[dict[str, Any], list
     return {"exists": bool(rows), "alpha_shortlist_count": len(rows), "alpha_best_score": best}, []
 
 
+def check_sealed_holdout_validation(
+    candidate_pool_path: str | Path | None,
+    result_manifest_path: str | Path | None = None,
+    preflight_path: str | Path | None = None,
+) -> tuple[dict[str, Any], list[MonitoringAlert]]:
+    candidate = _read_json(Path(candidate_pool_path)) if candidate_pool_path else {}
+    result = _read_json(Path(result_manifest_path)) if result_manifest_path else {}
+    preflight = _read_json(Path(preflight_path)) if preflight_path else {}
+    alerts: list[MonitoringAlert] = []
+    if preflight and preflight.get("status") == "blocked":
+        alerts.append(
+            MonitoringAlert(
+                "warning",
+                "sealed_holdout_preflight_blocked",
+                "sealed holdout is unavailable or contaminated",
+                {"blockers": list(preflight.get("blockers") or [])},
+            )
+        )
+    if result:
+        candidate_count = int(result.get("candidate_count") or 0)
+        terminal_count = int(result.get("terminal_count") or 0)
+        if candidate_count != terminal_count:
+            alerts.append(
+                MonitoringAlert(
+                    "error",
+                    "sealed_holdout_terminal_count_mismatch",
+                    "sealed holdout result is incomplete",
+                    {"candidate_count": candidate_count, "terminal_count": terminal_count},
+                )
+            )
+        if result.get("feedback_to_search_forbidden") is not True:
+            alerts.append(
+                MonitoringAlert(
+                    "error",
+                    "sealed_holdout_feedback_boundary_missing",
+                    "sealed holdout result is not isolated from Alpha Factory",
+                )
+            )
+    status_counts = result.get("status_counts") if isinstance(result.get("status_counts"), dict) else {}
+    return {
+        "exists": bool(candidate or result or preflight),
+        "candidate_pool_frozen": candidate.get("status") == "frozen_before_holdout",
+        "sealed_holdout_preflight_status": str(preflight.get("status") or ""),
+        "sealed_holdout_capability_issuable": bool(preflight.get("holdout_capability_issuable", False)),
+        "sealed_holdout_candidate_count": int(result.get("candidate_count", candidate.get("candidate_count", 0)) or 0),
+        "sealed_holdout_terminal_count": int(result.get("terminal_count", 0) or 0),
+        "sealed_holdout_status_counts": status_counts,
+        "sealed_holdout_feedback_forbidden": bool(result.get("feedback_to_search_forbidden", False)),
+        "sealed_holdout_certification_ready": False,
+    }, alerts
+
+
 def check_alpha_experiment_store(report_path: str | Path | None, registry_path: str | Path | None = None) -> tuple[dict[str, Any], list[MonitoringAlert]]:
     report = _read_json(Path(report_path)) if report_path else {}
     registry = _read_json(Path(registry_path)) if registry_path else {}

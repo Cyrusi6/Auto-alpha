@@ -7,6 +7,7 @@ from .checks import (
     check_paper_account,
     check_quality_report,
     check_risk_report,
+    check_sealed_holdout_validation,
 )
 from .models import MonitoringAlert, MonitoringReport
 from .report import build_monitoring_report, write_monitoring_report
@@ -21,5 +22,6 @@ __all__ = [
     "check_paper_account",
     "check_quality_report",
     "check_risk_report",
+    "check_sealed_holdout_validation",
     "write_monitoring_report",
 ]

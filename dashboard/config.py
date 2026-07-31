@@ -54,6 +54,7 @@ class DashboardConfig:
     alpha_experiment_store_dir: Path = Path("artifacts/alpha_experiment_store")
     validation_lab_dir: Path = Path("artifacts/validation_lab")
     validation_campaign_store_dir: Path = Path("artifacts/validation_campaign_store")
+    validation_red_team_dir: Path = Path("artifacts/validation_red_team")
     factor_certification_dir: Path = Path("artifacts/factor_certification")
     factor_certification_campaign_dir: Path = Path("artifacts/factor_certification_campaign")
     portfolio_lab_dir: Path = Path("artifacts/portfolio_lab")
@@ -126,6 +127,9 @@ class DashboardConfig:
             validation_lab_dir=Path(os.getenv("ASHARE_DASHBOARD_VALIDATION_LAB_DIR") or "artifacts/validation_lab"),
             validation_campaign_store_dir=Path(
                 os.getenv("ASHARE_DASHBOARD_VALIDATION_CAMPAIGN_STORE_DIR") or "artifacts/validation_campaign_store"
+            ),
+            validation_red_team_dir=Path(
+                os.getenv("ASHARE_DASHBOARD_VALIDATION_RED_TEAM_DIR") or "artifacts/validation_red_team"
             ),
             factor_certification_dir=Path(os.getenv("ASHARE_DASHBOARD_FACTOR_CERTIFICATION_DIR") or "artifacts/factor_certification"),
             factor_certification_campaign_dir=Path(

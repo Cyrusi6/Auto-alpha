@@ -578,4 +578,10 @@ Task 055-KR2 用 descriptor-first lease 替换 pathname/inode-only 锁：持续�
 
 Alpha Factory 现在先执行便宜的 PIT proxy，再只对 proxy shortlist 执行正式 full research。代理层记录中性化 RankIC、稳定性、覆盖率、换手代理、复杂度、递归 lookback、已有因子相关性、family novelty 和多 universe 方向一致性；完整层使用固定 purged rolling walk-forward、lookback+label-horizon embargo、市场状态、placebo、时间/参数敏感性、成本容量压力、风格暴露、BH/Holm correction 和完整 trial ledger。
 
+## Task 056-E：一次性 Sealed Holdout
+
+`validation_red_team/` 在读取 holdout payload 前冻结 `candidate_pool_manifest.json`，其中绑定公式和值/有效性哈希、研究指标、选择顺序、trial 数和选择政策。只有 `validation_red_team` principal 能取得一次性、候选绑定的 capability；同一 view 禁止换池或改公式重用。终态仅为 `sealed_holdout_passed`、`sealed_holdout_rejected`、`data_blocked`，失败项归档到下一代 holdout 或 shadow observation。Alpha Factory 在创建输出前拒绝所有位于 Red-Team feedback sentinel 下的路径。
+
+门槛按 universe、持有期、中性化和再平衡频率分别校准，不能把固定 IC/ICIR 套用到全部因子。当前 2025–2026 数据已经被历史流程观察且 `untouched=false`，真实预检因此 fail closed，未发 capability、未执行 holdout，也未进入 certification 或 portfolio。
+
 评分改为候选 cohort 内的无量纲多目标标准化，原始 spread 仅保留诊断，不再与 ICIR、monotonicity 和 turnover 直接相加。只有显式正样本外证据才可进入 `validation_candidate`；缺失、空窗或失败均 fail closed。当前 Task 056-C 的 `alpha_search_authorized=false` 仍阻断真实搜索，因此本任务不启动新 campaign 或 GPU 作业。

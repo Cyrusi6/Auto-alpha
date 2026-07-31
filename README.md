@@ -1937,4 +1937,10 @@ Production research now requires the content-addressed freeze and physically bou
 
 Alpha Factory now performs a cheap PIT-safe proxy screen followed by governed full research only for the proxy shortlist. Proxy and full-stage ranking use cohort-normalized, dimensionless objectives instead of directly adding ICIR, raw spread, monotonicity, and turnover. Full research fixes purged rolling walk-forward policy, label-aware embargo, regime/placebo/sensitivity diagnostics, exposure checks, modeled cost/capacity stress, multiple-testing correction, and an exact trial ledger. Only explicit positive OOS evidence can create a `validation_candidate`. See `docs/TASK_056_D_TWO_STAGE_ALPHA_FACTORY.md`.
 
+## One-shot sealed holdout (Task 056-E)
+
+`validation_red_team` freezes the complete candidate identity, research values/validity hashes, metrics, selection order, trial count, and selection-policy hash before any holdout payload is opened. A hash-chained capability grants exactly one candidate-bound future view to the Validation Red-Team principal; the same view cannot be reused for an adjusted formula or another pool. Rejected/data-blocked candidates are archived for a later holdout generation or shadow observation, and Alpha Factory rejects any configured path below a Red-Team feedback-firewall sentinel.
+
+Holdout thresholds are locked per universe, holding period, neutralization, and rebalance profile. Results never feed search and do not by themselves support certification. The current governed 2025–2026 partition is already historically observed and not untouched, so the real preflight is blocked and no holdout capability or evaluation was created. See `docs/TASK_056_E_SEALED_HOLDOUT.md`.
+
 The current Task 056-C canonical freeze still has `alpha_search_authorized=false`; production search therefore fails closed and no real discovery campaign is launched by this task.

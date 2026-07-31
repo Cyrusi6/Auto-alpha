@@ -29,6 +29,7 @@ from feature_promotion import load_promotion_gate
 from .diversity import select_shortlist, write_diversity_outputs
 from .generators import generate_alpha_candidates
 from .full_research import run_full_research
+from .holdout_firewall import assert_no_holdout_feedback_paths
 from .models import AlphaCampaignConfig, AlphaCampaignManifest, AlphaFactoryReport
 from .novelty import score_novelty
 from .proxy_eval import run_proxy_eval
@@ -43,6 +44,7 @@ from .trial_ledger import write_trial_ledger
 class AlphaFactoryRunner:
     def __init__(self, config: AlphaCampaignConfig):
         _validate_production_research_config(config)
+        assert_no_holdout_feedback_paths(config)
         self.config = config
         self.output_dir = Path(config.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)

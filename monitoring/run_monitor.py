@@ -156,6 +156,7 @@ from .checks import (
     check_placebo_tests,
     check_regime_validation,
     check_sensitivity_validation,
+    check_sealed_holdout_validation,
     check_stress_backtest_validation,
     check_task054c_engineering_baseline,
     check_task055a_simulator_baseline,
@@ -325,6 +326,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--alpha-proxy-eval-report-path")
     parser.add_argument("--alpha-diversity-report-path")
     parser.add_argument("--alpha-shortlist-path")
+    parser.add_argument("--sealed-holdout-candidate-pool-path")
+    parser.add_argument("--sealed-holdout-result-manifest-path")
+    parser.add_argument("--sealed-holdout-preflight-path")
     parser.add_argument("--feature-set-manifest-path")
     parser.add_argument("--feature-coverage-report-path")
     parser.add_argument("--feature-family-readiness-path")
@@ -551,6 +555,14 @@ def main(argv: list[str] | None = None) -> int:
         ("alpha_proxy_eval", lambda: check_alpha_proxy_eval(args.alpha_proxy_eval_report_path)),
         ("alpha_diversity", lambda: check_alpha_diversity(args.alpha_diversity_report_path)),
         ("alpha_shortlist", lambda: check_alpha_shortlist(args.alpha_shortlist_path)),
+        (
+            "sealed_holdout_validation",
+            lambda: check_sealed_holdout_validation(
+                args.sealed_holdout_candidate_pool_path,
+                args.sealed_holdout_result_manifest_path,
+                args.sealed_holdout_preflight_path,
+            ),
+        ),
         (
             "alpha_experiment_store",
             lambda: check_alpha_experiment_store(args.alpha_experiment_store_report_path, args.alpha_experiment_registry_path),

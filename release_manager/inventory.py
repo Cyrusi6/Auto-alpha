@@ -86,6 +86,7 @@ PLATFORM_MODULES = [
     "universe",
     "validation_campaign_store",
     "validation_lab",
+    "validation_red_team",
     "live_readiness",
 ]
 

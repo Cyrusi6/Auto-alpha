@@ -2313,6 +2313,120 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         ],
         ["task056c_canonical_freeze_summary.json"],
     ),
+    "candidate_pool_manifest": _definition(
+        "candidate_pool_manifest",
+        [
+            "status", "campaign_id", "candidate_count", "formula_hashes", "factor_value_hashes",
+            "research_metrics", "selection_order", "trial_count", "selection_policy_hash",
+            "selection_policy_id", "candidate_identity_root", "candidates", "source_hashes",
+            "source_catalog", "holdout_accessed", "candidate_mutation_forbidden",
+            "holdout_feedback_to_search_forbidden", "content_hash", "generation_id",
+        ],
+        ["candidate_pool_manifest.json"],
+    ),
+    "sealed_holdout_policy": _definition(
+        "sealed_holdout_policy",
+        [
+            "status", "policy_id", "policy_hash", "policy", "calibration_key", "parameters_locked",
+            "one_shot", "certification_supported", "content_hash", "generation_id",
+        ],
+        ["sealed_holdout_policy.json"],
+    ),
+    "sealed_holdout_view": _definition(
+        "sealed_holdout_view",
+        [
+            "status", "view_id", "evidence_level", "untouched", "historically_observed",
+            "selection_data_reused", "candidate_pool_root", "observation_boundary_seal_hash",
+            "freeze_content_hash", "holdout_start_date", "holdout_end_date", "max_target_endpoint_date",
+            "label_horizon", "profile", "windows", "artifact_catalog", "stock_axis_hash",
+            "date_axis_hash", "feature_axis_hash", "search_principal_access_count",
+            "feedback_to_search_forbidden", "pit_validation_status", "leakage_blocker_count",
+            "certified_factor_count", "content_hash",
+        ],
+        ["sealed_holdout_view_manifest.json"],
+    ),
+    "sealed_holdout_capability": _definition(
+        "sealed_holdout_capability",
+        [
+            "status", "capability_id", "principal", "allowed_operation", "max_consumptions",
+            "candidate_pool_manifest_path", "candidate_pool_root", "holdout_view_manifest_path",
+            "holdout_view_root", "holdout_policy_path", "holdout_policy_hash", "policy_manifest_sha256",
+            "red_team_output_root", "registry_root", "search_agent_capability",
+            "feedback_to_search_forbidden", "formula_mutation_after_holdout_forbidden",
+            "failed_formula_next_evidence", "content_hash",
+        ],
+        ["holdout_capability.json"],
+    ),
+    "holdout_feedback_firewall": _definition(
+        "holdout_feedback_firewall",
+        [
+            "status", "candidate_pool_root", "holdout_view_root", "feedback_to_search_forbidden",
+            "search_agent_readable",
+        ],
+        ["holdout_feedback_forbidden.json"],
+    ),
+    "sealed_holdout_candidate_result": _definition(
+        "sealed_holdout_candidate_result",
+        [
+            "selection_rank", "alpha_candidate_id", "factor_id", "formula_hash", "formula_tokens",
+            "formula_names", "holdout_policy_hash", "candidate_pool_root", "holdout_view_root",
+            "evidence_level", "certification_supported", "status", "gate_passed", "gate_reasons",
+            "metrics", "failed_formula_reuse_with_same_holdout_forbidden", "next_eligible_evidence",
+        ],
+        ["sealed_holdout_candidate_results.jsonl"],
+        kind="jsonl",
+        optional=[
+            "artifact_type", "schema_version", "producer", "created_at", "artifact_metadata",
+            "windows", "regime_diagnostics", "universe_diagnostics", "placebo", "gate_checks",
+        ],
+        allow_empty=False,
+    ),
+    "sealed_holdout_candidate_archive": _definition(
+        "sealed_holdout_candidate_archive",
+        [
+            "alpha_candidate_id", "factor_id", "formula_hash", "status", "reason_codes",
+            "same_holdout_formula_reuse_forbidden", "next_eligible_evidence",
+        ],
+        ["candidate_holdout_archive.jsonl"],
+        kind="jsonl",
+        allow_empty=True,
+    ),
+    "sealed_holdout_result_manifest": _definition(
+        "sealed_holdout_result_manifest",
+        [
+            "status", "result_root", "candidate_pool_root", "candidate_identity_root", "formula_hashes",
+            "holdout_view_root", "holdout_policy_hash", "capability_id", "capability_registry_root",
+            "capability_manifest_sha256", "capability_ledger_root_at_start", "candidate_count",
+            "terminal_count", "status_counts", "candidate_results_sha256", "candidate_archive_sha256",
+            "candidate_results_semantic_root", "candidate_archive_semantic_root", "result_visibility",
+            "feedback_to_search_forbidden", "search_feedback_artifact_count", "selection_order_immutable",
+            "formula_mutation_count", "holdout_consumption_count", "certification_ready", "portfolio_ready",
+            "content_hash",
+        ],
+        ["sealed_holdout_result_manifest.json"],
+    ),
+    "sealed_holdout_preflight": _definition(
+        "sealed_holdout_preflight",
+        [
+            "status", "canonical_freeze_content_hash", "canonical_freeze_manifest_sha256",
+            "candidate_pool_root", "candidate_pool_frozen", "sealed_period",
+            "sealed_period_historically_observed", "sealed_period_untouched", "holdout_capability_issuable",
+            "holdout_market_values_read", "holdout_evaluation_executed", "blockers",
+            "certification_ready", "portfolio_ready", "content_hash", "generation_id",
+        ],
+        ["sealed_holdout_preflight.json"],
+    ),
+    "task056e_preflight_summary": _definition(
+        "task056e_preflight_summary",
+        [
+            "status", "canonical_freeze_content_hash", "canonical_freeze_manifest_sha256",
+            "preflight_manifest_sha256", "sealed_period", "sealed_period_historically_observed",
+            "sealed_period_untouched", "candidate_pool_frozen", "holdout_capability_issuable",
+            "holdout_market_values_read", "holdout_evaluation_executed", "network_request_count",
+            "blockers", "certification_ready", "portfolio_ready", "content_hash",
+        ],
+        ["task056e_preflight_summary.json"],
+    ),
 }
 
 
