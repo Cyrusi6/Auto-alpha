@@ -1,0 +1,1 @@
+"""Auto-alpha data package."""

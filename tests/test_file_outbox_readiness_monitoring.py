@@ -4,7 +4,7 @@ from pathlib import Path
 from artifact_schema.run_validate import main as validate_main
 from broker_file_gateway.run_gateway import main as gateway_main
 from broker_mapping_certification.run_mapping_certify import main as certify_main
-from live_readiness.run_readiness import main as readiness_main
+from auto_alpha.platform.governance.readiness.run_readiness import main as readiness_main
 from monitoring.run_monitor import main as monitor_main
 from operator_handoff.run_handoff import main as handoff_main
 

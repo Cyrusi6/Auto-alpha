@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from live_readiness.run_readiness import main as readiness_main
+from auto_alpha.platform.governance.readiness.run_readiness import main as readiness_main
 from shadow_lab.run_shadow_lab import main as shadow_lab_main
 
 

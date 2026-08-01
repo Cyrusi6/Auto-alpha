@@ -21,7 +21,7 @@ from data_pipeline.ashare.request_normalization import (
 from data_pipeline.ashare.providers.tushare import TushareAShareDataProvider
 from data_pipeline.ashare.providers.tushare_client import TushareSchemaError, parse_tushare_response_payload
 from data_pipeline.ashare.request_identity import TushareRequestIdentity
-from live_readiness.evidence_hardening.transport import CANONICAL_ORIGIN, transport_identity
+from auto_alpha.platform.network_authority._internal.evidence.transport import CANONICAL_ORIGIN, transport_identity
 
 
 class GenericClient:

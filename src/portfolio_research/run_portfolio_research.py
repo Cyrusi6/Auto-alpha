@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from live_readiness.production_hardening.fees import FeeScheduleCalculator
+from auto_alpha.platform.network_authority._internal.validation.fees import FeeScheduleCalculator
 
 from .bundle import load_portfolio_research_bundle
 from .contracts import DATA_BLOCKED_STATUS, PortfolioResearchPolicy

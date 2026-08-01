@@ -632,7 +632,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "live_readiness.run_readiness",
+                "auto_alpha.platform.governance.readiness.run_readiness",
                 "smoke",
                 "--policy-profile",
                 "sample_lenient_readiness",
