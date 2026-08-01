@@ -13,13 +13,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from data_pipeline.ashare.cache import TushareResponseCache
-from data_pipeline.ashare.config import AShareDataConfig
-from data_pipeline.ashare.providers.tushare_client import TUSHARE_PROVIDER_API_VERSION, TushareHttpClient
-from data_pipeline.ashare.request_normalization import (
+from auto_alpha.data.ingestion.pipeline.ashare.cache import TushareResponseCache
+from auto_alpha.data.ingestion.pipeline.ashare.config import AShareDataConfig
+from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare_client import TUSHARE_PROVIDER_API_VERSION, TushareHttpClient
+from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import (
     tushare_code_semantic_hash,
 )
-from data_pipeline.ashare.security import CredentialStatus, tls_preflight
+from auto_alpha.data.ingestion.pipeline.ashare.security import CredentialStatus, tls_preflight
 
 from .causal import validate_causal_frontier
 from .contracts import (

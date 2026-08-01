@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from data_pipeline.ashare.request_normalization import tushare_request_fingerprint
+from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import tushare_request_fingerprint
 
 
 BASELINE_COMMIT = "cc44926dda583652c0dad260bacb62a75550cdda"

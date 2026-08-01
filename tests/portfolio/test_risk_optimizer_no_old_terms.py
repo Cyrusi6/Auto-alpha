@@ -1,0 +1,37 @@
+from pathlib import Path
+
+
+TARGETS = [
+    Path("src/auto_alpha/portfolio/risk/model"),
+        Path("src/auto_alpha/portfolio/construction/optimizer"),
+    Path("src/auto_alpha/portfolio/simulation/backtest/run_backtest.py"),
+    Path("src/auto_alpha/portfolio/simulation/backtest/simulator.py"),
+    Path("src/auto_alpha/execution/trading/strategy/runner.py"),
+]
+
+FORBIDDEN_TERMS = [
+    "solana",
+    "jupiter",
+    "meme",
+    "crypto",
+    "birdeye",
+    "dexscreener",
+    "wallet",
+    "lamports",
+    "mint",
+    "swap",
+    "private_key",
+    "fdv",
+]
+
+
+def test_risk_and_optimizer_code_excludes_old_terms():
+    chunks = []
+    for target in TARGETS:
+        if target.is_dir():
+            chunks.extend(path.read_text(encoding="utf-8").lower() for path in target.rglob("*.py"))
+        else:
+            chunks.append(target.read_text(encoding="utf-8").lower())
+    payload = "\n".join(chunks)
+    for forbidden in FORBIDDEN_TERMS:
+        assert forbidden not in payload

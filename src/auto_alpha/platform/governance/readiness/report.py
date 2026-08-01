@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from artifact_schema.writer import write_json_artifact, write_jsonl_artifact
+from auto_alpha.platform.artifacts.schema.writer import write_json_artifact, write_jsonl_artifact
 
 from .models import LiveReadinessDecision, LiveReadinessPolicy, LiveReadinessScorecard
 

@@ -8,20 +8,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from data_pipeline.ashare.cache import TushareResponseCache
-from data_pipeline.ashare.config import AShareDataConfig
-from data_pipeline.ashare.network_capability import _issue_task055j_execution_capability
-from data_pipeline.ashare.providers.tushare_client import (
+from auto_alpha._paths import repository_root as resolve_repository_root
+from auto_alpha.data.ingestion.pipeline.ashare.cache import TushareResponseCache
+from auto_alpha.data.ingestion.pipeline.ashare.config import AShareDataConfig
+from auto_alpha.data.ingestion.pipeline.ashare.network_capability import _issue_task055j_execution_capability
+from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare_client import (
     TUSHARE_PROVIDER_API_VERSION,
     TushareHttpClient,
     TushareResponseEnvelope,
 )
-from data_pipeline.ashare.request_normalization import (
+from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import (
     stable_json_hash,
     tushare_code_semantic_hash,
     tushare_request_fingerprint,
 )
-from data_pipeline.ashare.security import tls_preflight
+from auto_alpha.data.ingestion.pipeline.ashare.security import tls_preflight
 from auto_alpha.platform.network_authority._internal.evidence.network import ENDPOINT_ROW_CAPS, _validate_records
 from auto_alpha.platform.network_authority._internal.evidence.transport import CANONICAL_ORIGIN, evidence_use_identity, transport_identity
 from auto_alpha.platform.network_authority._internal.authorization.io import atomic_json, canonical_hash, publish_generation, read_json, sha256_file, validate_generation
@@ -137,7 +138,7 @@ def validate_canary_acceptance(
     seal = validate_final_execution_seal(
         final_execution_seal,
         reviewed_hash=reviewed_final_execution_seal_hash,
-        repository_root=Path(__file__).resolve().parents[3],
+        repository_root=resolve_repository_root(__file__),
         require_ready=True,
         require_pristine=False,
     )
@@ -971,7 +972,7 @@ def _validate_seal(
     return validate_final_execution_seal(
         path,
         reviewed_hash=reviewed_hash,
-        repository_root=Path(__file__).resolve().parents[3],
+        repository_root=resolve_repository_root(__file__),
         require_ready=True,
         require_pristine=require_pristine,
     )

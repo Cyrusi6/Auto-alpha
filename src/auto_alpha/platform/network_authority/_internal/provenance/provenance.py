@@ -16,7 +16,7 @@ from typing import Any, Iterable, Mapping
 
 import numpy as np
 
-from data_pipeline.ashare.request_normalization import stable_json_hash
+from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import stable_json_hash
 from auto_alpha.platform.network_authority._internal.replay.evidence import sha256_file
 
 from .contracts import (

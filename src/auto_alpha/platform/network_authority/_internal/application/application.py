@@ -11,25 +11,25 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from data_lake.task052_freeze import (
+from auto_alpha.data.lake.store.task052_freeze import (
     create_task052_governed_freeze,
     resolve_task052_governed_freeze_manifest,
     validate_task052_governed_freeze,
 )
-from factor_store.storage import LocalFactorStore
-from matrix_store.strict_engineering import (
+from auto_alpha.research.factors.store.storage import LocalFactorStore
+from auto_alpha.data.matrix.store.strict_engineering import (
     StrictEngineeringPITMatrixBuilder,
     StrictEngineeringPITMatrixConfig,
 )
-from research_firewall import ResearchEligibilityContract
-from feature_factory.engineering_replay.orchestrator import build_v3_tensor_generation
-from research_firewall.engineering_closure.factor_store import validate_normalized_replay_store
+from auto_alpha.validation.firewall.core import ResearchEligibilityContract
+from auto_alpha.research.features.factory.engineering_replay.orchestrator import build_v3_tensor_generation
+from auto_alpha.validation.firewall.core.engineering_closure.factor_store import validate_normalized_replay_store
 from auto_alpha.platform.network_authority._internal.simulation.policy import PREREGISTERED_SCENARIOS
 from auto_alpha.platform.network_authority._internal.simulation.simulator import EventLedgerSimulator, SimulationDataBlocker
 from auto_alpha.platform.network_authority._internal.evidence.transport import evidence_use_identity, transport_identity
 from auto_alpha.platform.network_authority._internal.authorization.fee import FeeProjectionCalculator
 from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, publish_generation, read_json, sha256_file, validate_generation
-from validation_lab.materialization import FactorMaterializer, MaterializationInputs
+from auto_alpha.validation.lab.engine.materialization import FactorMaterializer, MaterializationInputs
 
 from .contracts import CANARY, MAX_DATE, RESPONSE_APPLICATION_SCHEMA
 from .executor import (

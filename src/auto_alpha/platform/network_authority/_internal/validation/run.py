@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from auto_alpha._paths import repository_root
 from .access import (
     AccessBroker,
     build_production_access_plan,
@@ -1163,7 +1164,7 @@ def _atomic_json(path: Path, payload: Mapping[str, Any]) -> None:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Task 055-G production offline/official-fee DAG")
-    parser.add_argument("--repository-root", default=str(Path(__file__).resolve().parents[3]))
+    parser.add_argument("--repository-root", default=str(repository_root(__file__)))
     parser.add_argument("--governed-root", required=True)
     parser.add_argument("--output-root", required=True)
     parser.add_argument("--allow-official-fee-network", action="store_true")

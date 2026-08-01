@@ -138,7 +138,7 @@ def _build_secure_executor(
     loads the credential once and passes the same object to every request.
     """
 
-    from data_pipeline.ashare.security import tls_preflight
+    from auto_alpha.data.ingestion.pipeline.ashare.security import tls_preflight
     from auto_alpha.platform.network_authority._internal.evidence.network import _execute_one, load_credential_once
 
     tls = dict(tls_preflight())

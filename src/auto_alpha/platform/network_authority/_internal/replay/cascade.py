@@ -4,7 +4,7 @@ import json, os, shutil, tempfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Mapping
-from data_pipeline.ashare.request_normalization import normalize_tushare_request, stable_json_hash
+from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import normalize_tushare_request, stable_json_hash
 from .evidence import MAX_DATE, canonical_hash, sha256_file, validate_truth_table
 
 SCHEMA="task055c_cascade_request_plan_v1"
@@ -72,9 +72,9 @@ def execute_transport_stage(*,plan_manifest:str|Path,output_root:str|Path,stage:
     """Execute one immutable cascade stage, scanning every item before spending budget."""
     raise CascadeError("superseded_by_task055k_transport_broker")
     import os
-    from data_pipeline.ashare.config import AShareDataConfig
-    from data_pipeline.ashare.providers.tushare_client import TushareHttpClient
-    from data_pipeline.ashare.rate_limit import RequestRateLimitConfig, SimpleRateLimiter
+    from auto_alpha.data.ingestion.pipeline.ashare.config import AShareDataConfig
+    from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare_client import TushareHttpClient
+    from auto_alpha.data.ingestion.pipeline.ashare.rate_limit import RequestRateLimitConfig, SimpleRateLimiter
     plan=json.loads(Path(plan_manifest).read_text()); selected=[r for r in plan["requests"] if r["stage"]==stage]
     if request_budget<0 or request_budget>MAX_TRANSPORT_MISSES: raise CascadeError("execution_budget_invalid")
     root=Path(output_root); response_root=root/"responses"; response_root.mkdir(parents=True,exist_ok=True)

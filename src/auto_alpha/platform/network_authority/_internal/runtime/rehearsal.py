@@ -10,11 +10,11 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from data_pipeline.ashare.providers.tushare_client import (
+from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare_client import (
     TUSHARE_PROVIDER_API_VERSION,
     TushareResponseEnvelope,
 )
-from data_pipeline.ashare.request_normalization import stable_json_hash, tushare_code_semantic_hash
+from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import stable_json_hash, tushare_code_semantic_hash
 from auto_alpha.platform.network_authority._internal.evidence.transport import CANONICAL_ORIGIN
 from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, publish_generation, read_json, sha256_file, validate_generation
 
@@ -437,19 +437,19 @@ def _concurrency_worker(seal_path: str, seal_hash: str, calls: Path, queue: Any)
 
 
 def _old_entrypoint_case() -> dict[str, Any]:
-    from data_backfill.run_backfill import main as data_backfill_main
-    from data_pipeline.run_pipeline import main as data_pipeline_main
-    from data_pipeline.ashare.config import AShareDataConfig
-    from data_pipeline.ashare.providers.tushare_client import TushareHttpClient, TushareNetworkError
-    from backfill_repair.governed_replay.backfill import GovernedBackfillConfig, run_governed_backfill
+    from auto_alpha.data.ingestion.backfill.run_backfill import main as data_backfill_main
+    from auto_alpha.data.ingestion.pipeline.run_pipeline import main as data_pipeline_main
+    from auto_alpha.data.ingestion.pipeline.ashare.config import AShareDataConfig
+    from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare_client import TushareHttpClient, TushareNetworkError
+    from auto_alpha.data.ingestion.repair.governed_replay.backfill import GovernedBackfillConfig, run_governed_backfill
     from auto_alpha.platform.network_authority._internal.replay.cascade import CascadeError, execute_transport_stage
     from auto_alpha.platform.network_authority._internal.acquisition.network import NetworkGateError, execute_plan
     from auto_alpha.platform.network_authority._internal.evidence.network import Task055FNetworkError, execute_canary
     from auto_alpha.platform.network_authority._internal.validation.network_state import Task055GNetworkStateError, execute_l1_canary, execute_l1_resume, execute_l2_canary, execute_l2_resume
     from auto_alpha.platform.network_authority._internal.authorization.network import Task055HNetworkError, ordered_future_canary_gate
     from auto_alpha.platform.network_authority._internal.application.executor import Task055IExecutionError, execute_single_canary
-    from data_source_validation.run_smoke import main as data_source_smoke_main
-    from real_data_ops.run_real_data import main as real_data_main
+    from auto_alpha.data.quality.source_validation.run_smoke import main as data_source_smoke_main
+    from auto_alpha.data.lake.operations.run_real_data import main as real_data_main
 
     calls = []
     probes = [

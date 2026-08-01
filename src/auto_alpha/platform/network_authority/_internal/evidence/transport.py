@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from data_pipeline.ashare.request_identity import (
+from auto_alpha.data.ingestion.pipeline.ashare.request_identity import (
     CANONICAL_TUSHARE_ORIGIN,
     TRANSPORT_IDENTITY_VERSION,
     tushare_transport_identity,
 )
-from data_pipeline.ashare.request_normalization import stable_json_hash
+from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import stable_json_hash
 
 CANONICAL_ORIGIN = CANONICAL_TUSHARE_ORIGIN
 

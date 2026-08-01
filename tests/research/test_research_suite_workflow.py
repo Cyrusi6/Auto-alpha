@@ -1,0 +1,111 @@
+import json
+from pathlib import Path
+
+from auto_alpha.research.discovery.suite import ResearchSuiteConfig, ResearchSuiteRunner
+
+
+def _suite_config(tmp_path, **overrides):
+    root = tmp_path
+    payload = dict(
+        suite_name="sample_suite",
+        provider="sample",
+        data_dir=str(root / "data"),
+        universe_name="csi300_sample",
+        index_code="000300.SH",
+        factor_store_dir=str(root / "store"),
+        report_dir=str(root / "reports"),
+        output_dir=str(root / "suite"),
+        backtest_dir=str(root / "backtest"),
+        orders_dir=str(root / "orders"),
+        as_of_date="20240104",
+        factor_transform="winsorize_zscore",
+        search_seed=42,
+        search_population_size=6,
+        search_generations=1,
+        search_max_candidates=4,
+        top_k=3,
+        composite_method="rank_average",
+        promote_latest_composite=True,
+        walk_forward_train_size=1,
+        walk_forward_test_size=1,
+        walk_forward_step_size=1,
+    )
+    payload.update(overrides)
+    return ResearchSuiteConfig(**payload)
+
+
+def test_research_suite_sample_fails_closed_without_positive_oos_factor(tmp_path):
+    config = _suite_config(tmp_path)
+    result = ResearchSuiteRunner(config).run()
+    stage_statuses = {stage.name: stage.status for stage in result.stages}
+
+    assert result.status == "blocked"
+    assert result.selected_factor_id is None
+    assert stage_statuses["data_sync"] == "success"
+    assert stage_statuses["formula_search"] == "success"
+    assert stage_statuses["research_admission"] == "blocked"
+    assert "backtest" not in stage_statuses
+    assert (tmp_path / "suite" / "suite_result.json").exists()
+    assert (tmp_path / "suite" / "suite_report.md").exists()
+    assert (tmp_path / "suite" / "artifact_catalog.json").exists()
+    promotion = json.loads((tmp_path / "suite" / "promotion_decision.json").read_text(encoding="utf-8"))
+    assert promotion["artifact_type"] == "promotion_decision"
+    assert "passed" not in promotion
+
+
+def test_research_suite_workflow_records_failed_stage(tmp_path):
+    config = _suite_config(tmp_path, provider="missing_provider")
+    result = ResearchSuiteRunner(config).run()
+
+    assert result.status == "failed"
+    assert result.stages[0].name == "data_sync"
+    assert result.stages[0].status == "failed"
+    assert result.stages[0].error
+    assert (tmp_path / "suite" / "suite_result.json").exists()
+
+
+def test_research_suite_workflow_supports_hybrid_search(tmp_path):
+    config = _suite_config(
+        tmp_path,
+        search_mode="hybrid",
+        search_population_size=4,
+        search_generations=1,
+        search_max_candidates=2,
+        neural_warmup_steps=1,
+        neural_policy_steps=1,
+        top_k=2,
+        skip_orders=True,
+        promote_latest_composite=False,
+    )
+    result = ResearchSuiteRunner(config).run()
+    formula_stage = next(stage for stage in result.stages if stage.name == "formula_search")
+
+    assert result.status == "blocked"
+    assert formula_stage.summary["search_mode"] == "hybrid"
+    assert "neural_search_result" in formula_stage.output_paths
+    assert (Path(formula_stage.output_paths["neural_search_result"])).exists()
+
+
+def test_research_suite_can_register_model_and_create_review_package(tmp_path):
+    config = _suite_config(
+        tmp_path,
+        search_population_size=4,
+        search_generations=1,
+        search_max_candidates=2,
+        top_k=2,
+        skip_orders=True,
+        register_model_version=True,
+        model_registry_dir=str(tmp_path / "model_registry"),
+        create_model_review_package=True,
+        model_lifecycle_output_dir=str(tmp_path / "model_lifecycle"),
+        require_model_approval=True,
+        model_approval_store_dir=str(tmp_path / "approvals"),
+    )
+    result = ResearchSuiteRunner(config).run()
+    stage_statuses = {stage.name: stage.status for stage in result.stages}
+
+    assert result.status == "blocked"
+    assert stage_statuses["research_admission"] == "blocked"
+    assert "model_registry" not in stage_statuses
+    assert "model_lifecycle" not in stage_statuses
+    assert not (tmp_path / "model_registry" / "model_versions.jsonl").exists()

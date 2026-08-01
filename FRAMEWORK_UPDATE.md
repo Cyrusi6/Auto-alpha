@@ -1,3 +1,12 @@
+## 2026-08-01 — Six-domain architecture convergence
+
+- Replaced 81 peer-level `src` packages with one `auto_alpha` package containing six domains and 25 visible subsystems.
+- Merged data, feature/formula/factor, validation/firewall, portfolio/risk, execution, and platform capabilities under explicit ownership boundaries without compatibility aliases.
+- Collapsed the Task 055 history into one public `platform.network_authority`; removed superseded public CLIs, unreachable modules, and historical-generation tests while keeping required contracts private.
+- Mirrored the complete test suite under the six domains and hardened layout tests so deleted paths cannot produce false-positive scans.
+- Added the unified `auto-alpha <domain> <command>` entrypoint with 79 governed commands; local CI normalizes internal module invocations to this command surface.
+- Updated release inventory, packaging, architecture documentation, and operator examples for the new namespace.
+
 ## 2026-08-01 — Repository layout consolidation
 
 - Moved all installable Python packages under a single standard `src/` root while preserving public import names.

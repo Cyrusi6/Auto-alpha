@@ -4,11 +4,11 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from data_lake.task052_freeze import validate_task052_governed_freeze
-from matrix_store.strict_engineering import StrictEngineeringPITMatrixBuilder, StrictEngineeringPITMatrixConfig
-from feature_factory.engineering_replay.orchestrator import build_v3_tensor_generation
-from research_firewall.production_sentinel.sentinel import validate_task054b_production_sentinel
-from research_firewall.engineering_closure.validators import validate_strict_matrix_generation, validate_v3_tensor_generation
+from auto_alpha.data.lake.store.task052_freeze import validate_task052_governed_freeze
+from auto_alpha.data.matrix.store.strict_engineering import StrictEngineeringPITMatrixBuilder, StrictEngineeringPITMatrixConfig
+from auto_alpha.research.features.factory.engineering_replay.orchestrator import build_v3_tensor_generation
+from auto_alpha.validation.firewall.core.production_sentinel.sentinel import validate_task054b_production_sentinel
+from auto_alpha.validation.firewall.core.engineering_closure.validators import validate_strict_matrix_generation, validate_v3_tensor_generation
 from auto_alpha.platform.network_authority._internal.simulation.run import prepare_simulation_inputs
 from auto_alpha.platform.network_authority._internal.evidence.causal import build_valuation_surface, trace_causal_runs
 from auto_alpha.platform.network_authority._internal.evidence.valuation import (

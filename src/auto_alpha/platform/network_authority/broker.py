@@ -6,13 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from data_pipeline.ashare.cache import TushareResponseCache
-from data_pipeline.ashare.providers.tushare_client import (
+from auto_alpha.data.ingestion.pipeline.ashare.cache import TushareResponseCache
+from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare_client import (
     TUSHARE_PROVIDER_API_VERSION,
     TushareResponseEnvelope,
 )
-from data_pipeline.ashare.request_identity import TushareRequestIdentity, validate_tushare_request_identity
-from data_pipeline.ashare.request_normalization import stable_json_hash, tushare_code_semantic_hash
+from auto_alpha.data.ingestion.pipeline.ashare.request_identity import TushareRequestIdentity, validate_tushare_request_identity
+from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import stable_json_hash, tushare_code_semantic_hash
 from auto_alpha.platform.network_authority._internal.evidence.network import ENDPOINT_ROW_CAPS, _validate_records
 from auto_alpha.platform.network_authority._internal.evidence.transport import CANONICAL_ORIGIN
 from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, publish_generation, read_json, sha256_file, validate_generation

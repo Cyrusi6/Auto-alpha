@@ -19,7 +19,7 @@ from auto_alpha.platform.network_authority._internal.authorization.fee import Fe
 from auto_alpha.platform.network_authority._internal.authorization.independent import independently_trace_prepared, prepare_independent_inputs
 from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash
 from auto_alpha.platform.network_authority._internal.runtime.application import _successor_bundle
-from research_firewall.engineering_closure.validators import validate_strict_matrix_generation
+from auto_alpha.validation.firewall.core.engineering_closure.validators import validate_strict_matrix_generation
 
 from .application import validate_staged_application
 from .application_components import validate_fee_replay

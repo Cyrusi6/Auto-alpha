@@ -13,7 +13,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from artifact_schema.writer import write_artifact_sidecar
+from auto_alpha.platform.artifacts.schema.writer import write_artifact_sidecar
 from auto_alpha.platform.network_authority._internal.simulation.bundle import load_simulation_bundle, validate_simulation_bundle
 from auto_alpha.platform.network_authority._internal.simulation.policy import PREREGISTERED_SCENARIOS
 from auto_alpha.platform.network_authority._internal.simulation.run import SCENARIO_NAMES, prepare_simulation_inputs

@@ -1,6 +1,6 @@
 # Task 056-C Canonical A-share Research Freeze
 
-`data_lake.canonical_freeze` is the only publisher for the canonical immutable A-share research source generation. It reads one reviewed raw-index manifest, re-hashes every materialized source, writes compact Parquet envelopes, records field availability/effective-date contracts, computes quality evidence, and atomically publishes a content-addressed generation.
+The `data lake` subsystem is the only publisher for the canonical immutable A-share research source generation. It reads one reviewed raw-index manifest, re-hashes every materialized source, writes compact Parquet envelopes, records field availability/effective-date contracts, computes quality evidence, and atomically publishes a content-addressed generation.
 
 ## Physical access classes
 
@@ -25,19 +25,19 @@ The real preflight currently remains blocked. The server lake has no governed `s
 ## Commands
 
 ```bash
-python -m data_lake.run_canonical_freeze preflight \
+auto-alpha data freeze preflight \
   --governed-root <validated-ashare-lake> \
   --output-root <new-sibling-output>
 
-python -m data_lake.run_canonical_freeze build \
+auto-alpha data freeze build \
   --governed-root <validated-ashare-lake> \
   --output-root <new-sibling-output> \
   --workers 4
 
-python -m data_lake.run_canonical_freeze validate \
+auto-alpha data freeze validate \
   --manifest <generation>/canonical_freeze_manifest.json
 
-python -m data_lake.run_canonical_freeze validate-research-view \
+auto-alpha data freeze validate-research-view \
   --manifest <generation>/search_view/research_view_manifest.json \
   --require-research-ready
 ```

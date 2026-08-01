@@ -79,7 +79,7 @@ def recompute_run_truth(
     fills = _read_jsonl(generation / "fills.jsonl")
     rejections = _read_jsonl(generation / "rejections.jsonl")
     settlements = _read_jsonl(generation / "settlements.jsonl")
-    actions = _read_jsonl(generation / "corporate_actions.jsonl")
+    actions = _read_jsonl(generation / "auto_alpha.data.pit.corporate_actions.jsonl")
     nav = _read_jsonl(generation / "nav.jsonl")
     events = _read_jsonl(generation / "event_ledger.jsonl")
     stored_positions = _read_jsonl(generation / "positions.jsonl")

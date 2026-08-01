@@ -4,19 +4,19 @@ import json, os, shutil, tempfile
 import re
 from pathlib import Path
 from typing import Any, Iterable, Mapping
-from data_pipeline.ashare.cache import (
+from auto_alpha.data.ingestion.pipeline.ashare.cache import (
     CACHE_ENVELOPE_VERSION,
     LEGACY_CACHE_ENVELOPE_VERSION,
     TushareResponseCache,
     tushare_cache_source_hash,
 )
-from data_pipeline.ashare.request_normalization import (
+from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import (
     normalize_tushare_request,
     stable_json_hash,
     tushare_code_semantic_hash,
     tushare_request_fingerprint,
 )
-from data_pipeline.ashare.validators import is_valid_ts_code, is_valid_yyyymmdd
+from auto_alpha.data.ingestion.pipeline.ashare.validators import is_valid_ts_code, is_valid_yyyymmdd
 from .contracts import (
     CANONICAL_ORIGIN,
     ENDPOINT_CAPS,

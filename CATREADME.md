@@ -1,23 +1,27 @@
-# 当前仓库架构
+# 当前架构
 
-Auto-alpha 当前只服务于 A 股因子研究、验证、组合研究和受治理的 shadow 证据链。
+Auto-alpha 只服务于 A 股量化因子研发平台，正式代码统一位于 `src/auto_alpha/`。
 
-## 目录
+## 六个领域
 
-- `src/`：全部正式 Python 包。
-- `tests/`：测试与合成 fixture。
-- `docs/`：架构和操作文档。
-- `evidence/`：可提交的脱敏摘要，不含真实市场数据。
-- `dev_tools/`：仓库维护与隔离演练工具。
+- `data/`：摄取、数据湖、PIT、股票池、矩阵和质量。
+- `research/`：特征、公式、因子、搜索和 neural-guided research。
+- `validation/`：Research Firewall、walk-forward 和认证。
+- `portfolio/`：因子组合、风险、容量和事件账本模拟。
+- `execution/`：券商、交易、结算、对账和运行操作。
+- `platform/`：artifact、调度、治理、监控、发布和网络权威。
 
-历史任务编号不再作为顶层架构。对应实现已归入：
+共 25 个可见子系统。测试目录按相同六领域镜像。任务编号不再是包名；Task 055 只保留最终 `platform/network_authority`，旧代公开入口和测试已删除。
 
-- `src/point_in_time/historical_audit/`
-- `src/backfill_repair/governed_replay/`
-- `src/feature_factory/engineering_replay/`
-- `src/research_firewall/`
-- `src/live_readiness/`
+## 唯一命令入口
 
-正式研究链为：数据冻结 → PIT matrix/tensor → Alpha Factory → 样本外验证 → 因子认证 → 组合研究 → shadow。任何阶段都不能直接跳到 paper 或 live。
+```bash
+auto-alpha list
+auto-alpha data freeze --help
+auto-alpha research alpha --help
+auto-alpha validation run --help
+auto-alpha portfolio research --help
+auto-alpha platform ci --help
+```
 
-常用命令及安全边界见 `README.md`，包边界见 `docs/ARCHITECTURE.md`。
+正式文档和自动化不得再新增 `python -m <微型包>.run_xxx`。完整边界见 `docs/ARCHITECTURE.md`。

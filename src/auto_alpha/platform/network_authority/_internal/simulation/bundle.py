@@ -12,11 +12,11 @@ from typing import Any
 
 import numpy as np
 
-from research_firewall.engineering_closure.bundle import validate_bundle as validate_task054c_bundle
-from research_firewall.engineering_closure.factor_store import validate_normalized_replay_store
-from research_firewall.engineering_closure.research_view import validate_research_projection
-from research_firewall.engineering_closure.seal import validate_pre_gpu_seal
-from research_firewall.engineering_closure.validators import canonical_hash, sha256_file
+from auto_alpha.validation.firewall.core.engineering_closure.bundle import validate_bundle as validate_task054c_bundle
+from auto_alpha.validation.firewall.core.engineering_closure.factor_store import validate_normalized_replay_store
+from auto_alpha.validation.firewall.core.engineering_closure.research_view import validate_research_projection
+from auto_alpha.validation.firewall.core.engineering_closure.seal import validate_pre_gpu_seal
+from auto_alpha.validation.firewall.core.engineering_closure.validators import canonical_hash, sha256_file
 
 
 SIMULATION_BUNDLE_SCHEMA = "task055a_strict_simulation_bundle_v1"

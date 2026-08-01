@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 from typing import Any, Mapping
 
+from auto_alpha._paths import repository_root
 from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, read_json, validate_generation
 from auto_alpha.platform.network_authority._internal.runtime.application import _production_context
 
@@ -188,7 +189,7 @@ def _hash64(value: Any) -> bool:
 
 
 def runtime_semantic_source_hash() -> str:
-    repository = Path(__file__).resolve().parents[3]
+    repository = repository_root(__file__)
     rows = []
     for path in sorted(repository.rglob("*.py")):
         relative = path.relative_to(repository).as_posix()

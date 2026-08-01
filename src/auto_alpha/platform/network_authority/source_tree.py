@@ -135,8 +135,8 @@ def git_index_source_entries(repository: Path, *, treeish: str | None = None) ->
         "src/auto_alpha/platform/network_authority/verifier.py",
         "dev_tools/network_authority_harness.py",
         "dev_tools/network_authority_mutations.py",
-        "src/data_pipeline/ashare/network_capability.py",
-        "src/data_pipeline/ashare/providers/tushare_client.py",
+        "src/auto_alpha/data/ingestion/pipeline/ashare/network_capability.py",
+        "src/auto_alpha/data/ingestion/pipeline/ashare/providers/tushare_client.py",
     }
     if not required.issubset({entry["path"] for entry in entries}):
         raise Task055KSourceTreeError("task055k_runtime_source_selection_incomplete")

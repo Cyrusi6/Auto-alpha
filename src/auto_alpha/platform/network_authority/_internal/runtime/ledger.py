@@ -18,7 +18,7 @@ class DurableHashJournal:
 
     Local storage alone cannot prevent an administrator from rolling back the
     whole directory.  Task 055-J therefore requires the reviewed final seal's
-    initial journal checkpoint as an external ancestor at every execution.
+    initial journal checkpoint as an external ancestor at every auto_alpha.execution.trading.engine.
     """
 
     def __init__(self, root: str | Path, *, name: str) -> None:

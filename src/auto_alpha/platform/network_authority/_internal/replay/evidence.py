@@ -10,8 +10,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from data_pipeline.ashare.request_normalization import stable_json_hash
-from data_pipeline.ashare.validators import is_valid_ts_code, is_valid_yyyymmdd
+from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import stable_json_hash
+from auto_alpha.data.ingestion.pipeline.ashare.validators import is_valid_ts_code, is_valid_yyyymmdd
 
 SCHEMA = "task055c_security_date_truth_table_v1"
 POINTER_SCHEMA = "task055c_security_date_truth_pointer_v1"

@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Mapping
 
-from data_pipeline.ashare.request_identity import TushareRequestIdentity, validate_tushare_request_identity
+from auto_alpha.data.ingestion.pipeline.ashare.request_identity import TushareRequestIdentity, validate_tushare_request_identity
 from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, read_json, sha256_file, validate_generation
 from auto_alpha.platform.network_authority._internal.runtime.application_tree import validate_application_preflight
 from auto_alpha.platform.network_authority._internal.runtime.rehearsal import independently_verify_rehearsal, validate_rehearsal
@@ -722,7 +722,7 @@ def _assert_task055j_journal_ancestor(
 
 
 def _request_fingerprint(row: Mapping[str, Any], fields: list[str]) -> str:
-    from data_pipeline.ashare.request_normalization import tushare_request_fingerprint
+    from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import tushare_request_fingerprint
 
     return tushare_request_fingerprint(
         str(row.get("api_name") or ""),

@@ -10,16 +10,16 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from data_lake.task052_freeze import validate_task052_governed_freeze
-from factor_store.storage import LocalFactorStore
-from matrix_store.strict_engineering import StrictEngineeringPITMatrixBuilder, StrictEngineeringPITMatrixConfig
-from feature_factory.engineering_replay.orchestrator import build_v3_tensor_generation
-from research_firewall.production_sentinel.sentinel import (
+from auto_alpha.data.lake.store.task052_freeze import validate_task052_governed_freeze
+from auto_alpha.research.factors.store.storage import LocalFactorStore
+from auto_alpha.data.matrix.store.strict_engineering import StrictEngineeringPITMatrixBuilder, StrictEngineeringPITMatrixConfig
+from auto_alpha.research.features.factory.engineering_replay.orchestrator import build_v3_tensor_generation
+from auto_alpha.validation.firewall.core.production_sentinel.sentinel import (
     ProductionSentinelConfig,
     run_task054b_production_sentinel,
     validate_task054b_production_sentinel,
 )
-from research_firewall.engineering_closure.factor_store import validate_normalized_replay_store
+from auto_alpha.validation.firewall.core.engineering_closure.factor_store import validate_normalized_replay_store
 from auto_alpha.platform.network_authority._internal.simulation.bundle import EXECUTION_MASKS, SIGNAL_MASKS, load_simulation_bundle, validate_simulation_bundle
 from auto_alpha.platform.network_authority._internal.simulation.run import prepare_simulation_inputs
 from auto_alpha.platform.network_authority._internal.evidence.causal import build_valuation_surface, trace_causal_runs
@@ -28,7 +28,7 @@ from auto_alpha.platform.network_authority._internal.validation.truth import pub
 from auto_alpha.platform.network_authority._internal.authorization.fee import FeeProjectionCalculator
 from auto_alpha.platform.network_authority._internal.authorization.independent import independently_trace_prepared
 from auto_alpha.platform.network_authority._internal.authorization.io import atomic_json, canonical_hash, publish_generation, read_json, sha256_file, validate_generation
-from validation_lab.materialization import FactorMaterializer
+from auto_alpha.validation.lab.engine.materialization import FactorMaterializer
 
 from auto_alpha.platform.network_authority._internal.application.application import (
     _assert_repair_in_matrix,

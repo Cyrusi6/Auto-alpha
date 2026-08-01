@@ -32,23 +32,23 @@ These are not return promises and are not universal IC/ICIR constants. Every num
 ## Commands
 
 ```bash
-python -m validation_red_team.run_holdout freeze-candidates \
+auto-alpha validation red-team freeze-candidates \
   --campaign-report <alpha_factory_report.json> \
   --materialization-manifest <materialization_manifest.json> \
   --output-root <candidate-freeze-root>
 
-python -m validation_red_team.run_holdout publish-policy \
+auto-alpha validation red-team publish-policy \
   --policy-spec <locked-profile.json> \
   --output-root <policy-root>
 
-python -m validation_red_team.run_holdout issue-capability \
+auto-alpha validation red-team issue-capability \
   --registry-root <capability-registry> \
   --candidate-pool-manifest <candidate_pool_manifest.json> \
   --holdout-view-manifest <sealed_holdout_view_manifest.json> \
   --holdout-policy <sealed_holdout_policy.json> \
   --red-team-output-root <isolated-red-team-root>
 
-python -m validation_red_team.run_holdout evaluate \
+auto-alpha validation red-team evaluate \
   --capability <holdout_capability.json> \
   --reviewed-capability-hash <sha256>
 ```

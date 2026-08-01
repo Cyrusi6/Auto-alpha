@@ -11,24 +11,24 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from data_lake.task052_freeze import create_task052_governed_freeze
-from data_pipeline.ashare.providers.tushare_client import (
+from auto_alpha.data.lake.store.task052_freeze import create_task052_governed_freeze
+from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare_client import (
     TUSHARE_PROVIDER_API_VERSION,
     TushareResponseEnvelope,
 )
-from data_pipeline.ashare.request_normalization import tushare_code_semantic_hash
-from factor_store.hash import make_factor_id, stable_formula_hash
-from factor_store.models import FactorRecord
-from factor_store.storage import LocalFactorStore
-from feature_factory.catalog import FEATURE_SET_V3, build_feature_set_manifest
-from feature_factory.semantics import build_feature_semantics_map
-from feature_factory.vocab_adapter import make_formula_vocab_from_manifest
-from matrix_store.strict_engineering import StrictEngineeringPITMatrixBuilder, StrictEngineeringPITMatrixConfig
-from model_core.vm import StackVM
-from feature_factory.engineering_replay.orchestrator import build_v3_tensor_generation
+from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import tushare_code_semantic_hash
+from auto_alpha.research.factors.store.hash import make_factor_id, stable_formula_hash
+from auto_alpha.research.factors.store.models import FactorRecord
+from auto_alpha.research.factors.store.storage import LocalFactorStore
+from auto_alpha.research.features.factory.catalog import FEATURE_SET_V3, build_feature_set_manifest
+from auto_alpha.research.features.factory.semantics import build_feature_semantics_map
+from auto_alpha.research.features.factory.vocab_adapter import make_formula_vocab_from_manifest
+from auto_alpha.data.matrix.store.strict_engineering import StrictEngineeringPITMatrixBuilder, StrictEngineeringPITMatrixConfig
+from auto_alpha.research.formulas.runtime.vm import StackVM
+from auto_alpha.research.features.factory.engineering_replay.orchestrator import build_v3_tensor_generation
 from auto_alpha.platform.network_authority._internal.evidence.transport import CANONICAL_ORIGIN
 from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, publish_generation, read_json, sha256_file
-from universe.task052 import Task052HistoricalUniverseProofBuilder
+from auto_alpha.data.pit.universe.task052 import Task052HistoricalUniverseProofBuilder
 
 from .application import (
     _materialize_exact20,

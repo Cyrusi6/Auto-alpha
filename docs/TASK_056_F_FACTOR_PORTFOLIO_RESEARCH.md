@@ -1,6 +1,6 @@
 # Task 056-F: Factor-certified portfolio research
 
-`portfolio_research` is the only formal factor-combination path. It accepts a content-addressed bundle containing compact factor values and independent validity, strict next-open market and valuation evidence, multiple PIT universes, multiple governed benchmarks, and a validated Fee Schedule v2.
+The `portfolio construction` subsystem is the only formal factor-combination path. It accepts a content-addressed bundle containing compact factor values and independent validity, strict next-open market and valuation evidence, multiple PIT universes, multiple governed benchmarks, and a validated Fee Schedule v2.
 
 ## Admission boundary
 

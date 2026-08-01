@@ -1,62 +1,81 @@
-# Repository architecture
+# Architecture
 
-## Layout contract
+## Contract
 
-The repository uses a standard `src/` layout. Every installable production package is a direct child of `src/`; task numbers, campaign IDs, dates, and machine paths are not architectural package names.
+The repository exposes one production package, six domains, and 25 visible subsystems.
 
-`dev_tools/repository_layout.py` enforces the physical layout and prevents legacy task imports or packaging entries from returning.
+```text
+auto_alpha
+├── data
+│   ├── ingestion
+│   ├── lake
+│   ├── matrix
+│   ├── pit
+│   └── quality
+├── research
+│   ├── discovery
+│   ├── factors
+│   ├── features
+│   ├── formulas
+│   └── neural
+├── validation
+│   ├── certification
+│   ├── firewall
+│   └── lab
+├── portfolio
+│   ├── construction
+│   ├── risk
+│   └── simulation
+├── execution
+│   ├── broker
+│   ├── operations
+│   ├── settlement
+│   └── trading
+└── platform
+    ├── artifacts
+    ├── compute
+    ├── governance
+    ├── network_authority
+    └── observability
+```
+
+## Ownership
+
+| Domain | Owns | Must not own |
+| --- | --- | --- |
+| `data` | source contracts, immutable freezes, PIT availability, universe, matrices | factor admission or portfolio state |
+| `research` | feature semantics, StackVM, formulas, factor identity, search | holdout access or certification |
+| `validation` | eligibility, firewall, walk-forward, red-team, certification | formula mutation or portfolio optimization |
+| `portfolio` | certified-factor combination, risk, capacity, ledger simulation | factor generation or broker connectivity |
+| `execution` | orders, fills, settlement, reconciliation, paper/shadow operations | research scoring |
+| `platform` | schemas, compute, monitoring, release, approvals, network authority | market or factor semantics |
 
 ## Dependency direction
 
-The intended high-level dependency direction is:
-
 ```text
-data foundation
-  -> PIT matrix and feature validity
-  -> formula and factor research
-  -> validation and certification
-  -> portfolio research
-  -> shadow and operational evidence
+data → research → validation → portfolio → execution
+  └──────────────── platform services ────────────────┘
 ```
 
-Lower layers must not import portfolio, execution, or deployment state. Research components must consume governed artifacts rather than operational mutable state. Live-readiness components may verify research artifacts, but they cannot change formula identity or research results.
+Dependencies may point left-to-right through the research lifecycle. `platform` provides infrastructure but cannot redefine domain truth. Reverse dependencies require an explicit interface and must not import higher-level mutable state.
 
-## Durable domains
+## Public surface
 
-### Data foundation
+- Operators use `auto-alpha <domain> <command>`.
+- Python callers import through `auto_alpha.<domain>...`.
+- Internal `run_*.py` files and packages named `_internal` are not public capabilities.
+- A new top-level domain or visible subsystem requires an architecture decision; normal work extends an existing subsystem.
 
-Owns source contracts, immutable freezes, lifecycle, historical membership, corporate actions, raw validity, strict matrices, and feature tensors.
+## Network authority
 
-Primary packages: `data_pipeline`, `data_lake`, `point_in_time`, `universe`, `matrix_store`, and `feature_factory`.
+`auto_alpha.platform.network_authority` is the single formal implementation. Earlier Task 055 generations were removed as public packages. The private `_internal` tree contains only contracts still consumed by the final implementation and cannot be invoked through the unified CLI.
 
-### Research and validation
+## Enforcement
 
-Owns formula semantics, search, factor materialization, research firewall, walk-forward evaluation, multiple-testing evidence, and factor certification.
+`dev_tools.repository_layout` and `tests/platform/test_repository_layout.py` fail when:
 
-Primary packages: `alpha_factory`, `formula_search`, `formula_batch_eval`, `factor_store`, `research_firewall`, `validation_lab`, and `factor_certification`.
-
-### Portfolio research
-
-Owns admission of exact `factor_certified` records, correlation clustering, residualization, rolling IC weights, shrinkage, stability constraints, event-ledger simulation, governed fees, and shadow-only publication.
-
-Primary packages: `portfolio_research`, `backtest`, `risk_model`, `capacity_model`, and `settlement_engine`.
-
-### Operations
-
-Owns artifact schemas, scheduling, monitoring, release checks, approvals, broker abstractions, and explicitly governed readiness evidence.
-
-Primary packages: `artifact_schema`, `compute_cluster`, `monitoring`, `release_manager`, `execution`, `broker_adapter`, and `live_readiness`.
-
-## Historical engineering code
-
-Historical implementations remain available where they still protect correctness, but are nested under their durable domain. They must not be imported through task-numbered package names.
-
-No compatibility packages are retained at the repository root. Import drift is a blocker rather than an alias fallback.
-
-## Adding code
-
-- Extend an existing domain before creating a package.
-- Create a new top-level `src/` package only for a genuinely independent bounded context.
-- Never create a package named after a task, date, campaign, or ticket.
-- Keep real data and generated binaries outside Git.
-- Add a focused test and update the artifact schema when output contracts change.
+- a peer package reappears beside `src/auto_alpha`;
+- the six-domain or 25-subsystem set drifts;
+- a removed top-level import or task package returns;
+- tests stop mirroring the six domains;
+- a registered unified CLI command cannot resolve.

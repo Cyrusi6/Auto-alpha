@@ -11,16 +11,16 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Mapping
 
-from data_pipeline.ashare.cache import TushareResponseCache
-from data_pipeline.ashare.providers.tushare_client import (
+from auto_alpha.data.ingestion.pipeline.ashare.cache import TushareResponseCache
+from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare_client import (
     TUSHARE_PROVIDER_API_VERSION,
     TushareNetworkError,
     parse_tushare_response_payload,
     serialize_tushare_request,
 )
-from data_pipeline.ashare.request_identity import TushareRequestIdentity
-from data_pipeline.ashare.request_normalization import stable_json_hash
-from data_pipeline.ashare.security import tls_preflight
+from auto_alpha.data.ingestion.pipeline.ashare.request_identity import TushareRequestIdentity
+from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import stable_json_hash
+from auto_alpha.data.ingestion.pipeline.ashare.security import tls_preflight
 from auto_alpha.platform.network_authority._internal.evidence.transport import CANONICAL_ORIGIN
 from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, read_json, sha256_file, validate_generation
 from auto_alpha.platform.network_authority._internal.runtime.ledger import DurableHashJournal, event_rows

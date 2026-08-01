@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Mapping
 
+from auto_alpha._paths import repository_root
 from auto_alpha.platform.network_authority._internal.authorization.authorization import validate_authorization_seal, verify_scrubbed_evidence_package
 from auto_alpha.platform.network_authority._internal.authorization.io import atomic_json, canonical_hash, publish_generation, read_json, sha256_file, validate_generation
 from auto_alpha.platform.network_authority._internal.authorization.run import verify_task055h_report
@@ -194,7 +195,7 @@ def publish_task055i_authority(
             "other_network_request_count": 0,
             "prospective_holdout_accessed": False,
         },
-        "production_cli": "python -m auto_alpha.platform.network_authority._internal.application.network_cli canary",
+        "production_cli": "auto-alpha platform network-canary canary",
         "resume_cli_available": False,
     }
     runtime = publish_generation(
@@ -264,7 +265,7 @@ def validate_runtime_authority(
     manifest_path = Path(payload["manifest_path"]).resolve()
     authority_root = manifest_path.parents[3]
     governed = _derive_governed(authority_root, str(payload.get("governed_relative_root") or ""))
-    repository = Path(__file__).resolve().parents[3]
+    repository = repository_root(__file__)
     if authority_root != governed / GLOBAL_AUTHORITY_RELATIVE_ROOT:
         raise Task055IAuthorityError("task055i_runtime_authority_path_invalid")
     if payload.get("parent_authorization_seal_hash") != PARENT_AUTHORIZATION_SEAL_HASH:

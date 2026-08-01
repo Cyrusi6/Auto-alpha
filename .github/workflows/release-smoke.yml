@@ -29,11 +29,11 @@ jobs:
         run: uv sync --frozen
 
       - name: Run full local CI
-        run: uv run python -m ci.run_local_ci --full --output-dir .ci_artifacts/full --pretty --skip-pytest
+        run: uv run auto-alpha platform ci --full --output-dir .ci_artifacts/full --pretty --skip-pytest
 
       - name: Run release gate
         run: >
-          uv run python -m release_manager.run_release
+          uv run auto-alpha platform release
           --release-name manual_release_smoke
           --output-dir .ci_artifacts/release
           --artifact-dir .ci_artifacts/full

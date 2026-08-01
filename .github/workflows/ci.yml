@@ -32,7 +32,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Run local quick CI
-        run: uv run python -m ci.run_local_ci --quick --output-dir .ci_artifacts --pretty
+        run: uv run auto-alpha platform ci --quick --output-dir .ci_artifacts --pretty
 
       - name: Validate repository layout
         run: uv run python -m dev_tools.repository_layout audit --root-dir .
@@ -44,7 +44,7 @@ jobs:
         run: uv build
 
       - name: Validate CI artifacts
-        run: uv run python -m artifact_schema.run_validate --artifact-dir .ci_artifacts --output-dir .ci_artifacts/schema --write-manifest --pretty
+        run: uv run auto-alpha platform schema --artifact-dir .ci_artifacts --output-dir .ci_artifacts/schema --write-manifest --pretty
 
       - name: Upload CI artifacts
         uses: actions/upload-artifact@v4

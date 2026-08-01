@@ -8,15 +8,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from data_pipeline.ashare.cache import TushareResponseCache
-from data_pipeline.ashare.config import AShareDataConfig
-from data_pipeline.ashare.providers.tushare_client import (
+from auto_alpha._paths import repository_root
+from auto_alpha.data.ingestion.pipeline.ashare.cache import TushareResponseCache
+from auto_alpha.data.ingestion.pipeline.ashare.config import AShareDataConfig
+from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare_client import (
     TUSHARE_PROVIDER_API_VERSION,
     TushareHttpClient,
     TushareResponseEnvelope,
 )
-from data_pipeline.ashare.request_normalization import tushare_code_semantic_hash
-from data_pipeline.ashare.security import tls_preflight
+from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import tushare_code_semantic_hash
+from auto_alpha.data.ingestion.pipeline.ashare.security import tls_preflight
 from auto_alpha.platform.network_authority._internal.evidence.network import ENDPOINT_ROW_CAPS, _validate_records
 from auto_alpha.platform.network_authority._internal.evidence.transport import CANONICAL_ORIGIN, evidence_use_identity, transport_identity
 from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, publish_generation, read_json, sha256_file, validate_generation
@@ -780,7 +781,7 @@ def _validate_rehearsal_runtime_authority(
         raise Task055IExecutionError("task055i_rehearsal_authority_not_pristine")
     return payload | {
         "authority_root": str(authority_root),
-        "repository_root": str(Path(__file__).resolve().parents[3]),
+        "repository_root": str(repository_root(__file__)),
         "governed_root": str(authority_root.parent),
         "current_network_ledger_root": network.root_hash(),
         "current_transport_spend_root": spend.root_hash(),

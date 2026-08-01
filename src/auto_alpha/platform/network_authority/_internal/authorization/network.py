@@ -6,8 +6,8 @@ import stat
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from data_pipeline.ashare.cache import TushareResponseCache
-from data_pipeline.ashare.providers.tushare_client import TUSHARE_PROVIDER_API_VERSION
+from auto_alpha.data.ingestion.pipeline.ashare.cache import TushareResponseCache
+from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare_client import TUSHARE_PROVIDER_API_VERSION
 from auto_alpha.platform.network_authority._internal.evidence.network import _validate_records
 from auto_alpha.platform.network_authority._internal.evidence.transport import CANONICAL_ORIGIN
 from auto_alpha.platform.network_authority._internal.validation.network_state import read_ledger_read_only

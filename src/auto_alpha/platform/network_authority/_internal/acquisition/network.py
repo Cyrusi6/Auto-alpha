@@ -7,11 +7,11 @@ import os
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from data_pipeline.ashare.config import AShareDataConfig
-from data_pipeline.ashare.providers.tushare_client import TushareHttpClient
-from data_pipeline.ashare.rate_limit import RequestRateLimitConfig, SimpleRateLimiter
-from data_pipeline.ashare.request_normalization import stable_json_hash
-from data_pipeline.ashare.security import CredentialStatus, load_tushare_credential, tls_preflight
+from auto_alpha.data.ingestion.pipeline.ashare.config import AShareDataConfig
+from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare_client import TushareHttpClient
+from auto_alpha.data.ingestion.pipeline.ashare.rate_limit import RequestRateLimitConfig, SimpleRateLimiter
+from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import stable_json_hash
+from auto_alpha.data.ingestion.pipeline.ashare.security import CredentialStatus, load_tushare_credential, tls_preflight
 
 from .cache import SecureCacheError, find_endpoint_schema_proof, inventory_caches, publish_validated_response, split_capped_request
 from .contracts import GLOBAL_BUDGET, MAX_DATE

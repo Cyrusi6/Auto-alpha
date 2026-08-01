@@ -14,8 +14,8 @@ from typing import Any, Iterable, Mapping
 
 import numpy as np
 
-from artifact_schema.writer import write_artifact_sidecar
-from data_pipeline.ashare.request_normalization import stable_json_hash
+from auto_alpha.platform.artifacts.schema.writer import write_artifact_sidecar
+from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import stable_json_hash
 
 from .contracts import (
     EXPLICIT_FULL_DAY_TIMINGS,

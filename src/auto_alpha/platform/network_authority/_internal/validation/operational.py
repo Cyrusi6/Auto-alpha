@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from auto_alpha._paths import repository_root
 
 WRITER_REGISTRY_SCHEMA = "task055g_authoritative_writer_root_registry_v1"
 SCAN_LEDGER_SCHEMA = "task055g_operational_physical_scan_ledger_v1"
@@ -35,7 +36,7 @@ OPERATIONAL_STATES = (
     "live_registry",
 )
 
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+_REPOSITORY_ROOT = repository_root(__file__)
 
 
 class OperationalSealError(RuntimeError):
@@ -358,8 +359,8 @@ def _writer_contracts() -> tuple[WriterContract, ...]:
     return (
         WriterContract(
             writer_id="validation_campaign_store",
-            writer_fqn="validation_campaign_store.registry.LocalValidationCampaignStore",
-            source_files=("src/validation_campaign_store/registry.py", "src/dashboard/config.py"),
+            writer_fqn="auto_alpha.validation.lab.campaigns.registry.LocalValidationCampaignStore",
+            source_files=("src/auto_alpha/validation/lab/campaigns/registry.py", "src/auto_alpha/platform/observability/dashboard/config.py"),
             canonical_root="artifacts/validation_campaign_store",
             legacy_roots=("validation_campaign_store",),
             files=(
@@ -382,8 +383,8 @@ def _writer_contracts() -> tuple[WriterContract, ...]:
         ),
         WriterContract(
             writer_id="certification_campaign_store",
-            writer_fqn="certification_campaign_store.registry.LocalFactorCertificationCampaignStore",
-            source_files=("src/certification_campaign_store/registry.py", "src/dashboard/config.py"),
+            writer_fqn="auto_alpha.validation.certification.campaigns.registry.LocalFactorCertificationCampaignStore",
+            source_files=("src/auto_alpha/validation/certification/campaigns/registry.py", "src/auto_alpha/platform/observability/dashboard/config.py"),
             canonical_root="artifacts/factor_certification_campaign",
             legacy_roots=("factor_certification_campaign",),
             files=(
@@ -403,8 +404,8 @@ def _writer_contracts() -> tuple[WriterContract, ...]:
         ),
         WriterContract(
             writer_id="portfolio_campaign_store",
-            writer_fqn="portfolio_campaign_store.registry.LocalPortfolioCampaignStore",
-            source_files=("src/portfolio_campaign_store/registry.py", "src/dashboard/config.py"),
+            writer_fqn="auto_alpha.portfolio.construction.campaigns.registry.LocalPortfolioCampaignStore",
+            source_files=("src/auto_alpha/portfolio/construction/campaigns/registry.py", "src/auto_alpha/platform/observability/dashboard/config.py"),
             canonical_root="artifacts/portfolio_campaign",
             legacy_roots=("portfolio_campaign",),
             files=(
@@ -435,8 +436,8 @@ def _writer_contracts() -> tuple[WriterContract, ...]:
         ),
         WriterContract(
             writer_id="model_registry",
-            writer_fqn="model_registry.store.LocalModelRegistry",
-            source_files=("src/model_registry/store.py", "src/dashboard/config.py"),
+            writer_fqn="auto_alpha.research.factors.registry.store.LocalModelRegistry",
+            source_files=("src/auto_alpha/research/factors/registry/store.py", "src/auto_alpha/platform/observability/dashboard/config.py"),
             canonical_root="artifacts/model_registry",
             legacy_roots=("model_registry",),
             files=(
@@ -466,8 +467,8 @@ def _writer_contracts() -> tuple[WriterContract, ...]:
         ),
         WriterContract(
             writer_id="paper_account",
-            writer_fqn="paper_account.ledger.LocalPaperAccount",
-            source_files=("src/paper_account/ledger.py", "src/strategy_manager/config.py", "src/dashboard/config.py"),
+            writer_fqn="auto_alpha.execution.trading.paper.ledger.LocalPaperAccount",
+            source_files=("src/auto_alpha/execution/trading/paper/ledger.py", "src/auto_alpha/execution/trading/strategy/config.py", "src/auto_alpha/platform/observability/dashboard/config.py"),
             canonical_root="artifacts/account",
             legacy_roots=("account",),
             files=(
@@ -495,8 +496,8 @@ def _writer_contracts() -> tuple[WriterContract, ...]:
         ),
         WriterContract(
             writer_id="production_orchestrator",
-            writer_fqn="production_orchestrator.state.LocalProductionStateStore",
-            source_files=("src/production_orchestrator/state.py", "src/production_orchestrator/report.py", "src/dashboard/config.py"),
+            writer_fqn="auto_alpha.execution.operations.production.state.LocalProductionStateStore",
+            source_files=("src/auto_alpha/execution/operations/production/state.py", "src/auto_alpha/execution/operations/production/report.py", "src/auto_alpha/platform/observability/dashboard/config.py"),
             canonical_root="artifacts/production_orchestrator",
             legacy_roots=("production_orchestrator", "artifacts/production"),
             files=(

@@ -14,7 +14,7 @@ from typing import Any, Iterable, Mapping
 
 import numpy as np
 
-from research_firewall.engineering_closure.validators import sha256_file
+from auto_alpha.validation.firewall.core.engineering_closure.validators import sha256_file
 from auto_alpha.platform.network_authority._internal.simulation.bundle import load_simulation_bundle, validate_simulation_bundle
 from auto_alpha.platform.network_authority._internal.simulation.policy import PREREGISTERED_SCENARIOS
 from auto_alpha.platform.network_authority._internal.simulation.run import SCENARIO_NAMES, prepare_simulation_inputs

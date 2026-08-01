@@ -4,10 +4,10 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from data_lake.task052_freeze import validate_task052_governed_freeze
-from research_firewall.engineering_closure.bundle import validate_bundle
-from research_firewall.engineering_closure.factor_store import validate_normalized_replay_store
-from research_firewall.engineering_closure.validators import validate_strict_matrix_generation, validate_v3_tensor_generation
+from auto_alpha.data.lake.store.task052_freeze import validate_task052_governed_freeze
+from auto_alpha.validation.firewall.core.engineering_closure.bundle import validate_bundle
+from auto_alpha.validation.firewall.core.engineering_closure.factor_store import validate_normalized_replay_store
+from auto_alpha.validation.firewall.core.engineering_closure.validators import validate_strict_matrix_generation, validate_v3_tensor_generation
 from auto_alpha.platform.network_authority._internal.simulation.bundle import validate_simulation_bundle
 from auto_alpha.platform.network_authority._internal.validation.causal import validate_fee_aware_causal_frontier
 from auto_alpha.platform.network_authority._internal.validation.fees import validate_fee_schedule_v2

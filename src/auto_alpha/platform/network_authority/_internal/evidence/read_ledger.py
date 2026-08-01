@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from artifact_schema.writer import write_artifact_sidecar
+from auto_alpha.platform.artifacts.schema.writer import write_artifact_sidecar
 
 from .contracts import MAX_DATE, READ_LEDGER_SCHEMA
 

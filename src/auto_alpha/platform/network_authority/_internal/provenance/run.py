@@ -15,8 +15,9 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from data_lake.task052_freeze import validate_task052_governed_freeze
-from research_firewall.engineering_closure.validators import validate_strict_matrix_generation
+from auto_alpha._paths import semantic_source_hash
+from auto_alpha.data.lake.store.task052_freeze import validate_task052_governed_freeze
+from auto_alpha.validation.firewall.core.engineering_closure.validators import validate_strict_matrix_generation
 from auto_alpha.platform.network_authority._internal.simulation.bundle import validate_simulation_bundle
 from auto_alpha.platform.network_authority._internal.simulation.observation import validate_observation_boundary_seal
 from auto_alpha.platform.network_authority._internal.replay.evidence import MODELED, validate_truth_table
@@ -408,19 +409,17 @@ def _validate_git_baseline() -> dict[str, Any]:
 
 
 def _code_semantic_hash() -> str:
-    repository = Path(__file__).resolve().parents[3]
-    paths = sorted((repository / "task_055_e").glob("*.py")) + [
-        repository / "task_055_a" / "run.py",
-        repository / "task_055_a" / "simulator.py",
-        repository / "task_055_a" / "policy.py",
-    ]
-    digest = hashlib.sha256()
-    for path in paths:
-        digest.update(str(path.relative_to(repository)).encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(path.read_bytes())
-        digest.update(b"\0")
-    return digest.hexdigest()
+    return semantic_source_hash(
+        (
+            "auto_alpha.platform.network_authority._internal.provenance.contracts",
+            "auto_alpha.platform.network_authority._internal.provenance.domains",
+            "auto_alpha.platform.network_authority._internal.provenance.provenance",
+            "auto_alpha.platform.network_authority._internal.provenance.run",
+            "auto_alpha.platform.network_authority._internal.simulation.run",
+            "auto_alpha.platform.network_authority._internal.simulation.simulator",
+            "auto_alpha.platform.network_authority._internal.simulation.policy",
+        )
+    )
 
 
 def _safe_relative(root: Path, value: Any) -> Path:

@@ -12,6 +12,7 @@ import io
 import json
 import re
 import shutil
+import subprocess
 import tokenize
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -227,6 +228,111 @@ def migrate_domain_packages(root_dir: str | Path) -> tuple[str, ...]:
     return tuple(sorted(set(changed)))
 
 
+def restore_domain_sources(
+    root_dir: str | Path,
+    *,
+    treeish: str,
+) -> tuple[str, ...]:
+    root = Path(root_dir).resolve()
+    changed: list[str] = []
+    for old, canonical in PACKAGE_MAP.items():
+        prefix = f"src/{old}"
+        listing = subprocess.run(
+            ["git", "ls-tree", "-r", "--name-only", treeish, "--", prefix],
+            cwd=root,
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout.splitlines()
+        target_root = root / "src" / Path(*canonical.split("."))
+        for relative in listing:
+            suffix = Path(relative).relative_to(prefix)
+            target = target_root / suffix
+            content = subprocess.run(
+                ["git", "show", f"{treeish}:{relative}"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+            ).stdout
+            if target.suffix == ".py":
+                source = content.decode("utf-8")
+                content = _rewrite_python_source(source, PACKAGE_MAP).encode("utf-8")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            changed.append(str(target.relative_to(root)))
+    _ensure_layout_packages(root)
+    return tuple(sorted(changed))
+
+
+def organize_tests(root_dir: str | Path) -> tuple[str, ...]:
+    root = Path(root_dir).resolve()
+    tests = root / "tests"
+    destinations: dict[str, str] = {}
+    changed: list[str] = []
+    for path in sorted(tests.rglob("test_*.py")):
+        domain = _test_domain(path)
+        target = tests / domain / path.name
+        if target == path:
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        path.rename(target)
+        destinations[path.stem] = f"tests.{domain}.{path.stem}"
+        changed.append(str(target.relative_to(root)))
+    if destinations:
+        for path in tests.rglob("*.py"):
+            original = path.read_text(encoding="utf-8")
+            updated = original
+            for stem, module in destinations.items():
+                updated = updated.replace(f"tests.{stem}", module)
+            if updated != original:
+                path.write_text(updated, encoding="utf-8")
+                changed.append(str(path.relative_to(root)))
+    return tuple(sorted(set(changed)))
+
+
+def _test_domain(path: Path) -> str:
+    text = path.read_text(encoding="utf-8")
+    name = path.stem.removeprefix("test_")
+    hints = {
+        "data": (
+            "ashare", "backfill", "corporate", "cross_source", "data_", "matrix_",
+            "pit_", "point_in_time", "raw_", "task_051", "task_052", "task_053",
+            "task_056c", "tushare", "universe",
+        ),
+        "research": (
+            "alpha", "engine_", "evaluation", "factor_", "feature_", "formula_",
+            "model_core", "model_registry", "neural_", "performance_", "research_",
+            "task_056a", "task_056d",
+        ),
+        "validation": (
+            "certification", "leakage", "task_050", "task_054", "task_056e",
+            "validation_",
+        ),
+        "portfolio": ("backtest", "capacity", "portfolio", "risk_", "task_056f"),
+        "execution": (
+            "broker", "execution", "file_outbox", "go_live", "incident", "operations",
+            "operator", "paper", "production", "program_trading", "reconciliation",
+            "settlement", "shadow", "statement", "strategy",
+        ),
+        "platform": (
+            "approval", "artifact", "ci_", "compute", "dashboard", "monitoring",
+            "network_authority", "readiness", "release", "repository_layout",
+        ),
+    }
+    for domain, prefixes in hints.items():
+        if name.startswith(prefixes):
+            return domain
+    counts = {
+        domain: text.count(f"auto_alpha.{domain}.")
+        for domain in DOMAIN_SUBSYSTEMS
+    }
+    maximum = max(counts.values(), default=0)
+    winners = [domain for domain, count in counts.items() if count == maximum and count > 0]
+    if len(winners) == 1:
+        return winners[0]
+    return "platform"
+
+
 def rewrite_module_references(
     root_dir: str | Path,
     mapping: dict[str, str],
@@ -267,13 +373,17 @@ def _rewrite_string_tokens(source: str, mapping: dict[str, str]) -> str:
                 for old in ordered:
                     new = mapping[old]
                     value = re.sub(
-                        rf"(?<![A-Za-z0-9_]){re.escape(old)}(?=\.)",
+                        rf"(?<![A-Za-z0-9_.]){re.escape(old)}(?=\.)",
                         new,
                         value,
                     )
                     value = value.replace(
                         f"src/{old.replace('.', '/')}/",
                         f"src/{new.replace('.', '/')}/",
+                    )
+                    value = value.replace(
+                        f"src/{old.replace('.', '/')}",
+                        f"src/{new.replace('.', '/')}",
                     )
                     value = re.sub(
                         rf"(?<=[\"']){re.escape(old.replace('.', '/'))}(?=/)",
@@ -287,6 +397,56 @@ def _rewrite_string_tokens(source: str, mapping: dict[str, str]) -> str:
     except (IndentationError, tokenize.TokenError):
         return source
     return tokenize.untokenize(tokens)
+
+
+def _rewrite_python_source(source: str, mapping: dict[str, str]) -> str:
+    updated = source
+    ordered = tuple(sorted(mapping, key=len, reverse=True))
+    for old in ordered:
+        updated = re.sub(
+            rf"(?m)^([ \t]*from[ \t]+){re.escape(old)}(?=\.|[ \t]+import\b)",
+            rf"\1{mapping[old]}",
+            updated,
+        )
+        updated = re.sub(
+            rf"(?m)^([ \t]*import[ \t]+){re.escape(old)}(?=\.|[ \t]+as\b|[ \t]*$|,)",
+            rf"\1{mapping[old]}",
+            updated,
+        )
+    tokens = []
+    stream = tokenize.generate_tokens(io.StringIO(updated).readline)
+    for token in stream:
+        if token.type == tokenize.STRING and not _is_f_string(token.string):
+            value = token.string
+            for old in ordered:
+                new = mapping[old]
+                old_path = old.replace(".", "/")
+                new_path = new.replace(".", "/")
+                value = value.replace(f"src/{old_path}", f"src/{new_path}")
+                value = re.sub(
+                    rf"(?<=[\"']){re.escape(old_path)}(?=/)",
+                    new_path,
+                    value,
+                )
+                value = re.sub(
+                    rf"(?<![A-Za-z0-9_./]){re.escape(old)}(?=\.)",
+                    new,
+                    value,
+                )
+            token = tokenize.TokenInfo(
+                token.type,
+                value,
+                token.start,
+                token.end,
+                token.line,
+            )
+        tokens.append(token)
+    return tokenize.untokenize(tokens)
+
+
+def _is_f_string(value: str) -> bool:
+    prefix = value[: value.find(value.lstrip("rRuUbBfF")[0])] if value else ""
+    return "f" in prefix.lower()
 
 
 def _ensure_layout_packages(root: Path) -> None:
@@ -336,18 +496,36 @@ def audit_repository_layout(root_dir: str | Path) -> LayoutAudit:
     auto_alpha = src / "auto_alpha"
     domain_issues: list[str] = []
     actual_domains = tuple(
-        sorted(path.name for path in auto_alpha.iterdir() if path.is_dir())
+        sorted(
+            path.name
+            for path in auto_alpha.iterdir()
+            if path.is_dir() and path.name != "__pycache__"
+        )
     ) if auto_alpha.is_dir() else ()
     if actual_domains != tuple(sorted(DOMAIN_SUBSYSTEMS)):
         domain_issues.append(f"domains:{actual_domains!r}")
     subsystem_count = 0
     for domain, expected in DOMAIN_SUBSYSTEMS.items():
         domain_path = auto_alpha / domain
-        actual = tuple(sorted(path.name for path in domain_path.iterdir() if path.is_dir())) if domain_path.is_dir() else ()
+        actual = tuple(
+            sorted(
+                path.name
+                for path in domain_path.iterdir()
+                if path.is_dir() and path.name != "__pycache__"
+            )
+        ) if domain_path.is_dir() else ()
         expected_sorted = tuple(sorted(expected))
         if actual != expected_sorted:
             domain_issues.append(f"subsystems:{domain}:{actual!r}")
         subsystem_count += len(actual)
+    tests = root / "tests"
+    test_domains = tuple(sorted(path.name for path in tests.iterdir() if path.is_dir() and path.name != "__pycache__"))
+    expected_test_domains = tuple(sorted(DOMAIN_SUBSYSTEMS))
+    if test_domains != expected_test_domains:
+        domain_issues.append(f"test_domains:{test_domains!r}")
+    root_tests = tuple(path.name for path in tests.glob("test_*.py"))
+    if root_tests:
+        domain_issues.append(f"root_tests:{root_tests!r}")
     top_level_package_count = sum(
         1 for path in root.iterdir() if path.is_dir() and (path / "__init__.py").is_file()
     )
@@ -393,9 +571,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
-        choices=("audit", "migrate-live", "migrate-domains"),
+        choices=("audit", "migrate-live", "migrate-domains", "organize-tests", "restore-domains"),
     )
     parser.add_argument("--root-dir", default=".")
+    parser.add_argument("--treeish")
     args = parser.parse_args(argv)
     if args.command == "migrate-live":
         changed = migrate_live_readiness(args.root_dir)
@@ -403,6 +582,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "migrate-domains":
         changed = migrate_domain_packages(args.root_dir)
+        print(json.dumps({"changed_count": len(changed), "changed": changed}, indent=2))
+        return 0
+    if args.command == "organize-tests":
+        changed = organize_tests(args.root_dir)
+        print(json.dumps({"changed_count": len(changed), "changed": changed}, indent=2))
+        return 0
+    if args.command == "restore-domains":
+        if not args.treeish:
+            parser.error("restore-domains requires --treeish")
+        changed = restore_domain_sources(args.root_dir, treeish=args.treeish)
         print(json.dumps({"changed_count": len(changed), "changed": changed}, indent=2))
         return 0
     audit = audit_repository_layout(args.root_dir)

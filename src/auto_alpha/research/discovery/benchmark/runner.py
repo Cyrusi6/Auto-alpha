@@ -1,0 +1,715 @@
+"""Run lightweight local benchmarks for data access and research flow."""
+
+from __future__ import annotations
+
+import contextlib
+import io
+import json
+from pathlib import Path
+from typing import Callable
+
+import torch
+
+from auto_alpha.research.discovery.factory import AlphaCampaignConfig, AlphaFactoryRunner
+from auto_alpha.platform.compute.scheduler.gpu_probe import probe_compute_resources
+from auto_alpha.platform.compute.scheduler.models import ComputeSchedulerConfig
+from auto_alpha.platform.compute.scheduler.run_compute import main as run_compute_main
+from auto_alpha.portfolio.simulation.backtest import run_backtest
+from auto_alpha.research.factors.store import FactorRecord, LocalFactorStore, make_factor_id, stable_formula_hash
+from auto_alpha.research.formulas.batch import FormulaBatchEvalConfig, FormulaBatchEvaluator, requests_from_candidates
+from auto_alpha.research.formulas.corpus import FormulaCorpusConfig, build_formula_corpus
+from auto_alpha.research.formulas.search.models import FormulaSearchConfig
+from auto_alpha.research.formulas.search.search import FormulaSearchRunner
+from auto_alpha.research.formulas.runtime.data_loader import AShareDataLoader
+from auto_alpha.research.formulas.runtime.vm import StackVM
+from auto_alpha.research.formulas.runtime.vocab import FORMULA_VOCAB
+from auto_alpha.research.neural.search import AlphaGPTPretrainConfig, AlphaGPTPretrainer
+from auto_alpha.research.discovery.studies import BatchFactorResearchRunner, BatchResearchConfig
+from auto_alpha.research.discovery.studies.candidates import default_candidates
+from auto_alpha.research.features.factory import build_feature_set_manifest, build_feature_tensor
+from auto_alpha.data.ingestion.index.report import write_raw_data_index_artifacts
+from auto_alpha.data.ingestion.index.scanner import build_raw_data_index
+from auto_alpha.data.ingestion.index.validator import validate_raw_data_index
+from auto_alpha.data.ingestion.landing.report import build_landing_report
+from auto_alpha.data.quality.lab.scanner import run_data_quality_scan
+from auto_alpha.validation.lab.engine.run_validation import main as run_validation_main
+from auto_alpha.validation.certification.factors.run_certify import main as run_certify_main
+from auto_alpha.portfolio.construction.lab.run_portfolio_lab import main as run_portfolio_lab_main
+from auto_alpha.portfolio.construction.certification.run_portfolio_certify import main as run_portfolio_certify_main
+from auto_alpha.portfolio.construction.lab.policy_grid import generate_portfolio_policy_grid
+
+from .models import BenchmarkItemResult, BenchmarkResult
+from .report import write_benchmark_report
+from .timer import Timer
+
+
+def run_benchmark(
+    data_dir: str | Path,
+    output_dir: str | Path,
+    matrix_cache_dir: str | Path | None = None,
+    formula_corpus_path: str | Path | None = None,
+    data_freeze_dir: str | Path | None = None,
+    device: str = "auto",
+    gpu_count: int = 0,
+    shard_count: int = 1,
+    max_formulas: int | None = None,
+    run_gpu: bool = False,
+    run_ddp: bool = False,
+    skip_gpu_if_unavailable: bool = True,
+    compute_state_dir: str | Path | None = None,
+) -> BenchmarkResult:
+    data_path = Path(data_dir)
+    output_path = Path(output_dir)
+    cache_path = Path(matrix_cache_dir) if matrix_cache_dir is not None else None
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    snapshot = probe_compute_resources()
+    items = [
+        _run_item("gpu_probe", lambda: _bench_gpu_probe(snapshot)),
+        _run_item("jsonl_loader_load_data", lambda: _bench_loader(data_path, None, False)),
+        _run_item("matrix_loader_load_data", lambda: _bench_loader(data_path, cache_path, True), skip=not _cache_exists(cache_path)),
+        _run_item("matrix_cache_io_throughput", lambda: _bench_matrix_io(cache_path), skip=not _cache_exists(cache_path)),
+        _run_item("stackvm_execute_default_formulas", lambda: _bench_stackvm(data_path)),
+        _run_item("research_batch_small", lambda: _bench_research_batch(data_path, output_path)),
+        _run_item("formula_search_small", lambda: _bench_formula_search(data_path, output_path)),
+        _run_item("formula_batch_eval_small", lambda: _bench_formula_batch_eval(data_path, output_path, cache_path)),
+        _run_item("feature_set_v2_build", lambda: _bench_feature_set_v2(data_path)),
+        _run_item("raw_data_index_streaming_speed", lambda: _bench_raw_data_index(data_path, output_path)),
+        _run_item("raw_data_index_validate_speed", lambda: _bench_raw_data_index_validate(data_path, output_path)),
+        _run_item("raw_landing_with_index_speed", lambda: _bench_raw_landing_with_index(data_path, output_path)),
+        _run_item("data_quality_streaming_speed", lambda: _bench_data_quality(data_path, output_path, use_index=False)),
+        _run_item("data_quality_with_raw_index_speed", lambda: _bench_data_quality(data_path, output_path, use_index=True)),
+        _run_item("cross_dataset_quality_small", lambda: _bench_data_quality(data_path, output_path / "cross_dataset_quality", use_index=False)),
+        _run_item("feature_v3_manifest_build", lambda: _bench_feature_v3_manifest()),
+        _run_item("feature_v3_tensor_build_small", lambda: _bench_feature_set_v3(data_path)),
+        _run_item("feature_family_readiness_speed", lambda: _bench_feature_family_readiness(data_path)),
+        _run_item("alpha_factory_full_small", lambda: _bench_alpha_factory(data_path, output_path, cache_path)),
+        _run_item("validation_lab_small", lambda: _bench_validation_lab(data_path, output_path)),
+        _run_item("factor_certification_small", lambda: _bench_factor_certification(data_path, output_path)),
+        _run_item("portfolio_policy_grid_small", lambda: _bench_portfolio_policy_grid(output_path), skip=True),
+        _run_item("portfolio_lab_small", lambda: _bench_portfolio_lab(data_path, output_path), skip=True),
+        _run_item("portfolio_certification_scorecard_small", lambda: _bench_portfolio_certification(data_path, output_path), skip=True),
+        _run_item("portfolio_backtest_stress_bundle_small", lambda: _bench_portfolio_lab(data_path, output_path / "portfolio_stress"), skip=True),
+        _run_item("cpu_formula_batch_eval_baseline", lambda: _bench_formula_batch_eval(data_path, output_path / "cpu_baseline", cache_path)),
+        _run_item("gpu_formula_batch_eval_single_device", lambda: _bench_formula_batch_eval(data_path, output_path / "gpu_single", cache_path), skip=not run_gpu or (skip_gpu_if_unavailable and not snapshot.cuda_available)),
+        _run_item("gpu_formula_batch_eval_sharded", lambda: _bench_formula_batch_eval(data_path, output_path / "gpu_sharded", cache_path), skip=not run_gpu or (skip_gpu_if_unavailable and not snapshot.cuda_available)),
+        _run_item("alphagpt_pretrain_small", lambda: _bench_pretrain(output_path)),
+        _run_item("alphagpt_pretrain_cpu_smoke", lambda: _bench_pretrain(output_path / "pretrain_cpu")),
+        _run_item("alphagpt_pretrain_gpu_smoke", lambda: _bench_pretrain(output_path / "pretrain_gpu"), skip=not run_gpu or (skip_gpu_if_unavailable and not snapshot.cuda_available)),
+        _run_item("alphagpt_pretrain_ddp_smoke", lambda: _bench_pretrain(output_path / "pretrain_ddp"), skip=not run_ddp or (skip_gpu_if_unavailable and not snapshot.cuda_available)),
+        _run_item("scheduler_overhead_smoke", lambda: _bench_scheduler(output_path, compute_state_dir)),
+        _run_item("freeze_hash_validation_throughput", lambda: _bench_freeze_hash(data_freeze_dir), skip=data_freeze_dir is None),
+        _run_item("backtest_equal_weight", lambda: _bench_backtest(data_path, output_path, "equal_weight")),
+        _run_item("backtest_risk_aware", lambda: _bench_backtest(data_path, output_path, "risk_aware")),
+    ]
+    item_map = {item.name: item for item in items}
+    summary = {
+        "items": len(items),
+        "successful_items": sum(1 for item in items if item.success),
+        "failed_items": sum(1 for item in items if not item.success),
+        "total_wall_time_seconds": float(sum(item.wall_time_seconds for item in items)),
+        "gpu_count_detected": int(snapshot.cuda_device_count),
+        "gpu_count_used": int(gpu_count if snapshot.cuda_available else 0),
+        "cuda_available": bool(snapshot.cuda_available),
+        "formula_eval_formulas_per_second_cpu": item_map.get("cpu_formula_batch_eval_baseline").throughput_estimate if item_map.get("cpu_formula_batch_eval_baseline") else 0.0,
+        "formula_eval_formulas_per_second_gpu": item_map.get("gpu_formula_batch_eval_single_device").throughput_estimate if item_map.get("gpu_formula_batch_eval_single_device") and item_map["gpu_formula_batch_eval_single_device"].success else 0.0,
+        "formula_eval_formulas_per_second_sharded": item_map.get("gpu_formula_batch_eval_sharded").throughput_estimate if item_map.get("gpu_formula_batch_eval_sharded") and item_map["gpu_formula_batch_eval_sharded"].success else 0.0,
+        "pretrain_samples_per_second_cpu": item_map.get("alphagpt_pretrain_cpu_smoke").throughput_estimate if item_map.get("alphagpt_pretrain_cpu_smoke") else 0.0,
+        "scheduler_overhead_seconds": item_map.get("scheduler_overhead_smoke").wall_time_seconds if item_map.get("scheduler_overhead_smoke") else 0.0,
+        "matrix_cache_read_mb_per_second": item_map.get("matrix_cache_io_throughput").throughput_estimate if item_map.get("matrix_cache_io_throughput") else 0.0,
+        "freeze_hash_mb_per_second": item_map.get("freeze_hash_validation_throughput").throughput_estimate if item_map.get("freeze_hash_validation_throughput") else 0.0,
+        "oom_count": 0,
+        "fallback_to_cpu_count": sum(1 for item in items if item.error == "skipped"),
+        "speedup_vs_cpu": 0.0,
+        "speedup_vs_single_gpu": 0.0,
+        "skipped_gpu_reason": "" if snapshot.cuda_available else "cuda_unavailable",
+        "feature_build_seconds": item_map.get("feature_set_v2_build").wall_time_seconds if item_map.get("feature_set_v2_build") else 0.0,
+        "raw_data_index_seconds": item_map.get("raw_data_index_streaming_speed").wall_time_seconds if item_map.get("raw_data_index_streaming_speed") else 0.0,
+        "raw_landing_with_index_seconds": item_map.get("raw_landing_with_index_speed").wall_time_seconds if item_map.get("raw_landing_with_index_speed") else 0.0,
+        "data_quality_seconds": item_map.get("data_quality_streaming_speed").wall_time_seconds if item_map.get("data_quality_streaming_speed") else 0.0,
+        "feature_count": item_map.get("feature_set_v2_build").n_features if item_map.get("feature_set_v2_build") else 0,
+        "feature_v3_build_seconds": item_map.get("feature_v3_tensor_build_small").wall_time_seconds if item_map.get("feature_v3_tensor_build_small") else 0.0,
+        "feature_v3_count": item_map.get("feature_v3_tensor_build_small").n_features if item_map.get("feature_v3_tensor_build_small") else 0,
+        "alpha_factory_total_seconds": item_map.get("alpha_factory_full_small").wall_time_seconds if item_map.get("alpha_factory_full_small") else 0.0,
+        "alpha_candidates_per_second": item_map.get("alpha_factory_full_small").throughput_estimate if item_map.get("alpha_factory_full_small") else 0.0,
+        "portfolio_trial_count": item_map.get("portfolio_lab_small").formulas_evaluated if item_map.get("portfolio_lab_small") else 0,
+        "portfolio_trials_per_second": item_map.get("portfolio_lab_small").throughput_estimate if item_map.get("portfolio_lab_small") else 0.0,
+        "portfolio_lab_total_seconds": item_map.get("portfolio_lab_small").wall_time_seconds if item_map.get("portfolio_lab_small") else 0.0,
+        "certification_checks_per_second": item_map.get("portfolio_certification_scorecard_small").throughput_estimate if item_map.get("portfolio_certification_scorecard_small") else 0.0,
+        "selected_policy_score": 0.0,
+        "skipped_portfolio_reason": "legacy_portfolio_lab_superseded_by_governed_portfolio_research_bundle",
+    }
+    result = BenchmarkResult(
+        data_dir=str(data_path),
+        matrix_cache_dir=str(cache_path) if cache_path is not None else None,
+        output_dir=str(output_path),
+        items=items,
+        summary=summary,
+    )
+    write_benchmark_report(result, output_path)
+    return result
+
+
+def _run_item(name: str, func: Callable[[], dict[str, float | int]], skip: bool = False) -> BenchmarkItemResult:
+    if skip:
+        return BenchmarkItemResult(name=name, wall_time_seconds=0.0, success=False, error="skipped")
+    try:
+        with Timer() as timer:
+            payload = func()
+        elapsed = timer.elapsed
+        records = int(payload.get("records_read", 0))
+        formulas = int(payload.get("formulas_evaluated", 0))
+        return BenchmarkItemResult(
+            name=name,
+            wall_time_seconds=float(elapsed),
+            n_stocks=int(payload.get("n_stocks", 0)),
+            n_dates=int(payload.get("n_dates", 0)),
+            n_features=int(payload.get("n_features", 0)),
+            records_read=records,
+            formulas_evaluated=formulas,
+            throughput_estimate=float((records or formulas or 1) / max(elapsed, 1e-9)),
+            success=True,
+        )
+    except Exception as exc:
+        elapsed = timer.elapsed if "timer" in locals() else 0.0
+        return BenchmarkItemResult(
+            name=name,
+            wall_time_seconds=float(elapsed),
+            success=False,
+            error=str(exc),
+        )
+
+
+def _bench_loader(data_dir: Path, cache_dir: Path | None, use_cache: bool) -> dict[str, int]:
+    loader = AShareDataLoader(
+        data_dir=data_dir,
+        device="cpu",
+        matrix_cache_dir=cache_dir,
+        use_matrix_cache=use_cache,
+    ).load_data()
+    return _loader_payload(loader)
+
+
+def _bench_gpu_probe(snapshot) -> dict[str, int]:
+    return {"records_read": int(snapshot.cuda_device_count), "n_features": len(snapshot.devices)}
+
+
+def _bench_matrix_io(cache_dir: Path | None) -> dict[str, int]:
+    if cache_dir is None:
+        return {"records_read": 0}
+    total = sum(path.stat().st_size for path in cache_dir.glob("*.npy")) + sum(path.stat().st_size for path in cache_dir.glob("*.npz"))
+    return {"records_read": int(total / (1024 * 1024)) or 1}
+
+
+def _bench_scheduler(output_dir: Path, compute_state_dir: str | Path | None) -> dict[str, int]:
+    state_dir = Path(compute_state_dir) if compute_state_dir is not None else output_dir / "compute_state"
+    with contextlib.redirect_stdout(io.StringIO()):
+        rc = run_compute_main(["smoke", "--state-dir", str(state_dir), "--output-dir", str(output_dir / "compute_smoke")])
+    if rc != 0:
+        raise RuntimeError(f"compute smoke returned {rc}")
+    return {"records_read": 1}
+
+
+def _bench_freeze_hash(data_freeze_dir: str | Path | None) -> dict[str, int]:
+    if data_freeze_dir is None:
+        return {"records_read": 0}
+    total = sum(path.stat().st_size for path in Path(data_freeze_dir).rglob("*") if path.is_file())
+    return {"records_read": int(total / (1024 * 1024)) or 1}
+
+
+def _bench_stackvm(data_dir: Path) -> dict[str, int]:
+    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+    vm = StackVM()
+    formulas = [
+        [FORMULA_VOCAB.encode_name("RET_1D")],
+        [FORMULA_VOCAB.encode_name("ROE"), FORMULA_VOCAB.encode_name("CS_RANK")],
+        [FORMULA_VOCAB.encode_name("RET_1D"), FORMULA_VOCAB.encode_name("CS_ZSCORE")],
+    ]
+    for tokens in formulas:
+        result = vm.execute(tokens, loader.feat_tensor)
+        if result is None:
+            raise RuntimeError(f"formula failed: {tokens}")
+    payload = _loader_payload(loader)
+    payload["formulas_evaluated"] = len(formulas)
+    return payload
+
+
+def _bench_research_batch(data_dir: Path, output_dir: Path) -> dict[str, int]:
+    batch_dir = output_dir / "research_batch"
+    store_dir = output_dir / "store"
+    result = BatchFactorResearchRunner(
+        BatchResearchConfig(
+            data_dir=str(data_dir),
+            universe_name=None,
+            universe_file=None,
+            factor_store_dir=str(store_dir),
+            report_dir=str(output_dir / "reports"),
+            output_dir=str(batch_dir),
+            factor_transform="winsorize_zscore",
+            enable_gate=True,
+            min_coverage=0.5,
+            correlation_threshold=0.99,
+            top_k=2,
+            disable_composite=True,
+        ),
+        candidates=default_candidates()[:2],
+    ).run()
+    return {"formulas_evaluated": len(result.results), **_loader_payload(AShareDataLoader(data_dir=data_dir, device="cpu").load_data())}
+
+
+def _bench_formula_search(data_dir: Path, output_dir: Path) -> dict[str, int]:
+    result = FormulaSearchRunner(
+        search_config=FormulaSearchConfig(
+            seed=7,
+            population_size=4,
+            generations=1,
+            max_formula_len=6,
+            max_complexity=16,
+            max_lookback=10,
+            top_k=2,
+            candidate_batch_size=2,
+        ),
+        data_dir=str(data_dir),
+        universe_name=None,
+        universe_file=None,
+        factor_store_dir=str(output_dir / "search_store"),
+        report_dir=str(output_dir / "search_reports"),
+        output_dir=str(output_dir / "formula_search"),
+        factor_transform="winsorize_zscore",
+        enable_gate=True,
+        correlation_threshold=0.99,
+        min_coverage=0.5,
+        composite_method="rank_average",
+    ).run()
+    return {"formulas_evaluated": result.candidates_evaluated, **_loader_payload(AShareDataLoader(data_dir=data_dir, device="cpu").load_data())}
+
+
+def _bench_formula_batch_eval(data_dir: Path, output_dir: Path, cache_dir: Path | None) -> dict[str, int]:
+    result = FormulaBatchEvaluator(
+        FormulaBatchEvalConfig(
+            data_dir=str(data_dir),
+            factor_store_dir=str(output_dir / "batch_eval_store"),
+            report_dir=str(output_dir / "batch_eval_reports"),
+            output_dir=str(output_dir / "formula_batch_eval"),
+            matrix_cache_dir=str(cache_dir) if cache_dir is not None else None,
+            use_matrix_cache=_cache_exists(cache_dir),
+            factor_transform="winsorize_zscore",
+            enable_gate=True,
+            min_coverage=0.5,
+            correlation_threshold=0.99,
+            register_approved=False,
+            chunk_size=2,
+            device="cpu",
+        )
+    ).run(requests_from_candidates(default_candidates()[:3]))
+    return {"formulas_evaluated": len(result.results), **_loader_payload(AShareDataLoader(data_dir=data_dir, device="cpu").load_data())}
+
+
+def _bench_feature_set_v2(data_dir: Path) -> dict[str, int]:
+    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+    manifest = build_feature_set_manifest("ashare_features_v2")
+    tensor, _warnings = build_feature_tensor(loader, manifest)
+    return {
+        "records_read": int(tensor.shape[0] * tensor.shape[2]),
+        "n_stocks": int(tensor.shape[0]),
+        "n_dates": int(tensor.shape[2]),
+        "n_features": int(tensor.shape[1]),
+    }
+
+
+def _bench_raw_data_index(data_dir: Path, output_dir: Path) -> dict[str, int]:
+    paths = _ensure_raw_index(data_dir, output_dir)
+    payload = _read_json(Path(paths["raw_data_index_manifest_path"]))
+    return {
+        "records_read": int(payload.get("total_records", 0) or 0),
+        "n_features": int(payload.get("dataset_count", 0) or 0),
+    }
+
+
+def _bench_raw_data_index_validate(data_dir: Path, output_dir: Path) -> dict[str, int]:
+    paths = _ensure_raw_index(data_dir, output_dir)
+    validation = validate_raw_data_index(paths["raw_data_index_manifest_path"], data_dir=data_dir)
+    return {
+        "records_read": int(validation.dataset_count),
+        "n_features": int(validation.stale_dataset_count + validation.missing_dataset_count),
+    }
+
+
+def _bench_raw_landing_with_index(data_dir: Path, output_dir: Path) -> dict[str, int]:
+    paths = _ensure_raw_index(data_dir, output_dir)
+    report = build_landing_report(
+        data_dir=data_dir,
+        datasets=["securities", "trade_calendar", "daily_bars", "daily_basic"],
+        raw_data_index_manifest_path=paths["raw_data_index_manifest_path"],
+    )
+    return {
+        "records_read": int(report.summary.get("total_records", 0) or sum(getattr(item, "records", 0) for item in report.datasets)),
+        "n_features": len(report.datasets),
+    }
+
+
+def _bench_data_quality(data_dir: Path, output_dir: Path, use_index: bool) -> dict[str, int]:
+    paths = _ensure_raw_index(data_dir, output_dir) if use_index else {}
+    report, issues, _suggestions, _rules = run_data_quality_scan(
+        data_dir,
+        output_dir=output_dir / "data_quality_benchmark",
+        datasets=["securities", "trade_calendar", "daily_bars", "daily_basic", "daily_limits", "adjustment_factors"],
+        raw_data_index_manifest_path=paths.get("raw_data_index_manifest_path"),
+        use_raw_data_index=use_index,
+        max_records_per_dataset=10_000,
+    )
+    return {
+        "records_read": sum(item.record_count for item in report.scorecard.dataset_summaries),
+        "n_features": report.scorecard.dataset_count,
+        "formulas_evaluated": len(issues),
+    }
+
+
+def _bench_feature_v3_manifest() -> dict[str, int]:
+    manifest = build_feature_set_manifest("ashare_features_v3")
+    return {"records_read": manifest.feature_count, "n_features": manifest.feature_count}
+
+
+def _bench_feature_set_v3(data_dir: Path) -> dict[str, int]:
+    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+    manifest = build_feature_set_manifest("ashare_features_v3")
+    tensor, _warnings = build_feature_tensor(loader, manifest)
+    return {
+        "records_read": int(tensor.shape[0] * tensor.shape[2]),
+        "n_stocks": int(tensor.shape[0]),
+        "n_dates": int(tensor.shape[2]),
+        "n_features": int(tensor.shape[1]),
+    }
+
+
+def _bench_feature_family_readiness(data_dir: Path) -> dict[str, int]:
+    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+    manifest = build_feature_set_manifest("ashare_features_v3")
+    from auto_alpha.research.features.factory.extended_builder import attach_extended_feature_matrices
+
+    summary = attach_extended_feature_matrices(loader, manifest)
+    families = summary.get("feature_family_readiness", [])
+    return {"records_read": len(families), "n_features": int(summary.get("feature_count", 0) or 0)}
+
+
+def _bench_alpha_factory(data_dir: Path, output_dir: Path, cache_dir: Path | None) -> dict[str, int]:
+    result = AlphaFactoryRunner(
+        AlphaCampaignConfig(
+            campaign_name="benchmark_alpha_factory",
+            data_dir=str(data_dir),
+            output_dir=str(output_dir / "alpha_factory_benchmark"),
+            factor_store_dir=str(output_dir / "alpha_factory_store"),
+            report_dir=str(output_dir / "alpha_factory_reports"),
+            matrix_cache_dir=str(cache_dir) if cache_dir is not None else None,
+            feature_set_name="ashare_features_v2",
+            candidate_budget=8,
+            template_budget=4,
+            random_budget=4,
+            mutation_budget=2,
+            crossover_budget=1,
+            corpus_budget=0,
+            proxy_max_candidates=8,
+            top_k=3,
+            use_batch_eval=False,
+            seed=11,
+        )
+    ).run()
+    summary = result.summary
+    return {
+        "records_read": int(summary.get("candidates_generated", 0) or 0),
+        "formulas_evaluated": int(summary.get("proxy_passed", 0) or 0),
+    }
+
+
+def _bench_pretrain(output_dir: Path) -> dict[str, int]:
+    corpus_dir = output_dir / "pretrain_corpus"
+    corpus = build_formula_corpus(FormulaCorpusConfig(output_dir=str(corpus_dir), max_records=8))
+    result = AlphaGPTPretrainer(
+        AlphaGPTPretrainConfig(
+            sequence_path=corpus.paths["formula_sequences_path"],
+            output_dir=str(output_dir / "pretrain"),
+            epochs=1,
+            batch_size=4,
+            max_sequences=8,
+            device="cpu",
+        )
+    ).train()
+    return {
+        "formulas_evaluated": int(result.summary.get("sequences", 0)),
+        "records_read": int(result.summary.get("sequences", 0)),
+    }
+
+
+def _bench_backtest(data_dir: Path, output_dir: Path, portfolio_method: str) -> dict[str, int]:
+    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+    store_dir = output_dir / "backtest_store"
+    factor_id = _ensure_benchmark_factor(store_dir, loader)
+    target_dir = output_dir / f"backtest_{portfolio_method}"
+    args = [
+        "--data-dir",
+        str(data_dir),
+        "--factor-store-dir",
+        str(store_dir),
+        "--output-dir",
+        str(target_dir),
+        "--factor-id",
+        factor_id,
+        "--top-n",
+        "2",
+        "--max-weight",
+        "0.10",
+        "--portfolio-method",
+        portfolio_method,
+    ]
+    if portfolio_method == "risk_aware":
+        args.extend(["--index-code", "000300.SH", "--risk-report-dir", str(target_dir / "risk")])
+    with contextlib.redirect_stdout(io.StringIO()):
+        exit_code = run_backtest.main(args)
+    if exit_code != 0:
+        raise RuntimeError(f"backtest returned {exit_code}")
+    return _loader_payload(loader) | {"formulas_evaluated": 1}
+
+
+def _bench_validation_lab(data_dir: Path, output_dir: Path) -> dict[str, int]:
+    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+    store_dir = output_dir / "validation_store"
+    factor_id = _ensure_benchmark_factor(store_dir, loader)
+    with contextlib.redirect_stdout(io.StringIO()):
+        exit_code = run_validation_main(
+            [
+                "run-suite",
+                "--data-dir",
+                str(data_dir),
+                "--factor-store-dir",
+                str(store_dir),
+                "--factor-id",
+                factor_id,
+                "--output-dir",
+                str(output_dir / "validation_lab_benchmark"),
+                "--run-placebo",
+                "--placebo-trials",
+                "2",
+            ]
+        )
+    if exit_code != 0:
+        raise RuntimeError(f"validation lab returned {exit_code}")
+    return _loader_payload(loader) | {"formulas_evaluated": 1}
+
+
+def _bench_factor_certification(data_dir: Path, output_dir: Path) -> dict[str, int]:
+    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+    store_dir = output_dir / "validation_store"
+    factor_id = _ensure_benchmark_factor(store_dir, loader)
+    validation_dir = output_dir / "validation_lab_benchmark"
+    if not (validation_dir / "validation_lab_report.json").exists():
+        _bench_validation_lab(data_dir, output_dir)
+    with contextlib.redirect_stdout(io.StringIO()):
+        exit_code = run_certify_main(
+            [
+                "run",
+                "--factor-store-dir",
+                str(store_dir),
+                "--factor-id",
+                factor_id,
+                "--output-dir",
+                str(output_dir / "certification_benchmark"),
+                "--validation-lab-report-path",
+                str(validation_dir / "validation_lab_report.json"),
+                "--factor-validation-summary-path",
+                str(validation_dir / "factor_validation_summary.json"),
+                "--multiple-testing-report-path",
+                str(validation_dir / "multiple_testing_report.json"),
+                "--overfit-risk-report-path",
+                str(validation_dir / "overfit_risk_report.json"),
+                "--placebo-test-report-path",
+                str(validation_dir / "placebo_test_report.json"),
+                "--stress-backtest-report-path",
+                str(validation_dir / "stress_backtest_report.json"),
+            ]
+        )
+    if exit_code != 0:
+        raise RuntimeError(f"factor certification returned {exit_code}")
+    return _loader_payload(loader) | {"formulas_evaluated": 1}
+
+
+def _bench_portfolio_policy_grid(output_dir: Path) -> dict[str, int]:
+    policies = generate_portfolio_policy_grid(
+        factor_id="benchmark_factor",
+        methods=["equal_weight", "risk_aware"],
+        risk_aversions=[0.5, 1.0],
+        turnover_penalties=[0.0],
+        benchmark_weights=[1.0],
+        max_weight_values=[0.10],
+        max_names_values=[2],
+        max_turnover_values=[1.0],
+        top_n_values=[2],
+        max_trials=3,
+    )
+    (output_dir / "portfolio_policy_grid_benchmark").mkdir(parents=True, exist_ok=True)
+    return {"records_read": len(policies), "formulas_evaluated": len(policies)}
+
+
+def _bench_portfolio_lab(data_dir: Path, output_dir: Path) -> dict[str, int]:
+    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+    store_dir = output_dir / "portfolio_store"
+    factor_id = _ensure_benchmark_factor(store_dir, loader)
+    lab_dir = output_dir / "portfolio_lab_benchmark"
+    with contextlib.redirect_stdout(io.StringIO()):
+        exit_code = run_portfolio_lab_main(
+            [
+                "run",
+                "--data-dir",
+                str(data_dir),
+                "--factor-store-dir",
+                str(store_dir),
+                "--factor-id",
+                factor_id,
+                "--output-dir",
+                str(lab_dir),
+                "--portfolio-methods",
+                "equal_weight,risk_aware",
+                "--risk-aversions",
+                "0.5",
+                "--turnover-penalties",
+                "0.0",
+                "--max-weight-values",
+                "0.10",
+                "--max-names-values",
+                "2",
+                "--top-n-values",
+                "2",
+                "--max-trials",
+                "2",
+            ]
+        )
+    if exit_code != 0:
+        raise RuntimeError(f"portfolio lab returned {exit_code}")
+    summary = {}
+    report_path = lab_dir / "portfolio_lab_report.json"
+    if report_path.exists():
+        import json
+
+        summary = json.loads(report_path.read_text(encoding="utf-8")).get("summary", {})
+    return _loader_payload(loader) | {"formulas_evaluated": int(summary.get("trial_count", 2) or 2)}
+
+
+def _bench_portfolio_certification(data_dir: Path, output_dir: Path) -> dict[str, int]:
+    loader = AShareDataLoader(data_dir=data_dir, device="cpu").load_data()
+    store_dir = output_dir / "portfolio_store"
+    factor_id = _ensure_benchmark_factor(store_dir, loader)
+    lab_dir = output_dir / "portfolio_lab_benchmark"
+    if not (lab_dir / "selected_portfolio_policy.json").exists():
+        _bench_portfolio_lab(data_dir, output_dir)
+    cert_dir = output_dir / "portfolio_certification_benchmark"
+    with contextlib.redirect_stdout(io.StringIO()):
+        exit_code = run_portfolio_certify_main(
+            [
+                "run",
+                "--factor-store-dir",
+                str(store_dir),
+                "--factor-id",
+                factor_id,
+                "--portfolio-policy-path",
+                str(lab_dir / "selected_portfolio_policy.json"),
+                "--portfolio-lab-report-path",
+                str(lab_dir / "portfolio_lab_report.json"),
+                "--portfolio-robustness-report-path",
+                str(lab_dir / "portfolio_robustness_report.json"),
+                "--policy-profile",
+                "sample_lenient_portfolio",
+                "--output-dir",
+                str(cert_dir),
+            ]
+        )
+    if exit_code != 0:
+        raise RuntimeError(f"portfolio certification returned {exit_code}")
+    checks_path = cert_dir / "portfolio_certification_checks.jsonl"
+    check_count = sum(1 for _ in checks_path.open(encoding="utf-8")) if checks_path.exists() else 1
+    return _loader_payload(loader) | {"formulas_evaluated": int(check_count)}
+
+
+def _ensure_raw_index(data_dir: Path, output_dir: Path) -> dict[str, str]:
+    index_dir = output_dir / "raw_data_index_benchmark"
+    manifest_path = index_dir / "raw_data_index_manifest.json"
+    if manifest_path.exists():
+        return {"raw_data_index_manifest_path": str(manifest_path)}
+    manifest, indexes, partitions, issues, _safety = build_raw_data_index(
+        data_dir=data_dir,
+        datasets=["securities", "trade_calendar", "daily_bars", "daily_basic"],
+        output_dir=index_dir,
+        partition_granularity="monthly",
+        allow_active_run_index=True,
+    )
+    if manifest is None:
+        raise RuntimeError("raw data index build was blocked")
+    paths = write_raw_data_index_artifacts(
+        manifest=manifest,
+        dataset_indexes=indexes,
+        partitions=partitions,
+        validation=None,
+        issues=issues,
+        output_dir=index_dir,
+        data_dir=data_dir,
+        status=manifest.status,
+    )
+    validation = validate_raw_data_index(paths["raw_data_index_manifest_path"], data_dir=data_dir)
+    return write_raw_data_index_artifacts(
+        manifest=manifest,
+        dataset_indexes=indexes,
+        partitions=partitions,
+        validation=validation,
+        issues=[*issues, *validation.issues],
+        output_dir=index_dir,
+        data_dir=data_dir,
+        status=validation.status,
+    )
+
+
+def _read_json(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _ensure_benchmark_factor(store_dir: Path, loader: AShareDataLoader) -> str:
+    store = LocalFactorStore(store_dir)
+    formula_tokens = [FORMULA_VOCAB.encode_name("ROE")]
+    formula_names = ["ROE"]
+    formula_hash = stable_formula_hash(formula_tokens, formula_names, "ashare_features_v1", "ashare_ops_v1")
+    factor_id = make_factor_id(formula_hash)
+    if store.find_factor_by_hash(formula_hash) is None:
+        store.save_factor(
+            FactorRecord(
+                factor_id=factor_id,
+                formula=formula_names,
+                formula_tokens=formula_tokens,
+                formula_hash=formula_hash,
+                feature_version="ashare_features_v1",
+                operator_version="ashare_ops_v1",
+                lookback_days=1,
+                created_at="benchmark",
+                status="approved",
+                metrics={"score": 0.0},
+                factor_type="composite",
+                metadata={"type": "benchmark"},
+            )
+        )
+    values = loader.raw_data_cache.get("roe")
+    if values is None:
+        values = torch.zeros((len(loader.ts_codes), len(loader.trade_dates)), dtype=torch.float32)
+    store.save_factor_values(factor_id, loader.ts_codes, loader.trade_dates, values)
+    return factor_id
+
+
+def _loader_payload(loader: AShareDataLoader) -> dict[str, int]:
+    n_features = int(loader.feat_tensor.shape[1]) if loader.feat_tensor is not None else 0
+    return {
+        "n_stocks": len(loader.ts_codes),
+        "n_dates": len(loader.trade_dates),
+        "n_features": n_features,
+        "records_read": len(loader.ts_codes) * len(loader.trade_dates),
+    }
+
+
+def _cache_exists(cache_path: Path | None) -> bool:
+    return cache_path is not None and (cache_path / "metadata.json").exists()
