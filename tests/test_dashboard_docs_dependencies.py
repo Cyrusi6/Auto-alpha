@@ -2,10 +2,10 @@ from pathlib import Path
 
 
 DOC_TARGETS = [
-    Path("dashboard/config.py"),
-    Path("dashboard/data_service.py"),
-    Path("dashboard/visualizer.py"),
-    Path("dashboard/app.py"),
+    Path("src/dashboard/config.py"),
+    Path("src/dashboard/data_service.py"),
+    Path("src/dashboard/visualizer.py"),
+    Path("src/dashboard/app.py"),
     Path("README.md"),
     Path("CATREADME.md"),
     Path("pyproject.toml"),

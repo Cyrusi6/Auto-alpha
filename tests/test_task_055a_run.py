@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from task_055_a.run import (
+from live_readiness.holdout_simulation.run import (
     BLOCKED_STATUS,
     CONFIG_SCHEMA,
     PHYSICAL_STATE_NAMES,
@@ -14,7 +14,7 @@ from task_055_a.run import (
     Task055AOrchestrationError,
     run_task055a,
 )
-from task_055_a.simulator import simulate_event_ledger
+from live_readiness.holdout_simulation.simulator import simulate_event_ledger
 
 
 def _files(tmp_path: Path):
@@ -229,7 +229,7 @@ def test_resume_rejects_tampered_run_artifact(tmp_path):
 
 
 def test_data_blockers_publish_exact100_verified_terminal_artifacts(tmp_path):
-    from task_055_a.simulator import SimulationDataBlocker
+    from live_readiness.holdout_simulation.simulator import SimulationDataBlocker
 
     config, _, _ = _files(tmp_path)
     _, manifest, loaded, seal = _fake_evidence(tmp_path)

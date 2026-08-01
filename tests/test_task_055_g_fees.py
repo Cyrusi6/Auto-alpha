@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 
 from artifact_schema.validator import validate_artifact
-from task_055_a.policy import PREREGISTERED_SCENARIOS
-from task_055_g.fee_cli import main as fee_cli_main
-from task_055_g.fees import (
+from live_readiness.holdout_simulation.policy import PREREGISTERED_SCENARIOS
+from live_readiness.production_hardening.fee_cli import main as fee_cli_main
+from live_readiness.production_hardening.fees import (
     FeeScheduleCalculator,
     FeeWorkflowError,
     acquire_fee_documents,

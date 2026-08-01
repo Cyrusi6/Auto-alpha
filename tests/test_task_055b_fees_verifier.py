@@ -6,17 +6,17 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from task_055_a.artifacts import SimulationArtifactError, publish_simulation_run
-from task_055_a.policy import BASELINE
-from task_055_a.simulator import EventLedgerSimulator
-from task_055_b.fees import (
+from live_readiness.holdout_simulation.artifacts import SimulationArtifactError, publish_simulation_run
+from live_readiness.holdout_simulation.policy import BASELINE
+from live_readiness.holdout_simulation.simulator import EventLedgerSimulator
+from live_readiness.valuation_remediation.fees import (
     FeeScheduleError,
     default_fee_rules,
     fee_components_for_fill,
     publish_fee_schedule,
     validate_fee_schedule,
 )
-from task_055_b.verifier import (
+from live_readiness.valuation_remediation.verifier import (
     Task055BVerificationError,
     build_mark_matrices,
     make_official_mark_rows,
@@ -149,7 +149,7 @@ def test_stale_mark_requires_no_trade_evidence_and_source_transform():
             "mark_source_date": dates[0], "stale_age_trade_days": 1, "market_session_state": "DATA_SOURCE_GAP",
             "execution_allowed": False, "corporate_action_transform": {"type": "none", "price_multiplier": 1.0},
             "stale_mark_notional": 0.0, "stale_mark_nav_ratio": 0.0, "evidence": ev,
-            "evidence_hash": __import__("task_055_a.artifacts", fromlist=["canonical_hash"]).canonical_hash(ev),
+            "evidence_hash": __import__("live_readiness.holdout_simulation.artifacts", fromlist=["canonical_hash"]).canonical_hash(ev),
         })
     _, _, issues = build_mark_matrices(rows, dates=dates, assets=assets, raw_open=raw_open, raw_close=raw_close)
     assert any(issue.startswith("blocked_mark_state_used") for issue in issues)
@@ -158,7 +158,7 @@ def test_stale_mark_requires_no_trade_evidence_and_source_transform():
 
 def test_governed_simulator_uses_fee_manifest_not_embedded_policy_rates(tmp_path):
     from dataclasses import replace
-    from task_055_b.simulator import GovernedEventLedgerSimulator
+    from live_readiness.valuation_remediation.simulator import GovernedEventLedgerSimulator
 
     schedule = _schedule(tmp_path)
     policy = replace(
@@ -179,7 +179,7 @@ def test_governed_simulator_uses_fee_manifest_not_embedded_policy_rates(tmp_path
 
 
 def test_governed_simulator_requires_explicit_valuation_marks(tmp_path):
-    from task_055_b.simulator import GovernedEventLedgerSimulator
+    from live_readiness.valuation_remediation.simulator import GovernedEventLedgerSimulator
 
     schedule = _schedule(tmp_path)
     simulator = GovernedEventLedgerSimulator(BASELINE, fee_schedule=schedule["manifest_path"])

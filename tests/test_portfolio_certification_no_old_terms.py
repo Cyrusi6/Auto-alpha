@@ -18,7 +18,7 @@ def test_portfolio_governance_modules_do_not_reintroduce_old_business_terms():
         "fdv",
         "liquidity",
     ]
-    roots = [Path("portfolio_lab"), Path("portfolio_certification")]
+    roots = [Path("src/portfolio_lab"), Path("src/portfolio_certification")]
     offenders = []
     for root in roots:
         for path in root.rglob("*.py"):

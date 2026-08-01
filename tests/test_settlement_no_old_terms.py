@@ -3,13 +3,13 @@ from pathlib import Path
 
 def test_settlement_modules_do_not_reintroduce_old_business_terms():
     roots = [
-        Path("settlement_engine"),
-        Path("paper_account/ledger.py"),
-        Path("paper_account/models.py"),
-        Path("backtest/run_backtest.py"),
-        Path("strategy_manager/runner.py"),
-        Path("operations/daily_runner.py"),
-        Path("operations/run_daily.py"),
+        Path("src/settlement_engine"),
+        Path("src/paper_account/ledger.py"),
+        Path("src/paper_account/models.py"),
+        Path("src/backtest/run_backtest.py"),
+        Path("src/strategy_manager/runner.py"),
+        Path("src/operations/daily_runner.py"),
+        Path("src/operations/run_daily.py"),
     ]
     old_terms = [
         "solana",

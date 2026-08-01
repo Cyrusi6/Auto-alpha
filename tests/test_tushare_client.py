@@ -16,7 +16,7 @@ from data_pipeline.ashare.providers.tushare_client import (
 )
 from data_pipeline.ashare.request_identity import TushareRequestIdentity
 from data_pipeline.ashare.request_normalization import tushare_request_fingerprint
-from task_055_f.transport import CANONICAL_ORIGIN, transport_identity
+from live_readiness.evidence_hardening.transport import CANONICAL_ORIGIN, transport_identity
 
 
 def _identity(api_name="daily", params=None, fields=None):

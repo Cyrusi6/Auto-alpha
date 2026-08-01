@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from task_055_b import run as module
+from live_readiness.valuation_remediation import run as module
 
 
 def _config(tmp_path: Path) -> dict:

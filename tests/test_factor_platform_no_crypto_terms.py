@@ -22,10 +22,10 @@ FORBIDDEN_TERMS = [
 
 def test_factor_platform_files_do_not_contain_old_business_terms():
     files = [
-        *Path("factor_store").glob("*.py"),
-        *Path("evaluation").glob("*.py"),
-        Path("model_core/engine.py"),
-        Path("model_core/backtest.py"),
+        *Path("src/factor_store").glob("*.py"),
+        *Path("src/evaluation").glob("*.py"),
+        Path("src/model_core/engine.py"),
+        Path("src/model_core/backtest.py"),
     ]
     payload = "\n".join(path.read_text(encoding="utf-8") for path in files).lower()
 

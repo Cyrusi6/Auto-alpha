@@ -21,7 +21,7 @@ def test_statement_reconciliation_modules_do_not_reintroduce_old_terms():
         "fdv",
         "liquidity",
     ]
-    roots = [Path("broker_statement"), Path("reconciliation_center")]
+    roots = [Path("src/broker_statement"), Path("src/reconciliation_center")]
     for root in roots:
         for path in root.rglob("*.py"):
             text = path.read_text(encoding="utf-8").lower()

@@ -42,7 +42,7 @@ def test_task054_blackbox_sentinel_runs_four_real_subprocess_paths(tmp_path: Pat
             command = (
                 sys.executable,
                 "-m",
-                "task_054_a.sentinel_fixture",
+                "research_firewall.truth_evidence.sentinel_fixture",
                 "--input",
                 str(source),
                 "--output-dir",
@@ -105,7 +105,7 @@ def test_task054_production_sentinel_rejects_synthetic_fixture(tmp_path: Path):
                     command=(
                         sys.executable,
                         "-m",
-                        "task_054_a.sentinel_fixture",
+                        "research_firewall.truth_evidence.sentinel_fixture",
                         "--input",
                         str(source),
                         "--output-dir",

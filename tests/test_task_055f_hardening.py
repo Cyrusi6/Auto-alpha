@@ -6,10 +6,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from task_055_a.policy import ScenarioPolicy
-from task_055_a.simulator import EventLedgerSimulator, SimulationDataBlocker
-from task_055_f.causal import _seal_round_one_plan
-from task_055_f.fees import (
+from live_readiness.holdout_simulation.policy import ScenarioPolicy
+from live_readiness.holdout_simulation.simulator import EventLedgerSimulator, SimulationDataBlocker
+from live_readiness.evidence_hardening.causal import _seal_round_one_plan
+from live_readiness.evidence_hardening.fees import (
     FeeScheduleError,
     FeeScheduleCalculator,
     acquire_official_fee_documents,
@@ -18,8 +18,8 @@ from task_055_f.fees import (
     validate_official_fee_document_acquisition,
     validate_synthetic_fee_schedule_v2,
 )
-from task_055_f.read_ledger import AuditedReader, ReadLedgerError, canonical_hash
-from task_055_f.truth_v2 import _classify_cell
+from live_readiness.evidence_hardening.read_ledger import AuditedReader, ReadLedgerError, canonical_hash
+from live_readiness.evidence_hardening.truth_v2 import _classify_cell
 
 
 def _cell() -> dict:

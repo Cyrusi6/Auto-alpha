@@ -2,10 +2,10 @@ from pathlib import Path
 
 
 CORE_FILES = [
-    Path("data_pipeline/config.py"),
-    Path("data_pipeline/data_manager.py"),
-    Path("data_pipeline/db_manager.py"),
-    Path("data_pipeline/run_pipeline.py"),
+    Path("src/data_pipeline/config.py"),
+    Path("src/data_pipeline/data_manager.py"),
+    Path("src/data_pipeline/db_manager.py"),
+    Path("src/data_pipeline/run_pipeline.py"),
 ]
 
 FORBIDDEN_TERMS = [
@@ -21,9 +21,9 @@ FORBIDDEN_TERMS = [
 ]
 
 REMOVED_PROVIDER_FILES = [
-    Path("data_pipeline/providers/base.py"),
-    Path("data_pipeline/providers/birdeye.py"),
-    Path("data_pipeline/providers/dexscreener.py"),
+    Path("src/data_pipeline/providers/base.py"),
+    Path("src/data_pipeline/providers/birdeye.py"),
+    Path("src/data_pipeline/providers/dexscreener.py"),
 ]
 
 

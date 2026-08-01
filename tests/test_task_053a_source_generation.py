@@ -7,7 +7,7 @@ from data_pipeline.ashare.cache import TushareCacheSchemaError, TushareResponseC
 from data_pipeline.ashare.dataset_registry import DATASET_DEFINITIONS
 from data_pipeline.ashare.providers.tushare_client import TushareResponseEnvelope
 from data_pipeline.ashare.request_normalization import stable_json_hash
-from task_052_a.backfill import GovernedBackfillConfig, _run_dataset
+from backfill_repair.governed_replay.backfill import GovernedBackfillConfig, _run_dataset
 
 
 FIELDS = DATASET_DEFINITIONS["suspensions"].fields

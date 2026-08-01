@@ -6,9 +6,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from task_055_a.artifacts import publish_blocked_simulation_run
-from task_055_b import inventory
-from task_055_b.contracts import GapInventoryConfig
+from live_readiness.holdout_simulation.artifacts import publish_blocked_simulation_run
+from live_readiness.valuation_remediation import inventory
+from live_readiness.valuation_remediation.contracts import GapInventoryConfig
 
 
 def _json(path: Path, payload) -> None:

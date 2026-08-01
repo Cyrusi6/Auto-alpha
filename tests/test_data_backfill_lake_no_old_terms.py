@@ -21,8 +21,8 @@ FORBIDDEN = [
 
 def test_data_backfill_lake_no_old_terms():
     paths = [
-        *Path("data_backfill").glob("*.py"),
-        *Path("data_lake").glob("*.py"),
+        *Path("src/data_backfill").glob("*.py"),
+        *Path("src/data_lake").glob("*.py"),
     ]
     for path in paths:
         text = path.read_text(encoding="utf-8").lower()

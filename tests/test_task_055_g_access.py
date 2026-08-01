@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from task_055_g.access import AccessBroker, AccessPlanError, canonical_hash, validate_access_ledger
-from task_055_g.contracts import ACCESS_PLAN_SCHEMA
+from live_readiness.production_hardening.access import AccessBroker, AccessPlanError, canonical_hash, validate_access_ledger
+from live_readiness.production_hardening.contracts import ACCESS_PLAN_SCHEMA
 
 
 def _plan(tmp_path: Path, entry: dict) -> Path:

@@ -7,15 +7,15 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from task_055_a.artifacts import (
+from live_readiness.holdout_simulation.artifacts import (
     ResumeDriftError,
     canonical_hash,
     publish_simulation_run,
     resume_simulation_run,
 )
-from task_055_a.policy import BASELINE
-from task_055_a.simulator import EventLedgerSimulator
-from task_055_a.verifier import (
+from live_readiness.holdout_simulation.policy import BASELINE
+from live_readiness.holdout_simulation.simulator import EventLedgerSimulator
+from live_readiness.holdout_simulation.verifier import (
     SimulationVerificationError,
     compare_replay_truth,
     verify_simulation_run,
@@ -168,7 +168,7 @@ def test_verifier_closes_lots_dividend_and_share_action(tmp_path):
 
 
 def test_blocked_run_artifact_is_tamper_evident(tmp_path: Path):
-    from task_055_a.artifacts import publish_blocked_simulation_run
+    from live_readiness.holdout_simulation.artifacts import publish_blocked_simulation_run
 
     root = tmp_path / "blocked"
     published = publish_blocked_simulation_run(

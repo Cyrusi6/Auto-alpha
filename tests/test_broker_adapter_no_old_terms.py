@@ -26,11 +26,11 @@ FORBIDDEN = [
 
 def test_broker_adapter_and_modified_execution_paths_have_no_old_terms():
     roots = [
-        Path("broker_adapter"),
-        Path("operations"),
-        Path("paper_account"),
-        Path("monitoring"),
-        Path("dashboard"),
+        Path("src/broker_adapter"),
+        Path("src/operations"),
+        Path("src/paper_account"),
+        Path("src/monitoring"),
+        Path("src/dashboard"),
     ]
     files = []
     for root in roots:

@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
 import pytest
-from task_055_c.evidence import Task055CEvidenceError, _classify, canonical_hash
-from task_055_c.cascade import _request
+from live_readiness.native_replay.evidence import Task055CEvidenceError, _classify, canonical_hash
+from live_readiness.native_replay.cascade import _request
 
 
 def test_vendor_modeled_requires_exact_positive_s_complete_coverage():

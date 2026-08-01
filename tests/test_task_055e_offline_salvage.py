@@ -6,17 +6,17 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from task_055_a.policy import ScenarioPolicy
-from task_055_a.simulator import EventLedgerSimulator, SimulationDataBlocker
-from task_055_e.domains import _minimal_network_plan, _reproject_anchors
-from task_055_e.provenance import (
+from live_readiness.holdout_simulation.policy import ScenarioPolicy
+from live_readiness.holdout_simulation.simulator import EventLedgerSimulator, SimulationDataBlocker
+from live_readiness.source_salvage.domains import _minimal_network_plan, _reproject_anchors
+from live_readiness.source_salvage.provenance import (
     _classify,
     _legacy_cache_key,
     _legacy_stable_hash,
     _scan_legacy_daily_cache,
     _scan_normalized_daily_jsonl,
 )
-from task_055_e.run import Task055EOfflineError, _validate_no_network
+from live_readiness.source_salvage.run import Task055EOfflineError, _validate_no_network
 
 
 def _bar(code: str, date: str, close: float = 10.0) -> dict:

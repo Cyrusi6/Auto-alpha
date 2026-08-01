@@ -2,13 +2,13 @@ from pathlib import Path
 
 
 TARGETS = [
-    Path("data_pipeline/ashare/sync_plan.py"),
-    Path("data_pipeline/ashare/cache.py"),
-    Path("data_pipeline/ashare/audit.py"),
-    Path("data_pipeline/ashare/compaction.py"),
-    Path("data_pipeline/ashare/stats.py"),
-    Path("data_pipeline/ashare/manager.py"),
-    Path("data_pipeline/run_pipeline.py"),
+    Path("src/data_pipeline/ashare/sync_plan.py"),
+    Path("src/data_pipeline/ashare/cache.py"),
+    Path("src/data_pipeline/ashare/audit.py"),
+    Path("src/data_pipeline/ashare/compaction.py"),
+    Path("src/data_pipeline/ashare/stats.py"),
+    Path("src/data_pipeline/ashare/manager.py"),
+    Path("src/data_pipeline/run_pipeline.py"),
 ]
 
 FORBIDDEN_TERMS = [

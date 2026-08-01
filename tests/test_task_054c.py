@@ -3,11 +3,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 from model_core.vm import StackVM
-from task_054_c.bundle import validate_bundle
-from task_054_c.factor_store import validate_normalized_replay_store
-from task_054_c.research_view import validate_research_projection
-from task_054_c.seal import validate_pre_gpu_seal
-from task_054_c.validators import canonical_hash,sha256_file,validate_strict_matrix_generation,validate_v3_tensor_generation
+from research_firewall.engineering_closure.bundle import validate_bundle
+from research_firewall.engineering_closure.factor_store import validate_normalized_replay_store
+from research_firewall.engineering_closure.research_view import validate_research_projection
+from research_firewall.engineering_closure.seal import validate_pre_gpu_seal
+from research_firewall.engineering_closure.validators import canonical_hash,sha256_file,validate_strict_matrix_generation,validate_v3_tensor_generation
 
 def test_formula_lookback_uses_max_raw_lag_units():
     vm=StackVM(); feature=vm.vocab.encode_name('RET_1D'); mean=vm.vocab.encode_name('TS_MEAN10')

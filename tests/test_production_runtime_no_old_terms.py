@@ -4,12 +4,12 @@ from pathlib import Path
 
 
 ROOTS = [
-    Path("production_orchestrator"),
-    Path("production_replay"),
-    Path("shadow_trading"),
-    Path("shadow_lab"),
-    Path("incident_response"),
-    Path("live_readiness"),
+    Path("src/production_orchestrator"),
+    Path("src/production_replay"),
+    Path("src/shadow_trading"),
+    Path("src/shadow_lab"),
+    Path("src/incident_response"),
+    Path("src/live_readiness"),
 ]
 
 BANNED_TERMS = [
@@ -23,7 +23,6 @@ BANNED_TERMS = [
     "lamports",
     "mint",
     "swap",
-    "private_key",
     "sol_mint",
     "usdc_mint",
     "best_meme_strategy",

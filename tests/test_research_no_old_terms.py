@@ -2,18 +2,18 @@ from pathlib import Path
 
 
 TARGETS = [
-    Path("research/__init__.py"),
-    Path("research/models.py"),
-    Path("research/candidates.py"),
-    Path("research/batch_runner.py"),
-    Path("research/composite.py"),
-    Path("research/report.py"),
-    Path("research/run_batch.py"),
-    Path("backtest/io.py"),
-    Path("backtest/run_backtest.py"),
-    Path("strategy_manager/runner.py"),
-    Path("dashboard/data_service.py"),
-    Path("dashboard/app.py"),
+    Path("src/research/__init__.py"),
+    Path("src/research/models.py"),
+    Path("src/research/candidates.py"),
+    Path("src/research/batch_runner.py"),
+    Path("src/research/composite.py"),
+    Path("src/research/report.py"),
+    Path("src/research/run_batch.py"),
+    Path("src/backtest/io.py"),
+    Path("src/backtest/run_backtest.py"),
+    Path("src/strategy_manager/runner.py"),
+    Path("src/dashboard/data_service.py"),
+    Path("src/dashboard/app.py"),
 ]
 
 FORBIDDEN_TERMS = [

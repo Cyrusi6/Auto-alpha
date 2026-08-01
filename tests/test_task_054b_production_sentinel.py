@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from task_054_b.audit import (
+from research_firewall.production_sentinel.audit import (
     AuditedReadBroker,
     ComponentReceiptRecorder,
     validate_component_receipts,
     validate_read_ledger,
 )
-from task_054_b.sentinel import (
+from research_firewall.production_sentinel.sentinel import (
     EVIDENCE_SCOPE,
     MUTATIONS,
     PATHS,

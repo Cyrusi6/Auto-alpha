@@ -25,28 +25,28 @@ from dev_tools.task055kr_harness import (
     run_lightweight_recovery_matrix,
     synthetic_accepted_response,
 )
-from task_055_h.io import canonical_hash, read_json
-from task_055_j.ledger import DurableHashJournal
-from task_055_f.valuation import (
+from live_readiness.network_authorization.io import canonical_hash, read_json
+from live_readiness.production_authority.ledger import DurableHashJournal
+from live_readiness.evidence_hardening.valuation import (
     publish_valuation_projection,
     valuation_surface_from_projection,
 )
-from task_055_k.application import APPLICATION_STAGES, runtime_semantic_source_hash
-from task_055_k.authority import (
+from live_readiness.correctness_closure.application import APPLICATION_STAGES, runtime_semantic_source_hash
+from live_readiness.correctness_closure.authority import (
     _resolve_task055k_roots,
     normalize_ordered_keys,
     publish_historical_supersession,
     validate_candidate_checkpoint,
 )
-from task_055_k.broker import (
+from live_readiness.correctness_closure.broker import (
     Task055KBrokerError,
     _validate_receipt_against_reservation,
 )
-from task_055_k.contracts import CANARY
-from task_055_k.immutable import write_immutable_generation
-from task_055_k import network_cli
-from task_055_k.source_tree import git_index_source_entries
-from task_055_k.stage_machine import (
+from live_readiness.correctness_closure.contracts import CANARY
+from live_readiness.correctness_closure.immutable import write_immutable_generation
+from live_readiness.correctness_closure import network_cli
+from live_readiness.correctness_closure.source_tree import git_index_source_entries
+from live_readiness.correctness_closure.stage_machine import (
     ApplicationStageMachine,
     StageDefinition,
     Task055KStageMachineError,
@@ -197,19 +197,19 @@ def test_all_python_capability_and_generic_client_paths_fail_closed() -> None:
 
 
 def test_all_legacy_network_entrypoints_fail_before_injected_io() -> None:
-    from task_052_a.backfill import run_governed_backfill
-    from task_055_c.cascade import execute_transport_stage
-    from task_055_d.network import execute_plan
-    from task_055_f.network import execute_canary as execute_f_canary
-    from task_055_f.network import execute_l1_resume as execute_f_resume
-    from task_055_g.network_state import execute_l1_canary, execute_l1_resume
-    from task_055_g.network_state import execute_l2_canary, execute_l2_resume
-    from task_055_h.network import (
+    from backfill_repair.governed_replay.backfill import run_governed_backfill
+    from live_readiness.native_replay.cascade import execute_transport_stage
+    from live_readiness.secure_acquisition.network import execute_plan
+    from live_readiness.evidence_hardening.network import execute_canary as execute_f_canary
+    from live_readiness.evidence_hardening.network import execute_l1_resume as execute_f_resume
+    from live_readiness.production_hardening.network_state import execute_l1_canary, execute_l1_resume
+    from live_readiness.production_hardening.network_state import execute_l2_canary, execute_l2_resume
+    from live_readiness.network_authorization.network import (
         load_file_credential_after_offline_gates,
         ordered_future_canary_gate,
     )
-    from task_055_i.executor import execute_single_canary as execute_i_canary
-    from task_055_j.executor import execute_single_canary as execute_j_canary
+    from live_readiness.canary_authority.executor import execute_single_canary as execute_i_canary
+    from live_readiness.production_authority.executor import execute_single_canary as execute_j_canary
 
     calls = {"credential": 0, "network": 0}
 
@@ -487,7 +487,7 @@ def test_production_package_has_no_task055k_synthetic_transport_entry() -> None:
     assert "execute_synthetic_rehearsal_response" not in sources
     assert "apply_staged_synthetic_response" not in sources
     assert "urllib.request.urlopen" not in sources
-    assert "urllib.request.build_opener(_NoRedirect).open" in Path("task_055_k/gateway.py").read_text(
+    assert "urllib.request.build_opener(_NoRedirect).open" in Path("src/live_readiness/correctness_closure/gateway.py").read_text(
         encoding="utf-8"
     )
     cli_source = inspect.getsource(network_cli)
@@ -500,7 +500,7 @@ def test_production_package_has_no_task055k_synthetic_transport_entry() -> None:
 
 def test_source_entries_use_git_blobs_and_include_full_runtime_boundary() -> None:
     tracked = subprocess.run(
-        ["git", "ls-files", "--error-unmatch", "task_055_k/stage_machine.py"],
+        ["git", "ls-files", "--error-unmatch", "src/live_readiness/correctness_closure/stage_machine.py"],
         capture_output=True,
         check=False,
     )
@@ -509,9 +509,9 @@ def test_source_entries_use_git_blobs_and_include_full_runtime_boundary() -> Non
     entries = git_index_source_entries(Path(".").resolve())
     paths = {row["path"] for row in entries}
     assert {
-        "task_055_k/gateway.py",
-        "task_055_k/stage_machine.py",
-        "task_055_k/application_components.py",
+        "src/live_readiness/correctness_closure/gateway.py",
+        "src/live_readiness/correctness_closure/stage_machine.py",
+        "src/live_readiness/correctness_closure/application_components.py",
         "dev_tools/task055kr_harness.py",
     } <= paths
     assert {row["git_index_mode"] for row in entries} <= {"100644", "100755"}
@@ -532,16 +532,16 @@ def test_runtime_semantic_hash_changes_with_production_source_bytes(
 
 
 def test_independent_verifier_does_not_reuse_production_valuation_builder() -> None:
-    import task_055_k.independent as independent_module
+    import live_readiness.correctness_closure.independent as independent_module
 
     source = inspect.getsource(independent_module)
-    assert "from task_055_f.causal import build_valuation_surface" not in source
+    assert "from live_readiness.evidence_hardening.causal import build_valuation_surface" not in source
     assert "prepare_simulation_inputs" not in source
-    assert "from task_055_j.application import _matrix_marks" not in source
+    assert "from live_readiness.production_authority.application import _matrix_marks" not in source
 
 
 def test_independent_valuation_surface_matches_contract_for_official_and_stale_marks() -> None:
-    from task_055_k.independent import _independent_valuation_surface
+    from live_readiness.correctness_closure.independent import _independent_valuation_surface
 
     surface = _independent_valuation_surface(
         truth={
@@ -581,8 +581,8 @@ def test_independent_valuation_surface_matches_contract_for_official_and_stale_m
 def test_invalid_sentinel_cache_moves_to_new_semantic_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import task_055_k.application_components as components
-    from task_055_k.stage_machine import StageRuntime
+    import live_readiness.correctness_closure.application_components as components
+    from live_readiness.correctness_closure.stage_machine import StageRuntime
 
     application_root = tmp_path / "application"
     cache_root = tmp_path / "cache"

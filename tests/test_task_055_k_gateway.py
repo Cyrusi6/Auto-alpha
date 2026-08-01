@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from task_055_h.io import canonical_hash, read_json
-from task_055_j.ledger import DurableHashJournal
-from task_055_k import broker, gateway
-from task_055_k.authority import normalize_ordered_keys, publish_candidate_checkpoint
-from task_055_k.broker import request_from_checkpoint
-from task_055_k.contracts import CANARY
+from live_readiness.network_authorization.io import canonical_hash, read_json
+from live_readiness.production_authority.ledger import DurableHashJournal
+from live_readiness.correctness_closure import broker, gateway
+from live_readiness.correctness_closure.authority import normalize_ordered_keys, publish_candidate_checkpoint
+from live_readiness.correctness_closure.broker import request_from_checkpoint
+from live_readiness.correctness_closure.contracts import CANARY
 
 
 def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

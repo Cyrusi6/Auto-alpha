@@ -2,11 +2,11 @@ from pathlib import Path
 
 
 TARGETS = [
-    Path("compute_cluster"),
-    Path("experiment_orchestrator"),
-    Path("formula_batch_eval/sharding.py"),
-    Path("formula_batch_eval/merge.py"),
-    Path("performance_benchmark/runner.py"),
+    Path("src/compute_cluster"),
+    Path("src/experiment_orchestrator"),
+    Path("src/formula_batch_eval/sharding.py"),
+    Path("src/formula_batch_eval/merge.py"),
+    Path("src/performance_benchmark/runner.py"),
 ]
 
 FORBIDDEN = [

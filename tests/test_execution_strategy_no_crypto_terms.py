@@ -26,9 +26,9 @@ FORBIDDEN_TERMS = [
 
 def test_execution_strategy_and_backtest_do_not_contain_old_terms():
     files = [
-        *Path("execution").glob("*.py"),
-        *Path("strategy_manager").glob("*.py"),
-        *Path("backtest").glob("*.py"),
+        *Path("src/execution").glob("*.py"),
+        *Path("src/strategy_manager").glob("*.py"),
+        *Path("src/backtest").glob("*.py"),
     ]
     payload = "\n".join(path.read_text(encoding="utf-8") for path in files).lower()
 

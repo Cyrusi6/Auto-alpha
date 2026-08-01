@@ -8,11 +8,11 @@ from typing import Any, Mapping, Sequence
 
 from data_pipeline.ashare.providers.tushare_client import parse_tushare_response_payload
 from data_pipeline.ashare.request_identity import TushareRequestIdentity
-from task_055_h.io import canonical_hash, read_json, sha256_file
-from task_055_j.ledger import DurableHashJournal
-from task_055_k.application import apply_accepted_response, production_context_from_parent
-from task_055_k.authority import publish_candidate_checkpoint, validate_task055j_parent
-from task_055_k.broker import (
+from live_readiness.network_authorization.io import canonical_hash, read_json, sha256_file
+from live_readiness.production_authority.ledger import DurableHashJournal
+from live_readiness.correctness_closure.application import apply_accepted_response, production_context_from_parent
+from live_readiness.correctness_closure.authority import publish_candidate_checkpoint, validate_task055j_parent
+from live_readiness.correctness_closure.broker import (
     AcceptedResponse,
     publish_attempt_reservation,
     publish_canary_acceptance,
@@ -21,15 +21,15 @@ from task_055_k.broker import (
     request_from_checkpoint,
     load_accepted_response,
 )
-from task_055_k.contracts import APPLICATION_STAGES, CANARY
-from task_055_k.independent import independently_verify_application_replay
-from task_055_k.rehearsal import (
+from live_readiness.correctness_closure.contracts import APPLICATION_STAGES, CANARY
+from live_readiness.correctness_closure.independent import independently_verify_application_replay
+from live_readiness.correctness_closure.rehearsal import (
     independently_verify_rehearsal,
     publish_rehearsal_report,
     validate_rehearsal,
 )
-from task_055_k.signing import EphemeralReceiptSigner
-from task_055_k.stage_machine import (
+from live_readiness.correctness_closure.signing import EphemeralReceiptSigner
+from live_readiness.correctness_closure.stage_machine import (
     ApplicationStageMachine,
     NativeStageResult,
     StageDefinition,

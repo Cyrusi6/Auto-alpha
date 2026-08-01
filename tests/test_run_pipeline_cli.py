@@ -207,7 +207,7 @@ def test_run_pipeline_sync_tushare_without_token_returns_nonzero(monkeypatch, ca
 
 
 def test_run_pipeline_source_excludes_old_entrypoint_terms():
-    source = Path("data_pipeline/run_pipeline.py").read_text(encoding="utf-8")
+    source = Path("src/data_pipeline/run_pipeline.py").read_text(encoding="utf-8")
 
     for forbidden in [
         "BIRDEYE_API_KEY",

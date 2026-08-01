@@ -2,14 +2,14 @@ from pathlib import Path
 
 
 TARGETS = [
-    Path("capacity_model"),
-    Path("execution_plan"),
-    Path("backtest/run_backtest.py"),
-    Path("backtest/simulator.py"),
-    Path("strategy_manager/runner.py"),
-    Path("operations"),
-    Path("monitoring"),
-    Path("dashboard"),
+    Path("src/capacity_model"),
+    Path("src/execution_plan"),
+    Path("src/backtest/run_backtest.py"),
+    Path("src/backtest/simulator.py"),
+    Path("src/strategy_manager/runner.py"),
+    Path("src/operations"),
+    Path("src/monitoring"),
+    Path("src/dashboard"),
 ]
 
 FORBIDDEN = [

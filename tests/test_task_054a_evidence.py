@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 
 from artifact_schema.validator import validate_artifact
-from task_054_a.evidence import (
+from research_firewall.truth_evidence.evidence import (
     build_scrubbed_blocked_evidence_package,
     build_scrubbed_evidence_package,
     verify_scrubbed_evidence_package,
 )
-from task_054_a.orchestrator import TASK054_STAGE_ORDER, Task054ProductionDAG, Task054StageContract, task054_stage_content_hash
+from research_firewall.truth_evidence.orchestrator import TASK054_STAGE_ORDER, Task054ProductionDAG, Task054StageContract, task054_stage_content_hash
 from validation_campaign_store.replay_evidence import validate_task054_replay_evidence
 
 

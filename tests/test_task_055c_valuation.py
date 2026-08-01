@@ -1,5 +1,5 @@
 import numpy as np
-from task_055_c.valuation import METHODS
+from live_readiness.native_replay.valuation import METHODS
 
 
 def test_mark_method_contract_is_strict():

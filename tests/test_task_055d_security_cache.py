@@ -16,15 +16,15 @@ from data_pipeline.ashare.security import (
     validate_tushare_origin,
 )
 from data_pipeline.ashare.providers.tushare_client import TushareNetworkError, _NoRedirect
-from task_055_d.cache import (
+from live_readiness.secure_acquisition.cache import (
     SecureCacheError,
     inventory_caches,
     publish_validated_response,
     split_capped_request,
     transport_identity,
 )
-from task_055_d.contracts import CANONICAL_ORIGIN, DAILY_FIELDS
-from task_055_d.network import execute_plan
+from live_readiness.secure_acquisition.contracts import CANONICAL_ORIGIN, DAILY_FIELDS
+from live_readiness.secure_acquisition.network import execute_plan
 
 
 def _request(params=None):

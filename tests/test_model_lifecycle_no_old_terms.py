@@ -22,12 +22,12 @@ OLD_TERMS = [
 
 
 SCAN_PATHS = [
-    Path("model_registry"),
-    Path("factor_lifecycle"),
-    Path("operations/daily_runner.py"),
-    Path("operations/run_daily.py"),
-    Path("monitoring/checks.py"),
-    Path("monitoring/run_monitor.py"),
+    Path("src/model_registry"),
+    Path("src/factor_lifecycle"),
+    Path("src/operations/daily_runner.py"),
+    Path("src/operations/run_daily.py"),
+    Path("src/monitoring/checks.py"),
+    Path("src/monitoring/run_monitor.py"),
 ]
 
 

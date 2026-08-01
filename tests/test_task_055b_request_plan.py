@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from task_055_b.request_plan import (
+from live_readiness.valuation_remediation.request_plan import (
     RequestPlanConfig,
     RequestPlanError,
     ResponseEnvelope,

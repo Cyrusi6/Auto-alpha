@@ -5,12 +5,12 @@ from pathlib import Path
 import pytest
 
 from data_pipeline.ashare.cache import TushareResponseCache
-from task_055_f.network import _append_spend_event
-from task_055_g import network_state
-from task_055_h.application import apply_native_canary_response, synthetic_test_only_apply, validate_native_response_apply
-from task_055_h.authorization import EXPECTED_ORDERED_REQUESTS
-from task_055_h.io import sha256_file
-from task_055_h.network import verify_and_accept_canary
+from live_readiness.evidence_hardening.network import _append_spend_event
+from live_readiness.production_hardening import network_state
+from live_readiness.network_authorization.application import apply_native_canary_response, synthetic_test_only_apply, validate_native_response_apply
+from live_readiness.network_authorization.authorization import EXPECTED_ORDERED_REQUESTS
+from live_readiness.network_authorization.io import sha256_file
+from live_readiness.network_authorization.network import verify_and_accept_canary
 
 from test_task_055_h_authorization import DAILY_FIELDS, ready_seal
 

@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from task_055_f.network import _append_spend_event
-from task_055_g import network_state
-from task_055_h.authorization import (
+from live_readiness.evidence_hardening.network import _append_spend_event
+from live_readiness.production_hardening import network_state
+from live_readiness.network_authorization.authorization import (
     EXPECTED_G_FRONTIER_ROOT,
     EXPECTED_G_PLAN_HASH,
     EXPECTED_ORDERED_REQUESTS,
@@ -16,10 +16,10 @@ from task_055_h.authorization import (
     validate_authorization_seal,
     verify_scrubbed_evidence_package,
 )
-from task_055_h.contracts import AUTHORIZATION_SEAL_SCHEMA, READY_STATUS, SCRUBBED_EVIDENCE_SCHEMA
-from task_055_h.io import canonical_hash, publish_generation
-from task_055_h.journal import DurableAccessError, DurableAccessJournal
-from task_055_h.network import load_file_credential_after_offline_gates, ordered_future_canary_gate
+from live_readiness.network_authorization.contracts import AUTHORIZATION_SEAL_SCHEMA, READY_STATUS, SCRUBBED_EVIDENCE_SCHEMA
+from live_readiness.network_authorization.io import canonical_hash, publish_generation
+from live_readiness.network_authorization.journal import DurableAccessError, DurableAccessJournal
+from live_readiness.network_authorization.network import load_file_credential_after_offline_gates, ordered_future_canary_gate
 
 
 DAILY_FIELDS = ["ts_code", "trade_date", "open", "high", "low", "close", "pre_close", "vol", "amount"]
@@ -188,7 +188,7 @@ def test_scrubbed_package_rejects_absolute_path_and_tamper(tmp_path: Path) -> No
 
 def test_scrubbed_package_verifies_as_standalone_file(tmp_path: Path) -> None:
     seal = ready_seal(tmp_path)
-    from task_055_h.authorization import publish_scrubbed_evidence_package
+    from live_readiness.network_authorization.authorization import publish_scrubbed_evidence_package
 
     package = publish_scrubbed_evidence_package(seal, tmp_path / "native_scrubbed")
     standalone = tmp_path / "scrubbed_authorization_evidence.json"
@@ -298,7 +298,7 @@ def test_credential_file_rejects_wrong_permissions_and_owner(tmp_path: Path, mon
 
     credential.chmod(0o600)
     current_uid = os.getuid()
-    monkeypatch.setattr("task_055_h.network.os.getuid", lambda: current_uid + 1)
+    monkeypatch.setattr("live_readiness.network_authorization.network.os.getuid", lambda: current_uid + 1)
     with pytest.raises(Exception, match="superseded_by_task055k_transport_broker"):
         load_file_credential_after_offline_gates(
             credential_file=credential,

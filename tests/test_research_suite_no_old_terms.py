@@ -2,17 +2,17 @@ from pathlib import Path
 
 
 TARGETS = [
-    Path("research_suite/__init__.py"),
-    Path("research_suite/models.py"),
-    Path("research_suite/catalog.py"),
-    Path("research_suite/walk_forward.py"),
-    Path("research_suite/promotion.py"),
-    Path("research_suite/workflow.py"),
-    Path("research_suite/report.py"),
-    Path("research_suite/run_suite.py"),
-    Path("factor_store/storage.py"),
-    Path("dashboard/data_service.py"),
-    Path("dashboard/app.py"),
+    Path("src/research_suite/__init__.py"),
+    Path("src/research_suite/models.py"),
+    Path("src/research_suite/catalog.py"),
+    Path("src/research_suite/walk_forward.py"),
+    Path("src/research_suite/promotion.py"),
+    Path("src/research_suite/workflow.py"),
+    Path("src/research_suite/report.py"),
+    Path("src/research_suite/run_suite.py"),
+    Path("src/factor_store/storage.py"),
+    Path("src/dashboard/data_service.py"),
+    Path("src/dashboard/app.py"),
 ]
 
 FORBIDDEN_TERMS = [

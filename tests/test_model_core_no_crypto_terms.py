@@ -2,16 +2,16 @@ from pathlib import Path
 
 
 MODEL_CORE_FILES = [
-    Path("model_core/config.py"),
-    Path("model_core/vocab.py"),
-    Path("model_core/ops.py"),
-    Path("model_core/vm.py"),
-    Path("model_core/factors.py"),
-    Path("model_core/data_loader.py"),
-    Path("model_core/backtest.py"),
-    Path("model_core/engine.py"),
-    Path("model_core/alphagpt.py"),
-    Path("model_core/__init__.py"),
+    Path("src/model_core/config.py"),
+    Path("src/model_core/vocab.py"),
+    Path("src/model_core/ops.py"),
+    Path("src/model_core/vm.py"),
+    Path("src/model_core/factors.py"),
+    Path("src/model_core/data_loader.py"),
+    Path("src/model_core/backtest.py"),
+    Path("src/model_core/engine.py"),
+    Path("src/model_core/alphagpt.py"),
+    Path("src/model_core/__init__.py"),
 ]
 
 FORBIDDEN_TERMS = [

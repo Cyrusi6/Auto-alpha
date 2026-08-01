@@ -4,11 +4,11 @@ from pathlib import Path
 
 import numpy as np
 
-import task_055_f.fees as fee_module
-import task_055_f.replay as replay_module
-from task_055_f.fees import acquire_official_fee_documents, publish_fee_schedule_v2
-from task_055_f.replay import _execute_generation, verify_native_replay_tree
-from task_055_f.valuation import publish_valuation_projection
+import live_readiness.evidence_hardening.fees as fee_module
+import live_readiness.evidence_hardening.replay as replay_module
+from live_readiness.evidence_hardening.fees import acquire_official_fee_documents, publish_fee_schedule_v2
+from live_readiness.evidence_hardening.replay import _execute_generation, verify_native_replay_tree
+from live_readiness.evidence_hardening.valuation import publish_valuation_projection
 
 
 def _rules(clause: str) -> list[dict]:

@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from task_055_a.contracts import CONTAMINATED_END_DATE, CONTAMINATED_START_DATE
-from task_055_a.observation import (
+from live_readiness.holdout_simulation.contracts import CONTAMINATED_END_DATE, CONTAMINATED_START_DATE
+from live_readiness.holdout_simulation.observation import (
     publish_observation_boundary_seal,
     recompute_observation_boundary,
     validate_observation_boundary_seal,

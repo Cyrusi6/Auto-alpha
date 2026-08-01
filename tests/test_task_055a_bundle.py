@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from task_054_c.validators import canonical_hash, sha256_file
-from task_055_a import bundle
+from research_firewall.engineering_closure.validators import canonical_hash, sha256_file
+from live_readiness.holdout_simulation import bundle
 
 
 def _stock_axis_hash(values: list[str]) -> str:

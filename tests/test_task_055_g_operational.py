@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from task_055_g.operational import (
+from live_readiness.production_hardening.operational import (
     OPERATIONAL_STATES,
     OperationalSealError,
     build_authoritative_writer_registry,

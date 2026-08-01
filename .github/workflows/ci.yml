@@ -34,6 +34,9 @@ jobs:
       - name: Run local quick CI
         run: uv run python -m ci.run_local_ci --quick --output-dir .ci_artifacts --pretty
 
+      - name: Validate repository layout
+        run: uv run python -m dev_tools.repository_layout audit --root-dir .
+
       - name: Run pytest
         run: uv run pytest
 

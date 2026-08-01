@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from artifact_schema.writer import attach_artifact_metadata
-from task_054_b.orchestrator import (
+from research_firewall.production_sentinel.orchestrator import (
     TASK054B_PATHS,
     TASK054B_REQUIRED_COMPONENTS,
     TASK054B_RESEARCH_OUTPUT_KEYS,

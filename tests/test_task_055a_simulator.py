@@ -5,8 +5,8 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from task_055_a.policy import BASELINE, PREREGISTERED_SCENARIOS, stable_top_n_equal_weight
-from task_055_a.simulator import EventLedgerSimulator
+from live_readiness.holdout_simulation.policy import BASELINE, PREREGISTERED_SCENARIOS, stable_top_n_equal_weight
+from live_readiness.holdout_simulation.simulator import EventLedgerSimulator
 
 
 def _market(open_price, close_price=None, adv=None, volume=None):

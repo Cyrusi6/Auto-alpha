@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 
 from artifact_schema.validator import validate_artifact
-from task_055_f.read_ledger import canonical_hash
-from task_055_g import network_cli
-from task_055_g import network_state
+from live_readiness.evidence_hardening.read_ledger import canonical_hash
+from live_readiness.production_hardening import network_cli
+from live_readiness.production_hardening import network_state
 
 
 def _content(payload: dict) -> dict:

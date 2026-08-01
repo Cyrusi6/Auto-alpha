@@ -21,10 +21,10 @@ OLD_TERMS = [
 
 def test_formula_corpus_batch_eval_and_pretrain_no_old_terms():
     paths = [
-        Path("formula_corpus"),
-        Path("formula_batch_eval"),
-        Path("neural_search/pretrain.py"),
-        Path("neural_search/run_pretrain.py"),
+        Path("src/formula_corpus"),
+        Path("src/formula_batch_eval"),
+        Path("src/neural_search/pretrain.py"),
+        Path("src/neural_search/run_pretrain.py"),
     ]
     for path in paths:
         files = [path] if path.is_file() else sorted(path.glob("*.py"))

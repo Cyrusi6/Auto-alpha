@@ -11,19 +11,19 @@ import pytest
 
 from artifact_schema.validator import validate_artifact
 from monitoring.checks import check_task055i_single_canary_authority
-from task_055_g.network_cli import _dispatch
-from task_055_g.network_state import Task055GNetworkStateError
-from task_055_h.io import canonical_hash
-from task_055_i import network_cli
-from task_055_i.contracts import (
+from live_readiness.production_hardening.network_cli import _dispatch
+from live_readiness.production_hardening.network_state import Task055GNetworkStateError
+from live_readiness.network_authorization.io import canonical_hash
+from live_readiness.canary_authority import network_cli
+from live_readiness.canary_authority.contracts import (
     CANARY,
     PARENT_AUTHORIZATION_SEAL_HASH,
     PARENT_CANARY_PLAN_HASH,
     PARENT_GIT_EVIDENCE_HASH,
     READY_STATUS,
 )
-from task_055_i.executor import execute_single_canary
-from task_055_i.verifier import ScrubbedEvidenceError, verify_scrubbed_evidence
+from live_readiness.canary_authority.executor import execute_single_canary
+from live_readiness.canary_authority.verifier import ScrubbedEvidenceError, verify_scrubbed_evidence
 
 
 def test_fixed_parent_and_first_canary_identity_are_exact():
@@ -42,7 +42,7 @@ def test_fixed_parent_and_first_canary_identity_are_exact():
 
 def test_production_cli_exposes_only_canary_and_acceptance_without_injection():
     result = subprocess.run(
-        [sys.executable, "-m", "task_055_i.network_cli", "--help"],
+        [sys.executable, "-m", "live_readiness.canary_authority.network_cli", "--help"],
         check=True,
         text=True,
         capture_output=True,

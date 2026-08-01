@@ -1,3 +1,12 @@
+## 2026-08-01 — Repository layout consolidation
+
+- Moved all installable Python packages under a single standard `src/` root while preserving public import names.
+- Replaced 17 task-numbered top-level packages with stable domain subpackages under `point_in_time`, `backfill_repair`, `feature_factory`, `research_firewall`, and `live_readiness`.
+- Reduced production package roots at repository top level from 99 to zero; only the non-production `dev_tools` helper package remains outside `src/`.
+- Removed the obsolete migration memo and replaced duplicated root documentation with concise current architecture and safety guidance.
+- Updated packaging, release inventory, subprocess `PYTHONPATH`, semantic source paths, source-tree seals, worker commands, and repository-root discovery for the new layout.
+- Added a repository-layout audit and regression tests that reject task-numbered directories, imports, and packaging entries.
+
 ## 2026-07-28 — Task 056-A research and backtest correctness hardening
 
 - The daily next-open simulator now derives limit-up/down tradability from the actual open and governed limit prices. Close-limit flags no longer stand in for open execution state, and tests keep open-board and close-board cases separate.

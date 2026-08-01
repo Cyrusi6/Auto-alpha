@@ -2,19 +2,19 @@ from pathlib import Path
 
 
 TARGETS = [
-    Path("factor_engine/__init__.py"),
-    Path("factor_engine/transforms.py"),
-    Path("factor_engine/correlation.py"),
-    Path("factor_engine/gate.py"),
-    Path("factor_engine/pipeline.py"),
-    Path("model_core/data_loader.py"),
-    Path("model_core/backtest.py"),
-    Path("model_core/engine.py"),
-    Path("evaluation/report.py"),
-    Path("factor_store/models.py"),
-    Path("factor_store/storage.py"),
-    Path("dashboard/data_service.py"),
-    Path("dashboard/app.py"),
+    Path("src/factor_engine/__init__.py"),
+    Path("src/factor_engine/transforms.py"),
+    Path("src/factor_engine/correlation.py"),
+    Path("src/factor_engine/gate.py"),
+    Path("src/factor_engine/pipeline.py"),
+    Path("src/model_core/data_loader.py"),
+    Path("src/model_core/backtest.py"),
+    Path("src/model_core/engine.py"),
+    Path("src/evaluation/report.py"),
+    Path("src/factor_store/models.py"),
+    Path("src/factor_store/storage.py"),
+    Path("src/dashboard/data_service.py"),
+    Path("src/dashboard/app.py"),
 ]
 
 FORBIDDEN_TERMS = [

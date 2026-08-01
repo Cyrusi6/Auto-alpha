@@ -3,11 +3,11 @@ from pathlib import Path
 
 def test_validation_and_certification_modules_do_not_reintroduce_old_business_terms():
     roots = [
-        Path("validation_lab"),
-        Path("factor_certification"),
-        Path("research_suite"),
-        Path("factor_lifecycle"),
-        Path("monitoring"),
+        Path("src/validation_lab"),
+        Path("src/factor_certification"),
+        Path("src/research_suite"),
+        Path("src/factor_lifecycle"),
+        Path("src/monitoring"),
     ]
     terms = [
         "crypto",

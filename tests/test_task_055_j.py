@@ -15,32 +15,32 @@ from data_pipeline.ashare.request_normalization import (
     tushare_code_semantic_hash,
     tushare_request_fingerprint,
 )
-from task_055_f.transport import CANONICAL_ORIGIN
-from task_055_g.truth import publish_truth_successor, validate_truth_v2
-from task_052_a.backfill import GovernedBackfillConfig, run_governed_backfill
+from live_readiness.evidence_hardening.transport import CANONICAL_ORIGIN
+from live_readiness.production_hardening.truth import publish_truth_successor, validate_truth_v2
+from backfill_repair.governed_replay.backfill import GovernedBackfillConfig, run_governed_backfill
 from data_source_validation.probe import probe_provider
 from data_backfill.run_backfill import main as data_backfill_main
 from data_source_validation.run_smoke import main as data_source_smoke_main
 from real_data_ops.run_real_data import main as real_data_main
-from task_055_h.io import canonical_hash, publish_generation
-from task_055_j import network_cli
-from task_055_j.application import _load_or_initialize_stage_journal
-from task_055_j.application_tree import publish_application_tree_seal, validate_application_preflight
-from task_055_j.contracts import CANARY, READY_STATUS
-from task_055_j.executor import (
+from live_readiness.network_authorization.io import canonical_hash, publish_generation
+from live_readiness.production_authority import network_cli
+from live_readiness.production_authority.application import _load_or_initialize_stage_journal
+from live_readiness.production_authority.application_tree import publish_application_tree_seal, validate_application_preflight
+from live_readiness.production_authority.contracts import CANARY, READY_STATUS
+from live_readiness.production_authority.executor import (
     Task055JExecutionError,
     _execute_synthetic_test_only,
     _load_credential_file,
     _verify_lock_identity,
     _verify_and_accept_synthetic_test_only,
 )
-from task_055_j.ledger import DurableHashJournal
-from task_055_j.rehearsal import (
+from live_readiness.production_authority.ledger import DurableHashJournal
+from live_readiness.production_authority.rehearsal import (
     _publish_synthetic_authority,
     _rehearsal_execution_root,
     _synthetic_seal_validator,
 )
-from task_055_j.verifier import (
+from live_readiness.production_authority.verifier import (
     Task055JScrubbedEvidenceError,
     _verify_repository_source_tree,
     verify_scrubbed_evidence,
@@ -235,7 +235,7 @@ def test_task055j_credential_file_contract_rejects_relative_symlink_root_mode_an
         _load_credential_file(outside, seal)
     outside.chmod(0o600)
     current_uid = os.getuid()
-    monkeypatch.setattr("task_055_j.executor.os.getuid", lambda: current_uid + 1)
+    monkeypatch.setattr("live_readiness.production_authority.executor.os.getuid", lambda: current_uid + 1)
     with pytest.raises(Task055JExecutionError, match="owner_or_mode_invalid"):
         _load_credential_file(outside, seal)
 
@@ -443,8 +443,8 @@ def test_standalone_verifier_recomputes_repository_source_entries(
             return "module.py\0"
         return ""
 
-    monkeypatch.setattr("task_055_j.verifier._git", fake_git)
-    monkeypatch.setattr("task_055_j.verifier.subprocess.run", lambda *_args, **_kwargs: type("Result", (), {"returncode": 0})())
+    monkeypatch.setattr("live_readiness.production_authority.verifier._git", fake_git)
+    monkeypatch.setattr("live_readiness.production_authority.verifier.subprocess.run", lambda *_args, **_kwargs: type("Result", (), {"returncode": 0})())
     payload = {
         "implementation_commit": implementation,
         "source_entries": [
@@ -582,8 +582,8 @@ def _scrubbed_fixture() -> dict:
     source_entries = [
         {"path": path, "sha256": "a" * 64, "size_bytes": 1, "mode": 420}
         for path in (
-            "task_055_j/executor.py", "task_055_j/application.py", "task_055_j/authority.py", "task_055_j/verifier.py",
-            "data_pipeline/ashare/providers/tushare_client.py", "validation_lab/materialization.py", "model_core/vm.py", "task_055_a/simulator.py",
+            "src/live_readiness/production_authority/executor.py", "src/live_readiness/production_authority/application.py", "src/live_readiness/production_authority/authority.py", "src/live_readiness/production_authority/verifier.py",
+            "src/data_pipeline/ashare/providers/tushare_client.py", "src/validation_lab/materialization.py", "src/model_core/vm.py", "src/live_readiness/holdout_simulation/simulator.py",
         )
     ]
     roles = ["source_tree_seal", "application_preflight", "application_tree_seal", "runtime_authority", "execution_authorization", "native_rehearsal", "rehearsal_independent_verification", "final_report", "final_independent_verification", "final_execution_seal"]

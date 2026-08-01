@@ -8,22 +8,22 @@ from pathlib import Path
 
 import pytest
 
-from task_055_h.io import canonical_hash
-from task_055_j.ledger import DurableHashJournal
-from task_055_k.contracts import CANARY
-from task_055_k.lease import ReplacementSafeLease, Task055KLeaseError
-from task_055_k.stage_machine import ApplicationStageMachine, StageDefinition
-from task_055_k.verifier import (
+from live_readiness.network_authorization.io import canonical_hash
+from live_readiness.production_authority.ledger import DurableHashJournal
+from live_readiness.correctness_closure.contracts import CANARY
+from live_readiness.correctness_closure.lease import ReplacementSafeLease, Task055KLeaseError
+from live_readiness.correctness_closure.stage_machine import ApplicationStageMachine, StageDefinition
+from live_readiness.correctness_closure.verifier import (
     Task055KVerifierError,
     _verify_artifact_closure,
     verify_candidate_semantics,
     verify_scrubbed_evidence,
 )
-from task_055_k.release import _load_rehearsal_release_catalog
-from task_055_k.run import _publish_content_addressed_evidence
+from live_readiness.correctness_closure.release import _load_rehearsal_release_catalog
+from live_readiness.correctness_closure.run import _publish_content_addressed_evidence
 from dev_tools.task055kr_harness import _lightweight_stages, synthetic_accepted_response
-from task_055_k.authority import normalize_ordered_keys
-from task_055_h.io import read_json
+from live_readiness.correctness_closure.authority import normalize_ordered_keys
+from live_readiness.network_authorization.io import read_json
 
 
 def _ordered_keys() -> list[dict]:
@@ -244,7 +244,7 @@ def _candidate_and_anchor() -> tuple[dict, dict]:
         "root_bindings": {"task_root": "validation_runs/task"},
         "source_entries": [
             {
-                "path": "task_055_k/verifier.py",
+                "path": "src/live_readiness/correctness_closure/verifier.py",
                 "git_blob_id": "1" * 40,
                 "git_index_mode": "100644",
                 "sha256": "3" * 64,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from task_055_f.truth_v2 import _classify_cell
+from live_readiness.evidence_hardening.truth_v2 import _classify_cell
 
 
 def _cell(**overrides):

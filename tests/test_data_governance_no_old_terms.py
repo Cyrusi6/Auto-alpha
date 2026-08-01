@@ -2,15 +2,15 @@ from pathlib import Path
 
 
 TARGETS = [
-    Path("data_pipeline/ashare/quality.py"),
-    Path("data_pipeline/ashare/state.py"),
-    Path("data_pipeline/ashare/storage.py"),
-    Path("data_pipeline/ashare/manager.py"),
-    Path("data_pipeline/run_pipeline.py"),
-    Path("universe/__init__.py"),
-    Path("universe/models.py"),
-    Path("universe/builder.py"),
-    Path("universe/run_universe.py"),
+    Path("src/data_pipeline/ashare/quality.py"),
+    Path("src/data_pipeline/ashare/state.py"),
+    Path("src/data_pipeline/ashare/storage.py"),
+    Path("src/data_pipeline/ashare/manager.py"),
+    Path("src/data_pipeline/run_pipeline.py"),
+    Path("src/universe/__init__.py"),
+    Path("src/universe/models.py"),
+    Path("src/universe/builder.py"),
+    Path("src/universe/run_universe.py"),
 ]
 
 FORBIDDEN_TERMS = [

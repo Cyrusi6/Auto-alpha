@@ -8,10 +8,10 @@ import numpy as np
 import pytest
 
 from data_pipeline.ashare.request_normalization import stable_json_hash
-from task_055_a.run import SCENARIO_NAMES
-from task_055_g.access import AccessBroker, canonical_hash
-from task_055_g.contracts import ACCESS_PLAN_SCHEMA
-from task_055_g.verifier import (
+from live_readiness.holdout_simulation.run import SCENARIO_NAMES
+from live_readiness.production_hardening.access import AccessBroker, canonical_hash
+from live_readiness.production_hardening.contracts import ACCESS_PLAN_SCHEMA
+from live_readiness.production_hardening.verifier import (
     SemanticVerificationError,
     _compare_causal,
     compare_truth_rows,

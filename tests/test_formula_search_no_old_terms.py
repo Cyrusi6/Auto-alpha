@@ -2,20 +2,20 @@ from pathlib import Path
 
 
 TARGETS = [
-    Path("formula_search/__init__.py"),
-    Path("formula_search/models.py"),
-    Path("formula_search/generator.py"),
-    Path("formula_search/mutation.py"),
-    Path("formula_search/search.py"),
-    Path("formula_search/report.py"),
-    Path("formula_search/run_search.py"),
-    Path("model_core/ops.py"),
-    Path("model_core/vm.py"),
-    Path("research/candidates.py"),
-    Path("research/batch_runner.py"),
-    Path("research/report.py"),
-    Path("dashboard/data_service.py"),
-    Path("dashboard/app.py"),
+    Path("src/formula_search/__init__.py"),
+    Path("src/formula_search/models.py"),
+    Path("src/formula_search/generator.py"),
+    Path("src/formula_search/mutation.py"),
+    Path("src/formula_search/search.py"),
+    Path("src/formula_search/report.py"),
+    Path("src/formula_search/run_search.py"),
+    Path("src/model_core/ops.py"),
+    Path("src/model_core/vm.py"),
+    Path("src/research/candidates.py"),
+    Path("src/research/batch_runner.py"),
+    Path("src/research/report.py"),
+    Path("src/dashboard/data_service.py"),
+    Path("src/dashboard/app.py"),
 ]
 
 FORBIDDEN_TERMS = [

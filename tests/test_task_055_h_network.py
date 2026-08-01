@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from task_055_g import network_state
-from task_055_h.network import Task055HNetworkError, ordered_future_canary_gate
+from live_readiness.production_hardening import network_state
+from live_readiness.network_authorization.network import Task055HNetworkError, ordered_future_canary_gate
 
 
 def _assert_gate_superseded() -> None:

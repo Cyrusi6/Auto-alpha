@@ -10,7 +10,7 @@ from artifact_schema.validator import validate_artifact
 from factor_store.hash import make_factor_id, stable_formula_hash
 from feature_factory.models import FeatureSetManifest
 from feature_factory.vocab_adapter import make_formula_vocab_from_manifest
-from task_054_b.forensics import ForensicConfig, run_selection_impact_forensic
+from research_firewall.production_sentinel.forensics import ForensicConfig, run_selection_impact_forensic
 
 
 def test_selection_forensic_reconstructs_frozen_scores_and_publishes_immutable_overlay(tmp_path):

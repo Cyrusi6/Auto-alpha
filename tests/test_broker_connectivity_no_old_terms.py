@@ -22,7 +22,7 @@ OLD_TERMS = [
 
 
 def test_broker_connectivity_modules_do_not_reintroduce_old_business_terms():
-    for root in [Path("broker_connectivity"), Path("broker_readonly_mirror")]:
+    for root in [Path("src/broker_connectivity"), Path("src/broker_readonly_mirror")]:
         for path in root.rglob("*.py"):
             text = path.read_text(encoding="utf-8").lower()
             for term in OLD_TERMS:

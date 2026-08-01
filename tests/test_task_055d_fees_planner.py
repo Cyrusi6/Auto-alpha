@@ -5,8 +5,8 @@ import json
 
 import pytest
 
-from task_055_d.fees import FeeScheduleV2Error, publish_fee_schedule_v2, validate_fee_schedule_v2
-from task_055_d.planner import PlanError, build_l2_child_plan
+from live_readiness.secure_acquisition.fees import FeeScheduleV2Error, publish_fee_schedule_v2, validate_fee_schedule_v2
+from live_readiness.secure_acquisition.planner import PlanError, build_l2_child_plan
 
 
 def _document(tmp_path):
@@ -73,8 +73,8 @@ def test_l2_cannot_exist_before_applied_l1(tmp_path):
 
 
 def test_transport_and_evidence_use_identity_are_separate():
-    from task_055_d.cache import evidence_use_identity, transport_identity
-    from task_055_d.contracts import DAILY_FIELDS
+    from live_readiness.secure_acquisition.cache import evidence_use_identity, transport_identity
+    from live_readiness.secure_acquisition.contracts import DAILY_FIELDS
     params = {"ts_code": "000001.SZ", "start_date": "20240101", "end_date": "20240131"}
     transport = transport_identity("daily", params, DAILY_FIELDS)
     left = evidence_use_identity(task="task_055_d", stage="L1", parent_plan_hash="a" * 64, valuation_key_hash="b" * 64, transport_hash=transport)

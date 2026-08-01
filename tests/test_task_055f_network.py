@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from task_055_f import network
+from live_readiness.evidence_hardening import network
 
 
 def _assert_canary_superseded() -> None:

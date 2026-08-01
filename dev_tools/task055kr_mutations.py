@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-from task_055_k.verifier import (
+from live_readiness.correctness_closure.verifier import (
     Task055KVerifierError,
     verify_candidate_semantics,
 )

@@ -2,16 +2,16 @@ from pathlib import Path
 
 
 TARGETS = [
-    Path("matrix_store"),
-    Path("raw_data_index"),
-    Path("performance_benchmark"),
-    Path("cross_source_checks"),
-    Path("model_core/data_loader.py"),
-    Path("research_suite/models.py"),
-    Path("research_suite/workflow.py"),
-    Path("dashboard/config.py"),
-    Path("dashboard/data_service.py"),
-    Path("dashboard/app.py"),
+    Path("src/matrix_store"),
+    Path("src/raw_data_index"),
+    Path("src/performance_benchmark"),
+    Path("src/cross_source_checks"),
+    Path("src/model_core/data_loader.py"),
+    Path("src/research_suite/models.py"),
+    Path("src/research_suite/workflow.py"),
+    Path("src/dashboard/config.py"),
+    Path("src/dashboard/data_service.py"),
+    Path("src/dashboard/app.py"),
 ]
 
 OLD_TERMS = [

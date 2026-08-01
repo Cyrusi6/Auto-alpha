@@ -2,11 +2,11 @@ from pathlib import Path
 
 
 TARGETS = [
-    Path("risk_model"),
-    Path("portfolio_optimizer"),
-    Path("backtest/run_backtest.py"),
-    Path("backtest/simulator.py"),
-    Path("strategy_manager/runner.py"),
+    Path("src/risk_model"),
+    Path("src/portfolio_optimizer"),
+    Path("src/backtest/run_backtest.py"),
+    Path("src/backtest/simulator.py"),
+    Path("src/strategy_manager/runner.py"),
 ]
 
 FORBIDDEN_TERMS = [

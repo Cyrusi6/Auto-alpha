@@ -79,13 +79,7 @@ def test_pyproject_packaging_config_excludes_non_platform_dirs():
     assert "build-system" in text
     assert "hatchling" in text
     assert "package = true" in text
-    assert '"artifact_schema"' in text
-    assert '"data_backfill"' in text
-    assert '"data_lake"' in text
-    assert '"release_manager"' in text
-    assert '"model_registry"' in text
-    assert '"factor_lifecycle"' in text
-    assert '"compute_cluster"' in text
-    assert '"experiment_orchestrator"' in text
+    assert 'only-include = ["src"]' in text
+    assert 'sources = ["src"]' in text
     assert '"times.py"' not in text
     assert '"tests"' in text

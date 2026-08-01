@@ -3,16 +3,16 @@ from pathlib import Path
 
 def test_alpha_feature_factory_no_old_business_terms():
     paths = [
-        Path("alpha_factory"),
-        Path("feature_factory"),
-        Path("model_core/data_loader.py"),
-        Path("model_core/factors.py"),
-        Path("formula_batch_eval"),
-        Path("formula_search/search.py"),
-        Path("formula_search/run_search.py"),
-        Path("research_suite/workflow.py"),
-        Path("monitoring/checks.py"),
-        Path("dashboard/data_service.py"),
+        Path("src/alpha_factory"),
+        Path("src/feature_factory"),
+        Path("src/model_core/data_loader.py"),
+        Path("src/model_core/factors.py"),
+        Path("src/formula_batch_eval"),
+        Path("src/formula_search/search.py"),
+        Path("src/formula_search/run_search.py"),
+        Path("src/research_suite/workflow.py"),
+        Path("src/monitoring/checks.py"),
+        Path("src/dashboard/data_service.py"),
     ]
     banned = [
         "solana",
