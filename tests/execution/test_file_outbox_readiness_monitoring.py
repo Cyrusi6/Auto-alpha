@@ -2,11 +2,11 @@ import json
 from pathlib import Path
 
 from auto_alpha.platform.artifacts.schema.run_validate import main as validate_main
-from auto_alpha.execution.broker.file_gateway.run_gateway import main as gateway_main
-from auto_alpha.execution.broker.mapping.run_mapping_certify import main as certify_main
+from auto_alpha.execution.broker.file_gateway_run_gateway import main as gateway_main
+from auto_alpha.execution.broker.mapping_run_mapping_certify import main as certify_main
 from auto_alpha.platform.governance.readiness.run_readiness import main as readiness_main
 from auto_alpha.platform.observability.monitoring.run_monitor import main as monitor_main
-from auto_alpha.execution.operations.handoff.run_handoff import main as handoff_main
+from auto_alpha.execution.operations.handoff_run_handoff import main as handoff_main
 
 
 def test_file_outbox_readiness_and_monitoring(tmp_path: Path) -> None:

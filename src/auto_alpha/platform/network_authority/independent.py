@@ -19,7 +19,7 @@ from auto_alpha.portfolio.simulation.fee_projection import FeeProjectionCalculat
 from auto_alpha.portfolio.simulation.independent import independently_trace_prepared, prepare_independent_inputs
 from auto_alpha.platform.network_authority.storage import canonical_hash
 from auto_alpha.platform.network_authority.response_application import _successor_bundle
-from auto_alpha.validation.firewall.core.engineering_closure.validators import validate_strict_matrix_generation
+from auto_alpha.validation.firewall.engineering_closure_validators import validate_strict_matrix_generation
 
 from .application import validate_staged_application
 from .application_components import validate_fee_replay

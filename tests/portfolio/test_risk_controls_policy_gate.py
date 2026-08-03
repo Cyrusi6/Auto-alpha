@@ -3,8 +3,9 @@ from pathlib import Path
 
 from auto_alpha.platform.governance.approval import LocalApprovalStore
 from auto_alpha.portfolio.risk.controls import LocalRiskControlState, evaluate_order_records, load_policy
-from auto_alpha.portfolio.risk.controls.kill_switch import activate_kill_switch
-from auto_alpha.portfolio.risk.controls.overrides import apply_approved_override, create_override_approval
+from auto_alpha.portfolio.risk.controls_kill_switch import activate_kill_switch
+from auto_alpha.portfolio.risk.controls_overrides import apply_approved_override
+from auto_alpha.portfolio.risk.controls_overrides import create_override_approval
 
 
 def test_risk_controls_gate_writes_artifacts(tmp_path):

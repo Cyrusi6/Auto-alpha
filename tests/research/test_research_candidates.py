@@ -2,8 +2,10 @@ import json
 
 import pytest
 
-from auto_alpha.research.formulas.runtime.vm import StackVM
-from auto_alpha.research.discovery.studies.candidates import default_candidates, load_candidates_json, save_candidates_json
+from auto_alpha.research.formulas.runtime_vm import StackVM
+from auto_alpha.research.discovery.studies_candidates import default_candidates
+from auto_alpha.research.discovery.studies_candidates import load_candidates_json
+from auto_alpha.research.discovery.studies_candidates import save_candidates_json
 
 
 def test_default_candidates_are_valid_stack_formulas():

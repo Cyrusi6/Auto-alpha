@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from auto_alpha.validation.lab.campaigns.artifacts import resolve_campaign_artifacts
+from auto_alpha.validation.lab.campaigns_artifacts import resolve_campaign_artifacts
 
 
 @dataclass(frozen=True)

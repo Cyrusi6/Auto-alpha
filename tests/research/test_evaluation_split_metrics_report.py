@@ -8,7 +8,7 @@ from auto_alpha.research.discovery.evaluation import (
     split_trade_dates,
     write_factor_report,
 )
-from auto_alpha.research.formulas.runtime.backtest import AShareFactorEvaluator
+from auto_alpha.research.formulas.runtime_backtest import AShareFactorEvaluator
 
 
 def test_split_trade_dates_three_dates_is_one_each():

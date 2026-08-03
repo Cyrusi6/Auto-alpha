@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
-from auto_alpha.research.formulas.runtime import engine
+from auto_alpha.research.formulas import runtime_engine as engine
 
 
 def write_sample_data(data_dir):

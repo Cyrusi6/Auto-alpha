@@ -24,8 +24,8 @@ def test_factor_platform_files_do_not_contain_old_business_terms():
     files = [
         *Path("src/auto_alpha/research/factors/store").glob("*.py"),
         *Path("src/auto_alpha/research/discovery/evaluation").glob("*.py"),
-        Path("src/auto_alpha/research/formulas/runtime/engine.py"),
-        Path("src/auto_alpha/research/formulas/runtime/backtest.py"),
+        Path("src/auto_alpha/research/formulas/runtime_engine.py"),
+        Path("src/auto_alpha/research/formulas/runtime_backtest.py"),
     ]
     payload = "\n".join(path.read_text(encoding="utf-8") for path in files).lower()
 

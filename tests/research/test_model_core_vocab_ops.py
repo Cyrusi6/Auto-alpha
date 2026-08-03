@@ -1,23 +1,22 @@
 import torch
 
-from auto_alpha.research.formulas.runtime.ops import (
-    OPS_CONFIG,
-    cs_rank,
-    cs_zscore,
-    get_operator_spec,
-    operator_arity,
-    operator_complexity,
-    operator_lookback,
-    ts_corr,
-    ts_delta,
-    ts_delay,
-    ts_max,
-    ts_mean,
-    ts_min,
-    ts_rank,
-    ts_std,
-)
-from auto_alpha.research.formulas.runtime.vocab import FEATURE_NAMES, FORMULA_VOCAB
+from auto_alpha.research.formulas.runtime_ops import OPS_CONFIG
+from auto_alpha.research.formulas.runtime_ops import cs_rank
+from auto_alpha.research.formulas.runtime_ops import cs_zscore
+from auto_alpha.research.formulas.runtime_ops import get_operator_spec
+from auto_alpha.research.formulas.runtime_ops import operator_arity
+from auto_alpha.research.formulas.runtime_ops import operator_complexity
+from auto_alpha.research.formulas.runtime_ops import operator_lookback
+from auto_alpha.research.formulas.runtime_ops import ts_corr
+from auto_alpha.research.formulas.runtime_ops import ts_delta
+from auto_alpha.research.formulas.runtime_ops import ts_delay
+from auto_alpha.research.formulas.runtime_ops import ts_max
+from auto_alpha.research.formulas.runtime_ops import ts_mean
+from auto_alpha.research.formulas.runtime_ops import ts_min
+from auto_alpha.research.formulas.runtime_ops import ts_rank
+from auto_alpha.research.formulas.runtime_ops import ts_std
+from auto_alpha.research.formulas.runtime_vocab import FEATURE_NAMES
+from auto_alpha.research.formulas.runtime_vocab import FORMULA_VOCAB
 
 
 def test_feature_names_are_ashare_fields():

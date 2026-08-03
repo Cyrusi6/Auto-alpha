@@ -1,7 +1,7 @@
 import torch
 
-from auto_alpha.research.formulas.runtime.factors import AShareFeatureEngineer
-from auto_alpha.research.formulas.runtime.vocab import FEATURE_NAMES
+from auto_alpha.research.formulas.runtime_factors import AShareFeatureEngineer
+from auto_alpha.research.formulas.runtime_vocab import FEATURE_NAMES
 
 
 def test_ashare_feature_engineer_outputs_expected_shape_and_order():

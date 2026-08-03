@@ -14,22 +14,21 @@ from auto_alpha.research.features.factory import (
     build_feature_tensor_artifacts,
     load_feature_manifest,
 )
-from auto_alpha.research.features.factory.builder import build_feature_matrix
-from auto_alpha.research.features.factory.extended_builder import (
-    _index_market_feature,
-    _days_since_event,
-    _days_to_event,
-    _pit_field_matrices,
-    _records,
-    _rolling_mean,
-    _rolling_std,
-    _rolling_sum,
-    _rolling_z,
-)
-from auto_alpha.research.features.factory.models import FeatureDefinition
-from auto_alpha.research.features.factory.run_features import _resolve_data_dir, main as run_features_main
-from auto_alpha.research.formulas.runtime.data_loader import AShareDataLoader
-from auto_alpha.research.formulas.runtime.vocab import FEATURE_NAMES
+from auto_alpha.research.features.factory_builder import build_feature_matrix
+from auto_alpha.research.features.factory_extended_builder import _index_market_feature
+from auto_alpha.research.features.factory_extended_builder import _days_since_event
+from auto_alpha.research.features.factory_extended_builder import _days_to_event
+from auto_alpha.research.features.factory_extended_builder import _pit_field_matrices
+from auto_alpha.research.features.factory_extended_builder import _records
+from auto_alpha.research.features.factory_extended_builder import _rolling_mean
+from auto_alpha.research.features.factory_extended_builder import _rolling_std
+from auto_alpha.research.features.factory_extended_builder import _rolling_sum
+from auto_alpha.research.features.factory_extended_builder import _rolling_z
+from auto_alpha.research.features.factory_models import FeatureDefinition
+from auto_alpha.research.features.factory_run_features import _resolve_data_dir
+from auto_alpha.research.features.factory_run_features import main as run_features_main
+from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
+from auto_alpha.research.formulas.runtime_vocab import FEATURE_NAMES
 
 
 def _prepare_sample_data(tmp_path):

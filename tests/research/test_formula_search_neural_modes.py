@@ -2,7 +2,7 @@ import json
 
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.data.ingestion.pipeline.ashare.storage import LocalAshareStorage
-from auto_alpha.research.formulas.search import run_search
+from auto_alpha.research.formulas import search_run_search as run_search
 from auto_alpha.data.pit.universe.builder import build_universe_from_storage
 from auto_alpha.data.pit.universe.models import UniverseBuildConfig
 

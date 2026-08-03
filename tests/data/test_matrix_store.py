@@ -5,7 +5,7 @@ import torch
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.data.ingestion.pipeline.ashare.storage import LocalAshareStorage
 from auto_alpha.data.matrix.store import MatrixStoreReader, build_matrix_cache, validate_matrix_cache
-from auto_alpha.research.formulas.runtime.data_loader import AShareDataLoader
+from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
 from auto_alpha.data.pit.universe.builder import build_universe_from_storage
 from auto_alpha.data.pit.universe.models import UniverseBuildConfig
 

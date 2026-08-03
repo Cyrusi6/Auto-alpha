@@ -1,7 +1,7 @@
 import json
 
-from auto_alpha.execution.settlement.reconciliation.models import ReconciliationMaterialityConfig
-from auto_alpha.execution.settlement.reconciliation.eod import run_eod_reconciliation
+from auto_alpha.execution.settlement.reconciliation_models import ReconciliationMaterialityConfig
+from auto_alpha.execution.settlement.reconciliation_eod import run_eod_reconciliation
 
 
 def test_reconciliation_center_report_roundtrip(tmp_path):

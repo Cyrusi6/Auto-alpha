@@ -5,7 +5,9 @@ from pathlib import Path
 
 import numpy as np
 
-from auto_alpha.validation.firewall.core.sentinel import ProductionSentinelCommand, ProductionSentinelPlan, run_production_firewall_sentinel
+from auto_alpha.validation.firewall.core_sentinel import ProductionSentinelCommand
+from auto_alpha.validation.firewall.core_sentinel import ProductionSentinelPlan
+from auto_alpha.validation.firewall.core_sentinel import run_production_firewall_sentinel
 
 
 def test_task054_blackbox_sentinel_runs_four_real_subprocess_paths(tmp_path: Path):
@@ -42,7 +44,7 @@ def test_task054_blackbox_sentinel_runs_four_real_subprocess_paths(tmp_path: Pat
             command = (
                 sys.executable,
                 "-m",
-                "auto_alpha.validation.firewall.core.truth_evidence.sentinel_fixture",
+                "auto_alpha.validation.firewall.truth_evidence_sentinel_fixture",
                 "--input",
                 str(source),
                 "--output-dir",
@@ -105,7 +107,7 @@ def test_task054_production_sentinel_rejects_synthetic_fixture(tmp_path: Path):
                     command=(
                         sys.executable,
                         "-m",
-                        "auto_alpha.validation.firewall.core.truth_evidence.sentinel_fixture",
+                        "auto_alpha.validation.firewall.truth_evidence_sentinel_fixture",
                         "--input",
                         str(source),
                         "--output-dir",

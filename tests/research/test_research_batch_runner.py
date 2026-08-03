@@ -2,12 +2,12 @@ import json
 
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.research.discovery.studies import BatchFactorResearchRunner, BatchResearchConfig, FactorCandidate
-from auto_alpha.research.discovery.studies.candidates import default_candidates
+from auto_alpha.research.discovery.studies_candidates import default_candidates
 from auto_alpha.data.pit.universe.builder import build_universe_from_storage
 from auto_alpha.data.pit.universe.models import UniverseBuildConfig
 from auto_alpha.data.ingestion.pipeline.ashare.storage import LocalAshareStorage
 from auto_alpha.research.factors.store import LocalFactorStore
-from auto_alpha.research.formulas.runtime.vocab import FORMULA_VOCAB
+from auto_alpha.research.formulas.runtime_vocab import FORMULA_VOCAB
 
 
 def _prepare_data(tmp_path):

@@ -9,7 +9,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Mapping
 
-from auto_alpha.portfolio.simulation.ledger.run import SCENARIO_NAMES, prepare_simulation_inputs
+from auto_alpha.portfolio.simulation.ledger_run import SCENARIO_NAMES
+from auto_alpha.portfolio.simulation.ledger_run import prepare_simulation_inputs
 from auto_alpha.portfolio.simulation.causal import (
     _build_valuation_surface,
     _load_matrix_marks,

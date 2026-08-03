@@ -11,7 +11,7 @@ from typing import Any
 
 from auto_alpha.platform.artifacts.schema.writer import write_json_artifact, write_jsonl_artifact
 from auto_alpha.data.pit.universe.historical import SnapshotPolicy, build_historical_index_universe, normalize_suspensions
-from auto_alpha.validation.lab.campaigns.artifacts import resolve_campaign_artifacts
+from auto_alpha.validation.lab.campaigns_artifacts import resolve_campaign_artifacts
 
 
 REQUIRED_DATASETS = (

@@ -8,13 +8,14 @@ from pathlib import Path
 import pytest
 
 from auto_alpha.platform.artifacts.schema.validator import validate_artifact
-from auto_alpha.validation.firewall.core.truth_evidence.evidence import (
-    build_scrubbed_blocked_evidence_package,
-    build_scrubbed_evidence_package,
-    verify_scrubbed_evidence_package,
-)
-from auto_alpha.validation.firewall.core.truth_evidence.orchestrator import TASK054_STAGE_ORDER, Task054ProductionDAG, Task054StageContract, task054_stage_content_hash
-from auto_alpha.validation.lab.campaigns.replay_evidence import validate_task054_replay_evidence
+from auto_alpha.validation.firewall.truth_evidence_evidence import build_scrubbed_blocked_evidence_package
+from auto_alpha.validation.firewall.truth_evidence_evidence import build_scrubbed_evidence_package
+from auto_alpha.validation.firewall.truth_evidence_evidence import verify_scrubbed_evidence_package
+from auto_alpha.validation.firewall.truth_evidence_orchestrator import TASK054_STAGE_ORDER
+from auto_alpha.validation.firewall.truth_evidence_orchestrator import Task054ProductionDAG
+from auto_alpha.validation.firewall.truth_evidence_orchestrator import Task054StageContract
+from auto_alpha.validation.firewall.truth_evidence_orchestrator import task054_stage_content_hash
+from auto_alpha.validation.lab.campaigns_replay_evidence import validate_task054_replay_evidence
 
 
 def test_task054_scrubbed_evidence_verifies_and_detects_tampering(tmp_path: Path):

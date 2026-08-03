@@ -1,8 +1,8 @@
 import json
 
-from auto_alpha.portfolio.simulation.backtest import run_backtest
+from auto_alpha.portfolio.simulation import backtest_run_backtest as run_backtest
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
-from auto_alpha.research.formulas.runtime import engine
+from auto_alpha.research.formulas import runtime_engine as engine
 
 
 def prepare_registered_factor(tmp_path):

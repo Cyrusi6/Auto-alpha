@@ -9,8 +9,9 @@ import pyarrow.parquet as pq
 import pytest
 
 from auto_alpha.platform.artifacts.schema.validator import validate_artifact
-from auto_alpha.research.discovery.factory.models import AlphaCampaignConfig
-from auto_alpha.research.discovery.factory.runner import _resolve_data_dir, _validate_production_research_config
+from auto_alpha.research.discovery.factory_models import AlphaCampaignConfig
+from auto_alpha.research.discovery.factory_runner import _resolve_data_dir
+from auto_alpha.research.discovery.factory_runner import _validate_production_research_config
 from auto_alpha.data.lake.store.canonical_freeze import (
     REQUIRED_DATASETS,
     CanonicalFreezeConfig,

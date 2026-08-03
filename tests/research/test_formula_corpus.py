@@ -1,7 +1,7 @@
 import json
 
 from auto_alpha.research.formulas.corpus import FormulaCorpusConfig, build_formula_corpus
-from auto_alpha.research.formulas.runtime.vm import StackVM
+from auto_alpha.research.formulas.runtime_vm import StackVM
 
 
 def test_formula_corpus_builds_sequences_preferences_and_schema_artifacts(tmp_path):
@@ -35,7 +35,7 @@ def test_formula_corpus_builds_sequences_preferences_and_schema_artifacts(tmp_pa
 
 def test_formula_corpus_merges_factor_store_records(tmp_path):
     from auto_alpha.research.factors.store import FactorRecord, LocalFactorStore, make_factor_id, stable_formula_hash
-    from auto_alpha.research.formulas.runtime.vocab import FORMULA_VOCAB
+    from auto_alpha.research.formulas.runtime_vocab import FORMULA_VOCAB
 
     tokens = [FORMULA_VOCAB.encode_name("ROE")]
     names = ["ROE"]

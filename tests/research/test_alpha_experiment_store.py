@@ -1,8 +1,9 @@
 import json
 
 from auto_alpha.research.discovery.experiments import LocalAlphaExperimentStore, consolidate_factor_stores
-from auto_alpha.research.discovery.experiments.leaderboard import build_leaderboard_from_factor_store, write_validation_candidate_pool
-from auto_alpha.research.discovery.experiments.run_store import main as alpha_store_main
+from auto_alpha.research.discovery.experiments_leaderboard import build_leaderboard_from_factor_store
+from auto_alpha.research.discovery.experiments_leaderboard import write_validation_candidate_pool
+from auto_alpha.research.discovery.experiments_run_store import main as alpha_store_main
 from auto_alpha.platform.artifacts.schema.run_validate import main as validate_artifacts_main
 from auto_alpha.research.factors.store import FactorRecord, LocalFactorStore
 

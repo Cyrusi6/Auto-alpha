@@ -2,7 +2,7 @@ import json
 
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.research.formulas.corpus import FormulaCorpusConfig, build_formula_corpus
-from auto_alpha.research.formulas.search import run_search
+from auto_alpha.research.formulas import search_run_search as run_search
 from auto_alpha.data.matrix.store import build_matrix_cache
 
 

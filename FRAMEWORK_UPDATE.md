@@ -1,3 +1,11 @@
+## 2026-08-03 — Delete-first package consolidation
+
+- Deleted unreachable execution history instead of relocating it: broker connectivity/mirror/UAT and go-live, incident, production replay, and shadow-lab chains are gone together with their CLI, CI, and tests.
+- Deleted duplicate research benchmark/suite/orchestrator/factor-lifecycle implementations; retained formula-search merge logic now lives in the single formulas subsystem.
+- Flattened runner/store/report micro-packages inside research, validation, portfolio, and execution into capability-prefixed modules while preserving each subsystem facade and behavior.
+- Reduced Python package directories from 118 to 57: data 23, research 6, validation 4, portfolio 4, execution 5, platform 14, plus the root package. Unified CLI commands fell from 79 to 67 by removing obsolete execution and research entrypoints.
+- Added a hard 65-package budget and flat-domain regression checks to repository layout CI so micro-package proliferation fails closed.
+
 ## 2026-08-03 — Capability-level source consolidation
 
 - Deleted the full Task 055 `_internal` generation tree instead of hiding it behind a private namespace; the retained network authority is now one flat production implementation.

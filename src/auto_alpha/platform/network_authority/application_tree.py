@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from auto_alpha.data.lake.store.task052_freeze import validate_task052_governed_freeze
-from auto_alpha.validation.firewall.core.engineering_closure.bundle import validate_bundle
-from auto_alpha.validation.firewall.core.engineering_closure.factor_store import validate_normalized_replay_store
-from auto_alpha.validation.firewall.core.engineering_closure.validators import validate_strict_matrix_generation, validate_v3_tensor_generation
-from auto_alpha.portfolio.simulation.ledger.bundle import validate_simulation_bundle
+from auto_alpha.validation.firewall.engineering_closure_bundle import validate_bundle
+from auto_alpha.validation.firewall.engineering_closure_factor_store import validate_normalized_replay_store
+from auto_alpha.validation.firewall.engineering_closure_validators import validate_strict_matrix_generation
+from auto_alpha.validation.firewall.engineering_closure_validators import validate_v3_tensor_generation
+from auto_alpha.portfolio.simulation.ledger_bundle import validate_simulation_bundle
 from auto_alpha.portfolio.simulation.causal_validation import validate_fee_aware_causal_frontier
 from auto_alpha.portfolio.simulation.fees import validate_fee_schedule_v2
 from auto_alpha.data.pit.truth import validate_truth_v2

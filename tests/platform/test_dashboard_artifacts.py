@@ -2,7 +2,7 @@ import importlib
 
 import plotly.graph_objects as go
 
-from auto_alpha.portfolio.simulation.backtest import run_backtest
+from auto_alpha.portfolio.simulation import backtest_run_backtest as run_backtest
 from auto_alpha.platform.observability.dashboard.config import DashboardConfig
 from auto_alpha.platform.observability.dashboard.data_service import AshareDashboardService
 from auto_alpha.platform.observability.dashboard.visualizer import (
@@ -12,8 +12,8 @@ from auto_alpha.platform.observability.dashboard.visualizer import (
     plot_order_distribution,
 )
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
-from auto_alpha.research.formulas.runtime import engine
-from auto_alpha.execution.trading.strategy import runner
+from auto_alpha.research.formulas import runtime_engine as engine
+from auto_alpha.execution.trading import strategy_runner as runner
 
 
 def prepare_dashboard_artifacts(tmp_path):

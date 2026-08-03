@@ -7,10 +7,12 @@ from pathlib import Path
 import pytest
 
 from auto_alpha.platform.artifacts.schema.validator import validate_artifact
-from auto_alpha.research.factors.store.hash import make_factor_id, stable_formula_hash
-from auto_alpha.research.features.factory.models import FeatureSetManifest
-from auto_alpha.research.features.factory.vocab_adapter import make_formula_vocab_from_manifest
-from auto_alpha.validation.firewall.core.production_sentinel.forensics import ForensicConfig, run_selection_impact_forensic
+from auto_alpha.research.factors.store_hash import make_factor_id
+from auto_alpha.research.factors.store_hash import stable_formula_hash
+from auto_alpha.research.features.factory_models import FeatureSetManifest
+from auto_alpha.research.features.factory_vocab_adapter import make_formula_vocab_from_manifest
+from auto_alpha.validation.firewall.production_sentinel_forensics import ForensicConfig
+from auto_alpha.validation.firewall.production_sentinel_forensics import run_selection_impact_forensic
 
 
 def test_selection_forensic_reconstructs_frozen_scores_and_publishes_immutable_overlay(tmp_path):

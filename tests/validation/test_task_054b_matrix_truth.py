@@ -4,9 +4,9 @@ import torch
 
 from auto_alpha.data.matrix.store.strict_engineering import StrictEngineeringPITMatrixBuilder, StrictEngineeringPITMatrixConfig
 from tests.data.test_task_053a_matrix import _fixture
-from auto_alpha.validation.lab.engine.metrics import evaluate_factor_splits
-from auto_alpha.validation.lab.engine.models import ValidationSplit
-from auto_alpha.validation.lab.engine.policy import EngineeringRobustnessPolicy
+from auto_alpha.validation.lab.engine_metrics import evaluate_factor_splits
+from auto_alpha.validation.lab.engine_models import ValidationSplit
+from auto_alpha.validation.lab.engine_policy import EngineeringRobustnessPolicy
 
 
 def test_strict_matrix_preserves_diagnostic_target_but_separates_research_common_cells(tmp_path):

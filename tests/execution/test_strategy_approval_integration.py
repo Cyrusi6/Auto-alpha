@@ -3,8 +3,8 @@ import json
 from auto_alpha.platform.governance.approval import LocalApprovalStore
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.research.factors.store import FactorRecord, LocalFactorStore, stable_formula_hash
-from auto_alpha.research.formulas.runtime.data_loader import AShareDataLoader
-from auto_alpha.execution.trading.strategy import runner
+from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
+from auto_alpha.execution.trading import strategy_runner as runner
 
 
 def test_strategy_propose_only_writes_approval_batch_without_fills(tmp_path, capsys):

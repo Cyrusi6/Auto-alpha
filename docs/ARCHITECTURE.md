@@ -39,6 +39,8 @@ auto_alpha
     └── observability
 ```
 
+The current tree contains 57 Python package directories. The repository budget is 65.
+
 ## Ownership
 
 | Domain | Owns | Must not own |
@@ -68,6 +70,7 @@ Dependencies may point left-to-right through the research lifecycle. `platform` 
 
 ## Nested boundaries
 
+- `research`, `validation`, `portfolio`, and `execution` may not create packages below their visible subsystem level. Capability-prefixed modules are used instead.
 - `data.ingestion` contains only the current A-share `pipeline` and governed `repair` workflows.
 - `data.lake.catalog` owns both raw landing inspection and the sidecar raw-data index.
 - `platform.observability.monitoring` owns backfill observation; ingestion does not own dashboards or monitoring.
@@ -89,3 +92,5 @@ Dependencies may point left-to-right through the research lifecycle. `platform` 
 - a removed top-level import or task package returns;
 - tests stop mirroring the six domains;
 - a registered unified CLI command cannot resolve.
+- the Python package-directory count exceeds 65;
+- a nested micro-package returns below `research`, `validation`, `portfolio`, or `execution`.

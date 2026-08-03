@@ -6,10 +6,10 @@ import numpy as np
 import pytest
 import torch
 
-from auto_alpha.research.discovery.factory.proxy_eval import run_proxy_eval
+from auto_alpha.research.discovery.factory_proxy_eval import run_proxy_eval
 from auto_alpha.validation.firewall.core import DateFirewall, ResearchEligibilityContract
-from auto_alpha.validation.lab.engine.eligibility import build_common_eligibility
-from auto_alpha.validation.lab.engine.policy import load_validation_policy
+from auto_alpha.validation.lab.engine_eligibility import build_common_eligibility
+from auto_alpha.validation.lab.engine_policy import load_validation_policy
 
 
 @dataclass(frozen=True)
@@ -80,7 +80,7 @@ def test_common_eligibility_intersects_target_endpoint_contract():
 
 
 def test_proxy_post_cutoff_mutation_cannot_change_research_output(monkeypatch):
-    monkeypatch.setattr("auto_alpha.research.discovery.factory.proxy_eval.StackVM", _IdentityVM)
+    monkeypatch.setattr("auto_alpha.research.discovery.factory_proxy_eval.StackVM", _IdentityVM)
     feature = torch.tensor([[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2.0, 1.0, 4.0, 3.0, 6.0, 5.0]])
     candidate = _Candidate()
     _, rows, summary = run_proxy_eval([candidate], _Loader(feature.clone()), max_candidates=1, max_dates=63)
@@ -93,7 +93,7 @@ def test_proxy_post_cutoff_mutation_cannot_change_research_output(monkeypatch):
 
 
 def test_proxy_research_mutation_changes_output(monkeypatch):
-    monkeypatch.setattr("auto_alpha.research.discovery.factory.proxy_eval.StackVM", _IdentityVM)
+    monkeypatch.setattr("auto_alpha.research.discovery.factory_proxy_eval.StackVM", _IdentityVM)
     feature = torch.tensor([[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2.0, 1.0, 4.0, 3.0, 6.0, 5.0]])
     candidate = _Candidate()
     _, rows, _ = run_proxy_eval([candidate], _Loader(feature.clone()), max_candidates=1, max_dates=63)

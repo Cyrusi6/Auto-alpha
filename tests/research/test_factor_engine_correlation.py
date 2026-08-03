@@ -1,13 +1,11 @@
 import torch
 
-from auto_alpha.research.factors.engine.correlation import (
-    factor_correlation,
-    factor_correlation_matrix,
-    find_similar_factors,
-    load_existing_factor_matrices,
-    max_abs_correlation,
-    pairwise_correlation_table,
-)
+from auto_alpha.research.factors.engine_correlation import factor_correlation
+from auto_alpha.research.factors.engine_correlation import factor_correlation_matrix
+from auto_alpha.research.factors.engine_correlation import find_similar_factors
+from auto_alpha.research.factors.engine_correlation import load_existing_factor_matrices
+from auto_alpha.research.factors.engine_correlation import max_abs_correlation
+from auto_alpha.research.factors.engine_correlation import pairwise_correlation_table
 from auto_alpha.research.factors.store import FactorRecord, LocalFactorStore
 
 

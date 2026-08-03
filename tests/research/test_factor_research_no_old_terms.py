@@ -2,17 +2,17 @@ from pathlib import Path
 
 
 TARGETS = [
-    Path("src/auto_alpha/research/factors/engine/__init__.py"),
-    Path("src/auto_alpha/research/factors/engine/transforms.py"),
-    Path("src/auto_alpha/research/factors/engine/correlation.py"),
-    Path("src/auto_alpha/research/factors/engine/gate.py"),
-    Path("src/auto_alpha/research/factors/engine/pipeline.py"),
-    Path("src/auto_alpha/research/formulas/runtime/data_loader.py"),
-    Path("src/auto_alpha/research/formulas/runtime/backtest.py"),
-    Path("src/auto_alpha/research/formulas/runtime/engine.py"),
-    Path("src/auto_alpha/research/discovery/evaluation/report.py"),
-    Path("src/auto_alpha/research/factors/store/models.py"),
-    Path("src/auto_alpha/research/factors/store/storage.py"),
+    Path("src/auto_alpha/research/factors/engine.py"),
+    Path("src/auto_alpha/research/factors/engine_transforms.py"),
+    Path("src/auto_alpha/research/factors/engine_correlation.py"),
+    Path("src/auto_alpha/research/factors/engine_gate.py"),
+    Path("src/auto_alpha/research/factors/engine_pipeline.py"),
+    Path("src/auto_alpha/research/formulas/runtime_data_loader.py"),
+    Path("src/auto_alpha/research/formulas/runtime_backtest.py"),
+    Path("src/auto_alpha/research/formulas/runtime_engine.py"),
+    Path("src/auto_alpha/research/discovery/evaluation_report.py"),
+    Path("src/auto_alpha/research/factors/store_models.py"),
+    Path("src/auto_alpha/research/factors/store_storage.py"),
     Path("src/auto_alpha/platform/observability/dashboard/data_service.py"),
     Path("src/auto_alpha/platform/observability/dashboard/app.py"),
 ]

@@ -6,10 +6,11 @@ from typing import Any, Mapping, Sequence
 
 from auto_alpha.data.lake.store.task052_freeze import validate_task052_governed_freeze
 from auto_alpha.data.matrix.store.strict_engineering import StrictEngineeringPITMatrixBuilder, StrictEngineeringPITMatrixConfig
-from auto_alpha.research.features.factory.engineering_replay.orchestrator import build_v3_tensor_generation
-from auto_alpha.validation.firewall.core.production_sentinel.sentinel import validate_task054b_production_sentinel
-from auto_alpha.validation.firewall.core.engineering_closure.validators import validate_strict_matrix_generation, validate_v3_tensor_generation
-from auto_alpha.portfolio.simulation.ledger.run import prepare_simulation_inputs
+from auto_alpha.research.features.engineering_replay_orchestrator import build_v3_tensor_generation
+from auto_alpha.validation.firewall.production_sentinel_sentinel import validate_task054b_production_sentinel
+from auto_alpha.validation.firewall.engineering_closure_validators import validate_strict_matrix_generation
+from auto_alpha.validation.firewall.engineering_closure_validators import validate_v3_tensor_generation
+from auto_alpha.portfolio.simulation.ledger_run import prepare_simulation_inputs
 from auto_alpha.portfolio.simulation.causal import build_valuation_surface, trace_causal_runs
 from auto_alpha.portfolio.simulation.valuation import (
     load_valuation_projection,

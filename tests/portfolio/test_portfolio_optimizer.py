@@ -4,9 +4,9 @@ import torch
 
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.research.factors.store import FactorRecord, LocalFactorStore
-from auto_alpha.research.formulas.runtime.data_loader import AShareDataLoader
+from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
 from auto_alpha.portfolio.construction.optimizer import OptimizationConfig, PortfolioOptimizer
-from auto_alpha.portfolio.construction.optimizer import run_optimize
+from auto_alpha.portfolio.construction import optimizer_run_optimize as run_optimize
 from auto_alpha.portfolio.risk.model import benchmark_weights_from_index_members, estimate_return_covariance
 
 

@@ -6,21 +6,17 @@ from pathlib import Path
 
 import pytest
 
-from auto_alpha.validation.firewall.core.production_sentinel.audit import (
-    AuditedReadBroker,
-    ComponentReceiptRecorder,
-    validate_component_receipts,
-    validate_read_ledger,
-)
-from auto_alpha.validation.firewall.core.production_sentinel.sentinel import (
-    EVIDENCE_SCOPE,
-    MUTATIONS,
-    PATHS,
-    REQUIRED_COMPONENTS,
-    _apply_research_cache_contract,
-    _validated_projection_eligibility,
-    validate_task054b_production_sentinel,
-)
+from auto_alpha.validation.firewall.production_sentinel_audit import AuditedReadBroker
+from auto_alpha.validation.firewall.production_sentinel_audit import ComponentReceiptRecorder
+from auto_alpha.validation.firewall.production_sentinel_audit import validate_component_receipts
+from auto_alpha.validation.firewall.production_sentinel_audit import validate_read_ledger
+from auto_alpha.validation.firewall.production_sentinel_sentinel import EVIDENCE_SCOPE
+from auto_alpha.validation.firewall.production_sentinel_sentinel import MUTATIONS
+from auto_alpha.validation.firewall.production_sentinel_sentinel import PATHS
+from auto_alpha.validation.firewall.production_sentinel_sentinel import REQUIRED_COMPONENTS
+from auto_alpha.validation.firewall.production_sentinel_sentinel import _apply_research_cache_contract
+from auto_alpha.validation.firewall.production_sentinel_sentinel import _validated_projection_eligibility
+from auto_alpha.validation.firewall.production_sentinel_sentinel import validate_task054b_production_sentinel
 
 
 def _public_copy(source: Path, destination: Path) -> str:

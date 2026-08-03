@@ -1,9 +1,9 @@
 import json
 
-from auto_alpha.portfolio.simulation.backtest.run_backtest import main as backtest_main
-from auto_alpha.portfolio.construction.certification.run_portfolio_certify import main as certify_main
-from auto_alpha.portfolio.construction.lab.run_portfolio_lab import main as lab_main
-from auto_alpha.execution.trading.strategy.runner import main as strategy_main
+from auto_alpha.portfolio.simulation.backtest_run_backtest import main as backtest_main
+from auto_alpha.portfolio.construction.certification_run_portfolio_certify import main as certify_main
+from auto_alpha.portfolio.construction.lab_run_portfolio_lab import main as lab_main
+from auto_alpha.execution.trading.strategy_runner import main as strategy_main
 
 from test_portfolio_lab_certification import _prepare_factor
 

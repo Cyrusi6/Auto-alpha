@@ -2,7 +2,8 @@ import math
 
 import torch
 
-from auto_alpha.research.formulas.runtime.backtest import AShareFactorEvaluator, FactorEvaluationResult
+from auto_alpha.research.formulas.runtime_backtest import AShareFactorEvaluator
+from auto_alpha.research.formulas.runtime_backtest import FactorEvaluationResult
 
 
 def test_factor_evaluator_returns_finite_metrics():

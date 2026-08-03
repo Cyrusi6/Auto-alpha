@@ -2,7 +2,7 @@ import json
 
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.data.ingestion.pipeline.ashare.storage import LocalAshareStorage
-from auto_alpha.research.discovery.studies import run_batch
+from auto_alpha.research.discovery import studies_run_batch as run_batch
 from auto_alpha.data.pit.universe.builder import build_universe_from_storage
 from auto_alpha.data.pit.universe.models import UniverseBuildConfig
 

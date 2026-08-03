@@ -2,7 +2,7 @@ import json
 
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.research.formulas.batch import FormulaBatchEvalConfig, FormulaBatchEvaluator, requests_from_candidates
-from auto_alpha.research.discovery.studies.candidates import default_candidates
+from auto_alpha.research.discovery.studies_candidates import default_candidates
 
 
 def test_formula_batch_eval_runs_and_writes_artifacts(tmp_path):
@@ -38,7 +38,7 @@ def test_formula_batch_eval_runs_and_writes_artifacts(tmp_path):
 
 def test_formula_batch_eval_cli_from_corpus(tmp_path, capsys):
     from auto_alpha.research.formulas.corpus import FormulaCorpusConfig, build_formula_corpus
-    from auto_alpha.research.formulas.batch import run_batch_eval
+    from auto_alpha.research.formulas import batch_run_batch_eval as run_batch_eval
 
     data_dir = tmp_path / "data"
     AShareDataManager(AShareDataConfig(provider="sample", data_dir=data_dir)).sync(validate=True)
@@ -74,7 +74,7 @@ def test_formula_batch_eval_cli_from_corpus(tmp_path, capsys):
 
 def test_formula_batch_eval_shards_and_merge(tmp_path, capsys):
     from auto_alpha.research.formulas.corpus import FormulaCorpusConfig, build_formula_corpus
-    from auto_alpha.research.formulas.batch import run_batch_eval
+    from auto_alpha.research.formulas import batch_run_batch_eval as run_batch_eval
 
     data_dir = tmp_path / "data"
     AShareDataManager(AShareDataConfig(provider="sample", data_dir=data_dir)).sync(validate=True)

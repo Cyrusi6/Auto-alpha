@@ -98,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "apply-account":
             if not args.account_dir or not args.trade_date:
                 raise ValueError("apply-account requires --account-dir and --trade-date")
-            from auto_alpha.execution.trading.paper.ledger import LocalPaperAccount
+            from auto_alpha.execution.trading.paper_ledger import LocalPaperAccount
 
             account = LocalPaperAccount(args.account_dir)
             state, applications = account.apply_corporate_actions(
@@ -109,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
             settlement_paths = {}
             if args.settlement_aware and args.settlement_dir:
                 from auto_alpha.execution.settlement.engine import SettlementCalendar, apply_settlement_events, build_settlement_events_from_corporate_actions, load_settlement_profile
-                from auto_alpha.execution.settlement.engine.report import write_settlement_report
+                from auto_alpha.execution.settlement.engine_report import write_settlement_report
 
                 profile = load_settlement_profile(args.settlement_profile, cost_basis_method=args.cost_basis_method)
                 calendar = SettlementCalendar.from_data_dir(args.data_dir)

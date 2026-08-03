@@ -4,12 +4,12 @@ from pathlib import Path
 def test_settlement_modules_do_not_reintroduce_old_business_terms():
     roots = [
         Path("src/auto_alpha/execution/settlement/engine"),
-        Path("src/auto_alpha/execution/trading/paper/ledger.py"),
-        Path("src/auto_alpha/execution/trading/paper/models.py"),
-        Path("src/auto_alpha/portfolio/simulation/backtest/run_backtest.py"),
-        Path("src/auto_alpha/execution/trading/strategy/runner.py"),
-        Path("src/auto_alpha/execution/operations/daily/daily_runner.py"),
-        Path("src/auto_alpha/execution/operations/daily/run_daily.py"),
+        Path("src/auto_alpha/execution/trading/paper_ledger.py"),
+        Path("src/auto_alpha/execution/trading/paper_models.py"),
+        Path("src/auto_alpha/portfolio/simulation/backtest_run_backtest.py"),
+        Path("src/auto_alpha/execution/trading/strategy_runner.py"),
+        Path("src/auto_alpha/execution/operations/daily_daily_runner.py"),
+        Path("src/auto_alpha/execution/operations/daily_run_daily.py"),
     ]
     old_terms = [
         "solana",

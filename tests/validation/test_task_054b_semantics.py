@@ -6,15 +6,15 @@ from dataclasses import replace
 import pytest
 import torch
 
-from auto_alpha.research.discovery.factory.models import AlphaCandidateRecord
-from auto_alpha.research.discovery.factory.static_checks import run_static_checks
-from auto_alpha.research.features.factory.catalog import FEATURE_SET_V3, build_feature_set_manifest, get_feature_definitions
-from auto_alpha.research.features.factory.semantics import (
-    build_feature_semantics_map,
-    feature_semantics_contract_hash,
-)
-from auto_alpha.research.features.factory.vocab_adapter import make_formula_vocab_from_manifest
-from auto_alpha.research.formulas.runtime.vm import StackVM
+from auto_alpha.research.discovery.factory_models import AlphaCandidateRecord
+from auto_alpha.research.discovery.factory_static_checks import run_static_checks
+from auto_alpha.research.features.factory_catalog import FEATURE_SET_V3
+from auto_alpha.research.features.factory_catalog import build_feature_set_manifest
+from auto_alpha.research.features.factory_catalog import get_feature_definitions
+from auto_alpha.research.features.factory_semantics import build_feature_semantics_map
+from auto_alpha.research.features.factory_semantics import feature_semantics_contract_hash
+from auto_alpha.research.features.factory_vocab_adapter import make_formula_vocab_from_manifest
+from auto_alpha.research.formulas.runtime_vm import StackVM
 
 
 def _v3_manifest():

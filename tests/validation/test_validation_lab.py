@@ -6,21 +6,20 @@ import torch
 
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.research.factors.store import FactorRecord, LocalFactorStore, stable_formula_hash
-from auto_alpha.research.formulas.runtime.data_loader import AShareDataLoader
-from auto_alpha.validation.lab.engine.metrics import evaluate_factor_splits
-from auto_alpha.validation.lab.engine.models import StressBacktestResult
-from auto_alpha.validation.lab.engine.multiple_testing import analyze_multiple_testing
-from auto_alpha.validation.lab.engine.overfit import estimate_overfit_risk
-from auto_alpha.validation.lab.engine.placebo import run_placebo_tests
-from auto_alpha.validation.lab.engine.regime import run_regime_validation
-from auto_alpha.validation.lab.engine.run_validation import main as validation_main
-from auto_alpha.validation.lab.engine.sensitivity import run_sensitivity_tests
-from auto_alpha.validation.lab.engine.splits import (
-    build_cscv_splits,
-    build_purged_embargo_splits,
-    build_simple_walk_forward_splits,
-)
-from auto_alpha.validation.lab.engine.stress_backtest import UnsupportedStressBacktestError, run_stress_backtest_bundle
+from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
+from auto_alpha.validation.lab.engine_metrics import evaluate_factor_splits
+from auto_alpha.validation.lab.engine_models import StressBacktestResult
+from auto_alpha.validation.lab.engine_multiple_testing import analyze_multiple_testing
+from auto_alpha.validation.lab.engine_overfit import estimate_overfit_risk
+from auto_alpha.validation.lab.engine_placebo import run_placebo_tests
+from auto_alpha.validation.lab.engine_regime import run_regime_validation
+from auto_alpha.validation.lab.engine_run_validation import main as validation_main
+from auto_alpha.validation.lab.engine_sensitivity import run_sensitivity_tests
+from auto_alpha.validation.lab.engine_splits import build_cscv_splits
+from auto_alpha.validation.lab.engine_splits import build_purged_embargo_splits
+from auto_alpha.validation.lab.engine_splits import build_simple_walk_forward_splits
+from auto_alpha.validation.lab.engine_stress_backtest import UnsupportedStressBacktestError
+from auto_alpha.validation.lab.engine_stress_backtest import run_stress_backtest_bundle
 
 
 def _prepare_factor(tmp_path, status="approved"):

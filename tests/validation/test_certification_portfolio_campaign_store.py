@@ -1,10 +1,10 @@
 import json
 
 from auto_alpha.platform.artifacts.schema.run_validate import main as artifact_validate_main
-from auto_alpha.validation.certification.campaigns.run_certification_campaign import main as certification_campaign_main
+from auto_alpha.validation.certification.campaigns_run_certification_campaign import main as certification_campaign_main
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.research.factors.store import FactorRecord, LocalFactorStore, stable_formula_hash
-from auto_alpha.research.formulas.runtime.data_loader import AShareDataLoader
+from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
 from auto_alpha.platform.observability.monitoring.checks import (
     check_certified_factor_pool,
     check_factor_certification_campaign,
@@ -12,8 +12,8 @@ from auto_alpha.platform.observability.monitoring.checks import (
     check_portfolio_campaign,
     check_production_candidate_bundle,
 )
-from auto_alpha.portfolio.construction.campaigns.run_portfolio_campaign import main as portfolio_campaign_main
-from auto_alpha.validation.lab.campaigns.run_validation_store import main as validation_campaign_main
+from auto_alpha.portfolio.construction.campaigns_run_portfolio_campaign import main as portfolio_campaign_main
+from auto_alpha.validation.lab.campaigns_run_validation_store import main as validation_campaign_main
 
 
 def _prepare_validation_queue(tmp_path, capsys):

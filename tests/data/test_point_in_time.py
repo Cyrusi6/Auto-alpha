@@ -2,7 +2,7 @@ import json
 
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager, LocalAshareStorage
 from auto_alpha.data.matrix.store import MatrixStoreReader, build_matrix_cache, validate_matrix_cache
-from auto_alpha.research.formulas.runtime.data_loader import AShareDataLoader
+from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
 from auto_alpha.data.pit.engine.security_master import build_active_security_mask, build_security_lifecycle
 from auto_alpha.data.pit.engine.validator import validate_point_in_time_data
 from auto_alpha.data.pit.engine.run_pit import main as pit_main

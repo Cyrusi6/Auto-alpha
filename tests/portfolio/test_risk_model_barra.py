@@ -4,7 +4,7 @@ import math
 import torch
 
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
-from auto_alpha.research.formulas.runtime.data_loader import AShareDataLoader
+from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
 from auto_alpha.portfolio.risk.model import (
     active_risk_decomposition,
     attribute_active_return,

@@ -2,14 +2,14 @@ import json
 
 from auto_alpha.platform.artifacts.schema.run_validate import main as validate_artifacts_main
 from auto_alpha.research.discovery.factory import AlphaCampaignConfig, AlphaFactoryRunner
-from auto_alpha.research.discovery.factory.run_factory import main as run_factory_main
+from auto_alpha.research.discovery.factory_run_factory import main as run_factory_main
 from auto_alpha.platform.observability.dashboard.config import DashboardConfig
 from auto_alpha.platform.observability.dashboard.data_service import AshareDashboardService
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.research.features.factory import FEATURE_SET_V2, FEATURE_SET_V3, build_feature_set_manifest
-from auto_alpha.research.discovery.factory.templates import template_formulas
+from auto_alpha.research.discovery.factory_templates import template_formulas
 from auto_alpha.research.factors.store import LocalFactorStore
-from auto_alpha.research.formulas.search.run_search import main as run_search_main
+from auto_alpha.research.formulas.search_run_search import main as run_search_main
 
 
 def _prepare_sample_data(tmp_path):

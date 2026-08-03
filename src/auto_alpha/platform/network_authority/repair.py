@@ -14,10 +14,8 @@ from auto_alpha.data.lake.store.task052_freeze import (
     create_task052_governed_freeze,
     resolve_task052_governed_freeze_manifest,
 )
-from auto_alpha.validation.lab.engine.materialization import (
-    FactorMaterializer,
-    MaterializationInputs,
-)
+from auto_alpha.validation.lab.engine_materialization import FactorMaterializer
+from auto_alpha.validation.lab.engine_materialization import MaterializationInputs
 
 from .storage import canonical_hash, publish_generation, read_json, sha256_file
 

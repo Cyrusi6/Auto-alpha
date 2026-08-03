@@ -8,15 +8,15 @@ import numpy as np
 import pytest
 import torch
 
-from auto_alpha.portfolio.simulation.backtest.simulator import AShareBacktestSimulator
-from auto_alpha.portfolio.simulation.backtest.time_contract import BacktestTimeContract
+from auto_alpha.portfolio.simulation.backtest_simulator import AShareBacktestSimulator
+from auto_alpha.portfolio.simulation.backtest_time_contract import BacktestTimeContract
 from auto_alpha.data.lake.store.freeze import create_research_freeze
 from auto_alpha.data.lake.store.models import DatasetVersionRecord
-from auto_alpha.research.features.factory.validity import build_feature_validity_tensor
-from auto_alpha.research.formulas.runtime.vm import StackVM
-from auto_alpha.research.formulas.runtime.vocab import FORMULA_VOCAB
+from auto_alpha.research.features.factory_validity import build_feature_validity_tensor
+from auto_alpha.research.formulas.runtime_vm import StackVM
+from auto_alpha.research.formulas.runtime_vocab import FORMULA_VOCAB
 from auto_alpha.validation.firewall.core import DateFirewall, FirewallAccessError, ResearchDataView
-from auto_alpha.portfolio.risk.model.covariance import estimate_return_covariance
+from auto_alpha.portfolio.risk.model_covariance import estimate_return_covariance
 from auto_alpha.data.pit.universe.historical import (
     HistoricalUniverseBlocker,
     SnapshotPolicy,
@@ -27,10 +27,11 @@ from auto_alpha.data.pit.universe.historical import (
     normalize_suspensions,
     target_available_mask,
 )
-from auto_alpha.validation.lab.engine.eligibility import build_common_eligibility, eligible_date_segments
-from auto_alpha.validation.lab.engine.metrics import evaluate_factor_splits
-from auto_alpha.validation.lab.engine.models import ValidationSplit
-from auto_alpha.validation.lab.engine.policy import EngineeringRobustnessPolicy
+from auto_alpha.validation.lab.engine_eligibility import build_common_eligibility
+from auto_alpha.validation.lab.engine_eligibility import eligible_date_segments
+from auto_alpha.validation.lab.engine_metrics import evaluate_factor_splits
+from auto_alpha.validation.lab.engine_models import ValidationSplit
+from auto_alpha.validation.lab.engine_policy import EngineeringRobustnessPolicy
 
 
 def _write_jsonl(path: Path, rows):

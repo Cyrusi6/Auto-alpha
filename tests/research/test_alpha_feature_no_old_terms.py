@@ -3,14 +3,13 @@ from pathlib import Path
 
 def test_alpha_feature_factory_no_old_business_terms():
     paths = [
-        Path("src/auto_alpha/research/discovery/factory"),
-        Path("src/auto_alpha/research/features/factory"),
-        Path("src/auto_alpha/research/formulas/runtime/data_loader.py"),
-        Path("src/auto_alpha/research/formulas/runtime/factors.py"),
-        Path("src/auto_alpha/research/formulas/batch"),
-        Path("src/auto_alpha/research/formulas/search/search.py"),
-        Path("src/auto_alpha/research/formulas/search/run_search.py"),
-        Path("src/auto_alpha/research/discovery/suite/workflow.py"),
+        Path("src/auto_alpha/research/discovery"),
+        Path("src/auto_alpha/research/features"),
+        Path("src/auto_alpha/research/formulas/runtime_data_loader.py"),
+        Path("src/auto_alpha/research/formulas/runtime_factors.py"),
+        Path("src/auto_alpha/research/formulas/batch.py"),
+        Path("src/auto_alpha/research/formulas/search_search.py"),
+        Path("src/auto_alpha/research/formulas/search_run_search.py"),
         Path("src/auto_alpha/platform/observability/monitoring/checks.py"),
         Path("src/auto_alpha/platform/observability/dashboard/data_service.py"),
     ]

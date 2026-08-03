@@ -5,8 +5,8 @@ from auto_alpha.platform.artifacts.schema.run_validate import main as validate_m
 from auto_alpha.platform.observability.dashboard.config import DashboardConfig
 from auto_alpha.platform.observability.dashboard.data_service import AshareDashboardService
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
-from auto_alpha.validation.firewall.leakage.run_audit import main as leakage_main
-from auto_alpha.research.formulas.runtime import engine
+from auto_alpha.validation.firewall.leakage_run_audit import main as leakage_main
+from auto_alpha.research.formulas import runtime_engine as engine
 from auto_alpha.data.pit.engine.run_pit import main as pit_main
 from auto_alpha.platform.governance.release.inventory import PLATFORM_MODULES
 

@@ -9,13 +9,11 @@ import numpy as np
 import pytest
 
 from auto_alpha.platform.artifacts.schema.writer import attach_artifact_metadata
-from auto_alpha.validation.firewall.core.production_sentinel.orchestrator import (
-    TASK054B_PATHS,
-    TASK054B_REQUIRED_COMPONENTS,
-    TASK054B_RESEARCH_OUTPUT_KEYS,
-    task054b_content_hash,
-    validate_task054b_stage,
-)
+from auto_alpha.validation.firewall.production_sentinel_orchestrator import TASK054B_PATHS
+from auto_alpha.validation.firewall.production_sentinel_orchestrator import TASK054B_REQUIRED_COMPONENTS
+from auto_alpha.validation.firewall.production_sentinel_orchestrator import TASK054B_RESEARCH_OUTPUT_KEYS
+from auto_alpha.validation.firewall.production_sentinel_orchestrator import task054b_content_hash
+from auto_alpha.validation.firewall.production_sentinel_orchestrator import validate_task054b_stage
 
 
 def test_task054b_sentinel_accepts_closed_real_production_evidence(tmp_path: Path):

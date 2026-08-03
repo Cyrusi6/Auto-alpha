@@ -1,6 +1,6 @@
-from auto_alpha.research.formulas.search.generator import generate_initial_population
-from auto_alpha.research.formulas.search.models import FormulaSearchConfig
-from auto_alpha.research.formulas.runtime.vm import StackVM
+from auto_alpha.research.formulas.search_generator import generate_initial_population
+from auto_alpha.research.formulas.search_models import FormulaSearchConfig
+from auto_alpha.research.formulas.runtime_vm import StackVM
 
 
 def test_initial_population_is_reproducible_and_valid():

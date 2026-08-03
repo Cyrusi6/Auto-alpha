@@ -9,20 +9,26 @@ import pytest
 
 from auto_alpha.platform.artifacts.schema.writer import attach_artifact_metadata, write_json_artifact, write_jsonl_artifact
 from auto_alpha.platform.artifacts.schema.validator import validate_artifact
-from auto_alpha.research.discovery.factory.models import AlphaCampaignConfig
-from auto_alpha.research.discovery.factory.runner import AlphaFactoryRunner
+from auto_alpha.research.discovery.factory_models import AlphaCampaignConfig
+from auto_alpha.research.discovery.factory_runner import AlphaFactoryRunner
 from auto_alpha.platform.observability.dashboard.config import DashboardConfig
 from auto_alpha.platform.observability.dashboard.data_service import AshareDashboardService
 from auto_alpha.research.factors.store import make_factor_id, stable_formula_hash
 from auto_alpha.platform.observability.monitoring.checks import check_sealed_holdout_validation
-from auto_alpha.validation.lab.red_team.candidate_pool import freeze_candidate_pool, validate_candidate_pool_manifest
-from auto_alpha.validation.lab.red_team.capability import HoldoutCapabilityRegistry
-from auto_alpha.validation.lab.red_team.contracts import HoldoutCalibrationProfile, SealedHoldoutPolicy, publish_holdout_policy
-from auto_alpha.validation.lab.red_team.evaluator import ValidationRedTeamAgent
-from auto_alpha.validation.lab.red_team.io import HoldoutContractError, atomic_json, sha256_file, stable_hash
-from auto_alpha.validation.lab.red_team.preflight import preflight_canonical_holdout
-from auto_alpha.validation.lab.red_team.verifier import verify_holdout_result
-from auto_alpha.validation.lab.red_team.view import VIEW_CORE_FIELDS
+from auto_alpha.validation.lab.red_team_candidate_pool import freeze_candidate_pool
+from auto_alpha.validation.lab.red_team_candidate_pool import validate_candidate_pool_manifest
+from auto_alpha.validation.lab.red_team_capability import HoldoutCapabilityRegistry
+from auto_alpha.validation.lab.red_team_contracts import HoldoutCalibrationProfile
+from auto_alpha.validation.lab.red_team_contracts import SealedHoldoutPolicy
+from auto_alpha.validation.lab.red_team_contracts import publish_holdout_policy
+from auto_alpha.validation.lab.red_team_evaluator import ValidationRedTeamAgent
+from auto_alpha.validation.lab.red_team_io import HoldoutContractError
+from auto_alpha.validation.lab.red_team_io import atomic_json
+from auto_alpha.validation.lab.red_team_io import sha256_file
+from auto_alpha.validation.lab.red_team_io import stable_hash
+from auto_alpha.validation.lab.red_team_preflight import preflight_canonical_holdout
+from auto_alpha.validation.lab.red_team_verifier import verify_holdout_result
+from auto_alpha.validation.lab.red_team_view import VIEW_CORE_FIELDS
 
 
 def test_candidate_pool_freezes_all_required_selection_evidence(tmp_path):
@@ -242,7 +248,7 @@ def test_contaminated_canonical_freeze_preflight_stays_blocked(tmp_path, monkeyp
     freeze_manifest = tmp_path / "canonical_freeze_manifest.json"
     freeze_manifest.write_text("{}", encoding="utf-8")
     monkeypatch.setattr(
-        "auto_alpha.validation.lab.red_team.preflight.validate_canonical_research_freeze",
+        "auto_alpha.validation.lab.red_team_preflight.validate_canonical_research_freeze",
         lambda path: {
             "content_hash": "a" * 64,
             "sealed_holdout": {

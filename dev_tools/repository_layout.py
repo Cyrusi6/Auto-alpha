@@ -24,6 +24,9 @@ NESTED_SUBSYSTEMS = {
     "platform/observability": ("dashboard", "monitoring"),
 }
 
+PACKAGE_DIRECTORY_BUDGET = 65
+FLAT_DOMAINS = ("research", "validation", "portfolio", "execution")
+
 REMOVED_INTERNAL_PACKAGES = (
     "data/ingestion/backfill",
     "data/ingestion/index",
@@ -150,6 +153,8 @@ class LayoutAudit:
     status: str
     top_level_package_count: int
     source_package_count: int
+    package_directory_count: int
+    package_directory_budget: int
     domain_count: int
     subsystem_count: int
     legacy_directory_count: int
@@ -194,6 +199,22 @@ def audit_repository_layout(root_dir: str | Path) -> LayoutAudit:
         actual = _child_packages(auto_alpha / relative)
         if actual != tuple(sorted(expected)):
             issues.append(f"nested_subsystems:{relative}:{actual!r}")
+    package_directory_count = sum(1 for _ in auto_alpha.rglob("__init__.py"))
+    if package_directory_count > PACKAGE_DIRECTORY_BUDGET:
+        issues.append(
+            f"package_directory_budget:{package_directory_count}>{PACKAGE_DIRECTORY_BUDGET}"
+        )
+    for domain in FLAT_DOMAINS:
+        domain_root = auto_alpha / domain
+        nested = tuple(
+            sorted(
+                str(path.parent.relative_to(domain_root))
+                for path in domain_root.rglob("__init__.py")
+                if len(path.parent.relative_to(domain_root).parts) > 1
+            )
+        )
+        if nested:
+            issues.append(f"flat_domain_nested_packages:{domain}:{nested!r}")
     test_domains = tuple(
         sorted(
             path.name
@@ -230,6 +251,8 @@ def audit_repository_layout(root_dir: str | Path) -> LayoutAudit:
         status="passed" if passed else "blocked",
         top_level_package_count=top_level_package_count,
         source_package_count=source_package_count,
+        package_directory_count=package_directory_count,
+        package_directory_budget=PACKAGE_DIRECTORY_BUDGET,
         domain_count=len(actual_domains),
         subsystem_count=subsystem_count,
         legacy_directory_count=len(legacy_directories),

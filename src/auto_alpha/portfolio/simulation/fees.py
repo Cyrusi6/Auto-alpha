@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 from urllib.parse import urljoin, urlparse
 
-from auto_alpha.portfolio.simulation.ledger.policy import PREREGISTERED_SCENARIOS
+from auto_alpha.portfolio.simulation.ledger_policy import PREREGISTERED_SCENARIOS
 
 
 class FeeWorkflowError(RuntimeError):
@@ -1044,14 +1044,14 @@ class FeeScheduleCalculator:
 
 
 def semantic_source_hashes() -> dict[str, str]:
-    import auto_alpha.portfolio.simulation.ledger.policy as policy_module
-    import auto_alpha.portfolio.simulation.ledger.simulator as simulator_module
-    import auto_alpha.portfolio.simulation.ledger.verifier as verifier_module
+    import auto_alpha.portfolio.simulation.ledger_policy as policy_module
+    import auto_alpha.portfolio.simulation.ledger_simulator as simulator_module
+    import auto_alpha.portfolio.simulation.ledger_verifier as verifier_module
 
     return {
-        "auto_alpha.portfolio.simulation.ledger.policy": _module_source_hash(policy_module),
-        "auto_alpha.portfolio.simulation.ledger.simulator": _module_source_hash(simulator_module),
-        "auto_alpha.portfolio.simulation.ledger.verifier": _module_source_hash(verifier_module),
+        "auto_alpha.portfolio.simulation.ledger_policy": _module_source_hash(policy_module),
+        "auto_alpha.portfolio.simulation.ledger_simulator": _module_source_hash(simulator_module),
+        "auto_alpha.portfolio.simulation.ledger_verifier": _module_source_hash(verifier_module),
         "auto_alpha.portfolio.simulation.fees": _source_hash(Path(__file__)),
     }
 

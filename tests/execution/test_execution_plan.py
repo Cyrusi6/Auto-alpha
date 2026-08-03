@@ -11,7 +11,7 @@ from auto_alpha.execution.trading.plan import (
     simulate_child_orders,
     write_execution_plan_report,
 )
-from auto_alpha.research.formulas.runtime.data_loader import AShareDataLoader
+from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
 
 
 def _loader(tmp_path):

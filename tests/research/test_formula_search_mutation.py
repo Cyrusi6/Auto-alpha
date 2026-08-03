@@ -1,9 +1,11 @@
 import random
 
-from auto_alpha.research.formulas.search.generator import generate_initial_population
-from auto_alpha.research.formulas.search.models import FormulaSearchConfig
-from auto_alpha.research.formulas.search.mutation import crossover_formula, mutate_formula, simplify_formula
-from auto_alpha.research.formulas.runtime.vm import StackVM
+from auto_alpha.research.formulas.search_generator import generate_initial_population
+from auto_alpha.research.formulas.search_models import FormulaSearchConfig
+from auto_alpha.research.formulas.search_mutation import crossover_formula
+from auto_alpha.research.formulas.search_mutation import mutate_formula
+from auto_alpha.research.formulas.search_mutation import simplify_formula
+from auto_alpha.research.formulas.runtime_vm import StackVM
 
 
 def test_mutation_produces_valid_formula_with_parent_hash():
