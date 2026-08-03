@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from auto_alpha.data.ingestion.backfill.executor import execute_backfill_plan
-from auto_alpha.data.ingestion.backfill.planner import build_backfill_plan
-from auto_alpha.data.ingestion.backfill.staging import atomic_publish_staging, write_staging_records
+from auto_alpha.data.ingestion.repair.backfill_executor import execute_backfill_plan
+from auto_alpha.data.ingestion.repair.backfill_planner import build_backfill_plan
+from auto_alpha.data.ingestion.repair.backfill_staging import atomic_publish_staging, write_staging_records
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig
 from auto_alpha.data.ingestion.pipeline.ashare.cache import (
     TushareCacheCorruptionError,
@@ -21,7 +21,7 @@ from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import (
 from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare import TushareAShareDataProvider
 from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare_client import TushareSchemaError, parse_tushare_response_payload
 from auto_alpha.data.ingestion.pipeline.ashare.request_identity import TushareRequestIdentity
-from auto_alpha.platform.network_authority._internal.evidence.transport import CANONICAL_ORIGIN, transport_identity
+from auto_alpha.platform.network_authority.transport import CANONICAL_ORIGIN, transport_identity
 
 
 class GenericClient:
@@ -168,7 +168,7 @@ def test_atomic_publish_metrics_negative_attestation_and_resume_miss(monkeypatch
     plan = build_backfill_plan(config, datasets=["suspensions"], chunk_days=1)
     rows = [{"ts_code": "000001.SZ", "trade_date": "20240102", "suspend_timing": "09:30", "suspend_type": "S"}]
     provider = BackfillProvider(rows)
-    monkeypatch.setattr("auto_alpha.data.ingestion.backfill.executor._provider", lambda *args, **kwargs: provider)
+    monkeypatch.setattr("auto_alpha.data.ingestion.repair.backfill_executor._provider", lambda *args, **kwargs: provider)
 
     first = execute_backfill_plan(plan, config, data_dir, output_dir, staging_dir=staging_dir)
     job = first.jobs[0]
@@ -184,7 +184,7 @@ def test_atomic_publish_metrics_negative_attestation_and_resume_miss(monkeypatch
     assert resumed.jobs[0].dedup == 1
 
     empty_provider = BackfillProvider([])
-    monkeypatch.setattr("auto_alpha.data.ingestion.backfill.executor._provider", lambda *args, **kwargs: empty_provider)
+    monkeypatch.setattr("auto_alpha.data.ingestion.repair.backfill_executor._provider", lambda *args, **kwargs: empty_provider)
     empty_dir = tmp_path / "empty"
     empty_report = execute_backfill_plan(plan, config, empty_dir / "data", empty_dir / "run", staging_dir=empty_dir / "staging")
     empty_job = empty_report.jobs[0]
@@ -206,7 +206,7 @@ def test_atomic_publish_preserves_existing_dataset_when_replace_fails(monkeypatc
         job,
         [{"ts_code": "000002.SZ", "trade_date": "20240103", "suspend_timing": "unknown", "suspend_type": "R"}],
     )
-    monkeypatch.setattr("auto_alpha.data.ingestion.backfill.staging.os.replace", lambda *args: (_ for _ in ()).throw(OSError("publish failed")))
+    monkeypatch.setattr("auto_alpha.data.ingestion.repair.backfill_staging.os.replace", lambda *args: (_ for _ in ()).throw(OSError("publish failed")))
     with pytest.raises(OSError, match="publish failed"):
         atomic_publish_staging(data_dir, staging_path, job)
     assert target.read_text(encoding="utf-8") == json.dumps(original) + "\n"

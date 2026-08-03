@@ -2,9 +2,9 @@ from pathlib import Path
 
 
 CORE_FILES = [
-    Path("src/auto_alpha/data/ingestion/pipeline/config.py"),
-    Path("src/auto_alpha/data/ingestion/pipeline/data_manager.py"),
-    Path("src/auto_alpha/data/ingestion/pipeline/db_manager.py"),
+    Path("src/auto_alpha/data/ingestion/pipeline/ashare/config.py"),
+    Path("src/auto_alpha/data/ingestion/pipeline/ashare/manager.py"),
+    Path("src/auto_alpha/data/ingestion/pipeline/ashare/storage.py"),
     Path("src/auto_alpha/data/ingestion/pipeline/run_pipeline.py"),
 ]
 
@@ -24,6 +24,8 @@ REMOVED_PROVIDER_FILES = [
     Path("src/auto_alpha/data/ingestion/pipeline/providers/base.py"),
     Path("src/auto_alpha/data/ingestion/pipeline/providers/birdeye.py"),
     Path("src/auto_alpha/data/ingestion/pipeline/providers/dexscreener.py"),
+    Path("src/auto_alpha/data/ingestion/pipeline/ashare/providers/birdeye.py"),
+    Path("src/auto_alpha/data/ingestion/pipeline/ashare/providers/dexscreener.py"),
 ]
 
 

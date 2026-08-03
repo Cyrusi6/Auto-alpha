@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, read_json, validate_generation
-from auto_alpha.platform.network_authority._internal.runtime.ledger import DurableHashJournal, event_rows
+from auto_alpha.platform.network_authority.storage import canonical_hash, read_json, validate_generation
+from auto_alpha.platform.network_authority.journal import DurableHashJournal, event_rows
 
 from .contracts import APPLICATION_JOURNAL_SCHEMA, APPLICATION_SCHEMA, APPLICATION_STAGE_SCHEMA
 from .immutable import (

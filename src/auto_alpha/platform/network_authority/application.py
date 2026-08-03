@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from auto_alpha._paths import repository_root
-from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, read_json, validate_generation
-from auto_alpha.platform.network_authority._internal.runtime.application import _production_context
+from auto_alpha.platform.network_authority.storage import canonical_hash, read_json, validate_generation
+from auto_alpha.platform.network_authority.response_application import _production_context
 
 from .application_components import production_stage_definitions
 from .broker import AcceptedResponse

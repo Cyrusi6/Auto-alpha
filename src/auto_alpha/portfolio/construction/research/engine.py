@@ -8,8 +8,8 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from auto_alpha.platform.network_authority._internal.simulation.policy import ScenarioPolicy
-from auto_alpha.platform.network_authority._internal.simulation.simulator import EventLedgerSimulator, SimulationDataBlocker
+from auto_alpha.portfolio.simulation.ledger.policy import ScenarioPolicy
+from auto_alpha.portfolio.simulation.ledger.simulator import EventLedgerSimulator, SimulationDataBlocker
 
 from .admission import validate_factor_certified_records
 from .combination import build_combined_signal, fit_factor_combination

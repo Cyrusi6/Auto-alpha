@@ -3,7 +3,7 @@ from pathlib import Path
 
 TARGETS = [
     Path("src/auto_alpha/data/matrix/store"),
-    Path("src/auto_alpha/data/ingestion/index"),
+    Path("src/auto_alpha/data/lake/catalog"),
     Path("src/auto_alpha/research/discovery/benchmark"),
     Path("src/auto_alpha/data/quality/cross_source"),
     Path("src/auto_alpha/research/formulas/runtime/data_loader.py"),

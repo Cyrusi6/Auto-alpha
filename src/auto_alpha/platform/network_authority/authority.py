@@ -7,10 +7,10 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from auto_alpha.data.ingestion.pipeline.ashare.request_identity import TushareRequestIdentity, validate_tushare_request_identity
-from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, read_json, sha256_file, validate_generation
-from auto_alpha.platform.network_authority._internal.runtime.application_tree import validate_application_preflight
-from auto_alpha.platform.network_authority._internal.runtime.rehearsal import independently_verify_rehearsal, validate_rehearsal
-from auto_alpha.platform.network_authority._internal.runtime.ledger import DurableHashJournal
+from auto_alpha.platform.network_authority.storage import canonical_hash, read_json, sha256_file, validate_generation
+from auto_alpha.platform.network_authority.application_tree import validate_application_preflight
+from auto_alpha.platform.network_authority.parent_rehearsal import independently_verify_rehearsal, validate_rehearsal
+from auto_alpha.platform.network_authority.journal import DurableHashJournal
 
 from .contracts import (
     BLOCKED_STATUS,

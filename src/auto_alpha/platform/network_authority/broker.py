@@ -13,10 +13,14 @@ from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare_client import (
 )
 from auto_alpha.data.ingestion.pipeline.ashare.request_identity import TushareRequestIdentity, validate_tushare_request_identity
 from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import stable_json_hash, tushare_code_semantic_hash
-from auto_alpha.platform.network_authority._internal.evidence.network import ENDPOINT_ROW_CAPS, _validate_records
-from auto_alpha.platform.network_authority._internal.evidence.transport import CANONICAL_ORIGIN
-from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, publish_generation, read_json, sha256_file, validate_generation
-from auto_alpha.platform.network_authority._internal.runtime.ledger import DurableHashJournal, event_rows
+from auto_alpha.platform.network_authority.response_validation import (
+    ENDPOINT_ROW_CAPS,
+    ResponseValidationError,
+    validate_response_records,
+)
+from auto_alpha.platform.network_authority.transport import CANONICAL_ORIGIN
+from auto_alpha.platform.network_authority.storage import canonical_hash, publish_generation, read_json, sha256_file, validate_generation
+from auto_alpha.platform.network_authority.journal import DurableHashJournal, event_rows
 
 from .authority import validate_candidate_checkpoint, validate_final_candidate_seal
 from .contracts import (
@@ -489,7 +493,10 @@ def _validate_receipt_against_reservation(
     )
     if len(records) >= ENDPOINT_ROW_CAPS[request["api_name"]]:
         raise Task055KBrokerError("task055k_transport_receipt_row_cap_reached")
-    _validate_records(request, records)
+    try:
+        validate_response_records(request, records)
+    except ResponseValidationError as exc:
+        raise Task055KBrokerError(str(exc)) from exc
     return payload
 
 
@@ -538,7 +545,10 @@ def _validate_envelope(request: Mapping[str, Any], envelope: TushareResponseEnve
         raise Task055KBrokerError("task055k_envelope_provider_invalid")
     if len(envelope.records) >= ENDPOINT_ROW_CAPS[request["api_name"]]:
         raise Task055KBrokerError("task055k_envelope_row_cap_reached")
-    _validate_records(request, envelope.records)
+    try:
+        validate_response_records(request, envelope.records)
+    except ResponseValidationError as exc:
+        raise Task055KBrokerError(str(exc)) from exc
 
 
 def _validate_production_journals(

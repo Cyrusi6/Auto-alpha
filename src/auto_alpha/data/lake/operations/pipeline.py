@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from auto_alpha.platform.artifacts.schema.writer import utc_now, write_json_artifact
-from auto_alpha.data.ingestion.backfill.executor import execute_backfill_plan
-from auto_alpha.data.ingestion.backfill.planner import build_backfill_plan, write_backfill_plan
+from auto_alpha.data.ingestion.repair.backfill_executor import execute_backfill_plan
+from auto_alpha.data.ingestion.repair.backfill_planner import build_backfill_plan, write_backfill_plan
 from auto_alpha.data.ingestion.pipeline.ashare.dataset_registry import TS_CODE_SPLIT_DATASETS
 from auto_alpha.data.lake.store import LocalDataLakeRegistry, create_research_freeze
 from auto_alpha.data.lake.store.fingerprint import content_hash_for_fingerprints, fingerprint_data_dir

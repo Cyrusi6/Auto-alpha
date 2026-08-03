@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, validate_generation
+from auto_alpha.platform.network_authority.storage import canonical_hash, validate_generation
 
 from .contracts import SOURCE_SCHEMA
 from .immutable import write_immutable_generation

@@ -183,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.data.ingestion.observer.run_observer",
+                "auto_alpha.platform.observability.monitoring.run_backfill_observer",
                 "smoke",
                 "--run-dir",
                 str(quick_dir / "observer_empty_run"),
@@ -207,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.data.ingestion.landing.run_landing",
+                "auto_alpha.data.lake.catalog.run_landing",
                 "smoke",
                 "--data-dir",
                 str(sample_data_dir),
@@ -223,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.data.ingestion.index.run_index",
+                "auto_alpha.data.lake.catalog.run_index",
                 "smoke",
                 "--data-dir",
                 str(sample_data_dir),
@@ -302,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.data.ingestion.post_download.run_post_download",
+                "auto_alpha.data.ingestion.repair.run_post_download",
                 "run",
                 "--data-dir",
                 str(sample_data_dir),
@@ -339,7 +339,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.data.ingestion.post_download.run_post_download",
+                "auto_alpha.data.ingestion.repair.run_post_download",
                 "plan",
                 "--data-dir",
                 str(sample_data_dir),

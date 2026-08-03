@@ -7,18 +7,18 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from auto_alpha.platform.network_authority._internal.evidence.contracts import (
+from auto_alpha.portfolio.simulation.evidence_contracts import (
     MAX_STALE_AGE_TRADE_DAYS,
     MODELED_STALE_METHOD,
     OFFICIAL_CLOSE_METHOD,
     OFFICIAL_OPEN_METHOD,
 )
-from auto_alpha.platform.network_authority._internal.evidence.valuation import load_valuation_projection, valuation_surface_from_projection
-from auto_alpha.platform.network_authority._internal.validation.truth import validate_truth_v2
-from auto_alpha.platform.network_authority._internal.authorization.fee import FeeProjectionCalculator
-from auto_alpha.platform.network_authority._internal.authorization.independent import independently_trace_prepared, prepare_independent_inputs
-from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash
-from auto_alpha.platform.network_authority._internal.runtime.application import _successor_bundle
+from auto_alpha.portfolio.simulation.valuation import load_valuation_projection, valuation_surface_from_projection
+from auto_alpha.data.pit.truth import validate_truth_v2
+from auto_alpha.portfolio.simulation.fee_projection import FeeProjectionCalculator
+from auto_alpha.portfolio.simulation.independent import independently_trace_prepared, prepare_independent_inputs
+from auto_alpha.platform.network_authority.storage import canonical_hash
+from auto_alpha.platform.network_authority.response_application import _successor_bundle
 from auto_alpha.validation.firewall.core.engineering_closure.validators import validate_strict_matrix_generation
 
 from .application import validate_staged_application

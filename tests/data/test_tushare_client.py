@@ -16,7 +16,7 @@ from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare_client import (
 )
 from auto_alpha.data.ingestion.pipeline.ashare.request_identity import TushareRequestIdentity
 from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import tushare_request_fingerprint
-from auto_alpha.platform.network_authority._internal.evidence.transport import CANONICAL_ORIGIN, transport_identity
+from auto_alpha.platform.network_authority.transport import CANONICAL_ORIGIN, transport_identity
 
 
 def _identity(api_name="daily", params=None, fields=None):

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from auto_alpha.data.ingestion.landing.run_landing import main as landing_main
+from auto_alpha.data.lake.catalog.run_landing import main as landing_main
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:

@@ -21,9 +21,9 @@ from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare_client import (
 from auto_alpha.data.ingestion.pipeline.ashare.request_identity import TushareRequestIdentity
 from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import stable_json_hash
 from auto_alpha.data.ingestion.pipeline.ashare.security import tls_preflight
-from auto_alpha.platform.network_authority._internal.evidence.transport import CANONICAL_ORIGIN
-from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, read_json, sha256_file, validate_generation
-from auto_alpha.platform.network_authority._internal.runtime.ledger import DurableHashJournal, event_rows
+from auto_alpha.platform.network_authority.transport import CANONICAL_ORIGIN
+from auto_alpha.platform.network_authority.storage import canonical_hash, read_json, sha256_file, validate_generation
+from auto_alpha.platform.network_authority.journal import DurableHashJournal, event_rows
 
 from .authority import validate_final_candidate_seal
 from .broker import (

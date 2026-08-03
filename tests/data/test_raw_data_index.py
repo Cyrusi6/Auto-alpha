@@ -12,11 +12,11 @@ from auto_alpha.research.features.factory import FEATURE_SET_V3, build_feature_s
 from auto_alpha.research.features.factory.coverage import build_feature_coverage_report
 from auto_alpha.data.matrix.refresh.planner import build_matrix_refresh_plan
 from auto_alpha.platform.observability.monitoring.checks import check_raw_data_index
-from auto_alpha.data.ingestion.post_download.planner import build_post_download_plan
-from auto_alpha.data.ingestion.index.run_index import main as index_main
-from auto_alpha.data.ingestion.index.scanner import active_run_safety_check, build_raw_data_index
-from auto_alpha.data.ingestion.index.validator import validate_raw_data_index
-from auto_alpha.data.ingestion.landing.report import build_landing_report
+from auto_alpha.data.ingestion.repair.post_download_planner import build_post_download_plan
+from auto_alpha.data.lake.catalog.run_index import main as index_main
+from auto_alpha.data.lake.catalog.index_scanner import active_run_safety_check, build_raw_data_index
+from auto_alpha.data.lake.catalog.index_validator import validate_raw_data_index
+from auto_alpha.data.lake.catalog.landing_report import build_landing_report
 
 
 def _write_jsonl(path: Path, rows: list[dict], malformed_tail: bool = False) -> None:
@@ -144,7 +144,7 @@ def test_raw_landing_matrix_feature_monitoring_and_dashboard_use_index(tmp_path:
         allow_active_run_index=True,
     )
     assert manifest is not None
-    from auto_alpha.data.ingestion.index.report import write_raw_data_index_artifacts
+    from auto_alpha.data.lake.catalog.index_report import write_raw_data_index_artifacts
 
     paths = write_raw_data_index_artifacts(
         manifest=manifest,

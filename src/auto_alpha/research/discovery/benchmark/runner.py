@@ -27,10 +27,10 @@ from auto_alpha.research.neural.search import AlphaGPTPretrainConfig, AlphaGPTPr
 from auto_alpha.research.discovery.studies import BatchFactorResearchRunner, BatchResearchConfig
 from auto_alpha.research.discovery.studies.candidates import default_candidates
 from auto_alpha.research.features.factory import build_feature_set_manifest, build_feature_tensor
-from auto_alpha.data.ingestion.index.report import write_raw_data_index_artifacts
-from auto_alpha.data.ingestion.index.scanner import build_raw_data_index
-from auto_alpha.data.ingestion.index.validator import validate_raw_data_index
-from auto_alpha.data.ingestion.landing.report import build_landing_report
+from auto_alpha.data.lake.catalog.index_report import write_raw_data_index_artifacts
+from auto_alpha.data.lake.catalog.index_scanner import build_raw_data_index
+from auto_alpha.data.lake.catalog.index_validator import validate_raw_data_index
+from auto_alpha.data.lake.catalog.landing_report import build_landing_report
 from auto_alpha.data.quality.lab.scanner import run_data_quality_scan
 from auto_alpha.validation.lab.engine.run_validation import main as run_validation_main
 from auto_alpha.validation.certification.factors.run_certify import main as run_certify_main

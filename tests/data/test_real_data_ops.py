@@ -1,7 +1,7 @@
 import json
 
-from auto_alpha.data.ingestion.backfill.chunking import PRODUCTION_DAILY_CHUNK_DAYS, dataset_chunk_days_for_strategy
-from auto_alpha.data.ingestion.backfill.run_backfill import main as backfill_main
+from auto_alpha.data.ingestion.repair.backfill_chunking import PRODUCTION_DAILY_CHUNK_DAYS, dataset_chunk_days_for_strategy
+from auto_alpha.data.ingestion.repair.run_backfill import main as backfill_main
 from auto_alpha.data.ingestion.pipeline.ashare.config import AShareDataConfig
 from auto_alpha.data.ingestion.pipeline.ashare.rate_limit import RequestRateLimitConfig, SimpleRateLimiter
 from auto_alpha.data.lake.operations.run_real_data import main as real_data_main

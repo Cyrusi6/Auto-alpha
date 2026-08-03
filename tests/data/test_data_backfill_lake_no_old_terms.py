@@ -21,7 +21,7 @@ FORBIDDEN = [
 
 def test_data_backfill_lake_no_old_terms():
     paths = [
-        *Path("src/auto_alpha/data/ingestion/backfill").glob("*.py"),
+        *Path("src/auto_alpha/data/ingestion/repair").glob("backfill_*.py"),
         *Path("src/auto_alpha/data/lake/store").glob("*.py"),
     ]
     for path in paths:

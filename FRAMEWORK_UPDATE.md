@@ -1,3 +1,12 @@
+## 2026-08-03 — Capability-level source consolidation
+
+- Deleted the full Task 055 `_internal` generation tree instead of hiding it behind a private namespace; the retained network authority is now one flat production implementation.
+- Promoted security-date truth into `data/pit` and fee, valuation, causal, and event-ledger semantics into `portfolio/simulation`, restoring domain ownership boundaries.
+- Reduced `data/ingestion` to the current A-share `pipeline` and governed `repair` capabilities. Backfill, post-download, and governed replay now share the single repair package.
+- Combined raw landing inspection and raw sidecar indexing under `data/lake/catalog`; moved backfill observation into `platform/observability/monitoring`.
+- Removed redundant A-share pipeline compatibility wrappers and the empty legacy provider package.
+- Extended the read-only repository audit so removed internal packages and nested subsystem drift fail CI rather than silently reappearing.
+
 ## 2026-08-01 — Six-domain architecture convergence
 
 - Replaced 81 peer-level `src` packages with one `auto_alpha` package containing six domains and 25 visible subsystems.

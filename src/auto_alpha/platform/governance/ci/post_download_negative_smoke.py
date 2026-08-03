@@ -8,7 +8,7 @@ import os
 import tempfile
 from pathlib import Path
 from auto_alpha.platform.artifacts.schema.writer import write_json_artifact
-from auto_alpha.data.ingestion.post_download.run_post_download import main as post_download_main
+from auto_alpha.data.ingestion.repair.run_post_download import main as post_download_main
 
 
 def main(argv=None):

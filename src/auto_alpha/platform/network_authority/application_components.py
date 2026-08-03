@@ -9,23 +9,23 @@ from auto_alpha.data.matrix.store.strict_engineering import StrictEngineeringPIT
 from auto_alpha.research.features.factory.engineering_replay.orchestrator import build_v3_tensor_generation
 from auto_alpha.validation.firewall.core.production_sentinel.sentinel import validate_task054b_production_sentinel
 from auto_alpha.validation.firewall.core.engineering_closure.validators import validate_strict_matrix_generation, validate_v3_tensor_generation
-from auto_alpha.platform.network_authority._internal.simulation.run import prepare_simulation_inputs
-from auto_alpha.platform.network_authority._internal.evidence.causal import build_valuation_surface, trace_causal_runs
-from auto_alpha.platform.network_authority._internal.evidence.valuation import (
+from auto_alpha.portfolio.simulation.ledger.run import prepare_simulation_inputs
+from auto_alpha.portfolio.simulation.causal import build_valuation_surface, trace_causal_runs
+from auto_alpha.portfolio.simulation.valuation import (
     load_valuation_projection,
     publish_valuation_projection,
     valuation_surface_from_projection,
 )
-from auto_alpha.platform.network_authority._internal.validation.truth import publish_truth_successor, validate_truth_v2
-from auto_alpha.platform.network_authority._internal.authorization.fee import FeeProjectionCalculator
-from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, publish_generation, read_json, sha256_file, validate_generation
-from auto_alpha.platform.network_authority._internal.application.application import (
+from auto_alpha.data.pit.truth import publish_truth_successor, validate_truth_v2
+from auto_alpha.portfolio.simulation.fee_projection import FeeProjectionCalculator
+from auto_alpha.platform.network_authority.storage import canonical_hash, publish_generation, read_json, sha256_file, validate_generation
+from auto_alpha.platform.network_authority.repair import (
     _assert_repair_in_matrix,
     _build_repaired_freeze,
     _materialize_exact20,
     _publish_raw_repair,
 )
-from auto_alpha.platform.network_authority._internal.runtime.application import (
+from auto_alpha.platform.network_authority.response_application import (
     _matrix_marks,
     _publish_dynamic_l2,
     _run_production_sentinel,

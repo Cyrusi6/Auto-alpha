@@ -26,7 +26,17 @@ tests/
 
 There are 25 visible subsystems. Internal implementation packages are nested below them and are not separate platform capabilities. Task numbers, campaign names, dates, and machine paths are prohibited as public package boundaries.
 
-`platform/network_authority` is the only retained formal network-authority implementation. Earlier Task 055 generations have no public package, CLI, or test surface; required low-level contracts are private under `_internal/`.
+The largest nested areas are deliberately narrow:
+
+```text
+data/ingestion/                  pipeline, repair
+data/lake/                       catalog, operations, store
+platform/observability/          dashboard, monitoring
+platform/network_authority/      one flat production implementation
+portfolio/simulation/            accounting and valuation domain logic
+```
+
+`platform/network_authority` is the only retained formal network-authority implementation. Earlier Task 055 generations and the historical `_internal` tree are deleted. Provider response truth lives in `data/pit`; valuation, fees, and ledger simulation live in `portfolio/simulation` rather than inside platform infrastructure.
 
 ## CLI
 

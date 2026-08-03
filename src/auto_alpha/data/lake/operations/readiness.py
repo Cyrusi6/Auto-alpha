@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from auto_alpha.platform.artifacts.schema.writer import write_json_artifact
-from auto_alpha.data.ingestion.backfill.planner import build_backfill_plan
+from auto_alpha.data.ingestion.repair.backfill_planner import build_backfill_plan
 from auto_alpha.data.ingestion.pipeline.ashare.config import AShareDataConfig
 
 from .env_file import redacted_token_metadata

@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
 
-from auto_alpha.data.ingestion.post_download.planner import build_post_download_plan
-from auto_alpha.data.ingestion.post_download.run_post_download import main as post_download_main
+from auto_alpha.data.ingestion.repair.post_download_planner import build_post_download_plan
+from auto_alpha.data.ingestion.repair.run_post_download import main as post_download_main
 
 
 def test_post_download_plan_only_generates_safe_steps(tmp_path: Path):

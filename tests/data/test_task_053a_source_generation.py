@@ -7,7 +7,7 @@ from auto_alpha.data.ingestion.pipeline.ashare.cache import TushareCacheSchemaEr
 from auto_alpha.data.ingestion.pipeline.ashare.dataset_registry import DATASET_DEFINITIONS
 from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare_client import TushareResponseEnvelope
 from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import stable_json_hash
-from auto_alpha.data.ingestion.repair.governed_replay.backfill import GovernedBackfillConfig, _run_dataset
+from auto_alpha.data.ingestion.repair.governed_backfill import GovernedBackfillConfig, _run_dataset
 
 
 FIELDS = DATASET_DEFINITIONS["suspensions"].fields

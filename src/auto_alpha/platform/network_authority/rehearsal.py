@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
-from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, read_json, sha256_file, validate_generation
+from auto_alpha.platform.network_authority.storage import canonical_hash, read_json, sha256_file, validate_generation
 
 from .contracts import REHEARSAL_SCHEMA, REHEARSAL_VERIFICATION_SCHEMA
 from .immutable import write_immutable_generation

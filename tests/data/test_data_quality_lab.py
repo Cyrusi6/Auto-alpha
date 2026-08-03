@@ -9,10 +9,10 @@ from auto_alpha.platform.observability.dashboard.data_service import AshareDashb
 from auto_alpha.data.quality.lab.run_quality_lab import main as quality_main
 from auto_alpha.data.quality.lab.scanner import run_data_quality_scan
 from auto_alpha.platform.observability.monitoring.checks import check_data_quality_lab
-from auto_alpha.data.ingestion.post_download.planner import build_post_download_plan
-from auto_alpha.data.ingestion.index.report import write_raw_data_index_artifacts
-from auto_alpha.data.ingestion.index.scanner import build_raw_data_index
-from auto_alpha.data.ingestion.index.validator import validate_raw_data_index
+from auto_alpha.data.ingestion.repair.post_download_planner import build_post_download_plan
+from auto_alpha.data.lake.catalog.index_report import write_raw_data_index_artifacts
+from auto_alpha.data.lake.catalog.index_scanner import build_raw_data_index
+from auto_alpha.data.lake.catalog.index_validator import validate_raw_data_index
 from auto_alpha.data.pit.readiness.report import build_research_data_readiness_report
 
 

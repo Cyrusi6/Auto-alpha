@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, read_json, sha256_file
+from auto_alpha.platform.network_authority.storage import canonical_hash, read_json, sha256_file
 
 from .authority import (
     publish_candidate_authority,

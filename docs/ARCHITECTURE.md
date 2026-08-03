@@ -63,12 +63,20 @@ Dependencies may point left-to-right through the research lifecycle. `platform` 
 
 - Operators use `auto-alpha <domain> <command>`.
 - Python callers import through `auto_alpha.<domain>...`.
-- Internal `run_*.py` files and packages named `_internal` are not public capabilities.
+- Internal `run_*.py` files are not public capabilities; historical generation trees named `_internal` are prohibited.
 - A new top-level domain or visible subsystem requires an architecture decision; normal work extends an existing subsystem.
+
+## Nested boundaries
+
+- `data.ingestion` contains only the current A-share `pipeline` and governed `repair` workflows.
+- `data.lake.catalog` owns both raw landing inspection and the sidecar raw-data index.
+- `platform.observability.monitoring` owns backfill observation; ingestion does not own dashboards or monitoring.
+- `portfolio.simulation` owns fee, valuation, causal, and ledger semantics.
+- `data.pit` owns security-date truth; network authority only controls access, receipts, and application lineage.
 
 ## Network authority
 
-`auto_alpha.platform.network_authority` is the single formal implementation. Earlier Task 055 generations were removed as public packages. The private `_internal` tree contains only contracts still consumed by the final implementation and cannot be invoked through the unified CLI.
+`auto_alpha.platform.network_authority` is the single flat formal implementation. Earlier Task 055 generations and their private `_internal` source tree were deleted. Reusable domain truth was promoted to `data.pit` or `portfolio.simulation`; obsolete generation-specific runners were removed rather than hidden.
 
 ## Enforcement
 
@@ -76,6 +84,8 @@ Dependencies may point left-to-right through the research lifecycle. `platform` 
 
 - a peer package reappears beside `src/auto_alpha`;
 - the six-domain or 25-subsystem set drifts;
+- ingestion, lake, or observability recreates removed parallel subpackages;
+- `platform/network_authority/_internal` returns;
 - a removed top-level import or task package returns;
 - tests stop mirroring the six domains;
 - a registered unified CLI command cannot resolve.

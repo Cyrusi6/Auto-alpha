@@ -25,9 +25,9 @@ from dev_tools.network_authority_harness import (
     run_lightweight_recovery_matrix,
     synthetic_accepted_response,
 )
-from auto_alpha.platform.network_authority._internal.authorization.io import canonical_hash, read_json
-from auto_alpha.platform.network_authority._internal.runtime.ledger import DurableHashJournal
-from auto_alpha.platform.network_authority._internal.evidence.valuation import (
+from auto_alpha.platform.network_authority.storage import canonical_hash, read_json
+from auto_alpha.platform.network_authority.journal import DurableHashJournal
+from auto_alpha.portfolio.simulation.valuation import (
     publish_valuation_projection,
     valuation_surface_from_projection,
 )
@@ -196,88 +196,13 @@ def test_all_python_capability_and_generic_client_paths_fail_closed() -> None:
         )
 
 
-def test_all_legacy_network_entrypoints_fail_before_injected_io() -> None:
-    from auto_alpha.data.ingestion.repair.governed_replay.backfill import run_governed_backfill
-    from auto_alpha.platform.network_authority._internal.replay.cascade import execute_transport_stage
-    from auto_alpha.platform.network_authority._internal.acquisition.network import execute_plan
-    from auto_alpha.platform.network_authority._internal.evidence.network import execute_canary as execute_f_canary
-    from auto_alpha.platform.network_authority._internal.evidence.network import execute_l1_resume as execute_f_resume
-    from auto_alpha.platform.network_authority._internal.validation.network_state import execute_l1_canary, execute_l1_resume
-    from auto_alpha.platform.network_authority._internal.validation.network_state import execute_l2_canary, execute_l2_resume
-    from auto_alpha.platform.network_authority._internal.authorization.network import (
-        load_file_credential_after_offline_gates,
-        ordered_future_canary_gate,
-    )
-    from auto_alpha.platform.network_authority._internal.application.executor import execute_single_canary as execute_i_canary
-    from auto_alpha.platform.network_authority._internal.runtime.executor import execute_single_canary as execute_j_canary
+def test_legacy_network_entrypoints_are_deleted() -> None:
+    from auto_alpha.data.ingestion.repair.governed_backfill import run_governed_backfill
 
-    calls = {"credential": 0, "network": 0}
-
-    def forbidden_credential(*_args, **_kwargs):
-        calls["credential"] += 1
-        raise AssertionError("credential boundary reached")
-
-    def forbidden_network(*_args, **_kwargs):
-        calls["network"] += 1
-        raise AssertionError("network boundary reached")
-
-    probes = [
-        lambda: run_governed_backfill(None),
-        lambda: execute_transport_stage(
-            plan_manifest="x", output_root="x", stage="L1", request_budget=0
-        ),
-        lambda: execute_plan(
-            plan={}, output_root="x", cache_roots=[], allow_network=True,
-            sealed_plan_hash="x", request_budget=1,
-            credential_loader=forbidden_credential, client_factory=forbidden_network,
-        ),
-        lambda: execute_f_canary(
-            causal_manifest="x", output_root="x", cache_data_root="x",
-            allow_network=True, sealed_plan_hash="x", repo_root="x", governed_root="x",
-            credential_loader=forbidden_credential, client_factory=forbidden_network,
-        ),
-        lambda: execute_f_resume(
-            causal_manifest="x", canary_acceptance_manifest="x", output_root="x",
-            cache_data_root="x", allow_network=True, sealed_plan_hash="x",
-            repo_root="x", governed_root="x",
-            credential_loader=forbidden_credential, client_factory=forbidden_network,
-        ),
-        lambda: execute_l1_canary(
-            state_root="x", plan_manifest={}, allow_network=True,
-            sealed_plan_hash="x", request_executor=forbidden_network,
-        ),
-        lambda: execute_l1_resume(
-            state_root="x", plan_manifest={}, canary_manifest={}, allow_network=True,
-            sealed_plan_hash="x", request_executor=forbidden_network,
-        ),
-        lambda: execute_l2_canary(
-            state_root="x", plan_manifest={}, allow_network=True,
-            sealed_plan_hash="x", request_executor=forbidden_network,
-        ),
-        lambda: execute_l2_resume(
-            state_root="x", plan_manifest={}, canary_manifest={}, allow_network=True,
-            sealed_plan_hash="x", request_executor=forbidden_network,
-        ),
-        lambda: load_file_credential_after_offline_gates(
-            credential_file="x", forbidden_root_identities={}
-        ),
-        lambda: ordered_future_canary_gate(
-            authorization_seal="x", allow_network=True, sealed_plan_hash="x",
-            tls_checker=forbidden_network, credential_loader=forbidden_credential,
-        ),
-        lambda: execute_i_canary(
-            runtime_authority="x", reviewed_authority_hash="x",
-            credential_file="x", allow_network=True,
-        ),
-        lambda: execute_j_canary(
-            final_execution_seal="x", reviewed_final_execution_seal_hash="x",
-            credential_file="x", allow_network=True,
-        ),
-    ]
-    for probe in probes:
-        with pytest.raises(Exception, match="superseded_by_task055k_transport_broker"):
-            probe()
-    assert calls == {"credential": 0, "network": 0}
+    package_root = Path(__file__).parents[2] / "src/auto_alpha/platform/network_authority"
+    assert not list((package_root / "_internal").rglob("*.py"))
+    with pytest.raises(Exception, match="superseded_by_task055k_transport_broker"):
+        run_governed_backfill(None)
 
 
 @pytest.mark.parametrize("positive", [False, True])
@@ -535,9 +460,9 @@ def test_independent_verifier_does_not_reuse_production_valuation_builder() -> N
     import auto_alpha.platform.network_authority.independent as independent_module
 
     source = inspect.getsource(independent_module)
-    assert "from auto_alpha.platform.network_authority._internal.evidence.causal import build_valuation_surface" not in source
+    assert "from auto_alpha.portfolio.simulation.causal import build_valuation_surface" not in source
     assert "prepare_simulation_inputs" not in source
-    assert "from auto_alpha.platform.network_authority._internal.runtime.application import _matrix_marks" not in source
+    assert "from auto_alpha.platform.network_authority.response_application import _matrix_marks" not in source
 
 
 def test_independent_valuation_surface_matches_contract_for_official_and_stale_marks() -> None:

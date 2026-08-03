@@ -1,6 +1,6 @@
 import json
 
-from auto_alpha.data.ingestion.backfill.planner import build_backfill_plan
+from auto_alpha.data.ingestion.repair.backfill_planner import build_backfill_plan
 from auto_alpha.data.ingestion.pipeline.ashare.config import AShareDataConfig
 from auto_alpha.data.ingestion.pipeline.ashare.dataset_registry import (
     EXPANDED_INDEX_CODES,

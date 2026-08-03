@@ -12,7 +12,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from auto_alpha.platform.network_authority._internal.validation.fees import validate_fee_schedule_v2
+from auto_alpha.portfolio.simulation.fees import validate_fee_schedule_v2
 
 from .contracts import PortfolioResearchError, stable_hash
 from .engine import PortfolioResearchData

@@ -2,8 +2,8 @@ import json
 from pathlib import Path
 
 from auto_alpha.platform.artifacts.schema.run_validate import main as validate_artifacts_main
-from auto_alpha.data.ingestion.backfill.planner import build_backfill_plan
-from auto_alpha.data.ingestion.backfill.run_backfill import main as backfill_main
+from auto_alpha.data.ingestion.repair.backfill_planner import build_backfill_plan
+from auto_alpha.data.ingestion.repair.run_backfill import main as backfill_main
 from auto_alpha.data.lake.store.run_lake import main as lake_main
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig
 from auto_alpha.platform.observability.dashboard.config import DashboardConfig

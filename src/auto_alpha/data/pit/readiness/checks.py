@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from auto_alpha.data.ingestion.landing.scanner import scan_datasets
+from auto_alpha.data.lake.catalog.landing_scanner import scan_datasets
 
 from .dataset_policy import ALL_RESEARCH_DATASETS, dataset_policy
 from .models import DatasetPitSafety, DatasetReadinessCheck, DatasetResearchTier
