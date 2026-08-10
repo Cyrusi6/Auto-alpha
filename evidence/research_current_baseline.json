@@ -1,0 +1,44 @@
+{
+  "schema_version": "research_current_baseline_v1",
+  "status": "engineering_data_and_holdout_blocked",
+  "canonical_freeze": {
+    "content_hash": "125cb21b9efdd7c6f0ec559b80c2fb45be8e97a6251e7456919c0b1670143c0a",
+    "source_catalog_hash": "1821aa50421bdad80fe8021ba7b390e4b625eb3740b7d82207f6105166f0d452",
+    "partition_root": "730bf0bd9b174dec3a32813bfb50a8ecbfb1c8b69c5cf41469b2661b2a042f00",
+    "record_count": 105208161,
+    "snapshot_count": 206,
+    "snapshot_month_count": 126,
+    "historical_constituent_proof": true,
+    "research_gate_ready": false
+  },
+  "holdout": {
+    "period": "20250101-20260630",
+    "historically_observed": true,
+    "untouched": false,
+    "candidate_pool_frozen": false,
+    "evaluation_executed": false
+  },
+  "portfolio": {
+    "factor_certified_count": 0,
+    "research_executed": false,
+    "portfolio_queue_count": 0,
+    "paper_queue_count": 0,
+    "live_queue_count": 0
+  },
+  "blockers": [
+    "strict_matrix_and_feature_validity_missing_from_canonical_lineage",
+    "historical_st_suspension_namechange_coverage_incomplete",
+    "historical_industry_transition_proof_missing",
+    "corporate_action_availability_incomplete",
+    "sealed_period_already_observed",
+    "no_future_untouched_holdout",
+    "candidate_pool_not_frozen",
+    "factor_certified_pool_empty"
+  ],
+  "alpha_search_authorized": false,
+  "certification_ready": false,
+  "portfolio_ready": false,
+  "paper_ready": false,
+  "live_ready": false,
+  "content_hash": "b81c188486bc28b6d89aaa37f5a71c7b6ab573e29e32e1fcf852e8e475868aca"
+}

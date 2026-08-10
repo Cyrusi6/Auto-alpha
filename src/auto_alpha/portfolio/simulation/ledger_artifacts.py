@@ -152,43 +152,20 @@ def publish_simulation_run(
         if list(projection.get("dates") or ()) != dates or list(projection.get("assets") or ()) != assets:
             raise SimulationArtifactError("valuation_projection_axis_mismatch")
     elif valuation_marks is None:
-        from auto_alpha.portfolio.simulation.mark_verifier import make_official_mark_rows
-
-        valuation_marks = make_official_mark_rows(
-            dates=dates,
-            assets=assets,
-            open_prices=open_prices,
-            close_prices=close_prices,
-            raw_quote_evidence={
-                (date, asset): {
-                    "source": "legacy_task055a_implicit_raw_quote",
-                    "evidence_scope": "legacy_compatibility_not_task055b_valuation_proof",
-                }
-                for date in dates for asset in assets
-            },
-        )
-    fee_schedule = None
+        raise SimulationArtifactError("strict_valuation_evidence_required")
     fee_schedule_reference = None
     if fee_schedule_manifest is not None:
-        candidate = Path(fee_schedule_manifest) if isinstance(fee_schedule_manifest, (str, Path)) else None
-        if candidate is not None:
-            try:
-                from auto_alpha.portfolio.simulation.fee_evidence import validate_fee_schedule_v2
+        if not isinstance(fee_schedule_manifest, (str, Path)):
+            raise SimulationArtifactError("fee_schedule_manifest_path_required")
+        from auto_alpha.portfolio.simulation.fees import validate_fee_schedule_v2
 
-                validated_fee = validate_fee_schedule_v2(candidate)
-            except (ImportError, ValueError, RuntimeError, OSError):
-                validated_fee = None
-            if validated_fee is not None:
-                fee_schedule_reference = {
-                    "schema_version": "task055f_fee_schedule_reference_v1",
-                    "generation_id": validated_fee["generation_id"],
-                    "content_hash": validated_fee["content_hash"],
-                    "manifest_name": "fee_schedule_v2_manifest.json",
-                }
-            else:
-                fee_schedule = _load_json_mapping(fee_schedule_manifest)
-        else:
-            fee_schedule = _load_json_mapping(fee_schedule_manifest)
+        validated_fee = validate_fee_schedule_v2(fee_schedule_manifest)
+        fee_schedule_reference = {
+            "schema_version": "task055g_fee_schedule_reference_v2",
+            "generation_id": validated_fee["generation_id"],
+            "content_hash": validated_fee["content_hash"],
+            "manifest_name": "fee_schedule_v2_manifest.json",
+        }
     benchmark_dates, benchmark_open = _benchmark_view(benchmark, dates)
 
     staging = Path(tempfile.mkdtemp(prefix=".task055a_run.", dir=root))
@@ -214,8 +191,6 @@ def publish_simulation_run(
                 },
             )
             _write_jsonl(staging / "held_marks.jsonl", held_marks or ())
-        if fee_schedule is not None:
-            _write_json(staging / "fee_schedule_manifest.json", fee_schedule)
         if fee_schedule_reference is not None:
             _write_json(staging / "fee_schedule_reference.json", fee_schedule_reference)
         table_names = (

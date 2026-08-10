@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Mapping
 
-from auto_alpha.platform.network_authority.storage import canonical_hash, read_json
+from auto_alpha.platform.artifacts.storage import canonical_hash, read_json
 
 
 class Task055KImmutableError(RuntimeError):

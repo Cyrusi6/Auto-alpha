@@ -7,7 +7,7 @@ from statistics import mean, pstdev
 
 import torch
 
-from auto_alpha.research.discovery.evaluation_multi_objective import bounded_factor_score
+from auto_alpha.research.discovery.evaluation import bounded_factor_score
 
 from auto_alpha.validation.lab.engine_models import FactorValidationSummary
 from auto_alpha.validation.lab.engine_models import FactorValidationWindowResult

@@ -13,7 +13,7 @@ from auto_alpha.research.factors.store import LocalFactorStore, stable_formula_h
 from auto_alpha.research.formulas.search_generator import generate_seed_formulas
 from auto_alpha.research.formulas.runtime_vm import StackVM
 from auto_alpha.research.formulas.runtime_vocab import FORMULA_VOCAB
-from auto_alpha.research.discovery.studies_candidates import default_candidates
+from auto_alpha.research.formulas.candidates import default_candidates
 
 from auto_alpha.research.formulas.corpus_models import FormulaCorpusBuildResult
 from auto_alpha.research.formulas.corpus_models import FormulaCorpusConfig

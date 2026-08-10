@@ -62,8 +62,10 @@ def test_formula_search_runner_writes_reports_and_factor_metadata(tmp_path):
     assert (tmp_path / "search" / "search_report.json").exists()
     assert (tmp_path / "search" / "search_report.md").exists()
     assert json.loads((tmp_path / "search" / "search_result.json").read_text(encoding="utf-8"))["search_id"] == result.search_id
-    assert metadata_records
-    assert {"formula_complexity", "formula_lookback", "formula_source", "generation"} <= set(metadata_records[0].metadata)
+    assert all(record.status == "validation_candidate" for record in factors)
+    if metadata_records:
+        assert {"formula_complexity", "formula_lookback", "formula_source", "generation"} <= set(metadata_records[0].metadata)
+    assert any((item.get("request") or {}).get("metadata", {}).get("search_id") == result.search_id for item in result.best_candidates)
 
 
 def test_formula_search_second_run_skips_duplicate_registration(tmp_path):

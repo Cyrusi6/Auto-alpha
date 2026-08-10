@@ -19,7 +19,7 @@ from auto_alpha.portfolio.simulation.valuation import (
 )
 from auto_alpha.data.pit.truth import publish_truth_successor, validate_truth_v2
 from auto_alpha.portfolio.simulation.fee_projection import FeeProjectionCalculator
-from auto_alpha.platform.network_authority.storage import canonical_hash, publish_generation, read_json, sha256_file, validate_generation
+from auto_alpha.platform.artifacts.storage import canonical_hash, publish_generation, read_json, sha256_file, validate_generation
 from auto_alpha.platform.network_authority.repair import (
     _assert_repair_in_matrix,
     _build_repaired_freeze,

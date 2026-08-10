@@ -43,7 +43,6 @@ COMMANDS = {
     ("research", "registry"): CommandSpec("auto_alpha.research.factors.registry_run_registry", "Inspect the model registry"),
     ("research", "alpha"): CommandSpec("auto_alpha.research.discovery.factory_run_factory", "Run governed Alpha Factory research"),
     ("research", "experiments"): CommandSpec("auto_alpha.research.discovery.experiments_run_store", "Manage research experiments"),
-    ("research", "batch"): CommandSpec("auto_alpha.research.discovery.studies_run_batch", "Run a research batch"),
     ("research", "neural-search"): CommandSpec("auto_alpha.research.neural.search_run_neural_search", "Run neural-guided search"),
     ("research", "neural-pretrain"): CommandSpec("auto_alpha.research.neural.search_run_pretrain", "Pretrain the formula model"),
     ("research", "runtime"): CommandSpec("auto_alpha.research.formulas.runtime_engine", "Run the formula research runtime"),

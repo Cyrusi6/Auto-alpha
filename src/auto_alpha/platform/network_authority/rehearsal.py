@@ -3,14 +3,79 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
-from auto_alpha.platform.network_authority.storage import canonical_hash, read_json, sha256_file, validate_generation
+from auto_alpha.platform.artifacts.storage import canonical_hash, read_json, sha256_file, validate_generation
 
 from .contracts import REHEARSAL_SCHEMA, REHEARSAL_VERIFICATION_SCHEMA
 from .immutable import write_immutable_generation
+from .response_contracts import REHEARSAL_SCHEMA as PARENT_REHEARSAL_SCHEMA
+from .response_contracts import REHEARSAL_VERIFICATION_SCHEMA as PARENT_REHEARSAL_VERIFICATION_SCHEMA
 
 
 class Task055KRehearsalError(RuntimeError):
     pass
+
+
+class ParentRehearsalError(RuntimeError):
+    pass
+
+
+def validate_parent_rehearsal(path: str | Path, *, require_passed: bool = True) -> dict[str, Any]:
+    """Read-only validation for the immediately preceding rehearsal schema."""
+
+    payload = validate_generation(path, schema=PARENT_REHEARSAL_SCHEMA, manifest_name="rehearsal_manifest.json")
+    if payload.get("status") not in {"passed", "blocked"} or payload.get("evidence_scope") != "synthetic_rehearsal_only":
+        raise ParentRehearsalError("parent_rehearsal_status_or_scope_invalid")
+    if require_passed and payload.get("status") != "passed":
+        raise ParentRehearsalError("parent_rehearsal_not_passed")
+    if payload.get("production_seal_eligible") is not False:
+        raise ParentRehearsalError("parent_rehearsal_production_boundary_invalid")
+    if payload.get("status") == "passed" and (
+        payload.get("positive_terminal_pair_count") != 100
+        or payload.get("empty_terminal_pair_count") != 100
+        or not payload.get("positive_chain_complete")
+        or not payload.get("empty_chain_complete")
+    ):
+        raise ParentRehearsalError("parent_rehearsal_chain_invalid")
+    counters = payload.get("network_execution") or {}
+    if any(int(counters.get(key) or 0) for key in ("credential_read_count", "tushare_post_count", "other_market_http_count")):
+        raise ParentRehearsalError("parent_rehearsal_network_boundary_invalid")
+    if counters.get("prospective_holdout_accessed") is not False:
+        raise ParentRehearsalError("parent_rehearsal_holdout_boundary_invalid")
+    return payload
+
+
+def independently_verify_parent_rehearsal(path: str | Path) -> dict[str, Any]:
+    rehearsal = validate_parent_rehearsal(path, require_passed=True)
+    required = {
+        "network_intent_safe_recovery",
+        "spend_intent_ambiguous_block",
+        "post_before_receipt_ambiguous_block",
+        "receipt_before_cache_recovery",
+        "cache_before_completion_recovery",
+        "terminal_before_execution_recovery",
+        "execution_before_pointer_recovery",
+        "cache_corruption",
+        "receipt_corruption",
+        "ledger_corruption",
+        "lock_inode_replacement",
+        "concurrent_single_flight",
+        "full_authority_rollback_unproven",
+        "old_entrypoints",
+    }
+    negative = rehearsal.get("negative_cases") or {}
+    if not required.issubset(negative) or not all(negative[key].get("passed") is True for key in required):
+        raise ParentRehearsalError("parent_rehearsal_negative_coverage_invalid")
+    semantic = {
+        "schema_version": PARENT_REHEARSAL_VERIFICATION_SCHEMA,
+        "status": "passed",
+        "rehearsal_content_hash": rehearsal["content_hash"],
+        "artifact_root": rehearsal["artifact_root"],
+        "positive_terminal_pair_count": rehearsal["positive_terminal_pair_count"],
+        "empty_terminal_pair_count": rehearsal["empty_terminal_pair_count"],
+        "negative_case_count": rehearsal["negative_case_count"],
+        "real_network_counts": {"credential_read_count": 0, "tushare_post_count": 0, "other_market_http_count": 0},
+    }
+    return semantic | {"content_hash": canonical_hash(semantic)}
 
 
 def publish_rehearsal_report(

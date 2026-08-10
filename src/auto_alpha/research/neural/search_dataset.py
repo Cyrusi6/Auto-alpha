@@ -10,8 +10,8 @@ import torch
 
 from auto_alpha.research.factors.store import LocalFactorStore
 from auto_alpha.research.formulas.search_generator import generate_seed_formulas
-from auto_alpha.research.discovery.studies_candidates import default_candidates
-from auto_alpha.research.discovery.studies_candidates import load_candidates_json
+from auto_alpha.research.formulas.candidates import default_candidates
+from auto_alpha.research.formulas.candidates import load_candidates_json
 
 
 def load_formula_records_from_store(store: LocalFactorStore) -> list[list[int]]:

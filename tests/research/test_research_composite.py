@@ -1,9 +1,9 @@
 import torch
 
 from auto_alpha.research.factors.store import FactorRecord, LocalFactorStore, stable_formula_hash
-from auto_alpha.research.discovery.studies_composite import build_composite_factor_matrix
-from auto_alpha.research.discovery.studies_composite import register_composite_factor
-from auto_alpha.research.discovery.studies_composite import select_approved_factors
+from auto_alpha.research.factors.composite import build_composite_factor_matrix
+from auto_alpha.research.factors.composite import register_composite_factor
+from auto_alpha.research.factors.composite import select_approved_factors
 
 
 def _save_factor(store, factor_id, names, values, score=1.0, status="validation_candidate"):

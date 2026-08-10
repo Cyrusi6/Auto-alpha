@@ -17,8 +17,8 @@ from auto_alpha.research.formulas.search_mutation import crossover_formula
 from auto_alpha.research.formulas.search_mutation import mutate_formula
 from auto_alpha.research.formulas.runtime_vm import StackVM
 from auto_alpha.research.formulas.runtime_vocab import FORMULA_VOCAB
-from auto_alpha.research.discovery.studies_candidates import default_candidates
-from auto_alpha.research.discovery.studies_candidates import load_candidates_json
+from auto_alpha.research.formulas.candidates import default_candidates
+from auto_alpha.research.formulas.candidates import load_candidates_json
 
 from auto_alpha.research.discovery.factory_models import AlphaCandidateRecord
 from auto_alpha.research.discovery.factory_models import AlphaCandidateSource

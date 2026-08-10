@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from auto_alpha.platform.network_authority.storage import canonical_hash, read_json
+from auto_alpha.platform.artifacts.storage import canonical_hash, read_json
 from auto_alpha.platform.network_authority.journal import DurableHashJournal
 from auto_alpha.platform.network_authority import broker, gateway
 from auto_alpha.platform.network_authority.authority import normalize_ordered_keys, publish_candidate_checkpoint
@@ -24,7 +24,7 @@ def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         authority_root / "transport_spend_journal", name="task055kr_spend"
     )
     keys = normalize_ordered_keys(
-        read_json("evidence/task_055_j/task055j_scrubbed_evidence.json")[
+        read_json("evidence/task_055_k/task055kr2_candidate_evidence.json")[
             "ordered_exact_daily_keys"
         ]
     )

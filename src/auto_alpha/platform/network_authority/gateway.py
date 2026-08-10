@@ -22,7 +22,7 @@ from auto_alpha.data.ingestion.pipeline.ashare.request_identity import TushareRe
 from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import stable_json_hash
 from auto_alpha.data.ingestion.pipeline.ashare.security import tls_preflight
 from auto_alpha.platform.network_authority.transport import CANONICAL_ORIGIN
-from auto_alpha.platform.network_authority.storage import canonical_hash, read_json, sha256_file, validate_generation
+from auto_alpha.platform.artifacts.storage import canonical_hash, read_json, sha256_file, validate_generation
 from auto_alpha.platform.network_authority.journal import DurableHashJournal, event_rows
 
 from .authority import validate_final_candidate_seal

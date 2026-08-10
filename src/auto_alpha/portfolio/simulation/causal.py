@@ -37,10 +37,10 @@ from .evidence_contracts import (
     SIMULATION_END,
     SIMULATION_START,
 )
-from .fee_evidence import FeeScheduleCalculator, validate_fee_schedule_v2
+from .fees import FeeScheduleCalculator, validate_fee_schedule_v2
 from auto_alpha.platform.network_authority.transport import evidence_use_identity, transport_identity
 from auto_alpha.platform.network_authority.access_journal import AuditedReader, canonical_hash, sha256_file
-from auto_alpha.data.pit.truth_builder import validate_truth_v2
+from auto_alpha.data.pit.truth import validate_truth_v2
 from .valuation import publish_valuation_projection, validate_valuation_projection
 
 

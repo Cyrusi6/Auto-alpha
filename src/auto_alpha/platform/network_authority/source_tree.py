@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from auto_alpha.platform.network_authority.storage import canonical_hash, validate_generation
+from auto_alpha.platform.artifacts.storage import canonical_hash, validate_generation
 
 from .contracts import SOURCE_SCHEMA
 from .immutable import write_immutable_generation
@@ -167,7 +167,7 @@ def _included(relative: str) -> bool:
 
 
 def _evidence_only(relative: str) -> bool:
-    return relative in {"README.md", "CATREADME.md", "FRAMEWORK_UPDATE.md"} or relative.startswith("evidence/task_055_k/")
+    return relative in {"README.md", "CATREADME.md", "FRAMEWORK_UPDATE.md", "evidence/research_current_baseline.json"} or relative.startswith("evidence/task_055_k/")
 
 
 def _require_clean(repository: Path) -> None:

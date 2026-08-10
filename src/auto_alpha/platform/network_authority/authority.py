@@ -7,9 +7,9 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from auto_alpha.data.ingestion.pipeline.ashare.request_identity import TushareRequestIdentity, validate_tushare_request_identity
-from auto_alpha.platform.network_authority.storage import canonical_hash, read_json, sha256_file, validate_generation
+from auto_alpha.platform.artifacts.storage import canonical_hash, read_json, sha256_file, validate_generation
 from auto_alpha.platform.network_authority.application_tree import validate_application_preflight
-from auto_alpha.platform.network_authority.parent_rehearsal import independently_verify_rehearsal, validate_rehearsal
+from auto_alpha.platform.network_authority.rehearsal import independently_verify_parent_rehearsal, validate_parent_rehearsal
 from auto_alpha.platform.network_authority.journal import DurableHashJournal
 
 from .contracts import (
@@ -92,14 +92,14 @@ def validate_task055j_parent(
         "task055j_native_application_rehearsal_v1",
         TASK055J_REHEARSAL_HASH,
     )
-    rehearsal = validate_rehearsal(rehearsal["manifest_path"], require_passed=True)
+    rehearsal = validate_parent_rehearsal(rehearsal["manifest_path"], require_passed=True)
     rehearsal_verification = _unique_generation(
         task_root / "rehearsal_verification",
         "rehearsal_verification.json",
         "task055j_rehearsal_independent_verification_v1",
         TASK055J_REHEARSAL_VERIFICATION_HASH,
     )
-    independent_rehearsal = independently_verify_rehearsal(rehearsal["manifest_path"])
+    independent_rehearsal = independently_verify_parent_rehearsal(rehearsal["manifest_path"])
     for key, value in independent_rehearsal.items():
         if key != "content_hash" and rehearsal_verification.get(key) != value:
             raise Task055KAuthorityError(f"task055k_parent_rehearsal_verification_invalid:{key}")

@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from auto_alpha.platform.network_authority.storage import atomic_json, canonical_hash
+from auto_alpha.platform.artifacts.storage import atomic_json, canonical_hash
 
 
 class Task055JLedgerError(RuntimeError):

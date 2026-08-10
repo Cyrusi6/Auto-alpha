@@ -90,7 +90,7 @@ def _code_semantic_hash() -> str:
         "auto_alpha.research.discovery.factory_full_research",
         "auto_alpha.research.discovery.factory_research_policy",
         "auto_alpha.research.discovery.factory_scoring",
-        "auto_alpha.research.discovery.evaluation_multi_objective",
+        "auto_alpha.research.discovery.evaluation",
         "auto_alpha.validation.lab.engine_metrics",
         "auto_alpha.research.formulas.batch_evaluator",
         "auto_alpha.validation.firewall.core_firewall",

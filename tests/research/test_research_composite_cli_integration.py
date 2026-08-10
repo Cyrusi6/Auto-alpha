@@ -3,8 +3,8 @@ import pytest
 from auto_alpha.portfolio.simulation import backtest_run_backtest as run_backtest
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.data.ingestion.pipeline.ashare.storage import LocalAshareStorage
-from auto_alpha.research.discovery.studies import BatchFactorResearchRunner, BatchResearchConfig
-from auto_alpha.research.discovery.studies_candidates import default_candidates
+from auto_alpha.research.formulas.batch import FormulaBatchEvalConfig, FormulaBatchEvaluator, requests_from_candidates
+from auto_alpha.research.formulas.candidates import default_candidates
 from auto_alpha.execution.trading import strategy_runner
 from auto_alpha.data.pit.universe.builder import build_universe_from_storage
 from auto_alpha.data.pit.universe.models import UniverseBuildConfig
@@ -24,22 +24,20 @@ def _prepare_batch(tmp_path):
             index_code="000300.SH",
         ),
     )
-    config = BatchResearchConfig(
+    config = FormulaBatchEvalConfig(
         data_dir=str(data_dir),
-        universe_name="csi300_sample",
-        universe_file=None,
         factor_store_dir=str(tmp_path / "store"),
         report_dir=str(tmp_path / "reports"),
         output_dir=str(tmp_path / "batch"),
+        universe_name="csi300_sample",
         factor_transform="winsorize_zscore",
         enable_gate=True,
         correlation_threshold=0.99,
         min_coverage=0.5,
-        top_k=3,
-        composite_method="rank_average",
+        register_approved=True,
+        device="cpu",
     )
-    result = BatchFactorResearchRunner(config=config, candidates=default_candidates()[:5]).run()
-    assert result.composite_factor_id is None
+    FormulaBatchEvaluator(config).run(requests_from_candidates(default_candidates()[:5]))
     return data_dir, tmp_path / "store"
 
 

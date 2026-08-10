@@ -1,4 +1,4 @@
-"""Immutable storage and hashing primitives for network authority."""
+"""Canonical content-addressed artifact storage and hashing primitives."""
 
 from __future__ import annotations
 

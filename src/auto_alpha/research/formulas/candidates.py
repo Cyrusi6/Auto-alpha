@@ -1,4 +1,4 @@
-"""Candidate formula sources for batch factor auto_alpha.research.discovery.studies."""
+"""Canonical formula evaluation requests used by all research entrypoints."""
 
 from __future__ import annotations
 
@@ -10,14 +10,14 @@ from auto_alpha.research.factors.store import stable_formula_hash
 from auto_alpha.research.formulas.runtime_vm import StackVM
 from auto_alpha.research.formulas.runtime_vocab import FORMULA_VOCAB
 
-from auto_alpha.research.discovery.studies_models import FactorCandidate
+from auto_alpha.research.formulas.batch_models import FormulaEvalRequest
 
 
 FEATURE_VERSION = "ashare_features_v1"
 OPERATOR_VERSION = "ashare_ops_v1"
 
 
-def default_candidates() -> list[FactorCandidate]:
+def default_candidates() -> list[FormulaEvalRequest]:
     specs = [
         ("ret_1d", ["RET_1D"], "One-day return signal."),
         ("ret_5d", ["RET_5D"], "Five-day return signal."),
@@ -45,8 +45,8 @@ def default_candidates() -> list[FactorCandidate]:
     return candidates
 
 
-def from_formula_search_candidates(candidates: Iterable[object]) -> list[FactorCandidate]:
-    converted: list[FactorCandidate] = []
+def from_formula_search_candidates(candidates: Iterable[object]) -> list[FormulaEvalRequest]:
+    converted: list[FormulaEvalRequest] = []
     for idx, candidate in enumerate(candidates):
         formula_tokens = [int(token) for token in getattr(candidate, "formula_tokens")]
         formula_names = list(getattr(candidate, "formula_names"))
@@ -69,7 +69,7 @@ def from_formula_search_candidates(candidates: Iterable[object]) -> list[FactorC
     return converted
 
 
-def load_candidates_json(path: str | Path) -> list[FactorCandidate]:
+def load_candidates_json(path: str | Path) -> list[FormulaEvalRequest]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(payload, list):
         raise ValueError("candidate JSON must contain a list")
@@ -78,7 +78,7 @@ def load_candidates_json(path: str | Path) -> list[FactorCandidate]:
     return candidates
 
 
-def save_candidates_json(candidates: list[FactorCandidate], path: str | Path) -> Path:
+def save_candidates_json(candidates: list[FormulaEvalRequest], path: str | Path) -> Path:
     _validate_candidates(candidates)
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -89,7 +89,7 @@ def save_candidates_json(candidates: list[FactorCandidate], path: str | Path) ->
     return output_path
 
 
-def _candidate_from_payload(payload: Any) -> FactorCandidate:
+def _candidate_from_payload(payload: Any) -> FormulaEvalRequest:
     if not isinstance(payload, dict):
         raise ValueError("each candidate must be an object")
     name = str(payload.get("name") or "").strip()
@@ -118,6 +118,7 @@ def _candidate_from_payload(payload: Any) -> FactorCandidate:
         except (IndexError, ValueError) as exc:
             raise ValueError(f"candidate {name} has invalid token id") from exc
 
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
     return _make_candidate(
         name=name,
         formula_names=formula_names,
@@ -127,9 +128,9 @@ def _candidate_from_payload(payload: Any) -> FactorCandidate:
         complexity=payload.get("complexity"),
         lookback=payload.get("lookback"),
         source=payload.get("source"),
-        parent_hashes=payload.get("parent_hashes"),
-        generation=payload.get("generation"),
-        validation_reason=payload.get("validation_reason"),
+        parent_hashes=metadata.get("parent_hashes"),
+        generation=metadata.get("generation"),
+        validation_reason=metadata.get("validation_reason"),
     )
 
 
@@ -146,7 +147,7 @@ def _make_candidate(
     generation: int | None = None,
     validation_reason: str | None = None,
     validate_with_global_vocab: bool = True,
-) -> FactorCandidate:
+) -> FormulaEvalRequest:
     vm = StackVM()
     tokens = formula_tokens or [FORMULA_VOCAB.encode_name(name) for name in formula_names]
     if validate_with_global_vocab:
@@ -161,7 +162,7 @@ def _make_candidate(
         reason = validation_reason or "dynamic feature vocab validation deferred"
         complexity_value = int(complexity) if complexity is not None else len(tokens)
         lookback_value = int(lookback) if lookback is not None else 0
-    return FactorCandidate(
+    return FormulaEvalRequest(
         name=name,
         formula_tokens=[int(token) for token in tokens],
         formula_names=names,
@@ -171,13 +172,15 @@ def _make_candidate(
         complexity=int(complexity) if complexity is not None else int(complexity_value),
         lookback=int(lookback) if lookback is not None else int(lookback_value),
         source=source,
-        parent_hashes=parent_hashes,
-        generation=generation,
-        validation_reason=validation_reason or reason,
+        metadata={
+            "parent_hashes": list(parent_hashes or []),
+            "generation": generation,
+            "validation_reason": validation_reason or reason,
+        },
     )
 
 
-def _validate_candidates(candidates: list[FactorCandidate]) -> None:
+def _validate_candidates(candidates: list[FormulaEvalRequest]) -> None:
     vm = StackVM()
     for candidate in candidates:
         for token in candidate.formula_tokens:

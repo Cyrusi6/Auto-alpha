@@ -6,7 +6,7 @@ import pytest
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.research.formulas.batch import requests_from_candidates
 from auto_alpha.research.formulas import batch_run_batch_eval as run_batch_eval
-from auto_alpha.research.discovery.studies_candidates import default_candidates
+from auto_alpha.research.formulas.candidates import default_candidates
 
 
 def _prepare_sample_data(tmp_path):

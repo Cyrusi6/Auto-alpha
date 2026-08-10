@@ -116,4 +116,4 @@ def test_real_firewall_sentinel_observes_diagnostic_but_not_research_changes(tmp
     assert result["proof"]["inside_cutoff_cache_miss_count"] == 4
     assert result["proof"]["raw_matrix_local_scheduler_consistent"] is True
     assert result["proof"]["access_violation_count"] == 0
-    assert (tmp_path / "task_053a_research_firewall_sentinel.json").exists()
+    assert (tmp_path / "research_firewall_sentinel.json").exists()

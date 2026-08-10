@@ -10,16 +10,16 @@ from pathlib import Path
 from auto_alpha.platform.artifacts.schema.writer import write_jsonl_artifact
 from auto_alpha.data.pit.engine.validator import validate_point_in_time_data
 
-from auto_alpha.validation.firewall.leakage_backtest_audit import audit_backtest_artifacts
-from auto_alpha.validation.firewall.leakage_corporate_actions import audit_corporate_actions
-from auto_alpha.validation.firewall.leakage_factor_audit import audit_factor_values
+from auto_alpha.validation.firewall.leakage import audit_backtest_artifacts
+from auto_alpha.validation.firewall.leakage import audit_corporate_actions
+from auto_alpha.validation.firewall.leakage import audit_factor_values
 from auto_alpha.validation.firewall.leakage_models import LeakageAuditConfig
 from auto_alpha.validation.firewall.leakage_models import LeakageAuditReport
 from auto_alpha.validation.firewall.leakage_models import LeakageIssue
 from auto_alpha.validation.firewall.leakage_models import SurvivorshipAuditResult
 from auto_alpha.validation.firewall.leakage_report import write_leakage_audit_report
-from auto_alpha.validation.firewall.leakage_static_analysis import scan_formula_leakage
-from auto_alpha.validation.firewall.leakage_truncation import run_truncation_consistency_test
+from auto_alpha.validation.firewall.leakage import scan_formula_leakage
+from auto_alpha.validation.firewall.leakage import run_truncation_consistency_test
 
 
 def _build_parser() -> argparse.ArgumentParser:

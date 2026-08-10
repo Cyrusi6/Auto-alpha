@@ -18,7 +18,7 @@ from auto_alpha.portfolio.simulation.valuation import METHOD_NAMES, load_valuati
 from auto_alpha.portfolio.simulation.causal_validation import validate_fee_aware_causal_frontier
 
 from .fee_projection import FeeProjectionCalculator
-from auto_alpha.platform.network_authority.storage import canonical_hash
+from auto_alpha.platform.artifacts.storage import canonical_hash
 
 
 class IndependentCausalError(RuntimeError):

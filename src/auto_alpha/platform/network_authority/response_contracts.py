@@ -81,5 +81,6 @@ EVIDENCE_ONLY_PATHS = (
     "README.md",
     "CATREADME.md",
     "FRAMEWORK_UPDATE.md",
-    "evidence/task_055_j/",
+    "evidence/task_055_k/",
+    "evidence/research_current_baseline.json",
 )

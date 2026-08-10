@@ -2,13 +2,9 @@ from pathlib import Path
 
 
 TARGETS = [
-    Path("src/auto_alpha/research/discovery/studies.py"),
-    Path("src/auto_alpha/research/discovery/studies_models.py"),
-    Path("src/auto_alpha/research/discovery/studies_candidates.py"),
-    Path("src/auto_alpha/research/discovery/studies_batch_runner.py"),
-    Path("src/auto_alpha/research/discovery/studies_composite.py"),
-    Path("src/auto_alpha/research/discovery/studies_report.py"),
-    Path("src/auto_alpha/research/discovery/studies_run_batch.py"),
+    Path("src/auto_alpha/research/formulas/candidates.py"),
+    Path("src/auto_alpha/research/formulas/batch_evaluator.py"),
+    Path("src/auto_alpha/research/factors/composite.py"),
     Path("src/auto_alpha/portfolio/simulation/backtest_io.py"),
     Path("src/auto_alpha/portfolio/simulation/backtest_run_backtest.py"),
     Path("src/auto_alpha/execution/trading/strategy_runner.py"),
@@ -39,3 +35,8 @@ def test_research_files_exclude_old_terms():
 
     for forbidden in FORBIDDEN_TERMS:
         assert forbidden not in payload
+
+
+def test_legacy_research_batch_modules_are_deleted():
+    legacy = Path("src/auto_alpha/research/discovery")
+    assert not list(legacy.glob("studies*.py"))

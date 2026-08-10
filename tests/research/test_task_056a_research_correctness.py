@@ -15,7 +15,7 @@ from auto_alpha.data.matrix.store.strict_engineering import _build_target
 from auto_alpha.research.formulas.runtime_backtest import AShareFactorEvaluator
 from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
 from auto_alpha.research.neural.search_reward import formula_reward_from_research_result
-from auto_alpha.research.discovery.studies_composite import register_composite_factor
+from auto_alpha.research.factors.composite import register_composite_factor
 
 
 def _sample_data(tmp_path):

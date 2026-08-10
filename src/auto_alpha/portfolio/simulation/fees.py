@@ -44,6 +44,7 @@ FEE_DOCUMENT_VERIFICATION_SCHEMA = "task055g_fee_document_verification_v2"
 FEE_EXTRACTION_SCHEMA = "task055g_fee_rule_extraction_v2"
 FEE_SCHEDULE_SCHEMA = "task055g_fee_schedule_v2"
 FEE_INDEPENDENT_VERIFICATION_SCHEMA = "task055g_fee_independent_verification_v2"
+LEGACY_FEE_SCHEDULE_SCHEMA = "task055b_fee_schedule_v1"
 TASK055A_POLICY_SCHEMA = "task055a_portfolio_diagnostic_policy_seal_v1"
 
 STATUTORY_COMPONENTS = (
@@ -1041,6 +1042,31 @@ class FeeScheduleCalculator:
             values[component] = _round_decimal(value, rule["rounding"])
         values["total"] = _round_decimal(sum((Decimal(str(value)) for value in values.values()), Decimal("0")), "cent_half_up")
         return values
+
+
+def validate_legacy_fee_schedule(path: str | Path) -> dict[str, Any]:
+    """Validate an old schedule for historical inspection only.
+
+    The returned payload is explicitly non-executable; production simulation
+    accepts only :func:`validate_fee_schedule_v2`.
+    """
+
+    manifest_path = _resolve_manifest(path, "fee_schedule_manifest.json")
+    payload = _load_json(manifest_path)
+    if payload.get("schema_version") != LEGACY_FEE_SCHEDULE_SCHEMA:
+        raise FeeWorkflowError("legacy_fee_schedule_schema_invalid")
+    semantic = {key: value for key, value in payload.items() if key not in {"content_hash", "generation_id"}}
+    if canonical_hash(semantic) != payload.get("content_hash"):
+        raise FeeWorkflowError("legacy_fee_schedule_content_hash_mismatch")
+    if payload.get("generation_id") != f"fee_schedule_{str(payload.get('content_hash'))[:24]}":
+        raise FeeWorkflowError("legacy_fee_schedule_generation_id_mismatch")
+    if not isinstance(payload.get("rules"), list) or not payload["rules"]:
+        raise FeeWorkflowError("legacy_fee_schedule_rules_missing")
+    return payload | {
+        "manifest_path": str(manifest_path),
+        "execution_supported": False,
+        "evidence_level": "legacy_read_only",
+    }
 
 
 def semantic_source_hashes() -> dict[str, str]:

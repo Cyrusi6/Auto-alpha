@@ -17,7 +17,7 @@ from auto_alpha.portfolio.simulation.valuation import load_valuation_projection,
 from auto_alpha.data.pit.truth import validate_truth_v2
 from auto_alpha.portfolio.simulation.fee_projection import FeeProjectionCalculator
 from auto_alpha.portfolio.simulation.independent import independently_trace_prepared, prepare_independent_inputs
-from auto_alpha.platform.network_authority.storage import canonical_hash
+from auto_alpha.platform.artifacts.storage import canonical_hash
 from auto_alpha.platform.network_authority.response_application import _successor_bundle
 from auto_alpha.validation.firewall.engineering_closure_validators import validate_strict_matrix_generation
 

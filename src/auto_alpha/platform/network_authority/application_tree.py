@@ -15,7 +15,7 @@ from auto_alpha.portfolio.simulation.ledger_bundle import validate_simulation_bu
 from auto_alpha.portfolio.simulation.causal_validation import validate_fee_aware_causal_frontier
 from auto_alpha.portfolio.simulation.fees import validate_fee_schedule_v2
 from auto_alpha.data.pit.truth import validate_truth_v2
-from auto_alpha.platform.network_authority.storage import canonical_hash, publish_generation, read_json, sha256_file, validate_generation
+from auto_alpha.platform.artifacts.storage import canonical_hash, publish_generation, read_json, sha256_file, validate_generation
 
 from .response_contracts import APPLICATION_PREFLIGHT_SCHEMA, APPLICATION_TREE_SCHEMA, MAX_DATE
 

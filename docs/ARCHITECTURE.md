@@ -39,7 +39,7 @@ auto_alpha
     └── observability
 ```
 
-The current tree contains 57 Python package directories. The repository budget is 65.
+The current tree contains 56 Python package directories and 664 Python source files. The budgets are 65 and 665 respectively. Committed evidence is capped at four current files.
 
 ## Ownership
 
@@ -81,6 +81,21 @@ Dependencies may point left-to-right through the research lifecycle. `platform` 
 
 `auto_alpha.platform.network_authority` is the single flat formal implementation. Earlier Task 055 generations and their private `_internal` source tree were deleted. Reusable domain truth was promoted to `data.pit` or `portfolio.simulation`; obsolete generation-specific runners were removed rather than hidden.
 
+## Capability owners
+
+| Capability | Sole implementation |
+| --- | --- |
+| Formula batch evaluation | `research/formulas/batch_evaluator.py` |
+| Formula candidate requests | `research/formulas/candidates.py` |
+| Composite factors | `research/factors/composite.py` |
+| Security-date truth | `data/pit/truth.py` |
+| Fee workflow and calculator | `portfolio/simulation/fees.py` |
+| Production firewall sentinel | `validation/firewall/production_sentinel_sentinel.py` |
+| Immutable generation storage | `platform/artifacts/storage.py` |
+| Network transport authority | `platform/network_authority/gateway.py` |
+
+Historical Task054/055 artifacts are read-only inputs. Their old producers, task DAGs, synthetic fixtures, runners, and compatibility facades are not production capabilities.
+
 ## Enforcement
 
 `dev_tools.repository_layout` and `tests/platform/test_repository_layout.py` fail when:
@@ -93,4 +108,7 @@ Dependencies may point left-to-right through the research lifecycle. `platform` 
 - tests stop mirroring the six domains;
 - a registered unified CLI command cannot resolve.
 - the Python package-directory count exceeds 65;
+- the Python source-file count exceeds 665;
+- committed evidence exceeds four current files;
+- a deleted predecessor of a capability owner returns;
 - a nested micro-package returns below `research`, `validation`, `portfolio`, or `execution`.

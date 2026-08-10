@@ -19,7 +19,7 @@ from auto_alpha.platform.network_authority.response_validation import (
     validate_response_records,
 )
 from auto_alpha.platform.network_authority.transport import CANONICAL_ORIGIN
-from auto_alpha.platform.network_authority.storage import canonical_hash, publish_generation, read_json, sha256_file, validate_generation
+from auto_alpha.platform.artifacts.storage import canonical_hash, publish_generation, read_json, sha256_file, validate_generation
 from auto_alpha.platform.network_authority.journal import DurableHashJournal, event_rows
 
 from .authority import validate_candidate_checkpoint, validate_final_candidate_seal

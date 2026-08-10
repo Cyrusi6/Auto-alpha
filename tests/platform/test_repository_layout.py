@@ -4,10 +4,12 @@ from importlib.util import find_spec
 from auto_alpha.cli import COMMANDS, normalize_python_module_command
 from dev_tools.repository_layout import (
     DOMAIN_SUBSYSTEMS,
+    EVIDENCE_FILE_BUDGET,
     FLAT_DOMAINS,
     NESTED_SUBSYSTEMS,
     PACKAGE_DIRECTORY_BUDGET,
     REMOVED_INTERNAL_PACKAGES,
+    SOURCE_FILE_BUDGET,
     audit_repository_layout,
 )
 
@@ -21,9 +23,15 @@ def test_repository_has_one_public_package_and_six_domains():
     assert audit.legacy_packaging_entry_count == 0
     assert audit.top_level_package_count == 1
     assert audit.source_package_count == 1
-    assert audit.package_directory_count == 57
+    assert audit.package_directory_count == 56
     assert audit.package_directory_count <= audit.package_directory_budget
     assert audit.package_directory_budget == PACKAGE_DIRECTORY_BUDGET
+    assert audit.source_file_count <= SOURCE_FILE_BUDGET
+    assert audit.source_file_budget == SOURCE_FILE_BUDGET
+    assert audit.evidence_file_count <= EVIDENCE_FILE_BUDGET
+    assert audit.evidence_file_budget == EVIDENCE_FILE_BUDGET
+    assert audit.forbidden_module_count == 0
+    assert audit.capability_owner_count == 8
     assert audit.domain_count == 6
     assert audit.subsystem_count == 25
     assert audit.domain_issues == ()

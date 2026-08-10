@@ -10,7 +10,7 @@ TARGETS = [
     Path("src/auto_alpha/research/formulas/runtime_data_loader.py"),
     Path("src/auto_alpha/research/formulas/runtime_backtest.py"),
     Path("src/auto_alpha/research/formulas/runtime_engine.py"),
-    Path("src/auto_alpha/research/discovery/evaluation_report.py"),
+    Path("src/auto_alpha/research/discovery/evaluation.py"),
     Path("src/auto_alpha/research/factors/store_models.py"),
     Path("src/auto_alpha/research/factors/store_storage.py"),
     Path("src/auto_alpha/platform/observability/dashboard/data_service.py"),

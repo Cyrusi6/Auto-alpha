@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from auto_alpha.platform.network_authority.storage import canonical_hash
+from auto_alpha.platform.artifacts.storage import canonical_hash
 from auto_alpha.platform.network_authority.journal import DurableHashJournal
 from auto_alpha.platform.network_authority.contracts import CANARY
 from auto_alpha.platform.network_authority.lease import ReplacementSafeLease, Task055KLeaseError
@@ -23,12 +23,12 @@ from auto_alpha.platform.network_authority.release import _load_rehearsal_releas
 from auto_alpha.platform.network_authority.run import _publish_content_addressed_evidence
 from dev_tools.network_authority_harness import _lightweight_stages, synthetic_accepted_response
 from auto_alpha.platform.network_authority.authority import normalize_ordered_keys
-from auto_alpha.platform.network_authority.storage import read_json
+from auto_alpha.platform.artifacts.storage import read_json
 
 
 def _ordered_keys() -> list[dict]:
     return normalize_ordered_keys(
-        read_json("evidence/task_055_j/task055j_scrubbed_evidence.json")[
+        read_json("evidence/task_055_k/task055kr2_candidate_evidence.json")[
             "ordered_exact_daily_keys"
         ]
     )

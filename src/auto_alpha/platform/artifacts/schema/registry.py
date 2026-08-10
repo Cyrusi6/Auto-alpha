@@ -1614,13 +1614,19 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
     ),
     "task055kr2_candidate_anchor": _definition(
         "task055kr2_candidate_anchor",
-        ["schema_version", "status", "release_topology", "source_entries", "source_root", "verifier_entry", "reviewed_evidence_entry", "legacy_evidence_entry", "semantic_expectations", "top_level_artifact_catalog", "rehearsal_artifact_catalog", "application_roots", "application_stage_roots", "broker_public_keys", "network_authorized", "executable", "authorization_eligible", "content_hash"],
+        ["schema_version", "status", "release_topology", "source_entries", "source_root", "verifier_entry", "reviewed_evidence_entry", "semantic_expectations", "top_level_artifact_catalog", "rehearsal_artifact_catalog", "application_roots", "application_stage_roots", "broker_public_keys", "network_authorized", "executable", "authorization_eligible", "content_hash"],
         _task055kr_patterns("task055kr2_candidate_anchor.json"),
+        optional=["legacy_evidence_entry", "legacy_evidence_supersession"],
     ),
     "task055kr2_supersession": _definition(
         "task055kr2_supersession",
         ["schema_version", "status", "legacy_evidence", "superseded", "executable", "authorization_eligible", "replacement_candidate_requires_independent_external_anchor_review", "content_hash"],
         _task055kr_patterns("task055kr2_supersession.json"),
+    ),
+    "research_current_baseline": _definition(
+        "research_current_baseline",
+        ["schema_version", "status", "canonical_freeze", "holdout", "portfolio", "blockers", "alpha_search_authorized", "certification_ready", "portfolio_ready", "paper_ready", "live_ready", "content_hash"],
+        ["evidence/research_current_baseline.json", "*/evidence/research_current_baseline.json"],
     ),
     "task055f_truth_v2_manifest": _definition(
         "task055f_truth_v2_manifest",

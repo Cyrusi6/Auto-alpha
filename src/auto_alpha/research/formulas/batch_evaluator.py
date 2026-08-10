@@ -31,7 +31,6 @@ from auto_alpha.research.formulas.runtime_backtest import AShareFactorEvaluator
 from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
 from auto_alpha.research.formulas.runtime_vm import StackVM
 from auto_alpha.research.formulas.runtime_vocab import FORMULA_VOCAB
-from auto_alpha.research.discovery.studies_models import FactorCandidate
 from auto_alpha.validation.firewall.core import ResearchEligibilityContract
 from auto_alpha.validation.firewall.core_lineage import build_loader_lineage
 
@@ -484,7 +483,7 @@ class FormulaBatchEvaluator:
         write_json_artifact(path, payload, "resource_usage_report", "formula_batch_eval")
 
 
-def requests_from_candidates(candidates: Iterable[FactorCandidate]) -> list[FormulaEvalRequest]:
+def requests_from_candidates(candidates: Iterable[FormulaEvalRequest]) -> list[FormulaEvalRequest]:
     requests = []
     vm = StackVM()
     for idx, candidate in enumerate(candidates):
@@ -501,11 +500,7 @@ def requests_from_candidates(candidates: Iterable[FactorCandidate]) -> list[Form
                 source=candidate.source,
                 complexity=candidate.complexity or vm.formula_complexity(tokens),
                 lookback=candidate.lookback or vm.formula_lookback(tokens),
-                metadata={
-                    "parent_hashes": candidate.parent_hashes or [],
-                    "generation": candidate.generation,
-                    "validation_reason": candidate.validation_reason,
-                },
+                metadata=dict(candidate.metadata or {}),
             )
         )
     return requests

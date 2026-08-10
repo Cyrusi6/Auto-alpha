@@ -22,8 +22,7 @@ OLD_TERMS = [
 
 
 SCAN_PATHS = [
-    Path("src/auto_alpha/research/factors/registry"),
-    Path("src/auto_alpha/research/factors/lifecycle"),
+    Path("src/auto_alpha/research/factors"),
     Path("src/auto_alpha/execution/operations/daily_daily_runner.py"),
     Path("src/auto_alpha/execution/operations/daily_run_daily.py"),
     Path("src/auto_alpha/platform/observability/monitoring/checks.py"),

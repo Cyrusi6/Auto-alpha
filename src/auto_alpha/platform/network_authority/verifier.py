@@ -16,7 +16,6 @@ BASELINE_COMMIT = "df24308eadab07128b9efead884355247e58a382"
 ANCHOR_SCHEMA = "task055kr2_external_release_candidate_anchor_v1"
 ANCHOR_PATH = "evidence/task_055_k/task055kr2_candidate_anchor.json"
 CANDIDATE_EVIDENCE_PATH = "evidence/task_055_k/task055kr2_candidate_evidence.json"
-LEGACY_EVIDENCE_PATH = "evidence/task_055_k/task055kr_scrubbed_evidence.json"
 CANDIDATE_STATUS = "task055kr2_candidate_ready_for_independent_audit_no_network_executed"
 CANARY = {
     "api_name": "daily",
@@ -234,12 +233,6 @@ def _verify_release_git_topology(
         raise Task055KVerifierError("task055kr2_reviewed_evidence_blob_invalid")
     if _git_blob_entry(repository, anchor_commit, CANDIDATE_EVIDENCE_PATH) != evidence_entry:
         raise Task055KVerifierError("task055kr2_evidence_changed_after_e_commit")
-    legacy = anchor.get("legacy_evidence_entry") or {}
-    if (
-        _git_blob_entry(repository, BASELINE_COMMIT, LEGACY_EVIDENCE_PATH) != legacy
-        or _git_blob_entry(repository, anchor_commit, LEGACY_EVIDENCE_PATH) != legacy
-    ):
-        raise Task055KVerifierError("task055kr2_legacy_evidence_rewritten")
 
 
 def _verify_source_tree(*, repository: Path, anchor: Mapping[str, Any]) -> None:

@@ -11,7 +11,7 @@ from typing import Any, Mapping
 
 from auto_alpha.portfolio.simulation.fees import independent_verify_fee_schedule, validate_fee_schedule_v2
 
-from auto_alpha.platform.network_authority.storage import canonical_hash, publish_generation, sha256_file, validate_generation
+from auto_alpha.platform.artifacts.storage import canonical_hash, publish_generation, sha256_file, validate_generation
 
 
 FEE_ATTESTATION_SCHEMA = "task055h_fee_schedule_attestation_v1"

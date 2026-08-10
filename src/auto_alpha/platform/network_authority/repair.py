@@ -17,7 +17,7 @@ from auto_alpha.data.lake.store.task052_freeze import (
 from auto_alpha.validation.lab.engine_materialization import FactorMaterializer
 from auto_alpha.validation.lab.engine_materialization import MaterializationInputs
 
-from .storage import canonical_hash, publish_generation, read_json, sha256_file
+from auto_alpha.platform.artifacts.storage import canonical_hash, publish_generation, read_json, sha256_file
 
 
 class NetworkRepairError(RuntimeError):

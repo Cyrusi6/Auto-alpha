@@ -12,7 +12,7 @@ from auto_alpha.portfolio.simulation.evidence_contracts import (
     MAX_UNIQUE_SECURITY_DATES,
 )
 
-from .storage import canonical_hash
+from auto_alpha.platform.artifacts.storage import canonical_hash
 from .transport import evidence_use_identity, transport_identity
 
 

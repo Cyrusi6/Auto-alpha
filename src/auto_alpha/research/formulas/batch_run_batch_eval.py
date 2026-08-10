@@ -6,8 +6,8 @@ import argparse
 import json
 
 from auto_alpha.research.factors.engine import SUPPORTED_TRANSFORMS
-from auto_alpha.research.discovery.studies_candidates import default_candidates
-from auto_alpha.research.discovery.studies_candidates import load_candidates_json
+from auto_alpha.research.formulas.candidates import default_candidates
+from auto_alpha.research.formulas.candidates import load_candidates_json
 
 from auto_alpha.research.formulas.batch_evaluator import FormulaBatchEvaluator
 from auto_alpha.research.formulas.batch_evaluator import requests_from_candidates

@@ -25,7 +25,7 @@ from dev_tools.network_authority_harness import (
     run_lightweight_recovery_matrix,
     synthetic_accepted_response,
 )
-from auto_alpha.platform.network_authority.storage import canonical_hash, read_json
+from auto_alpha.platform.artifacts.storage import canonical_hash, read_json
 from auto_alpha.platform.network_authority.journal import DurableHashJournal
 from auto_alpha.portfolio.simulation.valuation import (
     publish_valuation_projection,
@@ -54,7 +54,7 @@ from auto_alpha.platform.network_authority.stage_machine import (
 
 
 def _ordered_keys() -> list[dict]:
-    payload = read_json("evidence/task_055_j/task055j_scrubbed_evidence.json")
+    payload = read_json("evidence/task_055_k/task055kr2_candidate_evidence.json")
     return normalize_ordered_keys(payload["ordered_exact_daily_keys"])
 
 

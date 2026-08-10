@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import random
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -17,11 +17,11 @@ from auto_alpha.research.formulas.search_models import FormulaCandidate
 from auto_alpha.research.formulas.runtime_alphagpt import AlphaGPT
 from auto_alpha.research.formulas.runtime_alphagpt import StableRankMonitor
 from auto_alpha.research.formulas.runtime_vm import StackVM
-from auto_alpha.research.discovery.studies import BatchFactorResearchRunner, BatchResearchConfig
-from auto_alpha.research.discovery.studies_candidates import from_formula_search_candidates
-from auto_alpha.research.discovery.studies_composite import build_composite_factor_matrix
-from auto_alpha.research.discovery.studies_composite import register_composite_factor
-from auto_alpha.research.discovery.studies_composite import select_approved_factors
+from auto_alpha.research.factors.composite import build_composite_factor_matrix
+from auto_alpha.research.factors.composite import register_composite_factor
+from auto_alpha.research.factors.composite import select_approved_factors
+from auto_alpha.research.formulas.batch import FormulaBatchEvalConfig, FormulaBatchEvaluator
+from auto_alpha.research.formulas.candidates import from_formula_search_candidates
 from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
 
 from auto_alpha.research.neural.search_dataset import FormulaSequenceDataset
@@ -236,34 +236,43 @@ class NeuralFormulaTrainer:
             )
             for sample in valid_samples
         ]
-        batch_config = BatchResearchConfig(
+        evaluation_dir = (
+            Path(self.config.evaluation_output_dir) / f"policy_step_{step}"
+            if self.config.evaluation_output_dir
+            else self.output_dir / f"policy_step_{step}"
+        )
+        batch_config = FormulaBatchEvalConfig(
             data_dir=self.data_dir,
-            universe_name=self.universe_name,
-            universe_file=self.universe_file,
             factor_store_dir=self.factor_store_dir,
             report_dir=self.report_dir,
-            output_dir=str(self.output_dir / f"policy_step_{step}"),
+            output_dir=str(evaluation_dir),
+            universe_name=self.universe_name,
+            universe_file=self.universe_file,
+            matrix_cache_dir=self.config.matrix_cache_dir,
+            use_matrix_cache=self.config.use_matrix_cache,
+            device=self.config.evaluation_device,
             factor_transform=self.config.factor_transform,
             enable_gate=self.config.enable_gate,
             correlation_threshold=self.correlation_threshold,
             min_coverage=self.min_coverage,
-            top_k=self.config.top_k,
-            composite_method=self.config.composite_method,
-            continue_on_error=True,
-            disable_composite=True,
-            batch_id=f"{search_id}_policy_{step}",
-            search_id=search_id,
-            matrix_cache_dir=self.config.matrix_cache_dir,
-            use_matrix_cache=self.config.use_matrix_cache,
-            use_batch_eval=self.config.use_batch_eval,
-            batch_eval_output_dir=str(self.output_dir / f"policy_step_{step}" / "batch_eval") if self.config.use_batch_eval else None,
-            batch_eval_chunk_size=self.config.batch_eval_chunk_size,
-            batch_eval_device=self.config.batch_eval_device,
+            chunk_size=self.config.evaluation_chunk_size,
             use_eval_cache=self.config.use_eval_cache,
             eval_cache_dir=self.config.eval_cache_dir,
+            skip_existing=True,
+            register_approved=True,
+            continue_on_error=True,
+            batch_id=f"{search_id}_policy_{step}",
         )
-        batch_result = BatchFactorResearchRunner(batch_config, from_formula_search_candidates(candidates)).run()
-        by_hash = {result.candidate.formula_hash: result for result in batch_result.results}
+        requests = from_formula_search_candidates(candidates)
+        requests = [
+            replace(
+                request,
+                metadata=dict(request.metadata or {}) | {"search_id": search_id, "generation": step},
+            )
+            for request in requests
+        ]
+        batch_result = FormulaBatchEvaluator(batch_config).run(requests)
+        by_hash = {result.request.formula_hash: result for result in batch_result.results}
         return [by_hash.get(sample.formula_hash) if sample.valid else None for sample in samples]
 
     def _record_best(self, sample: PolicySample, result: Any, reward: float) -> None:

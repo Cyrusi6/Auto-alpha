@@ -6,7 +6,7 @@ import argparse
 import json
 
 from auto_alpha.research.factors.engine import SUPPORTED_TRANSFORMS
-from auto_alpha.research.discovery.studies_composite import COMPOSITE_METHODS
+from auto_alpha.research.factors.composite import COMPOSITE_METHODS
 
 from auto_alpha.research.neural.search_models import NeuralSearchConfig
 from auto_alpha.research.neural.search_trainer import NeuralFormulaTrainer
@@ -36,10 +36,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--corpus-sequence-path")
     parser.add_argument("--matrix-cache-dir")
     parser.add_argument("--use-matrix-cache", action="store_true")
-    parser.add_argument("--use-batch-eval", action="store_true")
-    parser.add_argument("--batch-eval-output-dir")
-    parser.add_argument("--batch-eval-chunk-size", type=int, default=32)
-    parser.add_argument("--batch-eval-device", default="auto")
+    parser.add_argument("--evaluation-output-dir")
+    parser.add_argument("--evaluation-chunk-size", type=int, default=32)
+    parser.add_argument("--evaluation-device", default="auto")
     parser.add_argument("--use-eval-cache", action="store_true")
     parser.add_argument("--eval-cache-dir")
     parser.add_argument("--factor-transform", default="raw", choices=sorted(SUPPORTED_TRANSFORMS))
@@ -76,10 +75,9 @@ def main(argv: list[str] | None = None) -> int:
         corpus_sequence_path=args.corpus_sequence_path,
         matrix_cache_dir=args.matrix_cache_dir,
         use_matrix_cache=args.use_matrix_cache,
-        use_batch_eval=args.use_batch_eval,
-        batch_eval_output_dir=args.batch_eval_output_dir,
-        batch_eval_chunk_size=args.batch_eval_chunk_size,
-        batch_eval_device=args.batch_eval_device,
+        evaluation_output_dir=args.evaluation_output_dir,
+        evaluation_chunk_size=args.evaluation_chunk_size,
+        evaluation_device=args.evaluation_device,
         use_eval_cache=args.use_eval_cache,
         eval_cache_dir=args.eval_cache_dir,
     )

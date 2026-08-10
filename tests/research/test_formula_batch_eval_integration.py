@@ -6,7 +6,7 @@ from auto_alpha.research.formulas import search_run_search as run_search
 from auto_alpha.data.matrix.store import build_matrix_cache
 
 
-def test_formula_search_uses_batch_eval_and_matrix_cache(tmp_path, capsys):
+def test_formula_search_uses_canonical_evaluator_and_matrix_cache(tmp_path, capsys):
     data_dir = tmp_path / "data"
     AShareDataManager(AShareDataConfig(provider="sample", data_dir=data_dir)).sync(validate=True)
     matrix_dir = tmp_path / "matrix"
@@ -42,10 +42,9 @@ def test_formula_search_uses_batch_eval_and_matrix_cache(tmp_path, capsys):
             "--use-matrix-cache",
             "--matrix-cache-dir",
             str(matrix_dir),
-            "--use-batch-eval",
-            "--batch-eval-output-dir",
+            "--evaluation-output-dir",
             str(tmp_path / "batch_eval"),
-            "--batch-eval-device",
+            "--evaluation-device",
             "cpu",
             "--corpus-path",
             corpus.paths["formula_corpus_path"],

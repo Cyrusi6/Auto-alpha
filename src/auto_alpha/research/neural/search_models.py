@@ -30,10 +30,9 @@ class NeuralSearchConfig:
     corpus_sequence_path: str | None = None
     matrix_cache_dir: str | None = None
     use_matrix_cache: bool = False
-    use_batch_eval: bool = False
-    batch_eval_output_dir: str | None = None
-    batch_eval_chunk_size: int = 32
-    batch_eval_device: str = "auto"
+    evaluation_output_dir: str | None = None
+    evaluation_chunk_size: int = 32
+    evaluation_device: str = "auto"
     use_eval_cache: bool = False
     eval_cache_dir: str | None = None
 

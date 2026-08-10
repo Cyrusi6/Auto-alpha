@@ -5,14 +5,64 @@ from pathlib import Path
 from typing import Any
 from auto_alpha._paths import semantic_source_hash
 from auto_alpha.validation.firewall.engineering_closure_bundle import validate_bundle
-from auto_alpha.validation.firewall.engineering_closure_run import validate_sentinel
+from auto_alpha.validation.firewall.engineering_closure_contracts import EVIDENCE_SCOPE, RUN_MUTATIONS, RUN_PATHS
+from auto_alpha.validation.firewall.engineering_closure_research_view import load_research_projection_manifest, validate_research_projection
 from auto_alpha.validation.firewall.engineering_closure_validators import canonical_hash
 from auto_alpha.validation.firewall.engineering_closure_validators import sha256_file
 
 _VALIDATED_SEAL_CACHE: dict[tuple[str, str, str], dict[str, Any]] = {}
 
+def validate_sentinel(path:str|Path,*,root:str|Path)->dict[str,Any]:
+ p=Path(path);artifact=json.loads(p.read_text())
+ executions=artifact.get('executions') or {}
+ if artifact.get('evidence_scope')!=EVIDENCE_SCOPE or artifact.get('status')!='passed':raise RuntimeError('sentinel_status_scope_invalid')
+ if set(executions)!=set(RUN_MUTATIONS) or any(set(executions[mutation])!=set(RUN_PATHS) for mutation in RUN_MUTATIONS):raise RuntimeError('sentinel_exact12_invalid')
+ if canonical_hash({key:value for key,value in artifact.items() if key!='content_hash'})!=artifact.get('content_hash'):raise RuntimeError('sentinel_content_hash_mismatch')
+ base=Path(root)
+ for mutation in RUN_MUTATIONS:
+  projection_proofs=set()
+  for path_name in RUN_PATHS:
+   execution=executions[mutation][path_name];output=base/'runs'/path_name/mutation
+   native=json.loads((output/'auto_alpha.execution.trading.engine.json').read_text())
+   if native!=execution or execution.get('status')!='success':raise RuntimeError('sentinel_execution_invalid')
+   if canonical_hash({key:value for key,value in execution.items() if key!='content_hash'})!=execution.get('content_hash'):raise RuntimeError('sentinel_execution_hash_invalid')
+   receipts=_jsonl(output/'component_receipts.jsonl');previous='0'*64
+   if not receipts:raise RuntimeError('sentinel_receipts_missing')
+   for row in receipts:
+    if row.get('status')!='success' or not row.get('output_artifacts') or row.get('parent_receipt_hash')!=previous:raise RuntimeError('sentinel_receipt_chain_invalid')
+    if canonical_hash({key:value for key,value in row.items() if key!='receipt_hash'})!=row.get('receipt_hash'):raise RuntimeError('sentinel_receipt_hash_invalid')
+    previous=row['receipt_hash']
+   ledger=_jsonl(output/'read_ledger.jsonl');previous='0'*64
+   if not ledger:raise RuntimeError('sentinel_read_ledger_missing')
+   for row in ledger:
+    if row.get('policy_decision')!='allow' or row.get('principal')!='research' or row.get('date_range',[None,'99999999'])[1]>'20240528':raise RuntimeError('sentinel_read_ledger_invalid')
+    if row.get('previous_entry_hash')!=previous or canonical_hash({key:value for key,value in row.items() if key!='entry_hash'})!=row.get('entry_hash'):raise RuntimeError('sentinel_read_ledger_chain_invalid')
+    previous=row['entry_hash']
+   projection_path=_find_projection_manifest(output,execution['projection_manifest_sha256']);projection=load_research_projection_manifest(projection_path)
+   projection_proofs.add((projection['research_computation_identity'],projection['matrix_content_hash'],projection['tensor_content_hash']))
+  if len(projection_proofs)!=1:raise RuntimeError(f'sentinel_projection_semantic_mismatch:{mutation}')
+  validate_research_projection(_find_projection_manifest(base/'runs'/'matrix_local'/mutation,executions[mutation]['matrix_local']['projection_manifest_sha256']))
+ _validate_sentinel_invariants(executions)
+ return artifact
+
+def _find_projection_manifest(output:Path,expected_sha256:str)->Path:
+ matches=[candidate for candidate in output.glob('research_projection*/generations/*/research_projection_manifest.json') if sha256_file(candidate)==expected_sha256]
+ if len(matches)!=1:raise RuntimeError(f'sentinel_projection_manifest_unresolved:{output}')
+ return matches[0]
+
+def _validate_sentinel_invariants(executions:dict[str,Any])->None:
+ baseline=executions['baseline'];post=executions['post_cutoff'];inside=executions['inside_cutoff']
+ if len({baseline[path]['semantic']['research_semantic_hash'] for path in RUN_PATHS})!=1:raise RuntimeError('sentinel_baseline_semantic_mismatch')
+ for path in RUN_PATHS:
+  if post[path]['semantic']['research_semantic_hash']!=baseline[path]['semantic']['research_semantic_hash']:raise RuntimeError(f'sentinel_post_cutoff_changed:{path}')
+  if post[path]['semantic']['diagnostic_hash']==baseline[path]['semantic']['diagnostic_hash']:raise RuntimeError(f'sentinel_diagnostic_unchanged:{path}')
+  if inside[path]['semantic']['research_semantic_hash']==baseline[path]['semantic']['research_semantic_hash']:raise RuntimeError(f'sentinel_inside_cutoff_unchanged:{path}')
+
+def _jsonl(path:Path)->list[dict[str,Any]]:
+ return [json.loads(line) for line in path.read_text().splitlines() if line.strip()] if path.exists() else []
+
 def code_semantic_hash()->str:
- return semantic_source_hash(('auto_alpha.validation.firewall.engineering_closure_contracts','auto_alpha.validation.firewall.engineering_closure_validators','auto_alpha.validation.firewall.engineering_closure_bundle','auto_alpha.validation.firewall.engineering_closure_factor_store','auto_alpha.validation.firewall.engineering_closure_research_view','auto_alpha.validation.firewall.engineering_closure_audit','auto_alpha.validation.firewall.engineering_closure_run','auto_alpha.validation.firewall.engineering_closure_worker','auto_alpha.validation.firewall.engineering_closure_seal','auto_alpha.validation.firewall.engineering_closure_final_verifier','auto_alpha.validation.lab.engine_materialization','auto_alpha.validation.lab.engine_run_validation','auto_alpha.validation.lab.engine_policy','auto_alpha.validation.lab.campaigns_scheduler','auto_alpha.validation.lab.campaigns_replay_evidence','auto_alpha.research.formulas.runtime_vm'))
+ return semantic_source_hash(('auto_alpha.validation.firewall.engineering_closure_contracts','auto_alpha.validation.firewall.engineering_closure_validators','auto_alpha.validation.firewall.engineering_closure_bundle','auto_alpha.validation.firewall.engineering_closure_factor_store','auto_alpha.validation.firewall.engineering_closure_research_view','auto_alpha.validation.firewall.engineering_closure_seal','auto_alpha.validation.firewall.production_sentinel_sentinel','auto_alpha.validation.lab.engine_materialization','auto_alpha.validation.lab.engine_run_validation','auto_alpha.validation.lab.engine_policy','auto_alpha.validation.lab.campaigns_scheduler','auto_alpha.validation.lab.campaigns_replay_evidence','auto_alpha.research.formulas.runtime_vm'))
 def publish_pre_gpu_seal(*,bundle_manifest:str|Path,mutation_manifest:str|Path,sentinel_manifest:str|Path,validation_policy_hash:str,output_path:str|Path)->dict[str,Any]:
  bundle=validate_bundle(bundle_manifest);sentinel=validate_sentinel(sentinel_manifest,root=Path(sentinel_manifest).parent)
  execution_roots={f'{mutation}:{path_name}':{'projection_manifest_sha256':row['projection_manifest_sha256'],'receipt_root':row['receipt_root'],'ledger_root':row['ledger_root'],'research_semantic_hash':row['semantic']['research_semantic_hash']} for mutation,paths in sentinel['executions'].items() for path_name,row in paths.items()}

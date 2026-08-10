@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import torch
 
-from auto_alpha.research.discovery.evaluation_multi_objective import bounded_factor_score
+from auto_alpha.research.discovery.evaluation import bounded_factor_score
 
 from auto_alpha.research.formulas.runtime_config import ModelConfig
 from auto_alpha.research.formulas.runtime_ops import cs_rank

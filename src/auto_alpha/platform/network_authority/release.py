@@ -14,14 +14,11 @@ ANCHOR_SCHEMA = "task055kr2_external_release_candidate_anchor_v1"
 ANCHOR_PATH = "evidence/task_055_k/task055kr2_candidate_anchor.json"
 SUPERSESSION_PATH = "evidence/task_055_k/task055kr2_supersession.json"
 CANDIDATE_EVIDENCE_PATH = "evidence/task_055_k/task055kr2_candidate_evidence.json"
-LEGACY_EVIDENCE_PATH = "evidence/task_055_k/task055kr_scrubbed_evidence.json"
 EVIDENCE_COMMIT_ALLOWLIST = (
     "README.md",
     "CATREADME.md",
     "FRAMEWORK_UPDATE.md",
     CANDIDATE_EVIDENCE_PATH,
-    "evidence/task_055_k/task055kr2_prefailure_audit.json",
-    "evidence/task_055_k/task055kr2_validation_summary.json",
 )
 ANCHOR_COMMIT_ALLOWLIST = (ANCHOR_PATH, SUPERSESSION_PATH)
 
@@ -79,7 +76,6 @@ def build_candidate_anchor(
         governed=rehearsal_root,
         rehearsal_catalog=rehearsal_catalog,
     )
-    legacy_entry = _git_blob_entry(repository, BASELINE_COMMIT, LEGACY_EVIDENCE_PATH)
     evidence_entry = _git_blob_entry(repository, evidence_commit, CANDIDATE_EVIDENCE_PATH)
     if evidence_entry["sha256"] != hashlib.sha256(evidence_bytes).hexdigest():
         raise Task055KR2ReleaseError("task055kr2_evidence_worktree_blob_mismatch")
@@ -137,12 +133,6 @@ def build_candidate_anchor(
         "source_root": source_root,
         "verifier_entry": verifier,
         "reviewed_evidence_entry": evidence_entry,
-        "legacy_evidence_entry": legacy_entry,
-        "legacy_evidence_supersession": {
-            "superseded": True,
-            "executable": False,
-            "authorization_eligible": False,
-        },
         "semantic_expectations": semantic_expectations,
         "top_level_artifact_catalog": top_catalog,
         "top_level_artifact_role_count": len(top_catalog),
@@ -180,23 +170,13 @@ def build_candidate_anchor(
 
 def publish_supersession(*, repository_root: str | Path) -> dict[str, Any]:
     repository = Path(repository_root).resolve()
-    legacy = _git_blob_entry(repository, BASELINE_COMMIT, LEGACY_EVIDENCE_PATH)
-    semantic = {
-        "schema_version": "task055kr2_historical_evidence_supersession_v1",
-        "status": "superseded",
-        "legacy_evidence": legacy,
-        "superseded": True,
-        "executable": False,
-        "authorization_eligible": False,
-        "replacement_candidate_requires_independent_external_anchor_review": True,
-    }
-    payload = semantic | {"content_hash": _hash(semantic)}
     path = repository / SUPERSESSION_PATH
-    path.parent.mkdir(parents=True, exist_ok=True)
-    encoded = json.dumps(payload, indent=2, sort_keys=True).encode("utf-8") + b"\n"
-    if path.exists() and path.read_bytes() != encoded:
-        raise Task055KR2ReleaseError("task055kr2_supersession_replacement_forbidden")
-    path.write_bytes(encoded)
+    if not path.is_file():
+        raise Task055KR2ReleaseError("task055kr2_supersession_missing")
+    payload = _json_object(path.read_bytes(), code="supersession")
+    semantic = {key: value for key, value in payload.items() if key != "content_hash"}
+    if payload.get("status") != "superseded" or payload.get("content_hash") != _hash(semantic):
+        raise Task055KR2ReleaseError("task055kr2_supersession_invalid")
     return payload | {"manifest_path": str(path)}
 
 

@@ -11,7 +11,6 @@ MODEL_CORE_FILES = [
     Path("src/auto_alpha/research/formulas/runtime_backtest.py"),
     Path("src/auto_alpha/research/formulas/runtime_engine.py"),
     Path("src/auto_alpha/research/formulas/runtime_alphagpt.py"),
-    Path("src/auto_alpha/research/formulas/runtime.py"),
 ]
 
 FORBIDDEN_TERMS = [

@@ -25,7 +25,32 @@ NESTED_SUBSYSTEMS = {
 }
 
 PACKAGE_DIRECTORY_BUDGET = 65
+SOURCE_FILE_BUDGET = 665
+EVIDENCE_FILE_BUDGET = 4
 FLAT_DOMAINS = ("research", "validation", "portfolio", "execution")
+
+CAPABILITY_OWNERS = {
+    "formula_evaluation": "auto_alpha.research.formulas.batch_evaluator",
+    "formula_candidates": "auto_alpha.research.formulas.candidates",
+    "factor_composites": "auto_alpha.research.factors.composite",
+    "pit_truth": "auto_alpha.data.pit.truth",
+    "fee_schedule": "auto_alpha.portfolio.simulation.fees",
+    "research_firewall": "auto_alpha.validation.firewall.production_sentinel_sentinel",
+    "immutable_storage": "auto_alpha.platform.artifacts.storage",
+    "network_authority": "auto_alpha.platform.network_authority.gateway",
+}
+
+FORBIDDEN_MODULES = (
+    "auto_alpha.data.pit.truth_builder",
+    "auto_alpha.portfolio.simulation.fee_evidence",
+    "auto_alpha.portfolio.simulation.ledger_fees",
+    "auto_alpha.research.discovery.studies",
+    "auto_alpha.research.discovery.studies_batch_runner",
+    "auto_alpha.research.discovery.studies_models",
+    "auto_alpha.validation.firewall.truth_evidence",
+    "auto_alpha.validation.firewall.engineering_closure_run",
+    "auto_alpha.validation.firewall.engineering_closure_worker",
+)
 
 REMOVED_INTERNAL_PACKAGES = (
     "data/ingestion/backfill",
@@ -155,6 +180,12 @@ class LayoutAudit:
     source_package_count: int
     package_directory_count: int
     package_directory_budget: int
+    source_file_count: int
+    source_file_budget: int
+    evidence_file_count: int
+    evidence_file_budget: int
+    capability_owner_count: int
+    forbidden_module_count: int
     domain_count: int
     subsystem_count: int
     legacy_directory_count: int
@@ -204,6 +235,26 @@ def audit_repository_layout(root_dir: str | Path) -> LayoutAudit:
         issues.append(
             f"package_directory_budget:{package_directory_count}>{PACKAGE_DIRECTORY_BUDGET}"
         )
+    source_file_count = sum(1 for _ in source.rglob("*.py"))
+    if source_file_count > SOURCE_FILE_BUDGET:
+        issues.append(f"source_file_budget:{source_file_count}>{SOURCE_FILE_BUDGET}")
+    evidence_file_count = sum(1 for path in (root / "evidence").rglob("*") if path.is_file())
+    if evidence_file_count > EVIDENCE_FILE_BUDGET:
+        issues.append(f"evidence_file_budget:{evidence_file_count}>{EVIDENCE_FILE_BUDGET}")
+    forbidden_modules = tuple(
+        module
+        for module in FORBIDDEN_MODULES
+        if (source / Path(*module.split(".")).with_suffix(".py")).exists()
+    )
+    if forbidden_modules:
+        issues.append(f"forbidden_modules:{forbidden_modules!r}")
+    missing_owners = tuple(
+        module
+        for module in CAPABILITY_OWNERS.values()
+        if not (source / Path(*module.split(".")).with_suffix(".py")).is_file()
+    )
+    if missing_owners:
+        issues.append(f"capability_owners_missing:{missing_owners!r}")
     for domain in FLAT_DOMAINS:
         domain_root = auto_alpha / domain
         nested = tuple(
@@ -253,6 +304,12 @@ def audit_repository_layout(root_dir: str | Path) -> LayoutAudit:
         source_package_count=source_package_count,
         package_directory_count=package_directory_count,
         package_directory_budget=PACKAGE_DIRECTORY_BUDGET,
+        source_file_count=source_file_count,
+        source_file_budget=SOURCE_FILE_BUDGET,
+        evidence_file_count=evidence_file_count,
+        evidence_file_budget=EVIDENCE_FILE_BUDGET,
+        capability_owner_count=len(CAPABILITY_OWNERS),
+        forbidden_module_count=len(forbidden_modules),
         domain_count=len(actual_domains),
         subsystem_count=subsystem_count,
         legacy_directory_count=len(legacy_directories),

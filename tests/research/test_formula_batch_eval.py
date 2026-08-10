@@ -2,7 +2,7 @@ import json
 
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.research.formulas.batch import FormulaBatchEvalConfig, FormulaBatchEvaluator, requests_from_candidates
-from auto_alpha.research.discovery.studies_candidates import default_candidates
+from auto_alpha.research.formulas.candidates import default_candidates
 
 
 def test_formula_batch_eval_runs_and_writes_artifacts(tmp_path):

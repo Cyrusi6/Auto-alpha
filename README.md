@@ -24,7 +24,7 @@ tests/
 └── platform/
 ```
 
-There are 25 visible subsystems and 57 Python package directories in total. `research`, `validation`, `portfolio`, and `execution` are flat below their subsystem boundary: implementation files use capability prefixes instead of creating one package per runner, store, or report. Task numbers, campaign names, dates, and machine paths are prohibited as public package boundaries.
+There are 25 visible subsystems, 56 Python package directories, and 664 Python source files. `research`, `validation`, `portfolio`, and `execution` are flat below their subsystem boundary: implementation files use capability prefixes instead of creating one package per runner, store, or report. Task numbers, campaign names, dates, and machine paths are prohibited as public package boundaries.
 
 The largest nested areas are deliberately narrow:
 
@@ -35,7 +35,9 @@ platform/observability/          dashboard, monitoring
 platform/network_authority/      one flat production implementation
 ```
 
-`platform/network_authority` is the only retained formal network-authority implementation. Earlier Task 055 generations and the historical `_internal` tree are deleted. Provider response truth lives in `data/pit`; valuation, fees, and ledger simulation live in `portfolio/simulation` rather than inside platform infrastructure.
+`platform/network_authority` is the only retained formal network-authority implementation. Earlier Task 055 generations and the historical `_internal` tree are deleted. Only the current Git-safe anchor/candidate/supersession evidence remains. Provider response truth lives in `data/pit`; valuation, fees, and ledger simulation live in `portfolio/simulation` rather than inside platform infrastructure.
+
+The repository also enforces one owner per high-risk capability: `FormulaBatchEvaluator`, `data.pit.truth`, `portfolio.simulation.fees`, the production firewall sentinel, and `platform.artifacts.storage`. Reintroducing their deleted predecessor modules fails the layout audit.
 
 ## CLI
 
@@ -82,6 +84,6 @@ Architecture rules are enforced by:
 python -m dev_tools.repository_layout audit
 ```
 
-The audit enforces a hard ceiling of 65 package directories and rejects nested micro-packages in `research`, `validation`, `portfolio`, and `execution`.
+The audit enforces ceilings of 65 package directories, 665 Python source files, and four committed evidence files. It also rejects nested micro-packages in `research`, `validation`, `portfolio`, and `execution`.
 
 See `docs/ARCHITECTURE.md` for ownership and dependency rules. Every meaningful change must update `FRAMEWORK_UPDATE.md`.

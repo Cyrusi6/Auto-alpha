@@ -19,7 +19,7 @@ from auto_alpha.validation.firewall.production_sentinel_sentinel import Producti
 from auto_alpha.validation.firewall.production_sentinel_sentinel import run_task054b_production_sentinel
 from auto_alpha.validation.firewall.production_sentinel_sentinel import validate_task054b_production_sentinel
 
-from .storage import canonical_hash, publish_generation, read_json, sha256_file
+from auto_alpha.platform.artifacts.storage import canonical_hash, publish_generation, read_json, sha256_file
 from .transport import evidence_use_identity, transport_identity
 
 
