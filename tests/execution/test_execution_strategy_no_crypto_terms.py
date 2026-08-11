@@ -26,9 +26,9 @@ FORBIDDEN_TERMS = [
 
 def test_execution_strategy_and_backtest_do_not_contain_old_terms():
     files = [
-        *Path("src/auto_alpha/execution/trading/engine").glob("*.py"),
-        *Path("src/auto_alpha/execution/trading/strategy").glob("*.py"),
-        *Path("src/auto_alpha/portfolio/simulation/backtest").glob("*.py"),
+        Path("src/auto_alpha/execution/trading/engine.py"),
+        Path("src/auto_alpha/execution/trading/strategy.py"),
+        Path("src/auto_alpha/portfolio/simulator/backtest.py"),
     ]
     payload = "\n".join(path.read_text(encoding="utf-8") for path in files).lower()
 

@@ -5,8 +5,8 @@ import pytest
 from auto_alpha.platform.artifacts.schema.validator import validate_artifact
 from auto_alpha.research.factors.store import FactorRecord, LocalFactorStore, stable_formula_hash
 from auto_alpha.research.factors.registry import LocalModelRegistry, ModelKind, ModelLifecycleStatus, build_model_lineage_graph
-from auto_alpha.research.factors.registry_report import write_lineage_graph
-from auto_alpha.research.factors.registry_report import write_model_registry_report
+from auto_alpha.research.factors.registry import write_lineage_graph
+from auto_alpha.research.factors.registry import write_model_registry_report
 
 
 def _save_factor(root, factor_id="factor_model_registry", status="production_candidate"):

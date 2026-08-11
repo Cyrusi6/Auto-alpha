@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from auto_alpha.validation.lab.campaigns_scheduler import run_validation_shards
+from auto_alpha.validation.walk_forward.campaigns_scheduler import run_validation_shards
 
 
 def _kwargs(tmp_path):
@@ -41,8 +41,8 @@ def test_task054_scheduler_rejects_contract_override(tmp_path):
 
 
 def test_recursive_formula_lookback_composes_nested_windows():
-    from auto_alpha.research.formulas.runtime_vm import StackVM
-    from auto_alpha.research.formulas.runtime_vocab import FORMULA_VOCAB
+    from auto_alpha.research.formulas.vm import StackVM
+    from auto_alpha.research.formulas.semantics import FORMULA_VOCAB
 
     vm = StackVM()
     tokens = [

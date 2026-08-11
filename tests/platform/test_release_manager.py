@@ -32,7 +32,7 @@ def test_release_inventories_cover_platform_modules():
     assert "lord" not in module_names
     assert "times.py" not in module_names
     assert "auto_alpha.data.ingestion.pipeline.run_pipeline" in cli_modules
-    assert "auto_alpha.research.formulas.runtime_engine" in cli_modules
+    assert "auto_alpha.research.formulas.engine" in cli_modules
 
 
 def test_release_run_writes_reports_without_network(tmp_path, capsys):

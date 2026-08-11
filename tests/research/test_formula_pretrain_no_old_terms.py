@@ -21,10 +21,10 @@ OLD_TERMS = [
 
 def test_formula_corpus_batch_eval_and_pretrain_no_old_terms():
     paths = [
-        Path("src/auto_alpha/research/formulas/corpus"),
-        Path("src/auto_alpha/research/formulas/batch"),
-        Path("src/auto_alpha/research/neural/search_pretrain.py"),
-        Path("src/auto_alpha/research/neural/search_run_pretrain.py"),
+        Path("src/auto_alpha/research/formulas/corpus.py"),
+        Path("src/auto_alpha/research/formulas/evaluator.py"),
+        Path("src/auto_alpha/research/search/neural.py"),
+        Path("src/auto_alpha/research/search/pretrain_cli.py"),
     ]
     for path in paths:
         files = [path] if path.is_file() else sorted(path.glob("*.py"))

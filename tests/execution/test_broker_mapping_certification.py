@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from auto_alpha.execution.broker.mapping_run_mapping_certify import main as certify_main
+from auto_alpha.execution.broker.mapping import main as certify_main
 
 
 def test_mapping_certification_certifies_generic_profile(tmp_path: Path) -> None:

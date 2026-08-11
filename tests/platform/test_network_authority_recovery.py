@@ -9,20 +9,20 @@ from pathlib import Path
 import pytest
 
 from auto_alpha.platform.artifacts.storage import canonical_hash
-from auto_alpha.platform.network_authority.journal import DurableHashJournal
-from auto_alpha.platform.network_authority.contracts import CANARY
-from auto_alpha.platform.network_authority.lease import ReplacementSafeLease, Task055KLeaseError
-from auto_alpha.platform.network_authority.stage_machine import ApplicationStageMachine, StageDefinition
-from auto_alpha.platform.network_authority.verifier import (
+from auto_alpha.platform.governance.network.journal import DurableHashJournal
+from auto_alpha.platform.governance.network.contracts import CANARY
+from auto_alpha.platform.governance.network.lease import ReplacementSafeLease, Task055KLeaseError
+from auto_alpha.platform.governance.network.stage_machine import ApplicationStageMachine, StageDefinition
+from auto_alpha.platform.governance.network.verifier import (
     Task055KVerifierError,
     _verify_artifact_closure,
     verify_candidate_semantics,
     verify_scrubbed_evidence,
 )
-from auto_alpha.platform.network_authority.release import _load_rehearsal_release_catalog
-from auto_alpha.platform.network_authority.run import _publish_content_addressed_evidence
+from auto_alpha.platform.governance.network.release import _load_rehearsal_release_catalog
+from auto_alpha.platform.governance.network.run import _publish_content_addressed_evidence
 from dev_tools.network_authority_harness import _lightweight_stages, synthetic_accepted_response
-from auto_alpha.platform.network_authority.authority import normalize_ordered_keys
+from auto_alpha.platform.governance.network.authority import normalize_ordered_keys
 from auto_alpha.platform.artifacts.storage import read_json
 
 
@@ -244,7 +244,7 @@ def _candidate_and_anchor() -> tuple[dict, dict]:
         "root_bindings": {"task_root": "validation_runs/task"},
         "source_entries": [
             {
-                "path": "src/auto_alpha/platform/network_authority/verifier.py",
+                "path": "src/auto_alpha/platform/governance/network/verifier.py",
                 "git_blob_id": "1" * 40,
                 "git_index_mode": "100644",
                 "sha256": "3" * 64,

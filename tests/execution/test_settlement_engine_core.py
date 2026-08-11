@@ -17,7 +17,7 @@ from auto_alpha.execution.settlement.engine import (
     write_fee_tax_report,
     write_settlement_report,
 )
-from auto_alpha.execution.settlement.engine_lots import apply_buy_fill_to_lots
+from auto_alpha.execution.settlement.engine import apply_buy_fill_to_lots
 
 
 def _write_calendar(data_dir):

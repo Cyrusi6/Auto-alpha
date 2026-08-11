@@ -9,10 +9,10 @@ from typing import Any, Mapping, Sequence
 from auto_alpha.data.ingestion.pipeline.ashare.providers.tushare_client import parse_tushare_response_payload
 from auto_alpha.data.ingestion.pipeline.ashare.request_identity import TushareRequestIdentity
 from auto_alpha.platform.artifacts.storage import canonical_hash, read_json, sha256_file
-from auto_alpha.platform.network_authority.journal import DurableHashJournal
-from auto_alpha.platform.network_authority.application import apply_accepted_response, production_context_from_parent
-from auto_alpha.platform.network_authority.authority import publish_candidate_checkpoint, validate_task055j_parent
-from auto_alpha.platform.network_authority.broker import (
+from auto_alpha.platform.governance.network.journal import DurableHashJournal
+from auto_alpha.platform.governance.network.application import apply_accepted_response, production_context_from_parent
+from auto_alpha.platform.governance.network.authority import publish_candidate_checkpoint, validate_task055j_parent
+from auto_alpha.platform.governance.network.broker import (
     AcceptedResponse,
     publish_attempt_reservation,
     publish_canary_acceptance,
@@ -21,15 +21,15 @@ from auto_alpha.platform.network_authority.broker import (
     request_from_checkpoint,
     load_accepted_response,
 )
-from auto_alpha.platform.network_authority.contracts import APPLICATION_STAGES, CANARY
-from auto_alpha.platform.network_authority.independent import independently_verify_application_replay
-from auto_alpha.platform.network_authority.rehearsal import (
+from auto_alpha.platform.governance.network.contracts import APPLICATION_STAGES, CANARY
+from auto_alpha.platform.governance.network.independent import independently_verify_application_replay
+from auto_alpha.platform.governance.network.rehearsal import (
     independently_verify_rehearsal,
     publish_rehearsal_report,
     validate_rehearsal,
 )
-from auto_alpha.platform.network_authority.signing import EphemeralReceiptSigner
-from auto_alpha.platform.network_authority.stage_machine import (
+from auto_alpha.platform.governance.network.signing import EphemeralReceiptSigner
+from auto_alpha.platform.governance.network.stage_machine import (
     ApplicationStageMachine,
     NativeStageResult,
     StageDefinition,

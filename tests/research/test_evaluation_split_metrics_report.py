@@ -2,13 +2,13 @@ import json
 
 import torch
 
-from auto_alpha.research.discovery.evaluation import (
+from auto_alpha.research.search.evaluation import (
     build_factor_report,
     evaluate_by_splits,
     split_trade_dates,
     write_factor_report,
 )
-from auto_alpha.research.formulas.runtime_backtest import AShareFactorEvaluator
+from auto_alpha.research.formulas.backtest import AShareFactorEvaluator
 
 
 def test_split_trade_dates_three_dates_is_one_each():

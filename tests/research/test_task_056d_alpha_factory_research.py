@@ -6,15 +6,15 @@ import json
 import pytest
 import torch
 
-from auto_alpha.research.discovery.factory_full_research import run_full_research
-from auto_alpha.research.discovery.factory_models import AlphaCandidateRecord
-from auto_alpha.research.discovery.factory_proxy_eval import run_proxy_eval
-from auto_alpha.research.discovery.factory_research_policy import load_alpha_research_policy
-from auto_alpha.research.discovery.factory_scoring import score_candidates
-from auto_alpha.research.discovery.factory_trial_ledger import write_trial_ledger
-from auto_alpha.research.discovery.evaluation import ObjectiveSpec, normalize_objective_rows
+from auto_alpha.research.search.evaluation import run_full_research
+from auto_alpha.research.search.models import AlphaCandidateRecord
+from auto_alpha.research.search.evaluation import run_proxy_eval
+from auto_alpha.research.search.models import load_alpha_research_policy
+from auto_alpha.research.search.evaluation import score_candidates
+from auto_alpha.research.search.evaluation import write_trial_ledger
+from auto_alpha.research.search.evaluation import ObjectiveSpec, normalize_objective_rows
 from auto_alpha.research.factors.store import has_positive_oos_evidence
-from auto_alpha.research.formulas.runtime_backtest import AShareFactorEvaluator
+from auto_alpha.research.formulas.backtest import AShareFactorEvaluator
 from auto_alpha.platform.observability.monitoring.checks import check_alpha_factory_campaign
 
 
@@ -125,7 +125,7 @@ def test_cohort_normalization_is_dimensionless_and_tie_stable():
 
 
 def test_proxy_records_neutralized_metrics_universe_consistency_and_policy_lineage(monkeypatch):
-    monkeypatch.setattr("auto_alpha.research.discovery.factory_proxy_eval.StackVM", _IdentityVM)
+    monkeypatch.setattr("auto_alpha.research.search.evaluation.StackVM", _IdentityVM)
     loader = _ResearchLoader()
     policy = replace(
         load_alpha_research_policy("alpha_factory_two_stage_smoke_v1"),
@@ -151,7 +151,7 @@ def test_proxy_records_neutralized_metrics_universe_consistency_and_policy_linea
 
 
 def test_full_research_uses_lookback_plus_horizon_and_proper_trial_correction(monkeypatch):
-    monkeypatch.setattr("auto_alpha.research.discovery.factory_full_research.StackVM", _IdentityVM)
+    monkeypatch.setattr("auto_alpha.research.search.evaluation.StackVM", _IdentityVM)
     loader = _ResearchLoader()
     policy = load_alpha_research_policy("alpha_factory_two_stage_smoke_v1")
     candidate = _candidate(lookback=3)
@@ -179,7 +179,7 @@ def test_full_research_uses_lookback_plus_horizon_and_proper_trial_correction(mo
 
 
 def test_negative_oos_evidence_never_becomes_validation_candidate(monkeypatch):
-    monkeypatch.setattr("auto_alpha.research.discovery.factory_full_research.StackVM", _IdentityVM)
+    monkeypatch.setattr("auto_alpha.research.search.evaluation.StackVM", _IdentityVM)
     rows, _ = run_full_research(
         [_candidate()],
         _ResearchLoader(inverse_target=True),

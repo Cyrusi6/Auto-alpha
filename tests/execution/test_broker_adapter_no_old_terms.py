@@ -26,15 +26,15 @@ FORBIDDEN = [
 
 def test_broker_adapter_and_modified_execution_paths_have_no_old_terms():
     roots = [
-        Path("src/auto_alpha/execution/broker/adapter"),
-        Path("src/auto_alpha/execution/operations/daily"),
-        Path("src/auto_alpha/execution/trading/paper"),
+        Path("src/auto_alpha/execution/broker/adapter.py"),
+        Path("src/auto_alpha/execution/trading/daily.py"),
+        Path("src/auto_alpha/execution/trading/paper.py"),
         Path("src/auto_alpha/platform/observability/monitoring"),
         Path("src/auto_alpha/platform/observability/dashboard"),
     ]
     files = []
     for root in roots:
-        files.extend(path for path in root.rglob("*.py") if path.is_file())
+        files.extend([root] if root.is_file() else (path for path in root.rglob("*.py") if path.is_file()))
     for path in files:
         content = path.read_text(encoding="utf-8").lower()
         for term in FORBIDDEN:

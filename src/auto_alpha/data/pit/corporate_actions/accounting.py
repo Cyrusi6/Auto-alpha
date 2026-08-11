@@ -6,10 +6,10 @@ import math
 from dataclasses import replace
 from typing import Any, Sequence
 
-from auto_alpha.execution.trading.paper_models import PaperAccountState
-from auto_alpha.execution.trading.paper_models import PaperCashLedgerEntry
-from auto_alpha.execution.trading.paper_models import PaperCorporateActionLedgerEntry
-from auto_alpha.execution.trading.paper_models import PaperPosition
+from auto_alpha.execution.trading.paper import PaperAccountState
+from auto_alpha.execution.trading.paper import PaperCashLedgerEntry
+from auto_alpha.execution.trading.paper import PaperCorporateActionLedgerEntry
+from auto_alpha.execution.trading.paper import PaperPosition
 
 from .models import CorporateActionApplication, CorporateActionEvent
 from .schedule import eligible_events_for_account

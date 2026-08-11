@@ -1,8 +1,8 @@
 import json
 
 from auto_alpha.platform.artifacts.schema.validator import validate_artifact
-from auto_alpha.execution.settlement import compliance_run_compliance as run_compliance
-from auto_alpha.execution.settlement.compliance_secret_scan import scan_artifacts_for_secrets
+from auto_alpha.execution.settlement import compliance as run_compliance
+from auto_alpha.execution.settlement.compliance import scan_artifacts_for_secrets
 
 
 def test_program_trading_compliance_pack_cli_and_schema(tmp_path, capsys):

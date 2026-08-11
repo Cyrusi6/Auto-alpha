@@ -1,6 +1,6 @@
 import json
 
-from auto_alpha.portfolio.simulation.backtest import AShareCostModel, AShareTradingRules
+from auto_alpha.portfolio.simulator.backtest import AShareCostModel, AShareTradingRules
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.execution.trading.engine import ExecutionOrder
 from auto_alpha.execution.trading.plan import (
@@ -11,7 +11,7 @@ from auto_alpha.execution.trading.plan import (
     simulate_child_orders,
     write_execution_plan_report,
 )
-from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
+from auto_alpha.research.formulas.data_loader import AShareDataLoader
 
 
 def _loader(tmp_path):

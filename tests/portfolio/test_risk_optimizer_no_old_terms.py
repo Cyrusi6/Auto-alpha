@@ -4,9 +4,8 @@ from pathlib import Path
 TARGETS = [
     Path("src/auto_alpha/portfolio/risk"),
     Path("src/auto_alpha/portfolio/construction/optimizer.py"),
-    Path("src/auto_alpha/portfolio/simulation/backtest_run_backtest.py"),
-    Path("src/auto_alpha/portfolio/simulation/backtest_simulator.py"),
-    Path("src/auto_alpha/execution/trading/strategy_runner.py"),
+    Path("src/auto_alpha/portfolio/simulator/backtest.py"),
+    Path("src/auto_alpha/execution/trading/strategy.py"),
 ]
 
 FORBIDDEN_TERMS = [

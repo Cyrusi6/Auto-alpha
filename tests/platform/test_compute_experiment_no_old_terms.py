@@ -3,10 +3,8 @@ from pathlib import Path
 
 TARGETS = [
     Path("src/auto_alpha/platform/compute/scheduler"),
-    Path("src/auto_alpha/research/discovery/orchestrator"),
-    Path("src/auto_alpha/research/formulas/batch_sharding.py"),
-    Path("src/auto_alpha/research/formulas/batch_merge.py"),
-    Path("src/auto_alpha/research/discovery/benchmark/runner.py"),
+    Path("src/auto_alpha/research/search/workflow.py"),
+    Path("src/auto_alpha/research/formulas/evaluator.py"),
 ]
 
 FORBIDDEN = [

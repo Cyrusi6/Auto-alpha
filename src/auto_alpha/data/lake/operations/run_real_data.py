@@ -16,7 +16,7 @@ from .profiles import get_real_data_profile, load_profile_json, profile_with_ove
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run governed real-data auto_alpha.execution.operations.daily.")
+    parser = argparse.ArgumentParser(description="Run governed real-data auto_alpha.execution.trading.daily.")
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("readiness", "run", "resume", "report", "smoke"):
         cmd = sub.add_parser(name)

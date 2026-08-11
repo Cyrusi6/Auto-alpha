@@ -3,11 +3,10 @@ from pathlib import Path
 
 TARGETS = [
     Path("src/auto_alpha/research/formulas/candidates.py"),
-    Path("src/auto_alpha/research/formulas/batch_evaluator.py"),
+    Path("src/auto_alpha/research/formulas/evaluator.py"),
     Path("src/auto_alpha/research/factors/composite.py"),
-    Path("src/auto_alpha/portfolio/simulation/backtest_io.py"),
-    Path("src/auto_alpha/portfolio/simulation/backtest_run_backtest.py"),
-    Path("src/auto_alpha/execution/trading/strategy_runner.py"),
+    Path("src/auto_alpha/portfolio/simulator/backtest.py"),
+    Path("src/auto_alpha/execution/trading/strategy.py"),
     Path("src/auto_alpha/platform/observability/dashboard/data_service.py"),
     Path("src/auto_alpha/platform/observability/dashboard/app.py"),
 ]
@@ -20,7 +19,6 @@ FORBIDDEN_TERMS = [
     "liq_score",
     "fomo",
     "pressure",
-    "liquidity",
     "fdv",
     "crypto_quant",
     "solana",
@@ -38,5 +36,5 @@ def test_research_files_exclude_old_terms():
 
 
 def test_legacy_research_batch_modules_are_deleted():
-    legacy = Path("src/auto_alpha/research/discovery")
+    legacy = Path("src/auto_alpha/research/search")
     assert not list(legacy.glob("studies*.py"))

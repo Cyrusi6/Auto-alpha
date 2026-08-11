@@ -19,12 +19,12 @@ def test_portfolio_governance_modules_do_not_reintroduce_old_business_terms():
         "liquidity",
     ]
     roots = [
-        Path("src/auto_alpha/portfolio/construction/lab"),
-        Path("src/auto_alpha/portfolio/construction/certification"),
+        Path("src/auto_alpha/portfolio/construction/lab.py"),
+        Path("src/auto_alpha/portfolio/construction/certification.py"),
     ]
     offenders = []
     for root in roots:
-        for path in root.rglob("*.py"):
+        for path in ([root] if root.is_file() else root.rglob("*.py")):
             text = path.read_text(encoding="utf-8").lower()
             for term in terms:
                 if term in text:

@@ -122,6 +122,11 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
     "artifact_catalog": _definition("artifact_catalog", ["suite_name", "created_at", "entries"], ["artifact_catalog.json"]),
     "promotion_decision": _definition("promotion_decision", [], ["promotion_decision.json"]),
     "data_source_smoke_report": _definition("data_source_smoke_report", ["provider", "status", "datasets"], ["data_source_smoke_report.json"]),
+    "ashare_data_quality_report": _definition(
+        "ashare_data_quality_report",
+        ["generated_at", "datasets", "total_errors", "total_warnings", "has_errors"],
+        ["quality_report.json"],
+    ),
     "provider_probe": _definition("provider_probe", ["probes"], ["provider_probe.json"]),
     "field_coverage": _definition("field_coverage", ["datasets"], ["field_coverage.json"]),
     "audit_summary": _definition("audit_summary", [], ["audit_summary.json"]),

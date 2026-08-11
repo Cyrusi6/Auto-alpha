@@ -3,10 +3,10 @@ from pathlib import Path
 
 def test_validation_and_certification_modules_do_not_reintroduce_old_business_terms():
     roots = [
-        Path("src/auto_alpha/validation/lab/engine"),
-        Path("src/auto_alpha/validation/certification/factors"),
-        Path("src/auto_alpha/research/discovery/suite"),
-        Path("src/auto_alpha/research/factors/lifecycle"),
+        Path("src/auto_alpha/validation/walk_forward"),
+        Path("src/auto_alpha/validation/certification"),
+        Path("src/auto_alpha/research/search"),
+        Path("src/auto_alpha/research/factors"),
         Path("src/auto_alpha/platform/observability/monitoring"),
     ]
     terms = [

@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-from auto_alpha.platform.network_authority.verifier import (
+from auto_alpha.platform.governance.network.verifier import (
     Task055KVerifierError,
     verify_candidate_semantics,
 )

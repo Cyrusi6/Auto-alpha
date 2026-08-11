@@ -2,15 +2,14 @@ from pathlib import Path
 
 
 MODEL_CORE_FILES = [
-    Path("src/auto_alpha/research/formulas/runtime_config.py"),
-    Path("src/auto_alpha/research/formulas/runtime_vocab.py"),
-    Path("src/auto_alpha/research/formulas/runtime_ops.py"),
-    Path("src/auto_alpha/research/formulas/runtime_vm.py"),
-    Path("src/auto_alpha/research/formulas/runtime_factors.py"),
-    Path("src/auto_alpha/research/formulas/runtime_data_loader.py"),
-    Path("src/auto_alpha/research/formulas/runtime_backtest.py"),
-    Path("src/auto_alpha/research/formulas/runtime_engine.py"),
-    Path("src/auto_alpha/research/formulas/runtime_alphagpt.py"),
+    Path("src/auto_alpha/research/formulas/semantics.py"),
+    Path("src/auto_alpha/research/formulas/operators.py"),
+    Path("src/auto_alpha/research/formulas/vm.py"),
+    Path("src/auto_alpha/research/formulas/factors.py"),
+    Path("src/auto_alpha/research/formulas/data_loader.py"),
+    Path("src/auto_alpha/research/formulas/backtest.py"),
+    Path("src/auto_alpha/research/formulas/engine.py"),
+    Path("src/auto_alpha/research/formulas/alphagpt.py"),
 ]
 
 FORBIDDEN_TERMS = [

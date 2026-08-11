@@ -1,6 +1,6 @@
 import json
 
-from auto_alpha.portfolio.simulation.capacity import (
+from auto_alpha.portfolio.simulator.capacity import (
     CapacityConfig,
     estimate_impact_cost,
     estimate_portfolio_capacity,
@@ -10,7 +10,7 @@ from auto_alpha.portfolio.simulation.capacity import (
 )
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.execution.trading.engine import ExecutionOrder
-from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
+from auto_alpha.research.formulas.data_loader import AShareDataLoader
 
 
 def _loader(tmp_path):

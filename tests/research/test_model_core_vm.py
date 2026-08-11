@@ -1,7 +1,7 @@
 import torch
 
-from auto_alpha.research.formulas.runtime_vm import StackVM
-from auto_alpha.research.formulas.runtime_vocab import FORMULA_VOCAB
+from auto_alpha.research.formulas.vm import StackVM
+from auto_alpha.research.formulas.semantics import FORMULA_VOCAB
 
 
 def test_single_feature_token_returns_feature_slice():

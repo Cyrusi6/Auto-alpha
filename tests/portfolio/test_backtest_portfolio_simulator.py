@@ -3,11 +3,11 @@ import math
 
 import torch
 
-from auto_alpha.portfolio.simulation.backtest import AShareBacktestSimulator, AShareTradingRules, factor_values_to_matrix, select_factor_id
+from auto_alpha.portfolio.simulator.backtest import AShareBacktestSimulator, AShareTradingRules, factor_values_to_matrix, select_factor_id
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.research.factors.store import LocalFactorStore
-from auto_alpha.research.formulas import runtime_engine as engine
-from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
+from auto_alpha.research.formulas import engine
+from auto_alpha.research.formulas.data_loader import AShareDataLoader
 
 
 def prepare_registered_factor(tmp_path):

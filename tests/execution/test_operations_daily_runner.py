@@ -3,10 +3,10 @@ import json
 from auto_alpha.platform.governance.approval import LocalApprovalStore
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.research.factors.store import FactorRecord, LocalFactorStore, stable_formula_hash
-from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
+from auto_alpha.research.formulas.data_loader import AShareDataLoader
 from auto_alpha.research.factors.registry import LocalModelRegistry
-from auto_alpha.execution.operations.daily import ProductionDailyRunner
-from auto_alpha.execution.operations import daily_run_daily as run_daily
+from auto_alpha.execution.trading.daily import ProductionDailyRunner
+from auto_alpha.execution.trading import daily as run_daily
 from auto_alpha.execution.trading.paper import LocalPaperAccount
 from auto_alpha.execution.broker.statements import import_statement, synthesize_statement_from_internal
 

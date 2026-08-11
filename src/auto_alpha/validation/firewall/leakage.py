@@ -10,8 +10,8 @@ from auto_alpha.data.pit.corporate_actions.normalizer import normalize_corporate
 from auto_alpha.data.pit.corporate_actions.report import read_jsonl
 from auto_alpha.data.pit.engine.security_master import load_active_security_mask
 from auto_alpha.research.factors.store import LocalFactorStore
-from auto_alpha.research.formulas.runtime_vm import StackVM
-from auto_alpha.research.formulas.runtime_vocab import FORMULA_VOCAB
+from auto_alpha.research.formulas.vm import StackVM
+from auto_alpha.research.formulas.semantics import FORMULA_VOCAB
 from auto_alpha.validation.firewall.leakage_models import (
     BacktestLeakageResult,
     CorporateActionLeakageResult,

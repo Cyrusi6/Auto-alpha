@@ -3,10 +3,10 @@ import json
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.data.ingestion.pipeline.ashare.storage import LocalAshareStorage
 from auto_alpha.research.factors.store import LocalFactorStore
-from auto_alpha.research.formulas.search_models import FormulaSearchConfig
-from auto_alpha.research.formulas.search_search import FormulaSearchRunner
-from auto_alpha.data.pit.universe.builder import build_universe_from_storage
-from auto_alpha.data.pit.universe.models import UniverseBuildConfig
+from auto_alpha.research.search.formulas import FormulaSearchConfig
+from auto_alpha.research.search.formulas import FormulaSearchRunner
+from auto_alpha.data.universe.builder import build_universe_from_storage
+from auto_alpha.data.universe.models import UniverseBuildConfig
 
 
 def _prepare_data(tmp_path):

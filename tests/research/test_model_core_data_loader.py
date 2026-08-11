@@ -3,8 +3,8 @@ import json
 import torch
 
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager, LocalAshareStorage
-from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
-from auto_alpha.data.pit.universe import UniverseBuildConfig, build_universe_from_storage
+from auto_alpha.research.formulas.data_loader import AShareDataLoader
+from auto_alpha.data.universe import UniverseBuildConfig, build_universe_from_storage
 
 
 def write_sample_data(data_dir):

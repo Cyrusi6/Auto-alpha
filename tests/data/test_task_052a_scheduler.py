@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from auto_alpha.platform.compute.scheduler import ComputeDeviceRecord, ComputeDeviceType, ComputeResourceSnapshot
-from auto_alpha.validation.lab.campaigns_ingest import ingest_candidate_pool
-from auto_alpha.validation.lab.campaigns_scheduler import run_validation_shards
+from auto_alpha.validation.walk_forward.campaigns_ingest import ingest_candidate_pool
+from auto_alpha.validation.walk_forward.campaigns_scheduler import run_validation_shards
 
 
 def _prepare_campaign(tmp_path: Path, candidate_count: int = 20):
@@ -141,7 +141,7 @@ def test_task052a_gates_readiness_and_exact_four_by_five_before_scheduler(tmp_pa
             nonlocal scheduler_created
             scheduler_created = True
 
-    monkeypatch.setattr("auto_alpha.validation.lab.campaigns_scheduler.LocalComputeScheduler", ForbiddenScheduler)
+    monkeypatch.setattr("auto_alpha.validation.walk_forward.campaigns_scheduler.LocalComputeScheduler", ForbiddenScheduler)
     with pytest.raises(RuntimeError, match="exactly 4 shards x 5"):
         run_validation_shards(**_strict_run_kwargs(tmp_path, store_dir, strict))
     assert scheduler_created is False
@@ -157,7 +157,7 @@ def test_task052a_gates_readiness_and_exact_four_by_five_before_scheduler(tmp_pa
 
 def test_task052a_first_run_resume_and_stale_history_rejection(tmp_path, monkeypatch):
     store_dir, strict = _prepare_campaign(tmp_path)
-    monkeypatch.setattr("auto_alpha.validation.lab.campaigns_scheduler.probe_compute_resources", lambda: _snapshot())
+    monkeypatch.setattr("auto_alpha.validation.walk_forward.campaigns_scheduler.probe_compute_resources", lambda: _snapshot())
     submitted_batches = []
 
     class FakeReport:
@@ -235,7 +235,7 @@ def test_task052a_first_run_resume_and_stale_history_rejection(tmp_path, monkeyp
             self.store.heartbeats_path.write_text("".join(json.dumps(row) + "\n" for row in heartbeat_rows), encoding="utf-8")
             return FakeReport()
 
-    monkeypatch.setattr("auto_alpha.validation.lab.campaigns_scheduler.LocalComputeScheduler", FakeScheduler)
+    monkeypatch.setattr("auto_alpha.validation.walk_forward.campaigns_scheduler.LocalComputeScheduler", FakeScheduler)
     kwargs = _strict_run_kwargs(tmp_path, store_dir, strict)
     first = run_validation_shards(**kwargs)
     assert first["execution_mode"] == "first_run"
@@ -249,7 +249,7 @@ def test_task052a_first_run_resume_and_stale_history_rejection(tmp_path, monkeyp
         def __init__(self, _config):
             raise AssertionError("valid 4/4 resume must not create a scheduler")
 
-    monkeypatch.setattr("auto_alpha.validation.lab.campaigns_scheduler.LocalComputeScheduler", ForbiddenScheduler)
+    monkeypatch.setattr("auto_alpha.validation.walk_forward.campaigns_scheduler.LocalComputeScheduler", ForbiddenScheduler)
     resumed = run_validation_shards(**kwargs, resume=True)
     assert resumed["execution_mode"] == "resume_4_of_4"
     assert resumed["immutable_resume_count"] == 4
@@ -258,7 +258,7 @@ def test_task052a_first_run_resume_and_stale_history_rejection(tmp_path, monkeyp
     report = json.loads(report_path.read_text(encoding="utf-8"))
     report["tampered"] = True
     report_path.write_text(json.dumps(report), encoding="utf-8")
-    monkeypatch.setattr("auto_alpha.validation.lab.campaigns_scheduler.LocalComputeScheduler", FakeScheduler)
+    monkeypatch.setattr("auto_alpha.validation.walk_forward.campaigns_scheduler.LocalComputeScheduler", FakeScheduler)
     fresh = run_validation_shards(**kwargs, resume=True)
     assert fresh["execution_mode"] == "first_run"
     assert fresh["stale_history_rejected"] is True
@@ -295,7 +295,7 @@ def main(argv=None):
         [
             sys.executable,
             "-m",
-            "auto_alpha.validation.lab.campaigns_replay_worker",
+            "auto_alpha.validation.walk_forward.campaigns_replay_worker",
             "--entrypoint",
             "mini_validation",
             "--telemetry-path",

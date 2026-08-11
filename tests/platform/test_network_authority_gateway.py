@@ -7,11 +7,11 @@ from pathlib import Path
 import pytest
 
 from auto_alpha.platform.artifacts.storage import canonical_hash, read_json
-from auto_alpha.platform.network_authority.journal import DurableHashJournal
-from auto_alpha.platform.network_authority import broker, gateway
-from auto_alpha.platform.network_authority.authority import normalize_ordered_keys, publish_candidate_checkpoint
-from auto_alpha.platform.network_authority.broker import request_from_checkpoint
-from auto_alpha.platform.network_authority.contracts import CANARY
+from auto_alpha.platform.governance.network.journal import DurableHashJournal
+from auto_alpha.platform.governance.network import broker, gateway
+from auto_alpha.platform.governance.network.authority import normalize_ordered_keys, publish_candidate_checkpoint
+from auto_alpha.platform.governance.network.broker import request_from_checkpoint
+from auto_alpha.platform.governance.network.contracts import CANARY
 
 
 def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

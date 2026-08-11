@@ -1,4 +1,4 @@
-from auto_alpha.portfolio.simulation.backtest import AShareCostModel, AShareTradingRules
+from auto_alpha.portfolio.simulator.backtest import AShareCostModel, AShareTradingRules
 
 
 def test_cost_model_buy_sell_and_zero_value():

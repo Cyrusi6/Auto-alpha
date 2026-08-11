@@ -6,7 +6,7 @@ import torch
 
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.data.matrix.store import build_matrix_cache
-from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
+from auto_alpha.research.formulas.data_loader import AShareDataLoader
 
 
 def test_data_loader_uses_matrix_cache_when_requested(tmp_path):

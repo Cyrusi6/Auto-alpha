@@ -5,7 +5,7 @@ from auto_alpha.research.factors.store import LocalFactorStore
 from auto_alpha.validation.firewall.leakage import audit_factor_values
 from auto_alpha.validation.firewall.leakage_run_audit import main as leakage_main
 from auto_alpha.validation.firewall.leakage import scan_formula_leakage
-from auto_alpha.research.formulas import runtime_engine as engine
+from auto_alpha.research.formulas import engine
 
 
 def _prepare_factor_store(tmp_path):

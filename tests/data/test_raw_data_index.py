@@ -9,7 +9,7 @@ from auto_alpha.platform.artifacts.schema.run_validate import main as schema_mai
 from auto_alpha.platform.observability.dashboard.config import DashboardConfig
 from auto_alpha.platform.observability.dashboard.data_service import AshareDashboardService
 from auto_alpha.research.features.factory import FEATURE_SET_V3, build_feature_set_manifest
-from auto_alpha.research.features.factory_coverage import build_feature_coverage_report
+from auto_alpha.research.features.quality import build_feature_coverage_report
 from auto_alpha.data.matrix.refresh.planner import build_matrix_refresh_plan
 from auto_alpha.platform.observability.monitoring.checks import check_raw_data_index
 from auto_alpha.data.ingestion.repair.post_download_planner import build_post_download_plan

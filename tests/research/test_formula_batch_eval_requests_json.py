@@ -4,8 +4,8 @@ import json
 import pytest
 
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
-from auto_alpha.research.formulas.batch import requests_from_candidates
-from auto_alpha.research.formulas import batch_run_batch_eval as run_batch_eval
+from auto_alpha.research.formulas.evaluator import requests_from_candidates
+from auto_alpha.research.formulas import evaluator as run_batch_eval
 from auto_alpha.research.formulas.candidates import default_candidates
 
 

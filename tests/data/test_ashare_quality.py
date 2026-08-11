@@ -140,4 +140,6 @@ def test_write_quality_report_writes_json(tmp_path):
     path = write_quality_report(report, tmp_path / "quality_report.json")
 
     payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["artifact_type"] == "ashare_data_quality_report"
+    assert payload["producer"] == "ashare_data_ingestion"
     assert payload["datasets"][0]["dataset"] == "securities"

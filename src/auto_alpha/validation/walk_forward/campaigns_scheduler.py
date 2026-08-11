@@ -1,0 +1,1000 @@
+"""Shard planning and validation_lab execution for validation campaigns."""
+
+from __future__ import annotations
+
+import json
+import contextlib
+import io
+import hashlib
+import sys
+import uuid
+from pathlib import Path
+from typing import Any
+
+from auto_alpha._paths import module_file
+from auto_alpha.platform.artifacts.schema.writer import write_jsonl_artifact
+from auto_alpha.platform.artifacts.schema.writer import write_json_artifact
+from auto_alpha.platform.compute.scheduler.models import ComputeDeviceType, ComputeJobKind, ComputeJobSpec, ComputeSchedulerConfig
+from auto_alpha.platform.compute.scheduler.gpu_probe import probe_compute_resources
+from auto_alpha.platform.compute.scheduler.scheduler import LocalComputeScheduler
+from auto_alpha.validation.walk_forward.engine_policy import load_validation_policy
+from auto_alpha.validation.walk_forward.engine_run_validation import main as validation_lab_main
+
+from auto_alpha.validation.walk_forward.campaigns_models import ValidationShardRecord
+from auto_alpha.validation.walk_forward.campaigns_registry import LocalValidationCampaignStore
+from auto_alpha.validation.walk_forward.campaigns_replay_evidence import build_input_manifest
+from auto_alpha.validation.walk_forward.campaigns_replay_evidence import compare_replay_evidence
+from auto_alpha.validation.walk_forward.campaigns_replay_evidence import publish_replay_bundle
+from auto_alpha.validation.walk_forward.campaigns_replay_evidence import read_candidate_ids
+from auto_alpha.validation.walk_forward.campaigns_replay_evidence import validate_resume_evidence
+from auto_alpha.validation.walk_forward.campaigns_replay_evidence import validate_terminal_outputs
+from auto_alpha.validation.walk_forward.campaigns_replay_evidence import write_terminal_evidence
+
+
+_FINGERPRINT_FILE_CACHE: dict[tuple[str, int, int], str] = {}
+
+
+def plan_validation_shards(
+    store_dir: str | Path,
+    output_dir: str | Path,
+    *,
+    validation_campaign_id: str,
+    shard_count: int = 1,
+    max_candidates_per_shard: int | None = None,
+) -> list[ValidationShardRecord]:
+    store = LocalValidationCampaignStore(store_dir)
+    candidates = store.load_candidates()
+    if max_candidates_per_shard and max_candidates_per_shard > 0:
+        shard_count = max(shard_count, (len(candidates) + max_candidates_per_shard - 1) // max_candidates_per_shard)
+    shard_count = max(1, int(shard_count or 1))
+    shards: list[ValidationShardRecord] = []
+    for idx in range(shard_count):
+        rows = candidates[idx::shard_count]
+        shard_dir = Path(output_dir) / "validation_shards" / f"shard_{idx:04d}"
+        shard_dir.mkdir(parents=True, exist_ok=True)
+        pool_path = shard_dir / "candidate_pool.jsonl"
+        write_jsonl_artifact(pool_path, [_candidate_to_pool_row(row) for row in rows], "alpha_validation_candidate_pool", "validation_campaign_store")
+        shards.append(
+            ValidationShardRecord(
+                shard_id=f"{validation_campaign_id}_shard_{idx:04d}",
+                validation_campaign_id=validation_campaign_id,
+                shard_index=idx,
+                shard_count=shard_count,
+                candidate_count=len(rows),
+                output_dir=str(shard_dir),
+                status="planned",
+                metadata={"candidate_pool_path": str(pool_path)},
+            )
+        )
+    store.write_shards(shards)
+    return shards
+
+
+def run_validation_shards(
+    store_dir: str | Path,
+    *,
+    data_dir: str,
+    factor_store_dir: str,
+    output_dir: str | Path,
+    validation_campaign_id: str,
+    shard_count: int = 1,
+    max_candidates_per_shard: int | None = None,
+    split_method: str = "rolling_walk_forward",
+    data_freeze_dir: str | None = None,
+    matrix_cache_dir: str | None = None,
+    feature_manifest_path: str | None = None,
+    feature_tensor_path: str | None = None,
+    feature_validity_tensor_path: str | None = None,
+    snapshot_proof_manifest_path: str | None = None,
+    campaign_manifest_path: str | None = None,
+    promotion_policy_path: str | None = None,
+    promotion_allowlist_path: str | None = None,
+    promotion_denylist_path: str | None = None,
+    device: str = "cpu",
+    validation_policy: str = "real_long_history_engineering_robustness_v2",
+    train_size: int = 756,
+    validation_size: int = 126,
+    test_size: int = 126,
+    step_size: int = 126,
+    embargo_size: int = 0,
+    label_horizon: int = 1,
+    research_end_date: str | None = None,
+    holdout_start_date: str | None = None,
+    use_compute_scheduler: bool = False,
+    compute_state_dir: str | None = None,
+    run_multiple_testing: bool = False,
+    run_overfit_risk: bool = False,
+    run_placebo: bool = False,
+    placebo_trials: int = 12,
+    run_regime: bool = False,
+    run_sensitivity: bool = False,
+    run_stress_backtest: bool = False,
+    resume: bool = False,
+    dry_run: bool = False,
+    task_052a_replay: bool = False,
+    task_053a_replay: bool = False,
+    task_054a_replay: bool = False,
+    task_054c_replay: bool = False,
+    pre_gpu_seal_path: str | None = None,
+    engineering_bundle_manifest_path: str | None = None,
+    replay_readiness_path: str | None = None,
+    replay_generation_label: str = "primary",
+    replay_reference_evidence_path: str | None = None,
+    force_uncached_replay: bool = False,
+) -> dict[str, Any]:
+    policy = load_validation_policy(validation_policy)
+    policy.validate_window_parameters(train_size, validation_size, test_size, step_size)
+    if task_054a_replay or task_054c_replay:
+        if validation_policy != "task054_production_engineering_v1":
+            raise RuntimeError("task054_requires_locked_production_policy")
+        if shard_count != 4 or max_candidates_per_shard != 5:
+            raise RuntimeError("task054_requires_exact_four_by_five_shards")
+        if label_horizon != 2 or research_end_date != "20240530":
+            raise RuntimeError("task054_research_contract_mismatch")
+        if not str(device).startswith("cuda"):
+            raise RuntimeError("task054_requires_cuda")
+    store = LocalValidationCampaignStore(store_dir)
+    shards = plan_validation_shards(
+        store_dir,
+        output_dir,
+        validation_campaign_id=validation_campaign_id,
+        shard_count=shard_count,
+        max_candidates_per_shard=max_candidates_per_shard,
+    )
+    if dry_run:
+        return {"status": "planned", "shard_count": len(shards), "paths": store.paths()}
+
+    if task_052a_replay or task_053a_replay or task_054a_replay or task_054c_replay:
+        return _run_task052a_replay(
+            store,
+            shards,
+            data_dir=data_dir,
+            factor_store_dir=factor_store_dir,
+            output_dir=output_dir,
+            validation_campaign_id=validation_campaign_id,
+            compute_state_dir=compute_state_dir,
+            replay_readiness_path=replay_readiness_path,
+            resume=resume,
+            task_053a_replay=task_053a_replay or task_054a_replay or task_054c_replay,
+            task_054c_replay=task_054c_replay,
+            pre_gpu_seal_path=pre_gpu_seal_path,
+            engineering_bundle_manifest_path=engineering_bundle_manifest_path,
+            replay_generation_label=replay_generation_label,
+            replay_reference_evidence_path=replay_reference_evidence_path,
+            force_uncached_replay=force_uncached_replay,
+            validation_kwargs={
+                "data_dir": data_dir,
+                "factor_store_dir": factor_store_dir,
+                "split_method": split_method,
+                "data_freeze_dir": data_freeze_dir,
+                "matrix_cache_dir": matrix_cache_dir,
+                "feature_manifest_path": feature_manifest_path,
+                "feature_tensor_path": feature_tensor_path,
+                "feature_validity_tensor_path": feature_validity_tensor_path,
+                "snapshot_proof_manifest_path": snapshot_proof_manifest_path,
+                "campaign_manifest_path": campaign_manifest_path,
+                "promotion_policy_path": promotion_policy_path,
+                "promotion_allowlist_path": promotion_allowlist_path,
+                "promotion_denylist_path": promotion_denylist_path,
+                "device": device,
+                "validation_policy": validation_policy,
+                "train_size": train_size,
+                "validation_size": validation_size,
+                "test_size": test_size,
+                "step_size": step_size,
+                "embargo_size": embargo_size,
+                "label_horizon": label_horizon,
+                "research_end_date": research_end_date,
+                "holdout_start_date": holdout_start_date,
+                "run_multiple_testing": run_multiple_testing,
+                "run_overfit_risk": run_overfit_risk,
+                "run_placebo": run_placebo,
+                "placebo_trials": placebo_trials,
+                "run_regime": run_regime,
+                "run_sensitivity": run_sensitivity,
+                "run_stress_backtest": run_stress_backtest,
+                "firewall_attestation_path": pre_gpu_seal_path if task_054c_replay else None,
+                "strict_factor_store": task_054c_replay,
+            },
+        )
+
+    if use_compute_scheduler:
+        if shard_count != 4:
+            raise RuntimeError("formal GPU validation requires exactly four shards")
+        if not compute_state_dir:
+            raise RuntimeError("--compute-state-dir is required with compute scheduler")
+        strict_inputs = {
+            "data_freeze_dir": data_freeze_dir,
+            "matrix_cache_dir": matrix_cache_dir,
+            "feature_manifest_path": feature_manifest_path,
+            "feature_tensor_path": feature_tensor_path,
+            "feature_validity_tensor_path": feature_validity_tensor_path,
+            "snapshot_proof_manifest_path": snapshot_proof_manifest_path,
+            "promotion_policy_path": promotion_policy_path,
+            "promotion_allowlist_path": promotion_allowlist_path,
+            "promotion_denylist_path": promotion_denylist_path,
+        }
+        missing_strict = [name for name, value in strict_inputs.items() if not value or not Path(value).exists()]
+        if missing_strict:
+            raise RuntimeError(f"formal GPU validation strict inputs missing: {','.join(missing_strict)}")
+        jobs: list[ComputeJobSpec] = []
+        immutable_resume_count = 0
+        for shard in shards:
+            argv = _validation_argv(
+                shard,
+                data_dir=data_dir,
+                factor_store_dir=factor_store_dir,
+                split_method=split_method,
+                data_freeze_dir=data_freeze_dir,
+                matrix_cache_dir=matrix_cache_dir,
+                feature_manifest_path=feature_manifest_path,
+                feature_tensor_path=feature_tensor_path,
+                feature_validity_tensor_path=feature_validity_tensor_path,
+                snapshot_proof_manifest_path=snapshot_proof_manifest_path,
+                campaign_manifest_path=campaign_manifest_path,
+                promotion_policy_path=promotion_policy_path,
+                promotion_allowlist_path=promotion_allowlist_path,
+                promotion_denylist_path=promotion_denylist_path,
+                device=device,
+                validation_policy=validation_policy,
+                train_size=train_size,
+                validation_size=validation_size,
+                test_size=test_size,
+                step_size=step_size,
+                embargo_size=embargo_size,
+                label_horizon=label_horizon,
+                research_end_date=research_end_date,
+                holdout_start_date=holdout_start_date,
+                run_multiple_testing=run_multiple_testing,
+                run_overfit_risk=run_overfit_risk,
+                run_placebo=run_placebo,
+                placebo_trials=placebo_trials,
+                run_regime=run_regime,
+                run_sensitivity=run_sensitivity,
+                run_stress_backtest=run_stress_backtest,
+            )
+            fingerprint = _job_fingerprint(argv, shard)
+            marker_path = Path(shard.output_dir) / "immutable_input_fingerprint.json"
+            report_path = Path(shard.output_dir) / "validation_candidate_pool_report.json"
+            if resume and _valid_resume_marker(marker_path, report_path, fingerprint, shard.candidate_count):
+                immutable_resume_count += 1
+                continue
+            jobs.append(
+                ComputeJobSpec(
+                    job_id=f"validation_{shard.shard_index:02d}_{fingerprint[:16]}",
+                    job_kind=ComputeJobKind.SHELL_COMMAND,
+                    command=[sys.executable, "-m", "auto_alpha.validation.walk_forward.engine_run_validation", *argv],
+                    cwd=str(Path.cwd()),
+                    input_paths=[str(shard.metadata["candidate_pool_path"]), *(str(path) for path in [data_freeze_dir, matrix_cache_dir, feature_manifest_path, feature_tensor_path, feature_validity_tensor_path, snapshot_proof_manifest_path] if path)],
+                    output_dir=shard.output_dir,
+                    required_device_type=ComputeDeviceType.CUDA,
+                    gpu_count=1,
+                    max_retries=1,
+                    shard_id=shard.shard_index,
+                    shard_count=shard.shard_count,
+                    data_freeze_dir=data_freeze_dir,
+                    metadata={"immutable_input_fingerprint": fingerprint, "validation_campaign_id": validation_campaign_id},
+                )
+            )
+        if not jobs and immutable_resume_count == len(shards):
+            updated = _collect_shard_results(shards)
+            store.write_shards(updated)
+            return {
+                "status": "success",
+                "shard_count": len(updated),
+                "success_count": sum(row.success_count for row in updated),
+                "failed_count": sum(row.failed_count for row in updated),
+                "immutable_resume_count": immutable_resume_count,
+                "compute_report": _read_existing_compute_report(Path(output_dir) / "compute"),
+                "paths": store.paths(),
+            }
+        scheduler = LocalComputeScheduler(
+            ComputeSchedulerConfig(
+                state_dir=compute_state_dir,
+                output_dir=str(Path(output_dir) / "compute"),
+                max_parallel_cpu_jobs=0,
+                max_parallel_gpu_jobs=4,
+                fail_fast=True,
+                dry_run=dry_run,
+                resume=resume,
+                stale_heartbeat_seconds=300.0,
+            )
+        )
+        previous_run_ids = {str(run.get("run_id")) for run in scheduler.store.read_runs()}
+        scheduler.submit_jobs(jobs)
+        compute_report = scheduler.run()
+        if dry_run:
+            return {"status": "planned", "shard_count": len(shards), "compute_report": compute_report.to_dict(), "paths": store.paths()}
+        updated = _collect_shard_results(shards)
+        submitted_job_ids = {job.job_id for job in jobs}
+        current_runs = [run for run in scheduler.store.read_runs() if run.get("job_id") in submitted_job_ids and str(run.get("run_id")) not in previous_run_ids]
+        current_gpu_successes = sum(
+            run.get("status") == "success" and not run.get("fallback_to_cpu")
+            for run in current_runs
+        )
+        physical_devices = {tuple(run.get("device_indices") or []) for run in current_runs if run.get("status") == "success"}
+        if (
+            len(current_runs) != len(jobs)
+            or current_gpu_successes != len(jobs)
+            or immutable_resume_count + current_gpu_successes != 4
+            or (jobs and len(physical_devices) != len(jobs))
+        ):
+            for shard in updated:
+                if shard.status == "success":
+                    continue
+            store.write_shards(updated)
+            return {"status": "blocked", "blocked_reason": "four GPU shards did not complete without fallback", "compute_report": compute_report.to_dict(), "paths": store.paths()}
+        store.write_shards(updated)
+        fingerprints_by_shard = {int(job.shard_id): str(job.metadata.get("immutable_input_fingerprint")) for job in jobs if job.shard_id is not None}
+        for shard in updated:
+            fingerprint = fingerprints_by_shard.get(shard.shard_index)
+            if shard.status == "success" and fingerprint:
+                _write_resume_marker(Path(shard.output_dir), fingerprint, shard.candidate_count)
+        return {
+            "status": "success" if all(row.status == "success" for row in updated) else "partial",
+            "shard_count": len(updated),
+            "success_count": sum(row.success_count for row in updated),
+            "failed_count": sum(row.failed_count for row in updated),
+            "compute_report": compute_report.to_dict(),
+            "immutable_resume_count": immutable_resume_count,
+            "paths": store.paths(),
+        }
+
+    updated: list[ValidationShardRecord] = []
+    for shard in shards:
+        shard_dir = Path(shard.output_dir)
+        report_path = shard_dir / "validation_candidate_pool_report.json"
+        if resume and report_path.exists():
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+            updated.append(_shard_from_payload(shard, payload, "success"))
+            continue
+        argv = _validation_argv(
+            shard, data_dir=data_dir, factor_store_dir=factor_store_dir, split_method=split_method,
+            data_freeze_dir=data_freeze_dir, matrix_cache_dir=matrix_cache_dir, feature_manifest_path=feature_manifest_path,
+            feature_tensor_path=feature_tensor_path, promotion_policy_path=promotion_policy_path,
+            campaign_manifest_path=campaign_manifest_path,
+            promotion_allowlist_path=promotion_allowlist_path, promotion_denylist_path=promotion_denylist_path,
+            device=device, validation_policy=validation_policy, train_size=train_size, validation_size=validation_size,
+            test_size=test_size, step_size=step_size, embargo_size=embargo_size, label_horizon=label_horizon,
+            research_end_date=research_end_date, holdout_start_date=holdout_start_date,
+            run_multiple_testing=run_multiple_testing, run_overfit_risk=run_overfit_risk, run_placebo=run_placebo,
+            placebo_trials=placebo_trials, run_regime=run_regime, run_sensitivity=run_sensitivity,
+            run_stress_backtest=run_stress_backtest,
+        )
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = validation_lab_main(argv)
+        if code == 0 and report_path.exists():
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+            updated.append(_shard_from_payload(shard, payload, "success"))
+        else:
+            updated.append(
+                ValidationShardRecord(
+                    **{
+                        **shard.to_dict(),
+                        "status": "failed",
+                        "failed_count": shard.candidate_count,
+                        "error": f"validation_lab exit code {code}",
+                    }
+                )
+            )
+    store.write_shards(updated)
+    return {
+        "status": "success" if all(row.status == "success" for row in updated) else "partial",
+        "shard_count": len(updated),
+        "success_count": sum(row.success_count for row in updated),
+        "failed_count": sum(row.failed_count for row in updated),
+        "paths": store.paths(),
+    }
+
+
+def _run_task052a_replay(
+    store: LocalValidationCampaignStore,
+    shards: list[ValidationShardRecord],
+    *,
+    data_dir: str,
+    factor_store_dir: str,
+    output_dir: str | Path,
+    validation_campaign_id: str,
+    compute_state_dir: str | None,
+    replay_readiness_path: str | None,
+    resume: bool,
+    task_053a_replay: bool,
+    task_054c_replay: bool,
+    pre_gpu_seal_path: str | None,
+    engineering_bundle_manifest_path: str | None,
+    replay_generation_label: str,
+    replay_reference_evidence_path: str | None,
+    force_uncached_replay: bool,
+    validation_kwargs: dict[str, Any],
+) -> dict[str, Any]:
+    if len(shards) != 4 or any(shard.shard_count != 4 or shard.candidate_count != 5 for shard in shards):
+        raise RuntimeError("Task 052-A replay requires exactly 4 shards x 5 candidates")
+    candidate_ids_by_shard = {
+        shard.shard_index: read_candidate_ids(shard.metadata["candidate_pool_path"])
+        for shard in shards
+    }
+    all_candidate_ids = [candidate_id for ids in candidate_ids_by_shard.values() for candidate_id in ids]
+    if len(all_candidate_ids) != 20 or len(set(all_candidate_ids)) != 20:
+        raise RuntimeError("Task 052-A replay requires 20 unique candidate IDs")
+    if validation_kwargs.get("device") != "cuda":
+        raise RuntimeError("Task 052-A replay forbids non-CUDA execution")
+    if not compute_state_dir:
+        raise RuntimeError("Task 052-A replay requires compute_state_dir")
+
+    if task_054c_replay:
+        from auto_alpha.validation.firewall.engineering_closure_seal import validate_pre_gpu_seal
+        from auto_alpha.validation.firewall.engineering_closure_bundle import validate_bundle
+        if not pre_gpu_seal_path or not engineering_bundle_manifest_path:
+            raise RuntimeError("task054c_requires_pre_gpu_seal_and_bundle")
+        seal = validate_pre_gpu_seal(pre_gpu_seal_path, bundle_manifest=engineering_bundle_manifest_path)
+        engineering_bundle = validate_bundle(engineering_bundle_manifest_path)
+        expected_store = Path(engineering_bundle["artifact_paths"]["normalized_store_root"]).resolve()
+        if Path(factor_store_dir).resolve() != expected_store:
+            raise RuntimeError("task054c_normalized_factor_store_mismatch")
+        for shard in shards:
+            for row in _read_jsonl(Path(str(shard.metadata["candidate_pool_path"]))):
+                override = str(row.get("factor_store_dir") or "")
+                if override and Path(override).resolve() != expected_store:
+                    raise RuntimeError(f"task054c_candidate_factor_store_override:{row.get('factor_id')}")
+        from auto_alpha.validation.firewall.engineering_closure_research_view import validate_research_projection
+        from auto_alpha.validation.firewall.engineering_closure_validators import sha256_file
+        research_stage = seal["stages"]["research"]
+        projection_manifest = Path(validation_kwargs.get("matrix_cache_dir")).parent / "research_projection_manifest.json"
+        projection = validate_research_projection(projection_manifest)
+        if projection["matrix_content_hash"] != research_stage["baseline_projection_matrix_content_hash"] or projection["tensor_content_hash"] != research_stage["baseline_projection_tensor_content_hash"]:
+            raise RuntimeError("task054c_research_projection_lineage_mismatch")
+        replay_tensor_manifest = json.loads((Path(validation_kwargs.get("feature_tensor_path")).parent / "task_053_v3_tensor_manifest.json").read_text(encoding="utf-8"))
+        freeze_manifest = Path(validation_kwargs.get("data_freeze_dir")) / "task_052a_governed_freeze_manifest.json"
+        if sha256_file(freeze_manifest) != engineering_bundle["freeze_manifest_sha256"]:
+            raise RuntimeError("task054c_freeze_lineage_mismatch")
+        if sha256_file(validation_kwargs.get("feature_manifest_path")) != replay_tensor_manifest["source"]["feature_manifest_sha256"]:
+            raise RuntimeError("task054c_feature_manifest_lineage_mismatch")
+        if sha256_file(validation_kwargs.get("promotion_policy_path")) != engineering_bundle["promotion_policy_sha256"]:
+            raise RuntimeError("task054c_promotion_policy_lineage_mismatch")
+        readiness = {"retrospective_replay_ready": True, "strict_matrix_replay_safe": True, "research_firewall_ready": True, "pre_gpu_seal_hash": seal["seal_hash"]}
+    else:
+        readiness = _load_task052a_readiness(replay_readiness_path, task_053a_replay=task_053a_replay)
+    strict_paths = {
+        "data_dir": data_dir,
+        "factor_store_dir": factor_store_dir,
+        "data_freeze_dir": validation_kwargs.get("data_freeze_dir"),
+        "matrix_cache_dir": validation_kwargs.get("matrix_cache_dir"),
+        "feature_manifest_path": validation_kwargs.get("feature_manifest_path"),
+        "feature_tensor_path": validation_kwargs.get("feature_tensor_path"),
+        "feature_validity_tensor_path": validation_kwargs.get("feature_validity_tensor_path"),
+        "snapshot_proof_manifest_path": validation_kwargs.get("snapshot_proof_manifest_path"),
+        "campaign_manifest_path": validation_kwargs.get("campaign_manifest_path"),
+        "promotion_policy_path": validation_kwargs.get("promotion_policy_path"),
+        "promotion_allowlist_path": validation_kwargs.get("promotion_allowlist_path"),
+        "promotion_denylist_path": validation_kwargs.get("promotion_denylist_path"),
+        "replay_readiness_path": pre_gpu_seal_path if task_054c_replay else replay_readiness_path,
+    }
+    if task_054c_replay:
+        strict_paths.update({
+            "pre_gpu_seal_path": pre_gpu_seal_path,
+            "engineering_bundle_manifest_path": engineering_bundle_manifest_path,
+        })
+    missing = [name for name, value in strict_paths.items() if not value or not Path(str(value)).exists()]
+    if missing:
+        raise RuntimeError(f"Task 052-A replay inputs missing: {','.join(missing)}")
+
+    code_paths = {
+        "scheduler_code": Path(__file__),
+        "worker_code": module_file("auto_alpha.validation.walk_forward.campaigns_replay_worker"),
+        "evidence_code": module_file("auto_alpha.validation.walk_forward.campaigns_replay_evidence"),
+        "validation_code": module_file("auto_alpha.validation.walk_forward.engine_run_validation"),
+        "materializer_code": module_file("auto_alpha.validation.walk_forward.engine_materialization"),
+        "stackvm_code": module_file("auto_alpha.research.formulas.vm"),
+        "operator_code": module_file("auto_alpha.research.formulas.operators"),
+        "operator_validity_code": module_file("auto_alpha.research.formulas.semantics"),
+        "transform_code": module_file("auto_alpha.research.factors.engine"),
+        "feature_validity_code": module_file("auto_alpha.research.features.validity"),
+        "vocab_adapter_code": module_file("auto_alpha.research.features.vocab"),
+    }
+    bundle_inputs = {**strict_paths, **code_paths}
+    replay_bundle = publish_replay_bundle(
+        output_dir,
+        inputs=bundle_inputs,
+        extra={
+            "campaign_id": validation_campaign_id,
+            "candidate_ids": sorted(all_candidate_ids),
+            "candidate_identity": _candidate_identity_rows(shards),
+            "validation_policy": validation_kwargs.get("validation_policy"),
+            "train_size": validation_kwargs.get("train_size"),
+            "validation_size": validation_kwargs.get("validation_size"),
+            "test_size": validation_kwargs.get("test_size"),
+            "step_size": validation_kwargs.get("step_size"),
+            "embargo_size": validation_kwargs.get("embargo_size"),
+            "label_horizon": validation_kwargs.get("label_horizon"),
+            "research_end_date": validation_kwargs.get("research_end_date"),
+            "readiness_engineering_state": _engineering_readiness_state(readiness),
+        },
+    )
+
+    jobs: list[ComputeJobSpec] = []
+    input_manifests: dict[int, dict[str, Any]] = {}
+    resume_checks: dict[int, dict[str, Any]] = {}
+    for shard in shards:
+        argv = _validation_argv(shard, **validation_kwargs)
+        input_manifest = build_input_manifest(
+            [replay_bundle["manifest_path"], shard.metadata["candidate_pool_path"], *code_paths.values()],
+            extra={
+                "campaign_id": validation_campaign_id,
+                "shard_index": shard.shard_index,
+                "shard_count": 4,
+                "candidate_ids": candidate_ids_by_shard[shard.shard_index],
+                "argv": argv,
+                "readiness": readiness,
+                "replay_bundle_hash": replay_bundle["bundle_hash"],
+                "replay_generation_label": replay_generation_label,
+            },
+        )
+        input_manifests[shard.shard_index] = input_manifest
+        valid, reason, evidence = validate_resume_evidence(
+            shard.output_dir,
+            campaign_id=validation_campaign_id,
+            shard_index=shard.shard_index,
+            input_manifest=input_manifest,
+            expected_candidate_ids=candidate_ids_by_shard[shard.shard_index],
+            bundle_hash=replay_bundle["bundle_hash"] if task_053a_replay else None,
+            require_candidate_artifacts=task_053a_replay,
+            require_cuda_formula_evidence=task_053a_replay,
+        )
+        resume_checks[shard.shard_index] = {"valid": valid, "reason": reason, "evidence": evidence}
+
+    valid_resume_count = sum(bool(row["valid"]) for row in resume_checks.values())
+    if resume and valid_resume_count == 4:
+        updated = _collect_shard_results(shards)
+        store.write_shards(updated)
+        evidence_path = _write_task052a_campaign_evidence(
+            output_dir,
+            validation_campaign_id=validation_campaign_id,
+            mode="resume_4_of_4",
+            readiness=readiness,
+            resume_checks=resume_checks,
+            shard_evidence=[resume_checks[index]["evidence"] for index in sorted(resume_checks)],
+            replay_bundle=replay_bundle,
+            generation_label=replay_generation_label,
+        )
+        return {
+            "status": "success",
+            "execution_mode": "resume_4_of_4",
+            "shard_count": 4,
+            "success_count": sum(row.success_count for row in updated),
+            "failed_count": sum(row.failed_count for row in updated),
+            "immutable_resume_count": 4,
+            "stale_history_rejected": False,
+            "task_052a_replay_evidence_path": str(evidence_path),
+            "task_053a_replay_evidence_path": str(evidence_path),
+            "replay_bundle_hash": replay_bundle["bundle_hash"],
+            "paths": store.paths(),
+        }
+
+    stale_rejections = {
+        str(index): row["reason"]
+        for index, row in resume_checks.items()
+        if not row["valid"] and (row["reason"] != "evidence_missing" or valid_resume_count > 0)
+    }
+    snapshot = probe_compute_resources()
+    cuda_devices = [device for device in snapshot.devices if device.device_type == ComputeDeviceType.CUDA]
+    physical_ids = {(device.uuid, device.name) for device in cuda_devices if device.uuid and device.name}
+    if not snapshot.cuda_available or len(cuda_devices) < 4 or len(physical_ids) < 4:
+        raise RuntimeError("Task 052-A replay requires four distinct physical GPUs with UUID and model")
+    if task_053a_replay and any("4090" not in str(device.name) for device in cuda_devices[:4]):
+        raise RuntimeError("Task 053-A replay requires four physical RTX 4090 GPUs")
+
+    generation_state_dir = Path(compute_state_dir) / f"task052a_{validation_campaign_id}_{uuid.uuid4().hex[:12]}"
+    for shard in shards:
+        argv = _validation_argv(shard, **validation_kwargs)
+        telemetry_path = Path(shard.output_dir) / "task_052a_replay_telemetry.json"
+        fingerprint = input_manifests[shard.shard_index]["full_input_hash"]
+        jobs.append(
+            ComputeJobSpec(
+                job_id=f"task052a_replay_{shard.shard_index}_{fingerprint[:16]}",
+                job_kind=ComputeJobKind.SHELL_COMMAND,
+                command=[
+                    sys.executable,
+                    "-m",
+                    "auto_alpha.validation.walk_forward.campaigns_replay_worker",
+                    "--telemetry-path",
+                    str(telemetry_path),
+                    "--candidate-pool-path",
+                    str(shard.metadata["candidate_pool_path"]),
+                    "--output-dir",
+                    shard.output_dir,
+                    "--require-cuda",
+                    "--",
+                    *argv,
+                ],
+                cwd=str(Path.cwd()),
+                input_paths=[str(value) for value in strict_paths.values()] + [str(shard.metadata["candidate_pool_path"])],
+                output_dir=shard.output_dir,
+                required_device_type=ComputeDeviceType.CUDA,
+                gpu_count=1,
+                max_retries=0,
+                shard_id=shard.shard_index,
+                shard_count=4,
+                data_freeze_dir=str(validation_kwargs["data_freeze_dir"]),
+                metadata={
+                    "task_052a_replay": True,
+                    "task_053a_replay": task_053a_replay,
+                    "full_input_hash": fingerprint,
+                    "replay_bundle_hash": replay_bundle["bundle_hash"],
+                    "candidate_ids": candidate_ids_by_shard[shard.shard_index],
+                    "telemetry_path": str(telemetry_path),
+                },
+            )
+        )
+
+    scheduler = LocalComputeScheduler(
+        ComputeSchedulerConfig(
+            state_dir=str(generation_state_dir),
+            output_dir=str(Path(output_dir) / "compute"),
+            max_parallel_cpu_jobs=0,
+            max_parallel_gpu_jobs=4,
+            fail_fast=True,
+            resume=False,
+            stale_heartbeat_seconds=300.0,
+        )
+    )
+    scheduler.submit_jobs(jobs)
+    compute_report = scheduler.run()
+    runs = scheduler.store.read_runs()
+    heartbeats = _read_jsonl(scheduler.store.heartbeats_path)
+    runs_by_job = {str(run.get("job_id")): run for run in runs}
+    shard_evidence = []
+    physical_gpu_ids = set()
+    for job in jobs:
+        run = runs_by_job.get(job.job_id)
+        if run is None:
+            raise RuntimeError(f"Task 052-A replay run missing: {job.job_id}")
+        telemetry_path = Path(str(job.metadata["telemetry_path"]))
+        if not telemetry_path.is_file():
+            raise RuntimeError(f"Task 052-A replay telemetry missing: {job.job_id}")
+        telemetry = json.loads(telemetry_path.read_text(encoding="utf-8"))
+        if telemetry.get("exit_code") != 0 or not telemetry.get("cuda_available"):
+            raise RuntimeError(f"Task 052-A replay CUDA telemetry invalid: {job.job_id}")
+        if not task_053a_replay and (telemetry.get("cuda_kernel_elapsed_ms") is None or telemetry.get("cuda_peak_memory_allocated_bytes") is None):
+            raise RuntimeError(f"Task 052-A replay CUDA timing/allocation missing: {job.job_id}")
+        selected_gpus = telemetry.get("physical_gpus") or run.get("physical_devices") or []
+        if len(selected_gpus) != 1 or not selected_gpus[0].get("uuid") or not (selected_gpus[0].get("model") or selected_gpus[0].get("name")):
+            raise RuntimeError(f"Task 052-A replay physical GPU identity invalid: {job.job_id}")
+        physical_gpu_ids.add(selected_gpus[0].get("uuid"))
+        telemetry["physical_gpus"] = selected_gpus
+        job_heartbeats = [row for row in heartbeats if row.get("job_id") == job.job_id]
+        if len(job_heartbeats) < 2:
+            raise RuntimeError(f"Task 052-A replay heartbeat evidence missing: {job.job_id}")
+        terminal_outputs = validate_terminal_outputs(
+            job.output_dir,
+            list(job.metadata["candidate_ids"]),
+            require_candidate_artifacts=task_053a_replay,
+            require_cuda_formula_evidence=task_053a_replay,
+            require_uncached_materialization=task_053a_replay or force_uncached_replay,
+            expected_physical_gpu_uuid=str(selected_gpus[0].get("uuid")) if task_053a_replay else None,
+        )
+        evidence_path = write_terminal_evidence(
+            job.output_dir,
+            campaign_id=validation_campaign_id,
+            shard_index=int(job.shard_id),
+            input_manifest=input_manifests[int(job.shard_id)],
+            run=run,
+            telemetry=telemetry,
+            heartbeats=job_heartbeats,
+            terminal_outputs=terminal_outputs,
+            bundle_hash=replay_bundle["bundle_hash"] if task_053a_replay else None,
+        )
+        shard_evidence.append(json.loads(evidence_path.read_text(encoding="utf-8")))
+    if len(physical_gpu_ids) != 4:
+        raise RuntimeError("Task 052-A replay did not use four distinct physical GPU UUIDs")
+    if compute_report.failed_count or compute_report.fallback_to_cpu_count or compute_report.oom_error_count:
+        raise RuntimeError("Task 052-A replay compute report contains failure, fallback, or OOM")
+    if len(runs) != 4 or any(int(run.get("attempt", 0)) != 1 for run in runs):
+        raise RuntimeError("Task 052-A replay retry or stale run history detected")
+
+    updated = _collect_shard_results(shards)
+    if any(row.status != "success" for row in updated):
+        raise RuntimeError("Task 052-A replay shard terminal validation failed")
+    store.write_shards(updated)
+    deterministic_comparison = None
+    if replay_reference_evidence_path:
+        reference_payload = json.loads(Path(replay_reference_evidence_path).read_text(encoding="utf-8"))
+        reference_manifest = json.loads(Path(reference_payload["replay_bundle_manifest_path"]).read_text(encoding="utf-8"))
+        current_manifest = json.loads(Path(replay_bundle["manifest_path"]).read_text(encoding="utf-8"))
+        if _replay_bundle_computation_identity(reference_manifest) != _replay_bundle_computation_identity(current_manifest):
+            raise RuntimeError("uncached sibling replay bundle hash mismatch")
+        deterministic_comparison = compare_replay_evidence(reference_payload.get("shards") or [], shard_evidence)
+    campaign_evidence_path = _write_task052a_campaign_evidence(
+        output_dir,
+        validation_campaign_id=validation_campaign_id,
+        mode="first_run",
+        readiness=readiness,
+        resume_checks=resume_checks,
+        shard_evidence=shard_evidence,
+        stale_rejections=stale_rejections,
+        compute_report=compute_report.to_dict(),
+        replay_bundle=replay_bundle,
+        generation_label=replay_generation_label,
+        deterministic_comparison=deterministic_comparison,
+    )
+    return {
+        "status": "success",
+        "execution_mode": "first_run",
+        "shard_count": 4,
+        "success_count": sum(row.success_count for row in updated),
+        "failed_count": sum(row.failed_count for row in updated),
+        "immutable_resume_count": 0,
+        "stale_history_rejected": bool(stale_rejections),
+        "stale_history_rejections": stale_rejections,
+        "compute_report": compute_report.to_dict(),
+        "task_052a_replay_evidence_path": str(campaign_evidence_path),
+        "task_053a_replay_evidence_path": str(campaign_evidence_path),
+        "replay_bundle_hash": replay_bundle["bundle_hash"],
+        "deterministic_comparison": deterministic_comparison,
+        "paths": store.paths(),
+    }
+
+
+def _load_task052a_readiness(path: str | None, *, task_053a_replay: bool = False) -> dict[str, Any]:
+    if not path or not Path(path).is_file():
+        raise RuntimeError("Task 052-A replay readiness evidence is required")
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    required = (
+        [
+            "governed_source_ready",
+            "conservative_tradability_policy_ready",
+            "immutable_freeze_ready",
+            "engineering_universe_proxy_ready",
+            "strict_matrix_built",
+            "strict_matrix_replay_safe",
+            "v3_tensor_ready",
+            "research_firewall_ready",
+            "retrospective_replay_ready",
+        ]
+        if task_053a_replay
+        else ["data_foundation_ready", "retrospective_replay_ready", "research_firewall_ready"]
+    )
+    blockers = [name for name in required if payload.get(name) is not True]
+    engineering_blockers = list(payload.get("engineering_blockers") or []) if task_053a_replay else list(payload.get("blockers") or [])
+    if blockers or payload.get("gpu_replay_started") is True or engineering_blockers:
+        raise RuntimeError(f"Task 052-A replay readiness blocked: {','.join(blockers or ['engineering_blockers'])}")
+    if task_053a_replay and any(payload.get(name) is not False for name in ("untouched_holdout_ready", "certification_ready", "portfolio_ready", "paper_ready", "live_ready")):
+        raise RuntimeError("Task 053-A downstream readiness must remain false")
+    return payload
+
+
+def _engineering_readiness_state(payload: dict[str, Any]) -> dict[str, Any]:
+    excluded = {"certification_blockers", "quality_warnings", "candidate_blockers"}
+    return {key: value for key, value in payload.items() if key not in excluded}
+
+
+def _candidate_identity_rows(shards: list[ValidationShardRecord]) -> list[dict[str, Any]]:
+    fields = (
+        "validation_candidate_id",
+        "factor_id",
+        "formula_hash",
+        "formula_tokens",
+        "formula_names",
+        "feature_version",
+        "operator_version",
+        "transform_method",
+    )
+    rows = []
+    for shard in shards:
+        for row in _read_jsonl(Path(str(shard.metadata["candidate_pool_path"]))):
+            rows.append({name: row.get(name) for name in fields if row.get(name) is not None})
+    return sorted(rows, key=lambda row: str(row.get("validation_candidate_id") or row.get("factor_id") or ""))
+
+
+def _write_task052a_campaign_evidence(
+    output_dir: str | Path,
+    *,
+    validation_campaign_id: str,
+    mode: str,
+    readiness: dict[str, Any],
+    resume_checks: dict[int, dict[str, Any]],
+    shard_evidence: list[dict[str, Any]],
+    stale_rejections: dict[str, str] | None = None,
+    compute_report: dict[str, Any] | None = None,
+    replay_bundle: dict[str, Any] | None = None,
+    generation_label: str = "primary",
+    deterministic_comparison: dict[str, Any] | None = None,
+) -> Path:
+    payload = {
+        "status": "success",
+        "schema_version": "task_052a_replay_campaign_evidence_v1",
+        "validation_campaign_id": validation_campaign_id,
+        "execution_mode": mode,
+        "first_run": mode == "first_run",
+        "immutable_resume_4_of_4": mode == "resume_4_of_4",
+        "readiness": readiness,
+        "replay_bundle_hash": (replay_bundle or {}).get("bundle_hash"),
+        "replay_bundle_manifest_path": (replay_bundle or {}).get("manifest_path"),
+        "generation_label": generation_label,
+        "deterministic_comparison": deterministic_comparison,
+        "resume_checks": {str(index): {"valid": row["valid"], "reason": row["reason"]} for index, row in resume_checks.items()},
+        "stale_history_rejections": stale_rejections or {},
+        "shard_count": len(shard_evidence),
+        "candidate_count": sum(len(row.get("candidate_ids") or []) for row in shard_evidence),
+        "shard_evidence_hashes": [row.get("evidence_hash") for row in shard_evidence],
+        "shards": shard_evidence,
+        "physical_gpu_uuids": sorted({gpu.get("uuid") for row in shard_evidence for gpu in row.get("physical_gpus", []) if gpu.get("uuid")}),
+        "compute_report": compute_report,
+    }
+    return write_json_artifact(
+        Path(output_dir) / "task_052a_replay_evidence.json",
+        payload,
+        "task_052a_replay_evidence",
+        "validation_campaign_store",
+    )
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _replay_bundle_computation_identity(manifest: dict[str, Any]) -> str:
+    extra = {key: value for key, value in (manifest.get("extra") or {}).items() if key != "campaign_id"}
+    payload = json.dumps({"inputs": manifest.get("inputs") or {}, "extra": extra}, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _validation_argv(shard: ValidationShardRecord, **kwargs) -> list[str]:
+    shard_dir = Path(shard.output_dir)
+    argv = [
+        "validate-candidates", "--data-dir", str(kwargs["data_dir"]), "--factor-store-dir", str(kwargs["factor_store_dir"]),
+        "--validation-candidate-pool-path", str(shard_dir / "candidate_pool.jsonl"), "--output-dir", str(shard_dir),
+        "--split-method", str(kwargs["split_method"]), "--validation-policy", str(kwargs["validation_policy"]),
+        "--train-size", str(kwargs["train_size"]), "--validation-size", str(kwargs["validation_size"]),
+        "--test-size", str(kwargs["test_size"]), "--step-size", str(kwargs["step_size"]),
+        "--embargo-size", str(kwargs["embargo_size"]), "--label-horizon", str(kwargs["label_horizon"]),
+        "--device", str(kwargs["device"]), "--materialization-dir", str(shard_dir / "materialized_factors"),
+    ]
+    optional = {
+        "--data-freeze-dir": kwargs.get("data_freeze_dir"), "--matrix-cache-dir": kwargs.get("matrix_cache_dir"),
+        "--feature-set-manifest-path": kwargs.get("feature_manifest_path"), "--feature-tensor-path": kwargs.get("feature_tensor_path"),
+        "--feature-validity-tensor-path": kwargs.get("feature_validity_tensor_path"),
+        "--snapshot-proof-manifest-path": kwargs.get("snapshot_proof_manifest_path"),
+        "--campaign-manifest-path": kwargs.get("campaign_manifest_path"),
+        "--feature-promotion-policy-path": kwargs.get("promotion_policy_path"),
+        "--feature-promotion-allowlist-path": kwargs.get("promotion_allowlist_path"),
+        "--feature-promotion-denylist-path": kwargs.get("promotion_denylist_path"),
+        "--research-end-date": kwargs.get("research_end_date"), "--holdout-start-date": kwargs.get("holdout_start_date"),
+        "--firewall-attestation-path": kwargs.get("firewall_attestation_path"),
+    }
+    for flag, value in optional.items():
+        if value:
+            argv.extend([flag, str(value)])
+    if kwargs.get("feature_tensor_path"):
+        argv.append("--strict-materialization")
+    if kwargs.get("strict_factor_store"):
+        argv.append("--strict-factor-store")
+    for key, flag in {
+        "run_multiple_testing": "--run-multiple-testing", "run_overfit_risk": "--run-overfit-risk",
+        "run_placebo": "--run-placebo", "run_regime": "--run-regime", "run_sensitivity": "--run-sensitivity",
+        "run_stress_backtest": "--run-stress-backtest",
+    }.items():
+        if kwargs.get(key):
+            argv.append(flag)
+    if kwargs.get("run_placebo"):
+        argv.extend(["--placebo-trials", str(kwargs["placebo_trials"])])
+    return argv
+
+
+def _job_fingerprint(argv: list[str], shard: ValidationShardRecord) -> str:
+    pool_path = Path(str(shard.metadata["candidate_pool_path"]))
+    path_hashes = {}
+    for value in argv:
+        path = Path(value)
+        if path.is_file():
+            path_hashes[str(path)] = _fingerprint_file(path)
+        elif path.is_dir():
+            manifests = [path / name for name in ["freeze_manifest.json", "dataset_version_manifest.json", "matrix_version_manifest.json"] if (path / name).exists()]
+            if manifests:
+                path_hashes[str(path)] = {item.name: _fingerprint_file(item) for item in manifests}
+    code_files = [
+        Path(__file__),
+        module_file("auto_alpha.validation.walk_forward.engine_run_validation"),
+        module_file("auto_alpha.validation.walk_forward.engine_materialization"),
+        module_file("auto_alpha.validation.walk_forward.engine_metrics"),
+    ]
+    payload = json.dumps({
+        "argv": argv,
+        "pool_sha256": _fingerprint_file(pool_path),
+        "path_hashes": path_hashes,
+        "code_hashes": {str(path): _fingerprint_file(path) for path in code_files},
+    }, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _fingerprint_file(path: Path) -> str:
+    stat = path.stat()
+    key = (str(path.resolve()), int(stat.st_size), int(stat.st_mtime_ns))
+    if key in _FINGERPRINT_FILE_CACHE:
+        return _FINGERPRINT_FILE_CACHE[key]
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+            digest.update(chunk)
+    value = digest.hexdigest()
+    _FINGERPRINT_FILE_CACHE[key] = value
+    return value
+
+
+def _valid_resume_marker(marker_path: Path, report_path: Path, fingerprint: str, candidate_count: int) -> bool:
+    if not marker_path.exists() or not report_path.exists():
+        return False
+    try:
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return (
+        marker.get("immutable_input_fingerprint") == fingerprint
+        and marker.get("report_sha256") == _fingerprint_file(report_path)
+        and int(marker.get("candidate_count", -1)) == int(candidate_count)
+        and int(report.get("validated_candidate_count", -1)) == int(candidate_count)
+    )
+
+
+def _write_resume_marker(shard_dir: Path, fingerprint: str, candidate_count: int) -> None:
+    report_path = shard_dir / "validation_candidate_pool_report.json"
+    payload = {
+        "immutable_input_fingerprint": fingerprint,
+        "candidate_count": int(candidate_count),
+        "report_sha256": _fingerprint_file(report_path),
+    }
+    (shard_dir / "immutable_input_fingerprint.json").write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _read_existing_compute_report(compute_dir: Path) -> dict[str, Any]:
+    path = compute_dir / "compute_run_report.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"status": "resumed", "job_count": 0}
+
+
+def _collect_shard_results(shards: list[ValidationShardRecord]) -> list[ValidationShardRecord]:
+    updated = []
+    for shard in shards:
+        report_path = Path(shard.output_dir) / "validation_candidate_pool_report.json"
+        if report_path.exists():
+            updated.append(_shard_from_payload(shard, json.loads(report_path.read_text(encoding="utf-8")), "success"))
+        else:
+            updated.append(ValidationShardRecord(**{**shard.to_dict(), "status": "failed", "failed_count": shard.candidate_count, "error": "validation report missing"}))
+    return updated
+
+
+def _candidate_to_pool_row(row: dict[str, Any]) -> dict[str, Any]:
+    source = row.get("metadata", {}).get("source_candidate", {}) if isinstance(row.get("metadata"), dict) else {}
+    return {
+        **source,
+        "factor_id": row.get("factor_id"),
+        "formula_hash": row.get("formula_hash"),
+        "formula_names": row.get("formula_names", []),
+        "feature_version": row.get("feature_version", ""),
+        "source_campaign": row.get("source_campaign_id", ""),
+        "rank": row.get("alpha_rank", 0),
+        "final_score": row.get("alpha_score", 0.0),
+        "factor_store_dir": row.get("factor_store_dir", ""),
+        "factor_values_path": row.get("factor_values_path", ""),
+        "family": (row.get("family_tags") or ["general"])[0],
+    }
+
+
+def _shard_from_payload(shard: ValidationShardRecord, payload: dict[str, Any], status: str) -> ValidationShardRecord:
+    return ValidationShardRecord(
+        shard_id=shard.shard_id,
+        validation_campaign_id=shard.validation_campaign_id,
+        shard_index=shard.shard_index,
+        shard_count=shard.shard_count,
+        candidate_count=shard.candidate_count,
+        success_count=int(payload.get("validated_candidate_count", 0) or 0) - int(payload.get("blocked_count", 0) or 0),
+        failed_count=int(payload.get("blocked_count", 0) or 0),
+        skipped_count=0,
+        output_dir=shard.output_dir,
+        validation_lab_report_path=str(Path(shard.output_dir) / "validation_candidate_pool_report.json"),
+        status=status,
+        error=None,
+        metadata=shard.metadata | {"payload": payload},
+    )

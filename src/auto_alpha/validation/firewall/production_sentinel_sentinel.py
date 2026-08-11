@@ -19,28 +19,28 @@ from auto_alpha._paths import repository_root
 import numpy as np
 import torch
 
-from auto_alpha.research.discovery.factory_models import AlphaCandidateRecord
-from auto_alpha.research.discovery.factory_proxy_eval import run_proxy_eval
+from auto_alpha.research.search.models import AlphaCandidateRecord
+from auto_alpha.research.search.evaluation import run_proxy_eval
 from auto_alpha.platform.compute.scheduler import LocalComputeScheduler
 from auto_alpha.platform.compute.scheduler.models import ComputeDeviceType, ComputeJobKind, ComputeJobSpec, ComputeSchedulerConfig
 from auto_alpha.data.lake.store.task052_freeze import FREEZE_MANIFEST_FILENAMES
-from auto_alpha.research.factors.store_models import FactorRecord
-from auto_alpha.research.factors.store_storage import LocalFactorStore
+from auto_alpha.research.factors.store import FactorRecord
+from auto_alpha.research.factors.store import LocalFactorStore
 from auto_alpha.research.features.factory import make_formula_vocab_from_manifest
-from auto_alpha.research.features.factory_builder import load_feature_manifest
-from auto_alpha.research.formulas.batch import FormulaBatchEvalConfig, FormulaBatchEvaluator
-from auto_alpha.research.formulas.batch_models import FormulaEvalRequest
+from auto_alpha.research.features.builder import load_feature_manifest
+from auto_alpha.research.formulas.evaluator import FormulaBatchEvalConfig, FormulaBatchEvaluator
+from auto_alpha.research.formulas.evaluator import FormulaEvalRequest
 from auto_alpha.data.matrix.store import StrictEngineeringPITMatrixBuilder, StrictEngineeringPITMatrixConfig
-from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
-from auto_alpha.research.formulas.runtime_vm import StackVM
+from auto_alpha.research.formulas.data_loader import AShareDataLoader
+from auto_alpha.research.formulas.vm import StackVM
 from auto_alpha.validation.firewall.core import ResearchEligibilityContract
-from auto_alpha.research.features.engineering_replay_orchestrator import build_v3_tensor_generation
+from auto_alpha.research.features.engineering_replay import build_v3_tensor_generation
 from auto_alpha.validation.firewall.engineering_closure_research_view import publish_research_projection
 from auto_alpha.validation.firewall.engineering_closure_research_view import validate_research_projection
-from auto_alpha.validation.lab.campaigns_consolidate import consolidate_validation_results
-from auto_alpha.validation.lab.engine_materialization import FactorMaterializer
-from auto_alpha.validation.lab.engine_materialization import MaterializationInputs
-from auto_alpha.validation.lab.engine_run_validation import main as validation_lab_main
+from auto_alpha.validation.walk_forward.campaigns_consolidate import consolidate_validation_results
+from auto_alpha.validation.walk_forward.engine_materialization import FactorMaterializer
+from auto_alpha.validation.walk_forward.engine_materialization import MaterializationInputs
+from auto_alpha.validation.walk_forward.engine_run_validation import main as validation_lab_main
 
 from auto_alpha.validation.firewall.production_sentinel_audit import AuditedReadBroker
 from auto_alpha.validation.firewall.production_sentinel_audit import ComponentReceiptRecorder

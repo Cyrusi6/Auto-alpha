@@ -10,43 +10,49 @@ from pathlib import Path
 
 
 DOMAIN_SUBSYSTEMS = {
-    "data": ("ingestion", "lake", "matrix", "pit", "quality"),
-    "research": ("discovery", "factors", "features", "formulas", "neural"),
-    "validation": ("certification", "firewall", "lab"),
-    "portfolio": ("construction", "risk", "simulation"),
-    "execution": ("broker", "operations", "settlement", "trading"),
-    "platform": ("artifacts", "compute", "governance", "network_authority", "observability"),
+    "data": ("ingestion", "lake", "matrix", "pit", "quality", "universe"),
+    "research": ("factors", "features", "formulas", "search"),
+    "validation": ("certification", "firewall", "walk_forward"),
+    "portfolio": ("construction", "risk", "simulator"),
+    "execution": ("broker", "settlement", "trading"),
+    "platform": ("artifacts", "compute", "governance", "observability"),
 }
 
 NESTED_SUBSYSTEMS = {
     "data/ingestion": ("pipeline", "repair"),
     "data/lake": ("catalog", "operations", "store"),
+    "data/matrix": ("refresh", "store"),
+    "data/pit": ("corporate_actions", "engine", "readiness"),
+    "data/quality": ("cross_source", "lab", "source_validation"),
+    "platform/artifacts": ("schema",),
+    "platform/compute": ("scheduler",),
+    "platform/governance": ("approval", "ci", "network", "readiness", "release"),
     "platform/observability": ("dashboard", "monitoring"),
 }
 
-PACKAGE_DIRECTORY_BUDGET = 65
-SOURCE_FILE_BUDGET = 665
+PACKAGE_DIRECTORY_BUDGET = 55
+SOURCE_FILE_BUDGET = 450
 EVIDENCE_FILE_BUDGET = 4
 FLAT_DOMAINS = ("research", "validation", "portfolio", "execution")
 
 CAPABILITY_OWNERS = {
-    "formula_evaluation": "auto_alpha.research.formulas.batch_evaluator",
+    "formula_evaluation": "auto_alpha.research.formulas.evaluator",
     "formula_candidates": "auto_alpha.research.formulas.candidates",
     "factor_composites": "auto_alpha.research.factors.composite",
     "pit_truth": "auto_alpha.data.pit.truth",
-    "fee_schedule": "auto_alpha.portfolio.simulation.fees",
+    "fee_schedule": "auto_alpha.portfolio.simulator.fees",
     "research_firewall": "auto_alpha.validation.firewall.production_sentinel_sentinel",
     "immutable_storage": "auto_alpha.platform.artifacts.storage",
-    "network_authority": "auto_alpha.platform.network_authority.gateway",
+    "network_authority": "auto_alpha.platform.governance.network.gateway",
 }
 
 FORBIDDEN_MODULES = (
     "auto_alpha.data.pit.truth_builder",
-    "auto_alpha.portfolio.simulation.fee_evidence",
-    "auto_alpha.portfolio.simulation.ledger_fees",
-    "auto_alpha.research.discovery.studies",
-    "auto_alpha.research.discovery.studies_batch_runner",
-    "auto_alpha.research.discovery.studies_models",
+    "auto_alpha.portfolio.simulator.fee_evidence",
+    "auto_alpha.portfolio.simulator.ledger_fees",
+    "auto_alpha.research.search.studies",
+    "auto_alpha.research.search.studies_batch_runner",
+    "auto_alpha.research.search.studies_models",
     "auto_alpha.validation.firewall.truth_evidence",
     "auto_alpha.validation.firewall.engineering_closure_run",
     "auto_alpha.validation.firewall.engineering_closure_worker",
@@ -59,7 +65,11 @@ REMOVED_INTERNAL_PACKAGES = (
     "data/ingestion/observer",
     "data/ingestion/post_download",
     "data/ingestion/repair/governed_replay",
-    "platform/network_authority/_internal",
+    "execution/trading/operations",
+    "platform/network_authority",
+    "platform/governance/network/_internal",
+    "research/formulas/runtime",
+    "research/search/neural",
 )
 
 

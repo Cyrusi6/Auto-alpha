@@ -2,9 +2,9 @@ import json
 from pathlib import Path
 
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager, LocalAshareStorage
-from auto_alpha.data.pit.universe.builder import build_universe_from_storage
-from auto_alpha.data.pit.universe.models import UniverseBuildConfig
-from auto_alpha.data.pit.universe.run_universe import main as universe_main
+from auto_alpha.data.universe.builder import build_universe_from_storage
+from auto_alpha.data.universe.models import UniverseBuildConfig
+from auto_alpha.data.universe.run_universe import main as universe_main
 
 
 def test_sample_data_builds_universe(tmp_path):

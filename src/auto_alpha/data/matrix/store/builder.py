@@ -11,7 +11,7 @@ from typing import Iterable
 import numpy as np
 import torch
 
-from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
+from auto_alpha.research.formulas.data_loader import AShareDataLoader
 from auto_alpha.data.lake.store import validate_research_input
 from auto_alpha.research.features.factory import build_feature_set_manifest, load_feature_manifest
 

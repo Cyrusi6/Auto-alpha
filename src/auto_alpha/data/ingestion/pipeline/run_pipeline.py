@@ -48,7 +48,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--start-date", help="Override the configured start date.")
     parser.add_argument("--end-date", help="Override the configured end date.")
     parser.add_argument("--adjust", help="Override the configured adjustment mode.")
-    parser.add_argument("--universe", help="Override the configured auto_alpha.data.pit.universe.")
+    parser.add_argument("--universe", help="Override the configured auto_alpha.data.universe.")
     parser.add_argument("--index-codes", help="Comma-separated index codes for index_members sync.")
     parser.add_argument("--security-list-statuses", help="Comma-separated Tushare stock_basic list_status values, e.g. L,D,P.")
     parser.add_argument("--include-corporate-actions", dest="include_corporate_actions", action="store_true")

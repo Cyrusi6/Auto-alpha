@@ -23,7 +23,7 @@ def test_repository_has_one_public_package_and_six_domains():
     assert audit.legacy_packaging_entry_count == 0
     assert audit.top_level_package_count == 1
     assert audit.source_package_count == 1
-    assert audit.package_directory_count == 56
+    assert audit.package_directory_count == 54
     assert audit.package_directory_count <= audit.package_directory_budget
     assert audit.package_directory_budget == PACKAGE_DIRECTORY_BUDGET
     assert audit.source_file_count <= SOURCE_FILE_BUDGET
@@ -33,7 +33,7 @@ def test_repository_has_one_public_package_and_six_domains():
     assert audit.forbidden_module_count == 0
     assert audit.capability_owner_count == 8
     assert audit.domain_count == 6
-    assert audit.subsystem_count == 25
+    assert audit.subsystem_count == 23
     assert audit.domain_issues == ()
 
 
@@ -64,7 +64,7 @@ def test_runtime_domains_do_not_regrow_nested_micro_packages():
 
 
 def test_task055_generations_are_not_public_packages_or_tests():
-    public = Path("src/auto_alpha/platform/network_authority")
+    public = Path("src/auto_alpha/platform/governance/network")
     assert public.is_dir()
     assert not list((public / "_internal").rglob("*.py"))
     for relative in REMOVED_INTERNAL_PACKAGES:

@@ -26,27 +26,27 @@ from dev_tools.network_authority_harness import (
     synthetic_accepted_response,
 )
 from auto_alpha.platform.artifacts.storage import canonical_hash, read_json
-from auto_alpha.platform.network_authority.journal import DurableHashJournal
-from auto_alpha.portfolio.simulation.valuation import (
+from auto_alpha.platform.governance.network.journal import DurableHashJournal
+from auto_alpha.portfolio.simulator.valuation import (
     publish_valuation_projection,
     valuation_surface_from_projection,
 )
-from auto_alpha.platform.network_authority.application import APPLICATION_STAGES, runtime_semantic_source_hash
-from auto_alpha.platform.network_authority.authority import (
+from auto_alpha.platform.governance.network.application import APPLICATION_STAGES, runtime_semantic_source_hash
+from auto_alpha.platform.governance.network.authority import (
     _resolve_task055k_roots,
     normalize_ordered_keys,
     publish_historical_supersession,
     validate_candidate_checkpoint,
 )
-from auto_alpha.platform.network_authority.broker import (
+from auto_alpha.platform.governance.network.broker import (
     Task055KBrokerError,
     _validate_receipt_against_reservation,
 )
-from auto_alpha.platform.network_authority.contracts import CANARY
-from auto_alpha.platform.network_authority.immutable import write_immutable_generation
-from auto_alpha.platform.network_authority import network_cli
-from auto_alpha.platform.network_authority.source_tree import git_index_source_entries
-from auto_alpha.platform.network_authority.stage_machine import (
+from auto_alpha.platform.governance.network.contracts import CANARY
+from auto_alpha.platform.governance.network.immutable import write_immutable_generation
+from auto_alpha.platform.governance.network import network_cli
+from auto_alpha.platform.governance.network.source_tree import git_index_source_entries
+from auto_alpha.platform.governance.network.stage_machine import (
     ApplicationStageMachine,
     StageDefinition,
     Task055KStageMachineError,
@@ -199,7 +199,7 @@ def test_all_python_capability_and_generic_client_paths_fail_closed() -> None:
 def test_legacy_network_entrypoints_are_deleted() -> None:
     from auto_alpha.data.ingestion.repair.governed_backfill import run_governed_backfill
 
-    package_root = Path(__file__).parents[2] / "src/auto_alpha/platform/network_authority"
+    package_root = Path(__file__).parents[2] / "src/auto_alpha/platform/governance/network"
     assert not list((package_root / "_internal").rglob("*.py"))
     with pytest.raises(Exception, match="superseded_by_task055k_transport_broker"):
         run_governed_backfill(None)
@@ -412,7 +412,7 @@ def test_production_package_has_no_task055k_synthetic_transport_entry() -> None:
     assert "execute_synthetic_rehearsal_response" not in sources
     assert "apply_staged_synthetic_response" not in sources
     assert "urllib.request.urlopen" not in sources
-    assert "urllib.request.build_opener(_NoRedirect).open" in Path("src/auto_alpha/platform/network_authority/gateway.py").read_text(
+    assert "urllib.request.build_opener(_NoRedirect).open" in Path("src/auto_alpha/platform/governance/network/gateway.py").read_text(
         encoding="utf-8"
     )
     cli_source = inspect.getsource(network_cli)
@@ -425,7 +425,7 @@ def test_production_package_has_no_task055k_synthetic_transport_entry() -> None:
 
 def test_source_entries_use_git_blobs_and_include_full_runtime_boundary() -> None:
     tracked = subprocess.run(
-        ["git", "ls-files", "--error-unmatch", "src/auto_alpha/platform/network_authority/stage_machine.py"],
+        ["git", "ls-files", "--error-unmatch", "src/auto_alpha/platform/governance/network/stage_machine.py"],
         capture_output=True,
         check=False,
     )
@@ -434,9 +434,9 @@ def test_source_entries_use_git_blobs_and_include_full_runtime_boundary() -> Non
     entries = git_index_source_entries(Path(".").resolve())
     paths = {row["path"] for row in entries}
     assert {
-        "src/auto_alpha/platform/network_authority/gateway.py",
-        "src/auto_alpha/platform/network_authority/stage_machine.py",
-        "src/auto_alpha/platform/network_authority/application_components.py",
+        "src/auto_alpha/platform/governance/network/gateway.py",
+        "src/auto_alpha/platform/governance/network/stage_machine.py",
+        "src/auto_alpha/platform/governance/network/application_components.py",
         "dev_tools/network_authority_harness.py",
     } <= paths
     assert {row["git_index_mode"] for row in entries} <= {"100644", "100755"}
@@ -457,16 +457,16 @@ def test_runtime_semantic_hash_changes_with_production_source_bytes(
 
 
 def test_independent_verifier_does_not_reuse_production_valuation_builder() -> None:
-    import auto_alpha.platform.network_authority.independent as independent_module
+    import auto_alpha.platform.governance.network.independent as independent_module
 
     source = inspect.getsource(independent_module)
-    assert "from auto_alpha.portfolio.simulation.causal import build_valuation_surface" not in source
+    assert "from auto_alpha.portfolio.simulator.causal import build_valuation_surface" not in source
     assert "prepare_simulation_inputs" not in source
-    assert "from auto_alpha.platform.network_authority.response_application import _matrix_marks" not in source
+    assert "from auto_alpha.platform.governance.network.response_application import _matrix_marks" not in source
 
 
 def test_independent_valuation_surface_matches_contract_for_official_and_stale_marks() -> None:
-    from auto_alpha.platform.network_authority.independent import _independent_valuation_surface
+    from auto_alpha.platform.governance.network.independent import _independent_valuation_surface
 
     surface = _independent_valuation_surface(
         truth={
@@ -506,8 +506,8 @@ def test_independent_valuation_surface_matches_contract_for_official_and_stale_m
 def test_invalid_sentinel_cache_moves_to_new_semantic_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import auto_alpha.platform.network_authority.application_components as components
-    from auto_alpha.platform.network_authority.stage_machine import StageRuntime
+    import auto_alpha.platform.governance.network.application_components as components
+    from auto_alpha.platform.governance.network.stage_machine import StageRuntime
 
     application_root = tmp_path / "application"
     cache_root = tmp_path / "cache"

@@ -2,15 +2,15 @@
 
 This file records only the current A-share architecture and recent governed milestones. Detailed historical implementation is available through Git history rather than duplicated task-by-task prose.
 
-## 2026-08-11 — Deletion-first architecture closure
+## 2026-08-11 — Six-domain file-layout closure
 
 ### Outcome
 
 - One public package: `auto_alpha`.
 - Six domains: `data`, `research`, `validation`, `portfolio`, `execution`, `platform`.
-- 25 visible subsystems.
-- 56 Python package directories, below the hard budget of 65.
-- 664 Python source files, below the hard budget of 665.
+- 23 visible subsystems.
+- 54 Python package directories, below the hard budget of 55.
+- 436 Python source files, below the hard budget of 450.
 - Four committed evidence files, at the hard evidence budget.
 - Tests mirror the same six domains.
 
@@ -21,7 +21,8 @@ This file records only the current A-share architecture and recent governed mile
 - `FormulaEvalRequest` is the canonical candidate request model for defaults, imported candidates, random search, and neural search.
 - Formula search and neural search call the same evaluator instead of selecting between legacy and batch paths.
 - Composite construction moved to `research/factors/composite.py`; composite factors remain unvalidated until independent OOS evidence exists.
-- Split, metric, bounded multi-objective scoring, and factor report logic were merged into `research/discovery/evaluation.py`.
+- `research/discovery` and the separate neural package were replaced by the single `research/search` subsystem.
+- Formula batch, corpus, search, runtime semantics, factors, features, and experiment stores now use responsibility names instead of prefix chains.
 - Removed unused formula/runtime facades and the duplicate research CLI.
 
 ### Data truth and artifact storage
@@ -34,7 +35,7 @@ This file records only the current A-share architecture and recent governed mile
 
 ### Fee and simulation contracts
 
-- `portfolio/simulation/fees.py` is the sole Fee Schedule v2 workflow, calculator, and independent verifier.
+- `portfolio/simulator/fees.py` is the sole Fee Schedule v2 workflow, calculator, and independent verifier.
 - Deleted `fee_evidence.py` and the unused `ledger_fees.py` producer/calculator.
 - A legacy schedule can only be inspected through explicit read-only validation; production simulation cannot execute it.
 - Simulation artifact publication now requires explicit valuation evidence and a validated Fee Schedule v2 path.
@@ -52,7 +53,7 @@ This file records only the current A-share architecture and recent governed mile
 
 ### Network and evidence boundary
 
-- `platform/network_authority` remains the only network-authority implementation.
+- `platform/governance/network` remains the only network-authority implementation.
 - Parent rehearsal read-only validation was merged into `rehearsal.py`.
 - Historical Task055 H/I/J/K/KR Git evidence was removed from the working tree; Git history remains the archive.
 - Current committed network evidence is limited to the KR2 candidate anchor, candidate evidence, and supersession marker.

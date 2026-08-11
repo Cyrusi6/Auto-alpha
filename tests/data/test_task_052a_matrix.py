@@ -18,7 +18,7 @@ from auto_alpha.data.matrix.store.strict_engineering import (
     StrictEngineeringPITMatrixBuilder,
     StrictEngineeringPITMatrixConfig,
 )
-from auto_alpha.data.pit.universe.task052 import (
+from auto_alpha.data.universe.task052 import (
     Task052HistoricalUniverseProofBuilder,
     Task052UniversePolicy,
     Task052UniverseProofError,

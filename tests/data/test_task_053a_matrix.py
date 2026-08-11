@@ -8,7 +8,7 @@ import numpy as np
 
 from auto_alpha.data.lake.store.task052_freeze import create_task052_governed_freeze, validate_task052_governed_freeze
 from auto_alpha.data.matrix.store.strict_engineering import StrictEngineeringPITMatrixBuilder, StrictEngineeringPITMatrixConfig
-from auto_alpha.data.pit.universe.task052 import Task052HistoricalUniverseProofBuilder
+from auto_alpha.data.universe.task052 import Task052HistoricalUniverseProofBuilder
 
 
 def _write_jsonl(path: Path, rows) -> None:

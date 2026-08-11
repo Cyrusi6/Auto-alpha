@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
 
-from auto_alpha.execution.broker.file_gateway_run_gateway import main as gateway_main
-from auto_alpha.execution.broker.file_gateway_state import LocalBrokerFileGatewayStore
+from auto_alpha.execution.broker.file_gateway import main as gateway_main
+from auto_alpha.execution.broker.file_gateway import LocalBrokerFileGatewayStore
 
 
 def test_broker_file_gateway_smoke_roundtrip(tmp_path: Path) -> None:

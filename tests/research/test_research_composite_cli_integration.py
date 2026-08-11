@@ -1,13 +1,13 @@
 import pytest
 
-from auto_alpha.portfolio.simulation import backtest_run_backtest as run_backtest
+from auto_alpha.portfolio.simulator import backtest as run_backtest
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.data.ingestion.pipeline.ashare.storage import LocalAshareStorage
-from auto_alpha.research.formulas.batch import FormulaBatchEvalConfig, FormulaBatchEvaluator, requests_from_candidates
+from auto_alpha.research.formulas.evaluator import FormulaBatchEvalConfig, FormulaBatchEvaluator, requests_from_candidates
 from auto_alpha.research.formulas.candidates import default_candidates
-from auto_alpha.execution.trading import strategy_runner
-from auto_alpha.data.pit.universe.builder import build_universe_from_storage
-from auto_alpha.data.pit.universe.models import UniverseBuildConfig
+from auto_alpha.execution.trading import strategy as strategy_runner
+from auto_alpha.data.universe.builder import build_universe_from_storage
+from auto_alpha.data.universe.models import UniverseBuildConfig
 
 
 def _prepare_batch(tmp_path):

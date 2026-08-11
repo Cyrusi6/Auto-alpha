@@ -3,9 +3,9 @@ import json
 import torch
 
 from auto_alpha.research.formulas.corpus import FormulaCorpusConfig, build_formula_corpus
-from auto_alpha.research.formulas.runtime_alphagpt import AlphaGPT
-from auto_alpha.research.neural.search import AlphaGPTPretrainConfig, AlphaGPTPretrainer
-from auto_alpha.research.neural import search_run_pretrain as run_pretrain
+from auto_alpha.research.formulas.alphagpt import AlphaGPT
+from auto_alpha.research.search.neural import AlphaGPTPretrainConfig, AlphaGPTPretrainer
+from auto_alpha.research.search import pretrain_cli as run_pretrain
 
 
 def test_alphagpt_pretrain_writes_checkpoint_and_history(tmp_path):

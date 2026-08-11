@@ -1,26 +1,26 @@
 import json
 
-from auto_alpha.research.discovery.factory import AlphaCampaignConfig, AlphaFactoryRunner
-from auto_alpha.research.discovery.factory_models import AlphaCandidateRecord
-from auto_alpha.research.discovery.factory_static_checks import run_static_checks
+from auto_alpha.research.search.workflow import AlphaCampaignConfig, AlphaFactoryRunner
+from auto_alpha.research.search.models import AlphaCandidateRecord
+from auto_alpha.research.search.generation import run_static_checks
 from auto_alpha.data.lake.store.run_lake import main as lake_main
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.research.features.factory import FEATURE_SET_V3, build_feature_tensor_artifacts, load_feature_manifest, make_formula_vocab_from_manifest
-from auto_alpha.research.features.promotion_decision import build_allow_deny_lists
-from auto_alpha.research.features.promotion_decision import default_decisions_from_review_package
-from auto_alpha.research.features.promotion_evidence import build_feature_promotion_evidence
-from auto_alpha.research.features.promotion_evidence import build_promotion_candidates
-from auto_alpha.research.features.promotion_policy import apply_promotion_to_manifest
-from auto_alpha.research.features.promotion_policy import create_default_policy
-from auto_alpha.research.features.promotion_policy import feature_default_status
-from auto_alpha.research.features.promotion_policy import load_promotion_gate
-from auto_alpha.research.features.promotion_policy import policy_hash
-from auto_alpha.research.features.promotion_review import make_review_package
+from auto_alpha.research.features.promotion import build_allow_deny_lists
+from auto_alpha.research.features.promotion import default_decisions_from_review_package
+from auto_alpha.research.features.promotion import build_feature_promotion_evidence
+from auto_alpha.research.features.promotion import build_promotion_candidates
+from auto_alpha.research.features.promotion import apply_promotion_to_manifest
+from auto_alpha.research.features.promotion import create_default_policy
+from auto_alpha.research.features.promotion import feature_default_status
+from auto_alpha.research.features.promotion import load_promotion_gate
+from auto_alpha.research.features.promotion import policy_hash
+from auto_alpha.research.features.promotion import make_review_package
 from auto_alpha.validation.certification.factors_models import CertificationPolicy
 from auto_alpha.validation.certification.factors_scorecard import build_factor_certification_scorecard
 from auto_alpha.data.matrix.refresh.planner import build_matrix_refresh_plan
 from auto_alpha.data.matrix.store import build_matrix_cache
-from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
+from auto_alpha.research.formulas.data_loader import AShareDataLoader
 
 
 def _prepare_v3_promotion(tmp_path):

@@ -8,22 +8,22 @@ import numpy as np
 import pytest
 import torch
 
-from auto_alpha.portfolio.simulation.backtest_run_backtest import apply_signal_lag
+from auto_alpha.portfolio.simulator.backtest import apply_signal_lag
 from auto_alpha.platform.artifacts.schema.validator import validate_artifact
-from auto_alpha.research.factors.store_hash import make_factor_id
-from auto_alpha.research.factors.store_hash import stable_formula_hash
-from auto_alpha.research.factors.store_models import FactorRecord
+from auto_alpha.research.factors.store import make_factor_id
+from auto_alpha.research.factors.store import stable_formula_hash
+from auto_alpha.research.factors.store import FactorRecord
 from auto_alpha.research.features.factory import FEATURE_SET_V1, build_feature_set_manifest
-from auto_alpha.portfolio.risk.model_covariance import estimate_return_covariance
-from auto_alpha.validation.lab.engine_materialization import FactorMaterializer
-from auto_alpha.validation.lab.engine_materialization import MaterializationInputs
-from auto_alpha.validation.lab.engine_materialization import load_materialized_factor
-from auto_alpha.validation.lab.engine_metrics import evaluate_factor_splits
-from auto_alpha.validation.lab.engine_models import ValidationSplit
-from auto_alpha.validation.lab.engine_policy import EngineeringRobustnessPolicy
-from auto_alpha.validation.lab.engine_policy import load_validation_policy
-from auto_alpha.validation.lab.campaigns_ingest import ingest_candidate_pool
-from auto_alpha.validation.lab.campaigns_scheduler import run_validation_shards
+from auto_alpha.portfolio.risk.model import estimate_return_covariance
+from auto_alpha.validation.walk_forward.engine_materialization import FactorMaterializer
+from auto_alpha.validation.walk_forward.engine_materialization import MaterializationInputs
+from auto_alpha.validation.walk_forward.engine_materialization import load_materialized_factor
+from auto_alpha.validation.walk_forward.engine_metrics import evaluate_factor_splits
+from auto_alpha.validation.walk_forward.engine_models import ValidationSplit
+from auto_alpha.validation.walk_forward.engine_policy import EngineeringRobustnessPolicy
+from auto_alpha.validation.walk_forward.engine_policy import load_validation_policy
+from auto_alpha.validation.walk_forward.campaigns_ingest import ingest_candidate_pool
+from auto_alpha.validation.walk_forward.campaigns_scheduler import run_validation_shards
 
 
 def _materialization_fixture(tmp_path: Path, *, zero: bool = False):
@@ -235,7 +235,7 @@ def test_validation_scheduler_flag_creates_four_cuda_shards(tmp_path, monkeypatc
                 (output / "validation_candidate_pool_report.json").write_text(json.dumps({"validated_candidate_count": count, "blocked_count": count}), encoding="utf-8")
             return FakeReport()
 
-    monkeypatch.setattr("auto_alpha.validation.lab.campaigns_scheduler.LocalComputeScheduler", FakeScheduler)
+    monkeypatch.setattr("auto_alpha.validation.walk_forward.campaigns_scheduler.LocalComputeScheduler", FakeScheduler)
     strict = {}
     for name in ["feature_tensor", "feature_validity", "feature_manifest", "snapshot_proof", "promotion_policy", "promotion_allowlist", "promotion_denylist"]:
         path = tmp_path / f"{name}.json" if "tensor" not in name else tmp_path / f"{name}.npy"
@@ -275,7 +275,7 @@ def test_validation_scheduler_flag_creates_four_cuda_shards(tmp_path, monkeypatc
             return AccumulatedFakeReport()
 
     captured.clear()
-    monkeypatch.setattr("auto_alpha.validation.lab.campaigns_scheduler.LocalComputeScheduler", AccumulatedFakeScheduler)
+    monkeypatch.setattr("auto_alpha.validation.walk_forward.campaigns_scheduler.LocalComputeScheduler", AccumulatedFakeScheduler)
     result = run_validation_shards(
         store_dir,
         data_dir=str(tmp_path),

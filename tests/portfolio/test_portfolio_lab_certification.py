@@ -2,10 +2,10 @@ import json
 
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.research.factors.store import FactorRecord, LocalFactorStore, stable_formula_hash
-from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
+from auto_alpha.research.formulas.data_loader import AShareDataLoader
 from auto_alpha.research.factors.registry import LocalModelRegistry
-from auto_alpha.portfolio.construction.certification_run_portfolio_certify import main as certify_main
-from auto_alpha.portfolio.construction.lab_run_portfolio_lab import main as lab_main
+from auto_alpha.portfolio.construction.certification import main as certify_main
+from auto_alpha.portfolio.construction.lab import main as lab_main
 from auto_alpha.portfolio.construction.optimizer import build_portfolio_policy, from_portfolio_policy
 
 

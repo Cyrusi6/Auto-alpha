@@ -1,4 +1,4 @@
-"""Pipeline orchestration for real Tushare/sample data auto_alpha.execution.operations.daily."""
+"""Pipeline orchestration for real Tushare/sample data auto_alpha.execution.trading.daily."""
 
 from __future__ import annotations
 

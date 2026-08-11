@@ -14,8 +14,8 @@ import torch
 
 from auto_alpha._paths import semantic_source_hash
 from auto_alpha.platform.artifacts.schema.writer import attach_artifact_metadata
-from auto_alpha.research.formulas.runtime_vm import StackVM
-from auto_alpha.research.formulas.runtime_vocab import FormulaVocab
+from auto_alpha.research.formulas.vm import StackVM
+from auto_alpha.research.formulas.semantics import FormulaVocab
 from auto_alpha.validation.firewall.core_firewall import DateFirewall, ResearchDataView
 
 
@@ -279,8 +279,8 @@ def _code_semantic_hash() -> str:
         (
             "auto_alpha.validation.firewall.core_firewall",
             "auto_alpha.validation.firewall.core_sentinel",
-            "auto_alpha.research.formulas.runtime_vm",
-            "auto_alpha.research.formulas.runtime_validity",
+            "auto_alpha.research.formulas.vm",
+            "auto_alpha.research.formulas.semantics",
         )
     )
 

@@ -6,17 +6,17 @@ import torch
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.data.ingestion.pipeline.ashare.storage import LocalAshareStorage
 from auto_alpha.research.factors.store import LocalFactorStore
-from auto_alpha.research.formulas.runtime_alphagpt import AlphaGPT
-from auto_alpha.research.formulas.runtime_alphagpt import count_parameters
-from auto_alpha.research.formulas.runtime_vocab import FORMULA_VOCAB
-from auto_alpha.research.neural.search_action_mask import build_action_mask
-from auto_alpha.research.neural.search_action_mask import explain_available_actions
-from auto_alpha.research.neural.search_dataset import FormulaSequenceDataset
-from auto_alpha.research.neural.search_models import NeuralSearchConfig
-from auto_alpha.research.neural.search_sampler import NeuralFormulaSampler
-from auto_alpha.research.neural.search_trainer import NeuralFormulaTrainer
-from auto_alpha.data.pit.universe.builder import build_universe_from_storage
-from auto_alpha.data.pit.universe.models import UniverseBuildConfig
+from auto_alpha.research.formulas.alphagpt import AlphaGPT
+from auto_alpha.research.formulas.alphagpt import count_parameters
+from auto_alpha.research.formulas.semantics import FORMULA_VOCAB
+from auto_alpha.research.search.neural import build_action_mask
+from auto_alpha.research.search.neural import explain_available_actions
+from auto_alpha.research.search.neural import FormulaSequenceDataset
+from auto_alpha.research.search.neural import NeuralSearchConfig
+from auto_alpha.research.search.neural import NeuralFormulaSampler
+from auto_alpha.research.search.neural import NeuralFormulaTrainer
+from auto_alpha.data.universe.builder import build_universe_from_storage
+from auto_alpha.data.universe.models import UniverseBuildConfig
 
 
 def _prepare_sample_universe(tmp_path):

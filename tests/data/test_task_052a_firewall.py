@@ -9,13 +9,13 @@ import numpy as np
 import pytest
 import torch
 
-from auto_alpha.research.features.factory_validity import build_feature_validity_tensor
-from auto_alpha.research.formulas.batch_evaluator import FormulaBatchEvaluator
-from auto_alpha.research.formulas.batch_models import FormulaEvalRequest
+from auto_alpha.research.features.validity import build_feature_validity_tensor
+from auto_alpha.research.formulas.evaluator import FormulaBatchEvaluator
+from auto_alpha.research.formulas.evaluator import FormulaEvalRequest
 from auto_alpha.validation.firewall.core import DateFirewall, ResearchDataView
 from auto_alpha.validation.firewall.core_lineage import build_loader_lineage
-from auto_alpha.validation.lab.engine_run_validation import _load_governed_matrix_context
-from auto_alpha.validation.lab.engine_run_validation import _screening_reproduction
+from auto_alpha.validation.walk_forward.engine_run_validation import _load_governed_matrix_context
+from auto_alpha.validation.walk_forward.engine_run_validation import _screening_reproduction
 
 
 def test_task052_firewall_cutoff_diagnostic_and_actual_read_audit():

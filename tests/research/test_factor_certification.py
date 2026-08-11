@@ -6,8 +6,8 @@ from auto_alpha.validation.certification.factors_policy import policy_profile
 from auto_alpha.validation.certification.factors_run_certify import main as certify_main
 from auto_alpha.validation.certification.factors_scorecard import build_factor_certification_scorecard
 from auto_alpha.research.factors.store import FactorRecord, LocalFactorStore, stable_formula_hash
-from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
-from auto_alpha.validation.lab.engine_run_validation import main as validation_main
+from auto_alpha.research.formulas.data_loader import AShareDataLoader
+from auto_alpha.validation.walk_forward.engine_run_validation import main as validation_main
 
 
 def _prepare_factor_and_validation(tmp_path):

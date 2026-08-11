@@ -1,4 +1,4 @@
-"""Dataclasses for real data production auto_alpha.execution.operations.daily."""
+"""Dataclasses for real data production auto_alpha.execution.trading.daily."""
 
 from __future__ import annotations
 

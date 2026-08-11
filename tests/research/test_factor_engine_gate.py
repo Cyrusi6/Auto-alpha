@@ -1,7 +1,7 @@
 import json
 
-from auto_alpha.research.factors.engine_gate import FactorGateConfig
-from auto_alpha.research.factors.engine_gate import evaluate_factor_gate
+from auto_alpha.research.factors.engine import FactorGateConfig
+from auto_alpha.research.factors.engine import evaluate_factor_gate
 
 
 def _metrics(**overrides):

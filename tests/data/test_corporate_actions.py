@@ -3,9 +3,9 @@ import json
 from auto_alpha.data.pit.corporate_actions.normalizer import normalize_corporate_action_records
 from auto_alpha.data.pit.corporate_actions.report import write_corporate_action_report
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
-from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
+from auto_alpha.research.formulas.data_loader import AShareDataLoader
 from auto_alpha.execution.trading.paper import LocalPaperAccount
-from auto_alpha.execution.trading.paper_models import PaperPosition
+from auto_alpha.execution.trading.paper import PaperPosition
 
 
 def _prepare_data(tmp_path):

@@ -2,10 +2,10 @@ import json
 
 import torch
 
-from auto_alpha.portfolio.simulation import backtest_run_backtest as run_backtest
+from auto_alpha.portfolio.simulator import backtest as run_backtest
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.research.factors.store import FactorRecord, LocalFactorStore
-from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
+from auto_alpha.research.formulas.data_loader import AShareDataLoader
 
 
 def _prepare_factor(tmp_path):

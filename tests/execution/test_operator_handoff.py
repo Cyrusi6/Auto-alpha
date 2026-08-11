@@ -2,9 +2,9 @@ import json
 from pathlib import Path
 
 from auto_alpha.platform.governance.approval import ApprovalStatus, LocalApprovalStore
-from auto_alpha.execution.operations.handoff_checklist import required_item_ids
-from auto_alpha.execution.operations.handoff_run_handoff import main as handoff_main
-from auto_alpha.execution.operations.handoff_store import LocalOperatorHandoffStore
+from auto_alpha.execution.trading.handoff import required_item_ids
+from auto_alpha.execution.trading.handoff import main as handoff_main
+from auto_alpha.execution.trading.handoff import LocalOperatorHandoffStore
 
 
 def test_operator_handoff_smoke_creates_checked_package_and_approval(tmp_path: Path) -> None:

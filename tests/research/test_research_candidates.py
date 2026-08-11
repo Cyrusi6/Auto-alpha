@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from auto_alpha.research.formulas.runtime_vm import StackVM
+from auto_alpha.research.formulas.vm import StackVM
 from auto_alpha.research.formulas.candidates import default_candidates
 from auto_alpha.research.formulas.candidates import load_candidates_json
 from auto_alpha.research.formulas.candidates import save_candidates_json

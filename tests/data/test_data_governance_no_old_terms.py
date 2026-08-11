@@ -7,10 +7,10 @@ TARGETS = [
     Path("src/auto_alpha/data/ingestion/pipeline/ashare/storage.py"),
     Path("src/auto_alpha/data/ingestion/pipeline/ashare/manager.py"),
     Path("src/auto_alpha/data/ingestion/pipeline/run_pipeline.py"),
-    Path("src/auto_alpha/data/pit/universe/__init__.py"),
-    Path("src/auto_alpha/data/pit/universe/models.py"),
-    Path("src/auto_alpha/data/pit/universe/builder.py"),
-    Path("src/auto_alpha/data/pit/universe/run_universe.py"),
+    Path("src/auto_alpha/data/universe/__init__.py"),
+    Path("src/auto_alpha/data/universe/models.py"),
+    Path("src/auto_alpha/data/universe/builder.py"),
+    Path("src/auto_alpha/data/universe/run_universe.py"),
 ]
 
 FORBIDDEN_TERMS = [

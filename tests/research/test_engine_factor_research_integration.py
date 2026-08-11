@@ -3,10 +3,10 @@ import json
 import torch
 
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager, LocalAshareStorage
-from auto_alpha.research.factors.engine_correlation import factor_values_to_matrix
+from auto_alpha.research.factors.engine import factor_values_to_matrix
 from auto_alpha.research.factors.store import LocalFactorStore
-from auto_alpha.research.formulas import runtime_engine as engine
-from auto_alpha.data.pit.universe import UniverseBuildConfig, build_universe_from_storage
+from auto_alpha.research.formulas import engine
+from auto_alpha.data.universe import UniverseBuildConfig, build_universe_from_storage
 
 
 def prepare_data_with_universe(tmp_path):

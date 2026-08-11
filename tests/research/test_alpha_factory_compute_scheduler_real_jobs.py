@@ -1,7 +1,7 @@
 import json
 from dataclasses import replace
 
-from auto_alpha.research.discovery.factory_run_factory import main as run_factory_main
+from auto_alpha.research.search.workflow import main as run_factory_main
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 
 
@@ -96,8 +96,8 @@ def test_alpha_factory_compute_scheduler_runs_real_batch_eval_jobs(tmp_path, cap
             "certification_ready": False,
         }
 
-    monkeypatch.setattr("auto_alpha.research.discovery.factory_runner.run_proxy_eval", fixed_proxy_shortlist)
-    monkeypatch.setattr("auto_alpha.research.discovery.factory_runner.run_full_research", fixed_full_research)
+    monkeypatch.setattr("auto_alpha.research.search.workflow.run_proxy_eval", fixed_proxy_shortlist)
+    monkeypatch.setattr("auto_alpha.research.search.workflow.run_full_research", fixed_full_research)
 
     exit_code = run_factory_main(
         [

@@ -1,5 +1,5 @@
 from auto_alpha.execution.broker.adapter import BrokerOrderRequest, SimulatedBrokerAdapter
-from auto_alpha.portfolio.risk.controls_kill_switch import activate_kill_switch
+from auto_alpha.portfolio.risk.controls import activate_kill_switch
 
 
 def test_simulated_broker_rejects_when_risk_kill_switch_active(tmp_path):

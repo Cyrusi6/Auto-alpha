@@ -4,9 +4,9 @@ from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDa
 from auto_alpha.execution.trading.engine import ExecutionFill, export_fills_jsonl
 from auto_alpha.execution.broker.adapter import BrokerOrderRequest, SimulatedBrokerAdapter
 from auto_alpha.research.factors.store import FactorRecord, LocalFactorStore, stable_formula_hash
-from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
+from auto_alpha.research.formulas.data_loader import AShareDataLoader
 from auto_alpha.research.factors.registry import LocalModelRegistry
-from auto_alpha.research.factors.registry_report import write_model_registry_report
+from auto_alpha.research.factors.registry import write_model_registry_report
 from auto_alpha.platform.observability.monitoring import run_monitor
 from auto_alpha.platform.observability.monitoring.checks import (
     check_quality_report,

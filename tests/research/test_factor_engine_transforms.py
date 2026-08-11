@@ -1,11 +1,11 @@
 import torch
 
-from auto_alpha.research.factors.engine_transforms import SUPPORTED_TRANSFORMS
-from auto_alpha.research.factors.engine_transforms import cs_winsorize_mad
-from auto_alpha.research.factors.engine_transforms import cs_zscore
-from auto_alpha.research.factors.engine_transforms import neutralize_industry
-from auto_alpha.research.factors.engine_transforms import neutralize_market_cap
-from auto_alpha.research.factors.engine_transforms import preprocess_factor
+from auto_alpha.research.factors.engine import SUPPORTED_TRANSFORMS
+from auto_alpha.research.factors.engine import cs_winsorize_mad
+from auto_alpha.research.factors.engine import cs_zscore
+from auto_alpha.research.factors.engine import neutralize_industry
+from auto_alpha.research.factors.engine import neutralize_market_cap
+from auto_alpha.research.factors.engine import preprocess_factor
 
 
 def test_winsorize_and_zscore_keep_shape_and_finite_values():

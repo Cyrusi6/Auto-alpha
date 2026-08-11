@@ -4,16 +4,16 @@ from types import SimpleNamespace
 
 import torch
 
-from auto_alpha.research.features.factory_catalog import FEATURE_SET_V2
-from auto_alpha.research.features.factory_catalog import build_feature_set_manifest
-from auto_alpha.research.features.factory_contracts import build_feature_contract
-from auto_alpha.research.features.factory_contracts import build_tensor_content_fingerprint
-from auto_alpha.research.features.factory_contracts import intersect_candidate_feature_blockers
-from auto_alpha.research.features.factory_models import FeatureDefinition
-from auto_alpha.research.features.factory_models import FeatureSetManifest
-from auto_alpha.research.features.factory_validity import build_feature_values_and_validity
-from auto_alpha.research.formulas.runtime_vm import StackVM
-from auto_alpha.research.formulas.runtime_vocab import FORMULA_VOCAB
+from auto_alpha.research.features.catalog import FEATURE_SET_V2
+from auto_alpha.research.features.catalog import build_feature_set_manifest
+from auto_alpha.research.features.contracts import build_feature_contract
+from auto_alpha.research.features.contracts import build_tensor_content_fingerprint
+from auto_alpha.research.features.contracts import intersect_candidate_feature_blockers
+from auto_alpha.research.features.models import FeatureDefinition
+from auto_alpha.research.features.models import FeatureSetManifest
+from auto_alpha.research.features.validity import build_feature_values_and_validity
+from auto_alpha.research.formulas.vm import StackVM
+from auto_alpha.research.formulas.semantics import FORMULA_VOCAB
 
 
 def _manifest(*definitions: FeatureDefinition) -> FeatureSetManifest:

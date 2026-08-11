@@ -7,7 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from auto_alpha.research.factors.store_storage import LocalFactorStore
+from auto_alpha.research.factors.store import LocalFactorStore
 from auto_alpha.validation.firewall.engineering_closure_validators import canonical_hash, sha256_file
 
 

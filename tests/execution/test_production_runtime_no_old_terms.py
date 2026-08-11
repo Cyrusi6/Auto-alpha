@@ -4,12 +4,10 @@ from pathlib import Path
 
 
 ROOTS = [
-    Path("src/auto_alpha/execution/operations/production"),
-    Path("src/auto_alpha/execution/operations/replay"),
-    Path("src/auto_alpha/execution/trading/shadow"),
-    Path("src/auto_alpha/execution/operations/shadow_lab"),
-    Path("src/auto_alpha/execution/operations/incidents"),
-    Path("src/auto_alpha/platform/network_authority"),
+    Path("src/auto_alpha/execution/trading"),
+    Path("src/auto_alpha/execution/broker"),
+    Path("src/auto_alpha/execution/settlement"),
+    Path("src/auto_alpha/platform/governance/network"),
 ]
 
 BANNED_TERMS = [

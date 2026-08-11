@@ -1,4 +1,4 @@
-"""Production-oriented real data operations for local A-share auto_alpha.research.discovery.studies."""
+"""Production-oriented real data operations for local A-share auto_alpha.research.search.studies."""
 
 from .env_file import load_env_file, redacted_token_metadata
 from .pipeline import run_real_data_pipeline

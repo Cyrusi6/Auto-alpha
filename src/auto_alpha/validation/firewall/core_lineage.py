@@ -84,15 +84,15 @@ def _tensor_hash(value) -> str | None:
 
 def _code_semantic_hash() -> str:
     modules = [
-        "auto_alpha.research.formulas.runtime_vm",
-        "auto_alpha.research.formulas.runtime_validity",
-        "auto_alpha.research.discovery.factory_proxy_eval",
-        "auto_alpha.research.discovery.factory_full_research",
-        "auto_alpha.research.discovery.factory_research_policy",
-        "auto_alpha.research.discovery.factory_scoring",
-        "auto_alpha.research.discovery.evaluation",
-        "auto_alpha.validation.lab.engine_metrics",
-        "auto_alpha.research.formulas.batch_evaluator",
+        "auto_alpha.research.formulas.vm",
+        "auto_alpha.research.formulas.semantics",
+        "auto_alpha.research.search.evaluation",
+        "auto_alpha.research.search.evaluation",
+        "auto_alpha.research.search.models",
+        "auto_alpha.research.search.evaluation",
+        "auto_alpha.research.search.evaluation",
+        "auto_alpha.validation.walk_forward.engine_metrics",
+        "auto_alpha.research.formulas.evaluator",
         "auto_alpha.validation.firewall.core_firewall",
     ]
     digest = hashlib.sha256()

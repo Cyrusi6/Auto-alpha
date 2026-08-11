@@ -5,16 +5,16 @@ import numpy as np
 import pytest
 import torch
 
-from auto_alpha.research.discovery.factory import AlphaCampaignConfig, AlphaFactoryRunner
-from auto_alpha.research.discovery.experiments_leaderboard import build_leaderboard
-from auto_alpha.portfolio.simulation.backtest import AShareBacktestSimulator, AShareTradingRules
+from auto_alpha.research.search.workflow import AlphaCampaignConfig, AlphaFactoryRunner
+from auto_alpha.research.search.experiments import build_leaderboard
+from auto_alpha.portfolio.simulator.backtest import AShareBacktestSimulator, AShareTradingRules
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
-from auto_alpha.research.discovery.evaluation import split_trade_dates
+from auto_alpha.research.search.evaluation import split_trade_dates
 from auto_alpha.research.factors.store import FactorRecord, has_positive_oos_evidence
 from auto_alpha.data.matrix.store.strict_engineering import _build_target
-from auto_alpha.research.formulas.runtime_backtest import AShareFactorEvaluator
-from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
-from auto_alpha.research.neural.search_reward import formula_reward_from_research_result
+from auto_alpha.research.formulas.backtest import AShareFactorEvaluator
+from auto_alpha.research.formulas.data_loader import AShareDataLoader
+from auto_alpha.research.search.neural import formula_reward_from_research_result
 from auto_alpha.research.factors.composite import register_composite_factor
 
 

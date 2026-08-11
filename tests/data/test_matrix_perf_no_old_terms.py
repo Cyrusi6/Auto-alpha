@@ -5,7 +5,7 @@ TARGETS = [
     Path("src/auto_alpha/data/matrix/store"),
     Path("src/auto_alpha/data/lake/catalog"),
     Path("src/auto_alpha/data/quality/cross_source"),
-    Path("src/auto_alpha/research/formulas/runtime_data_loader.py"),
+    Path("src/auto_alpha/research/formulas/data_loader.py"),
     Path("src/auto_alpha/platform/observability/dashboard/config.py"),
     Path("src/auto_alpha/platform/observability/dashboard/data_service.py"),
     Path("src/auto_alpha/platform/observability/dashboard/app.py"),

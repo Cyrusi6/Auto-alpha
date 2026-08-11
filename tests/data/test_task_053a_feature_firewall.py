@@ -4,11 +4,11 @@ from types import SimpleNamespace
 
 import torch
 
-from auto_alpha.research.features.factory_models import FeatureDefinition
-from auto_alpha.research.features.factory_models import FeatureSetManifest
-from auto_alpha.research.features.factory_validity import build_feature_values_and_validity
-from auto_alpha.research.formulas.runtime_vm import StackVM
-from auto_alpha.research.formulas.runtime_vocab import FORMULA_VOCAB
+from auto_alpha.research.features.models import FeatureDefinition
+from auto_alpha.research.features.models import FeatureSetManifest
+from auto_alpha.research.features.validity import build_feature_values_and_validity
+from auto_alpha.research.formulas.vm import StackVM
+from auto_alpha.research.formulas.semantics import FORMULA_VOCAB
 from auto_alpha.validation.firewall.core import FirewallSentinelDataset, run_research_firewall_sentinel
 
 

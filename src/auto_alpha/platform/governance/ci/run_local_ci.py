@@ -91,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.research.discovery.experiments_run_store",
+                "auto_alpha.research.search.experiments",
                 "smoke",
                 "--output-dir",
                 str(quick_dir / "alpha_experiment_store"),
@@ -103,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.validation.lab.campaigns_run_validation_store",
+                "auto_alpha.validation.walk_forward.campaigns_run_validation_store",
                 "smoke",
                 "--validation-campaign-store-dir",
                 str(quick_dir / "validation_campaign_store"),
@@ -131,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.portfolio.construction.campaigns_run_portfolio_campaign",
+                "auto_alpha.portfolio.construction.campaigns",
                 "smoke",
                 "--portfolio-campaign-store-dir",
                 str(quick_dir / "portfolio_campaign_store"),
@@ -452,7 +452,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.execution.trading.paper_run_account",
+                "auto_alpha.execution.trading.paper",
                 "--account-dir",
                 str(quick_dir / "account"),
                 "reset",
@@ -466,7 +466,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.execution.broker.file_gateway_run_gateway",
+                "auto_alpha.execution.broker.file_gateway",
                 "smoke",
                 "--gateway-store-dir",
                 str(quick_dir / "broker_file_gateway"),
@@ -486,7 +486,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.execution.operations.handoff_run_handoff",
+                "auto_alpha.execution.trading.handoff",
                 "smoke",
                 "--handoff-store-dir",
                 str(quick_dir / "operator_handoff"),
@@ -506,7 +506,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.execution.broker.mapping_run_mapping_certify",
+                "auto_alpha.execution.broker.mapping",
                 "--output-dir",
                 str(quick_dir / "broker_mapping_certification"),
                 "--profile-name",
@@ -521,7 +521,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.execution.settlement.compliance_run_compliance",
+                "auto_alpha.execution.settlement.compliance",
                 "build-pack",
                 "--output-dir",
                 str(quick_dir / "compliance"),
@@ -545,7 +545,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.execution.trading.shadow_run_shadow",
+                "auto_alpha.execution.trading.shadow",
                 "smoke",
                 "--production-run-id",
                 "ci_shadow_20240104",
@@ -567,7 +567,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.execution.settlement.engine_run_settlement",
+                "auto_alpha.execution.settlement.engine",
                 "smoke",
                 "--data-dir",
                 str(sample_data_dir),
@@ -587,7 +587,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.portfolio.risk.controls_run_controls",
+                "auto_alpha.portfolio.risk.controls",
                 "smoke",
                 "--output-dir",
                 str(quick_dir / "risk_controls"),
@@ -651,7 +651,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.research.formulas.runtime_engine",
+                "auto_alpha.research.formulas.engine",
                 "--dry-run",
                 "--register",
                 "--data-dir",
@@ -670,7 +670,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.research.features.factory_run_features",
+                "auto_alpha.research.features.factory",
                 "build",
                 "--data-dir",
                 str(sample_data_dir),
@@ -686,7 +686,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.research.features.factory_run_features",
+                "auto_alpha.research.features.factory",
                 "build",
                 "--data-dir",
                 str(sample_data_dir),
@@ -702,7 +702,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.research.features.promotion_run_promotion",
+                "auto_alpha.research.features.promotion",
                 "smoke",
                 "--data-dir",
                 str(sample_data_dir),
@@ -716,7 +716,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.research.discovery.factory_run_factory",
+                "auto_alpha.research.search.workflow",
                 "run",
                 "--campaign-name",
                 "local_ci_alpha",
@@ -780,7 +780,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.validation.lab.engine_run_validation",
+                "auto_alpha.validation.walk_forward.engine_run_validation",
                 "run-suite",
                 "--data-dir",
                 str(sample_data_dir),
@@ -834,7 +834,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.execution.broker.statements_run_statement",
+                "auto_alpha.execution.broker.statements",
                 "synthesize-from-internal",
                 "--output-dir",
                 str(quick_dir / "statement_source"),
@@ -856,7 +856,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.execution.broker.statements_run_statement",
+                "auto_alpha.execution.broker.statements",
                 "import",
                 "--source-dir",
                 str(quick_dir / "statement_source"),
@@ -878,7 +878,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.execution.settlement.reconciliation_run_reconcile",
+                "auto_alpha.execution.settlement.reconciliation",
                 "eod",
                 "--statement-dir",
                 str(quick_dir / "statement_import"),
@@ -960,7 +960,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.research.formulas.corpus_run_corpus",
+                "auto_alpha.research.formulas.corpus",
                 "--output-dir",
                 str(quick_dir / "formula_corpus"),
                 "--pretty",
@@ -971,7 +971,7 @@ def main(argv: list[str] | None = None) -> int:
             [
                 sys.executable,
                 "-m",
-                "auto_alpha.research.neural.search_run_pretrain",
+                "auto_alpha.research.search.pretrain_cli",
                 "--sequence-path",
                 str(quick_dir / "formula_corpus" / "formula_sequences.jsonl"),
                 "--output-dir",

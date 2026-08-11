@@ -4,13 +4,13 @@ from auto_alpha.platform.artifacts.schema.run_validate import main as artifact_v
 from auto_alpha.data.ingestion.pipeline.ashare import AShareDataConfig, AShareDataManager
 from auto_alpha.validation.certification.factors_run_certify import main as certify_main
 from auto_alpha.research.factors.store import FactorRecord, LocalFactorStore, stable_formula_hash
-from auto_alpha.research.formulas.runtime_data_loader import AShareDataLoader
+from auto_alpha.research.formulas.data_loader import AShareDataLoader
 from auto_alpha.platform.observability.monitoring.checks import (
     check_factor_certification_queue,
     check_validation_campaign_leaderboard,
     check_validation_campaign_store,
 )
-from auto_alpha.validation.lab.campaigns_run_validation_store import main as validation_store_main
+from auto_alpha.validation.walk_forward.campaigns_run_validation_store import main as validation_store_main
 
 
 def _prepare_candidate_pool(tmp_path):

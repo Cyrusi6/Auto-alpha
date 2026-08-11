@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
+
+from auto_alpha.platform.artifacts.schema.writer import write_json_artifact
 
 from .dataset_registry import DATASET_DEFINITIONS
 from .pipeline import ASHARE_DATASETS
@@ -123,13 +124,13 @@ def validate_all_datasets(
 
 
 def write_quality_report(report: DataQualityReport, path: str | Path) -> Path:
-    output_path = Path(path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
-        json.dumps(report.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
-        encoding="utf-8",
+    return write_json_artifact(
+        path,
+        report.to_dict(),
+        artifact_type="ashare_data_quality_report",
+        producer="ashare_data_ingestion",
+        created_at=report.generated_at,
     )
-    return output_path
 
 
 def _check_duplicate_primary_keys(

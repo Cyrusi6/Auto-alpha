@@ -2,8 +2,8 @@ import json
 
 from auto_alpha.data.ingestion.pipeline.ashare.manager import AShareDataManager
 from auto_alpha.data.ingestion.pipeline.ashare.config import AShareDataConfig
-from auto_alpha.research.formulas.runtime_engine import main as engine_main
-from auto_alpha.execution.trading.strategy_runner import main as strategy_main
+from auto_alpha.research.formulas.engine import main as engine_main
+from auto_alpha.execution.trading.strategy import main as strategy_main
 
 
 def _prepare_sample_factor(tmp_path):

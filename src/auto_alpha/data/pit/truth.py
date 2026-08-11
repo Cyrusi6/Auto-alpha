@@ -17,7 +17,7 @@ import numpy as np
 from auto_alpha.platform.artifacts.schema.writer import write_artifact_sidecar
 from auto_alpha.data.ingestion.pipeline.ashare.request_normalization import stable_json_hash
 
-from auto_alpha.portfolio.simulation.evidence_contracts import (
+from auto_alpha.portfolio.simulator.evidence_contracts import (
     EXPLICIT_FULL_DAY_TIMINGS,
     MATRIX_DAILY_FIELDS,
     MAX_DATE,
@@ -25,9 +25,9 @@ from auto_alpha.portfolio.simulation.evidence_contracts import (
     TRUTH_SCHEMA,
     TRUTH_STATES,
 )
-from auto_alpha.platform.network_authority.source_access import AccessBroker, canonical_hash, sha256_file
-from auto_alpha.platform.network_authority.source_contracts import MAX_DATE as PRODUCTION_MAX_DATE
-from auto_alpha.platform.network_authority.source_contracts import TRUTH_SCHEMA as PRODUCTION_TRUTH_SCHEMA
+from auto_alpha.platform.governance.network.source_access import AccessBroker, canonical_hash, sha256_file
+from auto_alpha.platform.governance.network.source_contracts import MAX_DATE as PRODUCTION_MAX_DATE
+from auto_alpha.platform.governance.network.source_contracts import TRUTH_SCHEMA as PRODUCTION_TRUTH_SCHEMA
 
 
 class TruthV2Error(RuntimeError):

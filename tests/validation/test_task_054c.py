@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import numpy as np
 import pytest
-from auto_alpha.research.formulas.runtime_vm import StackVM
+from auto_alpha.research.formulas.vm import StackVM
 from auto_alpha.validation.firewall.engineering_closure_bundle import validate_bundle
 from auto_alpha.validation.firewall.engineering_closure_factor_store import validate_normalized_replay_store
 from auto_alpha.validation.firewall.engineering_closure_research_view import validate_research_projection

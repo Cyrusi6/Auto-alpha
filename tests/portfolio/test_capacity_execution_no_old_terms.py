@@ -2,12 +2,11 @@ from pathlib import Path
 
 
 TARGETS = [
-    Path("src/auto_alpha/portfolio/simulation/capacity.py"),
+    Path("src/auto_alpha/portfolio/simulator/capacity.py"),
     Path("src/auto_alpha/execution/trading/plan.py"),
-    Path("src/auto_alpha/portfolio/simulation/backtest_run_backtest.py"),
-    Path("src/auto_alpha/portfolio/simulation/backtest_simulator.py"),
-    Path("src/auto_alpha/execution/trading/strategy_runner.py"),
-    Path("src/auto_alpha/execution/operations"),
+    Path("src/auto_alpha/portfolio/simulator/backtest.py"),
+    Path("src/auto_alpha/execution/trading/strategy.py"),
+    Path("src/auto_alpha/execution/trading"),
     Path("src/auto_alpha/platform/observability/monitoring"),
     Path("src/auto_alpha/platform/observability/dashboard"),
 ]
@@ -26,7 +25,6 @@ FORBIDDEN = [
     "private_key",
     "token_address",
     "fdv",
-    "liquidity",
 ]
 
 

@@ -6,12 +6,12 @@ import numpy as np
 import pytest
 
 from auto_alpha.platform.compute.scheduler import ComputeDeviceRecord, ComputeDeviceType, ComputeResourceSnapshot
-from auto_alpha.validation.lab.campaigns_ingest import ingest_candidate_pool
-from auto_alpha.validation.lab.campaigns_replay_evidence import compare_replay_evidence
-from auto_alpha.validation.lab.campaigns_replay_evidence import publish_replay_bundle
-from auto_alpha.validation.lab.campaigns_replay_evidence import validate_terminal_outputs
-from auto_alpha.validation.lab.campaigns_scheduler import _load_task052a_readiness
-from auto_alpha.validation.lab.campaigns_scheduler import run_validation_shards
+from auto_alpha.validation.walk_forward.campaigns_ingest import ingest_candidate_pool
+from auto_alpha.validation.walk_forward.campaigns_replay_evidence import compare_replay_evidence
+from auto_alpha.validation.walk_forward.campaigns_replay_evidence import publish_replay_bundle
+from auto_alpha.validation.walk_forward.campaigns_replay_evidence import validate_terminal_outputs
+from auto_alpha.validation.walk_forward.campaigns_scheduler import _load_task052a_readiness
+from auto_alpha.validation.walk_forward.campaigns_scheduler import run_validation_shards
 
 
 def _sha(path: Path) -> str:
@@ -230,7 +230,7 @@ def test_content_addressed_bundle_and_replay_core_comparison(tmp_path):
 
 def test_task053a_four_by_five_strict_artifacts_and_resume(tmp_path, monkeypatch):
     store, inputs = _campaign(tmp_path)
-    monkeypatch.setattr("auto_alpha.validation.lab.campaigns_scheduler.probe_compute_resources", _snapshot)
+    monkeypatch.setattr("auto_alpha.validation.walk_forward.campaigns_scheduler.probe_compute_resources", _snapshot)
 
     class Report:
         failed_count = 0
@@ -270,7 +270,7 @@ def test_task053a_four_by_five_strict_artifacts_and_resume(tmp_path, monkeypatch
             self.store.heartbeats_path.write_text("".join(json.dumps(row) + "\n" for row in heartbeats), encoding="utf-8")
             return Report()
 
-    monkeypatch.setattr("auto_alpha.validation.lab.campaigns_scheduler.LocalComputeScheduler", Scheduler)
+    monkeypatch.setattr("auto_alpha.validation.walk_forward.campaigns_scheduler.LocalComputeScheduler", Scheduler)
     first = run_validation_shards(**_kwargs(tmp_path, store, inputs))
     assert first["execution_mode"] == "first_run"
     assert first["replay_bundle_hash"]
@@ -290,7 +290,7 @@ def test_task053a_four_by_five_strict_artifacts_and_resume(tmp_path, monkeypatch
         def __init__(self, _config):
             raise AssertionError("4/4 immutable resume must not schedule")
 
-    monkeypatch.setattr("auto_alpha.validation.lab.campaigns_scheduler.LocalComputeScheduler", ForbiddenScheduler)
+    monkeypatch.setattr("auto_alpha.validation.walk_forward.campaigns_scheduler.LocalComputeScheduler", ForbiddenScheduler)
     resumed = run_validation_shards(**sibling_kwargs, resume=True)
     assert resumed["execution_mode"] == "resume_4_of_4"
     assert resumed["immutable_resume_count"] == 4

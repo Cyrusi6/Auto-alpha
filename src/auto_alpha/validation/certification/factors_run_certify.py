@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from auto_alpha.portfolio.simulation.backtest_io import select_factor_id
+from auto_alpha.portfolio.simulator.backtest import select_factor_id
 from auto_alpha.research.factors.store import LocalFactorStore
 
 from auto_alpha.validation.certification.factors_decision import make_certification_decision

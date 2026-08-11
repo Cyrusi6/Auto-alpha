@@ -8,9 +8,9 @@ from typing import Any
 
 import torch
 
-from auto_alpha.research.factors.engine_correlation import factor_correlation
+from auto_alpha.research.factors.engine import factor_correlation
 from auto_alpha.research.factors.store import FactorRecord, LocalFactorStore, has_positive_oos_evidence, make_factor_id, stable_formula_hash
-from auto_alpha.research.factors.store_lifecycle import FactorLifecycleStatus
+from auto_alpha.research.factors.store import FactorLifecycleStatus
 
 
 FEATURE_VERSION = "ashare_features_v1"

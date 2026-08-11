@@ -7,10 +7,10 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from auto_alpha.research.factors.store import stable_formula_hash
-from auto_alpha.research.formulas.runtime_vm import StackVM
-from auto_alpha.research.formulas.runtime_vocab import FORMULA_VOCAB
+from auto_alpha.research.formulas.vm import StackVM
+from auto_alpha.research.formulas.semantics import FORMULA_VOCAB
 
-from auto_alpha.research.formulas.batch_models import FormulaEvalRequest
+from auto_alpha.research.formulas.evaluator import FormulaEvalRequest
 
 
 FEATURE_VERSION = "ashare_features_v1"
