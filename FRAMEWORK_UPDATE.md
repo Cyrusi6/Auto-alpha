@@ -2,6 +2,17 @@
 
 This file records only the current A-share architecture and recent governed milestones. Detailed historical implementation is available through Git history rather than duplicated task-by-task prose.
 
+## 2026-08-12 — Repository-scoped engineering skills
+
+### Outcome
+
+- Installed the 25 stable engineering and productivity skills from `mattpocock/skills` at upstream commit `84fdeffd12f2ee307994d1eb6feb48173b6e0502`.
+- Scoped the skills to this repository under `.agents/skills`; no Python, GPU, data, research, or production runtime dependency changed.
+- Excluded upstream `in-progress` and optional `misc` skills from the governed project baseline.
+- Recorded the upstream MIT license, immutable source revision, installed inventory, invocation examples, and update guidance beside the skills.
+- Added a minimal `AGENTS.md` precedence and safety block. Discovery still comes from `.agents/skills`; the block keeps the repository's one-question clarification rule authoritative and requires confirmation before governance, external-write, branch, merge/rebase, browser, credential, or secret workflows.
+- Left issue-tracker, triage-label, and domain-doc configuration unset. The optional `$setup-matt-pocock-skills` workflow may propose those settings later, but only after the user chooses and approves them.
+
 ## 2026-08-11 — Six-domain file-layout closure
 
 ### Outcome
