@@ -17,11 +17,12 @@ conda:`auto-alpha`, Python `3.11`, dependencies managed by `uv`.
 1. 先判断现有信息是否足够完全理解你的真实需求，达到95%置信度。
 2. 信息充足：直接开始实现，不额外提问。 
 3. 信息缺失、描述模糊：禁止直接实现，每轮只提出1个必要澄清问题，根据你的回复持续递进追问，直到信息完备后，再开始实现。
-4. 实现完成后需要验收所有的需求是否实现
+4. 使用多个Agent并行实现 
+5. 实现完成后需要验收所有的需求是否实现
 
 ## Commit 
 
-不使用Pull Request, 通过 Git commit 管理变更, 使用 git commit -m "提交信息"; git push origin main去提交 
+不使用Pull Request, 通过 Git commit 管理变更
 每次改进后按照之前的结构更新到`FRAMEWORK_UPDATE.md`
 
 完成后需要commit / push，并回复以下内容，除非明确要求：
