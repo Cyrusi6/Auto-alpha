@@ -2,6 +2,24 @@
 
 This file records only the current A-share architecture and recent governed milestones. Detailed historical implementation is available through Git history rather than duplicated task-by-task prose.
 
+## 2026-08-13 — Autonomous research loop vocabulary
+
+### Outcome
+
+- Added the root domain glossary and defined the Autonomous Research Loop as a resumable, fail-closed A-share research cycle whose atomic and composite outputs stop at `Validation Candidate`.
+- Defined `Validation Candidate` as a research promotion state governed by locked rolling-OOS, cost, capacity, stability, and redundancy gates; it is not factor certification.
+- Kept sealed-holdout access, shadow or paper operation, and live trading behind an explicit Human Authorization Boundary.
+- Required all research trials and evidence, including rejected and evidence-blocked outcomes, to remain in the Research Evidence Archive.
+- Defined each Research Campaign as one budgeted execution of an immutable Research Contract against one Canonical Data Freeze; a valid zero-promotion result is a successful run.
+- Set the initial operating boundary to a single controlled four-GPU host, local content-addressed storage, one campaign at a time, and small post-close campaigns triggered only by a newly admitted freeze.
+- Prioritized existing local data; missing governed coverage must be reported before requesting access to Tushare Pro as the first provider behind provider-neutral contracts.
+- Set both atomic and composite research outputs to stop at `Validation Candidate`; formal `Shadow Candidate` creation remains beyond this research-loop effort.
+- Required template, random, mutation, crossover, and candidate-combination discovery in the first loop; neural guidance shares the same trial contract but is not an acceptance blocker.
+- Made trial exposure cumulative across the Research Contract lineage and candidate promotion history immutable, with current `active`, `stale`, or `quarantined` eligibility derived from later evidence.
+- Limited permanent trial storage to lightweight Evidence Envelopes and promoted value/validity materializations; replay-verified caches, proxy tensors, and expired checkpoints may be garbage-collected under locked retention rules.
+- Required one active campaign per Research Contract, identity-preserving recovery, and auditable `superseded_without_run` outcomes when newer admissible freezes replace unstarted backlog entries.
+- Published the planning route as the GitHub Wayfinder map `Map the autonomous A-share factor research loop`, with decision tickets and native blocking relationships; production implementation remains unchanged until that map is resolved.
+
 ## 2026-08-13 — Engineering skill repository configuration
 
 ### Outcome
