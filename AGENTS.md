@@ -22,10 +22,17 @@ conda:`auto-alpha`, Python `3.11`, dependencies managed by `uv`.
 
 ## Agent skills
 
-- 项目级 skills 位于 `.agents/skills/`。用户明确点名某个 skill 时使用它；未点名时，只自动使用其 Codex 元数据允许隐式调用且描述与需求明确匹配的 skill。项目规则与 skill 冲突时，以本文件为准。
-- 尤其是澄清流程始终遵循“每轮只提出 1 个必要问题”，即使 `grilling` 及其组合 skill 建议一次提出多个问题。
-- `$setup-matt-pocock-skills`、issue/标签写操作、原型分支、合并或 rebase 完成操作、浏览器/凭证/secret 操作，只有在用户明确要求或确认后才执行。
-- skill 文档中的 `/skill-name` 是跨客户端调用写法；在 Codex 中使用 `$skill-name`，或直接要求 Codex 使用该 skill。
+### Issue tracker
+
+Issues and specs are tracked in GitHub Issues for `Cyrusi6/Auto-alpha`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default canonical triage labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repository uses the single-context layout. See `docs/agents/domain.md`.
 
 ## Commit 
 

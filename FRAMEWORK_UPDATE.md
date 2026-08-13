@@ -2,6 +2,15 @@
 
 This file records only the current A-share architecture and recent governed milestones. Detailed historical implementation is available through Git history rather than duplicated task-by-task prose.
 
+## 2026-08-13 — Engineering skill repository configuration
+
+### Outcome
+
+- Selected GitHub Issues in `Cyrusi6/Auto-alpha` as the issue and specification tracker; pull requests remain outside the triage request surface.
+- Mapped the five canonical triage roles directly to `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`.
+- Adopted the single-context domain documentation layout: root `CONTEXT.md` plus repository-wide ADRs under `docs/adr/`, both created lazily when domain modeling resolves terminology or decisions.
+- Added concise discovery pointers to `AGENTS.md` and detailed consumer rules under `docs/agents/`; production runtime, factor research, validation, portfolio, execution, and GPU behavior are unchanged.
+
 ## 2026-08-12 — Repository-scoped engineering skills
 
 ### Outcome
