@@ -125,8 +125,9 @@ def test_legacy_approved_without_positive_oos_is_not_validation_ready():
 def test_production_research_rejects_sample_cpu_and_non_pit_before_data_open(tmp_path, monkeypatch):
     loader = AShareDataLoader(data_dir=tmp_path / "missing", device="cpu", production_research=True)
     monkeypatch.setattr(loader, "_read_jsonl", lambda *_args, **_kwargs: pytest.fail("JSONL fallback was opened"))
+    monkeypatch.setattr(np, "load", lambda *_args, **_kwargs: pytest.fail("NumPy artifact was opened"))
 
-    with pytest.raises(RuntimeError, match="cuda_device_required"):
+    with pytest.raises(RuntimeError, match="data_admission_verdict_required"):
         loader.load_data()
 
     with pytest.raises(RuntimeError, match="sample_or_lenient_provider_forbidden"):

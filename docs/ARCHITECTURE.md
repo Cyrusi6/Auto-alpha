@@ -37,7 +37,7 @@ auto_alpha/
     └── observability/
 ```
 
-The tree contains 54 Python package directories and 436 Python source files. Hard ceilings are 55 and 450. Committed evidence remains capped at four current files.
+The tree contains 54 Python package directories and 437 Python source files. Hard ceilings are 55 and 450. Committed evidence remains capped at four current files.
 
 ## File Convention
 

@@ -2,6 +2,29 @@
 
 This file records only the current A-share architecture and recent governed milestones. Detailed historical implementation is available through Git history rather than duplicated task-by-task prose.
 
+## 2026-08-14 — Data admission verifier foundation
+
+### Outcome
+
+- Implemented the first provider-neutral Data Admission Profile as a stable content identity with the locked 11 base-required, 23 feature-family-conditional, and 7 inactive classifications. Active contracts carry approved fields, consumer roles, evidence grade, and coverage geometry.
+- Implemented deterministic Coverage Plan compilation over profile, access view, date span, As-of Market Date, full lifecycle population, locked SSE/SZSE and CSI300 subjects, and trading dates. The verifier reconstructs the plan identity and obligation set instead of trusting a caller-supplied plan; security obligations respect the half-open `[list_date, delist_date)` interval.
+- Implemented independent verification of a durable attempt-start/post-transport journal over manifest and hash-chain integrity, profile-approved acquisition identities, raw response envelopes, observed-empty semantics, pagination caps, retry lineage, RSA capture signatures, and exact obligation cover. A started request without a terminal receipt remains ambiguous; producer `complete` and `coverage_root` claims are ignored.
+- Locked every acquisition to the profile's exact approved fields, provider/adapter/endpoint/API/schema/permission contract, capture-public-key identity, read-only policy, retry ceiling, and deterministic split tree. A failed page has one causal retry chain; multiple root attempts, forks, backward time, unconsumed cursors, split drift, overlaps, and gaps block.
+- Added authoritative population reconciliation: locked `L`/`D`/`P` securities-master partitions must reproduce the complete lifecycle population, while SSE/SZSE calendar spans must cover every calendar date through As-of and reproduce the plan's open trading dates. Omitting a listed or delisted security or an open day cannot shrink downstream obligations silently.
+- Extended as-of coverage to the verdict watermark and required a pre-span suspension-state seed, so an apparently complete research span cannot hide stale base data or assume an unsuspended initial state.
+- Made `not_applicable` a derived verdict rather than a producer assertion: each reason is profile-locked and must reference a positive, already satisfied lifecycle or tradability authority obligation with matching subject/date geometry. Suspension authority is reconstructed from valid `S`/`R` events and conservative timing; an arbitrary non-empty response, a same-day pre-open `R`, or a same-day after-close `S` cannot prove full-day suspension.
+- Closed the first-profile source-field contracts to the approved price, volume, lifecycle, tradability, size, PIT CSI300, target, and strict-backtest inputs. Financial, industry, holder, event, and other conditional families remain inactive unless a future approved profile activates them.
+- Implemented content-addressed Data Admission Verdict publication and validation. Verdict identity binds the profile, Source Freeze Generation, scope, active field/consumer closure, verifier-recomputed Coverage Root, Data Scope Root evidence, zero-tolerance metrics, deterministic replay evidence, and canonical blockers.
+- Kept final Data Admission fail-closed at the human profile-approval, activated provider-acquisition, real Coverage evidence, and `canonical_bundle_contract_unresolved` boundaries. V1 can prove the controlled exact-cover path and compute a provisional active-scope root, but cannot issue an admitted Canonical Data Freeze until those authorities and the self-contained replayed matrix bundle exist.
+- Registered the Data Admission Profile, Coverage Plan, Coverage Evidence, attempt journal events, and Data Admission Verdict artifacts with the platform schema registry.
+- Removed producer authorization and canonical identity from the Source Freeze builder and physical research view. The capability module, CLI module, types, errors, generation schema, manifest, validation codes, and holdout lineage now consistently use Source Freeze language; no canonical-name compatibility facade remains. Their `alpha_search_authorized` value is always false, and historical canonical-labelled manifests remain read-only, legacy-unproven evidence.
+- Bound `admission_evidence` and its root into the Source Freeze content identity, so lifecycle, coverage, scope, or replay references cannot be swapped while retaining a generation ID. Data Scope identity independently derives active per-dataset roots from validated Source Freeze partitions and excludes inactive roots, so invented lineage is blocked while inactive-family changes do not create false matching-scope drift.
+- Bound each verdict to the actual admission, artifact-storage, and receipt-signing source hashes plus the Python toolchain identity; an implementation change can no longer reuse the same verifier identity merely because schema labels stayed constant.
+- Kept profile activation fail-closed: a mutable `activation_status=active` declaration cannot forge human approval, and v1 has no trusted approval root, so every current profile remains blocked pending a later explicit authorization seam.
+- Separated development replay from governed research validation. Governed Alpha Factory configuration and production formula loading require a Source Freeze plus an independent admitted verdict and cannot fall back to a legacy freeze; the loader remains blocked behind `admitted_bundle_resolver_required` until every target/value/validity/axis locator is resolved from the verdict-bound canonical bundle.
+- Added `data freeze verify-admission`; it returns success only for an independently admitted verdict and returns the governed blocked exit code for missing evidence. Structural Source Freeze validation no longer doubles as research authorization.
+- Preserved the current real-lake outcome as blocked. No Tushare call, market-data write, holdout opening, research campaign, candidate promotion, shadow, paper, or live action was performed.
+
 ## 2026-08-14 — Profile-scoped governed data admission contract
 
 ### Outcome
@@ -66,7 +89,7 @@ This file records only the current A-share architecture and recent governed mile
 - Six domains: `data`, `research`, `validation`, `portfolio`, `execution`, `platform`.
 - 23 visible subsystems.
 - 54 Python package directories, below the hard budget of 55.
-- 436 Python source files, below the hard budget of 450.
+- 437 Python source files, below the hard budget of 450.
 - Four committed evidence files, at the hard evidence budget.
 - Tests mirror the same six domains.
 

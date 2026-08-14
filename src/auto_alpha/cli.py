@@ -25,7 +25,10 @@ COMMANDS = {
     ("data", "repair"): CommandSpec("auto_alpha.data.ingestion.repair.run_repair", "Apply a governed repair plan"),
     ("data", "post-download"): CommandSpec("auto_alpha.data.ingestion.repair.run_post_download", "Validate and publish downloaded data"),
     ("data", "lake"): CommandSpec("auto_alpha.data.lake.store.run_lake", "Manage immutable lake generations"),
-    ("data", "freeze"): CommandSpec("auto_alpha.data.lake.store.run_canonical_freeze", "Build the canonical research freeze"),
+    ("data", "freeze"): CommandSpec(
+        "auto_alpha.data.lake.store.run_source_freeze",
+        "Build a Source Freeze and verify data admission",
+    ),
     ("data", "operate"): CommandSpec("auto_alpha.data.lake.operations.run_real_data", "Run governed real-data operations"),
     ("data", "quality"): CommandSpec("auto_alpha.data.quality.lab.run_quality_lab", "Run data-quality diagnostics"),
     ("data", "compare"): CommandSpec("auto_alpha.data.quality.cross_source.run_compare", "Compare governed sources"),

@@ -66,6 +66,7 @@ class AlphaCampaignConfig:
     factor_store_dir: str
     report_dir: str | None = None
     data_freeze_dir: str | None = None
+    data_admission_verdict_path: str | None = None
     data_version_manifest_path: str | None = None
     require_data_freeze: bool = False
     formula_corpus_path: str | None = None

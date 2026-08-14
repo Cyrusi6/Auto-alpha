@@ -1,4 +1,4 @@
-"""Canonical immutable A-share research freeze with physically bounded views."""
+"""A-share Source Freeze producer with physically bounded views."""
 
 from __future__ import annotations
 
@@ -28,10 +28,10 @@ from auto_alpha.data.ingestion.pipeline.ashare.dataset_registry import (
 )
 
 
-SCHEMA_VERSION = "canonical_ashare_research_freeze_v1"
+SCHEMA_VERSION = "ashare_source_freeze_generation_v1"
 SOURCE_CUTOFF = "20260630"
-REQUIRED_DATASETS = tuple(dict.fromkeys(FULL_RESEARCH_DATASETS))
-CORE_GATE_DATASETS = {
+SOURCE_INVENTORY_DATASETS = tuple(dict.fromkeys(FULL_RESEARCH_DATASETS))
+LEGACY_PRODUCER_CHECK_DATASETS = {
     "securities",
     "trade_calendar",
     "st_status_daily",
@@ -86,12 +86,12 @@ RESEARCH_ENVELOPE_SCHEMA = pa.schema(
 )
 
 
-class CanonicalFreezeError(RuntimeError):
+class SourceFreezeError(RuntimeError):
     pass
 
 
 @dataclass(frozen=True)
-class CanonicalFreezeConfig:
+class SourceFreezeConfig:
     governed_root: str
     output_root: str
     source_cutoff: str = SOURCE_CUTOFF
@@ -100,7 +100,7 @@ class CanonicalFreezeConfig:
     workers: int = 1
 
 
-def audit_canonical_freeze_sources(config: CanonicalFreezeConfig) -> dict[str, Any]:
+def audit_source_freeze_sources(config: SourceFreezeConfig) -> dict[str, Any]:
     governed_root = Path(config.governed_root).resolve()
     output_root = Path(config.output_root).resolve()
     raw_index_path = _resolve_reviewed_raw_index(governed_root)
@@ -115,13 +115,13 @@ def audit_canonical_freeze_sources(config: CanonicalFreezeConfig) -> dict[str, A
         blockers.append("reviewed_raw_index_duplicate_dataset_rows")
     if int(raw_index.get("dataset_count", -1)) != len(raw_dataset_rows):
         blockers.append("reviewed_raw_index_dataset_count_mismatch")
-    for dataset in REQUIRED_DATASETS:
+    for dataset in SOURCE_INVENTORY_DATASETS:
         index_row = datasets.get(dataset)
         contract = _dataset_contract(dataset)
         row = {
             "dataset": dataset,
             "required": True,
-            "core_gate": dataset in CORE_GATE_DATASETS,
+            "legacy_producer_check": dataset in LEGACY_PRODUCER_CHECK_DATASETS,
             "contract": contract,
             "status": "missing",
             "records_relative_path": None,
@@ -208,7 +208,7 @@ def audit_canonical_freeze_sources(config: CanonicalFreezeConfig) -> dict[str, A
             row["source_eligible"] = not any(_is_materialization_blocker(reason) for reason in row["blockers"])
         source_rows.append(row)
         warnings.extend(f"{dataset}:{reason}" for reason in row["warnings"])
-        if row["core_gate"]:
+        if row["legacy_producer_check"]:
             blockers.extend(f"{dataset}:{reason}" for reason in row["blockers"])
         else:
             warnings.extend(f"{dataset}:{reason}" for reason in row["blockers"])
@@ -254,7 +254,7 @@ def audit_canonical_freeze_sources(config: CanonicalFreezeConfig) -> dict[str, A
     source_catalog_hash = _canonical_hash(source_catalog)
     status = "ready_to_build" if not blockers else "source_freeze_buildable_research_gate_blocked"
     report = {
-        "schema_version": "canonical_ashare_freeze_preflight_v1",
+        "schema_version": "ashare_source_freeze_preflight_v1",
         "status": status,
         "source_catalog_hash": source_catalog_hash,
         "source_catalog": source_catalog,
@@ -270,13 +270,13 @@ def audit_canonical_freeze_sources(config: CanonicalFreezeConfig) -> dict[str, A
     target.parent.mkdir(parents=True, exist_ok=True)
     expected_bytes = _canonical_json_bytes(report, pretty=True)
     if target.exists():
-        existing = target / "canonical_freeze_preflight.json"
+        existing = target / "source_freeze_preflight.json"
         if not existing.is_file() or existing.read_bytes() != expected_bytes:
-            raise CanonicalFreezeError("content-addressed preflight generation drift")
+            raise SourceFreezeError("content-addressed preflight generation drift")
     else:
         temporary = Path(tempfile.mkdtemp(prefix=f".{generation_id}.", dir=target.parent))
         try:
-            _atomic_bytes(temporary / "canonical_freeze_preflight.json", expected_bytes)
+            _atomic_bytes(temporary / "source_freeze_preflight.json", expected_bytes)
             os.replace(temporary, target)
             _make_immutable(target)
         finally:
@@ -286,19 +286,19 @@ def audit_canonical_freeze_sources(config: CanonicalFreezeConfig) -> dict[str, A
         output_root / "preflight" / "current.json",
         {
             "generation_id": generation_id,
-            "manifest": f"generations/{generation_id}/canonical_freeze_preflight.json",
+            "manifest": f"generations/{generation_id}/source_freeze_preflight.json",
             "source_catalog_hash": source_catalog_hash,
         },
     )
-    return report | {"report_path": str(target / "canonical_freeze_preflight.json"), "generation_dir": str(target)}
+    return report | {"report_path": str(target / "source_freeze_preflight.json"), "generation_dir": str(target)}
 
 
-def build_canonical_research_freeze(config: CanonicalFreezeConfig) -> dict[str, Any]:
-    preflight = audit_canonical_freeze_sources(config)
+def build_source_freeze_generation(config: SourceFreezeConfig) -> dict[str, Any]:
+    preflight = audit_source_freeze_sources(config)
     output_root = Path(config.output_root).resolve()
     staging_parent = output_root / "staging"
     staging_parent.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=".canonical_freeze.", dir=staging_parent))
+    staging = Path(tempfile.mkdtemp(prefix=".source_freeze.", dir=staging_parent))
     source_catalog = preflight["source_catalog"]
     build_source_semantic = _source_semantic_hash()
     dataset_results: list[dict[str, Any]] = []
@@ -354,7 +354,7 @@ def build_canonical_research_freeze(config: CanonicalFreezeConfig) -> dict[str, 
             samples[str(source_row["dataset"])] = result["samples"]
         reconciliation = _cross_source_reconciliation(samples)
         quality = {
-            "schema_version": "canonical_ashare_freeze_quality_v1",
+            "schema_version": "ashare_source_freeze_quality_v1",
             "datasets": dataset_results,
             "cross_source_reconciliation": reconciliation,
             "source_dataset_count": len(source_catalog["datasets"]),
@@ -375,7 +375,7 @@ def build_canonical_research_freeze(config: CanonicalFreezeConfig) -> dict[str, 
             {
                 f"{row['dataset']}:{reason}"
                 for row in dataset_results
-                if row["dataset"] in CORE_GATE_DATASETS
+                if row["dataset"] in LEGACY_PRODUCER_CHECK_DATASETS
                 for reason in row.get("blockers") or []
             }
         )
@@ -388,15 +388,28 @@ def build_canonical_research_freeze(config: CanonicalFreezeConfig) -> dict[str, 
         )
         source_semantic = _source_semantic_hash()
         if source_semantic != build_source_semantic:
-            raise CanonicalFreezeError("freeze builder source semantics changed during materialization")
+            raise SourceFreezeError("freeze builder source semantics changed during materialization")
         period_coverage = _period_coverage(partition_rows)
         frozen_derived = _copy_derived_bundle_to_search_view(
             Path(config.governed_root).resolve(),
             source_catalog["derived_bundle"],
             staging,
         )
+        source_artifact_root = _canonical_hash(
+            {
+                "source_catalog_hash": preflight["source_catalog_hash"],
+                "partition_root": partition_root,
+                "search_partition_root": search_partition_root,
+                "dataset_quality_root": _canonical_hash(dataset_results),
+                "cross_source_reconciliation_hash": _canonical_hash(reconciliation),
+                "derived_artifact_root": frozen_derived.get("frozen_artifact_root"),
+                "source_semantic_hash": source_semantic,
+            }
+        )
+        admission_evidence: dict[str, Any] = {}
         core = {
             "schema_version": SCHEMA_VERSION,
+            "source_artifact_root": source_artifact_root,
             "source_catalog_hash": preflight["source_catalog_hash"],
             "period_policy": source_catalog["period_policy"],
             "partition_root": partition_root,
@@ -406,11 +419,13 @@ def build_canonical_research_freeze(config: CanonicalFreezeConfig) -> dict[str, 
             "cross_source_reconciliation_hash": _canonical_hash(reconciliation),
             "source_semantic_hash": source_semantic,
             "strict_derived_bundle": frozen_derived,
+            "admission_evidence": admission_evidence,
+            "admission_evidence_root": _canonical_hash(admission_evidence),
             "blockers": sorted(set(preflight["blockers"] + materialization_blockers + reconciliation_blockers)),
             "warnings": list(preflight["warnings"]),
         }
         content_hash = _canonical_hash(core)
-        generation_id = f"ashare_freeze_{content_hash[:24]}"
+        generation_id = f"ashare_source_freeze_{content_hash[:24]}"
         search_manifest = _build_search_view_manifest(
             generation_id,
             content_hash,
@@ -422,7 +437,11 @@ def build_canonical_research_freeze(config: CanonicalFreezeConfig) -> dict[str, 
             **core,
             "generation_id": generation_id,
             "content_hash": content_hash,
-            "status": "canonical_freeze_ready" if not core["blockers"] else "canonical_freeze_built_research_gate_blocked",
+            "status": (
+                "source_freeze_built_admission_pending"
+                if not core["blockers"]
+                else "source_freeze_built_producer_checks_blocked"
+            ),
             "partitions": partition_rows,
             "partition_count": len(partition_rows),
             "dataset_count": len(dataset_results),
@@ -430,7 +449,10 @@ def build_canonical_research_freeze(config: CanonicalFreezeConfig) -> dict[str, 
             "source_catalog_sha256": _sha256(staging / "source_catalog.json"),
             "quality_report_sha256": _sha256(staging / "quality_report.json"),
             "search_view_manifest_sha256": _sha256(staging / "search_view" / "research_view_manifest.json"),
-            "alpha_search_authorized": not core["blockers"],
+            # A producer can publish a Source Freeze Generation, never its own
+            # governed research authorization. Only an independent admitted
+            # Data Admission Verdict can create a Canonical Data Freeze.
+            "alpha_search_authorized": False,
             "sealed_holdout": {
                 "period": "20250101-20260630",
                 "physical_view": "sealed_holdout",
@@ -441,14 +463,14 @@ def build_canonical_research_freeze(config: CanonicalFreezeConfig) -> dict[str, 
             },
             "certification_ready": False,
         }
-        _atomic_json(staging / "canonical_freeze_manifest.json", manifest)
+        _atomic_json(staging / "source_freeze_manifest.json", manifest)
         target = output_root / "generations" / generation_id
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists():
             shutil.rmtree(staging)
-            validated = validate_canonical_research_freeze(target / "canonical_freeze_manifest.json")
+            validated = validate_source_freeze_generation(target / "source_freeze_manifest.json")
             if validated["content_hash"] != content_hash:
-                raise CanonicalFreezeError("canonical freeze content-address collision")
+                raise SourceFreezeError("source freeze content-address collision")
             return validated | {"cache_hit": True}
         os.replace(staging, target)
         _make_immutable(target)
@@ -457,23 +479,24 @@ def build_canonical_research_freeze(config: CanonicalFreezeConfig) -> dict[str, 
             {
                 "generation_id": generation_id,
                 "content_hash": content_hash,
-                "manifest": f"generations/{generation_id}/canonical_freeze_manifest.json",
+                "manifest": f"generations/{generation_id}/source_freeze_manifest.json",
                 "alpha_search_authorized": manifest["alpha_search_authorized"],
             },
         )
-        validated = validate_canonical_research_freeze(target / "canonical_freeze_manifest.json")
+        validated = validate_source_freeze_generation(target / "source_freeze_manifest.json")
         return validated | {"cache_hit": False}
     finally:
         if staging.exists():
             shutil.rmtree(staging, ignore_errors=True)
 
 
-def validate_canonical_research_freeze(path: str | Path) -> dict[str, Any]:
+def validate_source_freeze_generation(path: str | Path) -> dict[str, Any]:
     manifest_path = Path(path).resolve()
     manifest = _read_json(manifest_path)
     root = manifest_path.parent
     core_keys = (
         "schema_version",
+        "source_artifact_root",
         "source_catalog_hash",
         "period_policy",
         "partition_root",
@@ -483,58 +506,62 @@ def validate_canonical_research_freeze(path: str | Path) -> dict[str, Any]:
         "cross_source_reconciliation_hash",
         "source_semantic_hash",
         "strict_derived_bundle",
+        "admission_evidence",
+        "admission_evidence_root",
         "blockers",
         "warnings",
     )
     core = {key: manifest[key] for key in core_keys}
+    if manifest.get("schema_version") != SCHEMA_VERSION:
+        raise SourceFreezeError("source freeze schema mismatch")
     if _canonical_hash(core) != manifest.get("content_hash"):
-        raise CanonicalFreezeError("canonical freeze semantic content hash mismatch")
+        raise SourceFreezeError("source freeze semantic content hash mismatch")
     actual_partitions = []
     for row in manifest.get("partitions") or []:
         relative = str(row.get("relative_path") or "")
         source = (root / relative).resolve()
         if not source.is_relative_to(root) or not source.is_file() or source.is_symlink():
-            raise CanonicalFreezeError(f"canonical freeze partition containment failure: {relative}")
+            raise SourceFreezeError(f"source freeze partition containment failure: {relative}")
         if _sha256(source) != row.get("sha256") or source.stat().st_size != int(row.get("size_bytes", -1)):
-            raise CanonicalFreezeError(f"canonical freeze partition drift: {relative}")
+            raise SourceFreezeError(f"source freeze partition drift: {relative}")
         metadata = pq.read_metadata(source)
         if metadata.num_rows != int(row.get("record_count", -1)):
-            raise CanonicalFreezeError(f"canonical freeze partition row-count drift: {relative}")
+            raise SourceFreezeError(f"source freeze partition row-count drift: {relative}")
         if set(metadata.schema.to_arrow_schema().names) != set(FULL_ENVELOPE_SCHEMA.names):
-            raise CanonicalFreezeError(f"canonical freeze partition schema drift: {relative}")
+            raise SourceFreezeError(f"source freeze partition schema drift: {relative}")
         _validate_partition_dates(source, row)
         actual_partitions.append(
             {"path": relative, "sha256": row["sha256"], "records": int(row["record_count"])}
         )
     if _canonical_hash(actual_partitions) != manifest.get("partition_root"):
-        raise CanonicalFreezeError("canonical freeze partition root mismatch")
+        raise SourceFreezeError("source freeze partition root mismatch")
     source_catalog_path = root / "source_catalog.json"
     if _sha256(source_catalog_path) != manifest.get("source_catalog_sha256"):
-        raise CanonicalFreezeError("canonical freeze source catalog drift")
+        raise SourceFreezeError("source freeze source catalog drift")
     if _canonical_hash(_read_json(source_catalog_path)) != manifest.get("source_catalog_hash"):
-        raise CanonicalFreezeError("canonical freeze source catalog semantic mismatch")
+        raise SourceFreezeError("source freeze source catalog semantic mismatch")
     quality_path = root / "quality_report.json"
     if _sha256(quality_path) != manifest.get("quality_report_sha256"):
-        raise CanonicalFreezeError("canonical freeze quality report drift")
+        raise SourceFreezeError("source freeze quality report drift")
     quality = _read_json(quality_path)
     if _canonical_hash(quality.get("datasets") or []) != manifest.get("dataset_quality_root"):
-        raise CanonicalFreezeError("canonical freeze dataset quality root mismatch")
+        raise SourceFreezeError("source freeze dataset quality root mismatch")
     if _canonical_hash(quality.get("cross_source_reconciliation") or {}) != manifest.get(
         "cross_source_reconciliation_hash"
     ):
-        raise CanonicalFreezeError("canonical freeze reconciliation root mismatch")
+        raise SourceFreezeError("source freeze reconciliation root mismatch")
     search_path = root / "search_view" / "research_view_manifest.json"
     if _sha256(search_path) != manifest.get("search_view_manifest_sha256"):
-        raise CanonicalFreezeError("canonical freeze search view drift")
+        raise SourceFreezeError("source freeze search view drift")
     search = validate_physical_research_view(search_path)
     if search.get("freeze_content_hash") != manifest.get("content_hash"):
-        raise CanonicalFreezeError("physical research view freeze lineage mismatch")
+        raise SourceFreezeError("physical research view freeze lineage mismatch")
     if search.get("partition_root") != manifest.get("search_partition_root"):
-        raise CanonicalFreezeError("physical research view partition lineage mismatch")
-    if bool(search.get("alpha_search_authorized")) != bool(manifest.get("alpha_search_authorized")):
-        raise CanonicalFreezeError("physical research view authorization mismatch")
-    if bool(manifest.get("alpha_search_authorized")) != (not manifest.get("blockers")):
-        raise CanonicalFreezeError("canonical freeze research authorization mismatch")
+        raise SourceFreezeError("physical research view partition lineage mismatch")
+    if search.get("alpha_search_authorized") is not False:
+        raise SourceFreezeError("physical research view producer authorization forbidden")
+    if manifest.get("alpha_search_authorized") is not False:
+        raise SourceFreezeError("source freeze producer research authorization forbidden")
     return manifest | {
         "manifest_path": str(manifest_path),
         "generation_dir": str(root),
@@ -549,28 +576,30 @@ def validate_physical_research_view(path: str | Path) -> dict[str, Any]:
     root = manifest_path.parent
     semantic = {key: value for key, value in manifest.items() if key != "content_hash"}
     if _canonical_hash(semantic) != manifest.get("content_hash"):
-        raise CanonicalFreezeError("physical research view content hash mismatch")
+        raise SourceFreezeError("physical research view content hash mismatch")
     if manifest.get("allowed_periods") != ["bootstrap", "research"]:
-        raise CanonicalFreezeError("physical research view period contract mismatch")
+        raise SourceFreezeError("physical research view period contract mismatch")
     if str(manifest.get("max_availability_date")) != "20191231":
-        raise CanonicalFreezeError("physical research view cutoff mismatch")
+        raise SourceFreezeError("physical research view cutoff mismatch")
+    if manifest.get("alpha_search_authorized") is not False:
+        raise SourceFreezeError("physical research view producer authorization forbidden")
     actual_partitions = []
     for row in manifest.get("partitions") or []:
         if row.get("period") not in {"bootstrap", "research"}:
-            raise CanonicalFreezeError("sealed or evaluation partition leaked into research view")
+            raise SourceFreezeError("sealed or evaluation partition leaked into research view")
         source = (root / str(row["view_relative_path"])).resolve()
         if not source.is_relative_to(root) or not source.is_file() or source.is_symlink():
-            raise CanonicalFreezeError("physical research partition containment failure")
+            raise SourceFreezeError("physical research partition containment failure")
         if _sha256(source) != row.get("sha256"):
-            raise CanonicalFreezeError("physical research partition hash mismatch")
+            raise SourceFreezeError("physical research partition hash mismatch")
         metadata = pq.read_metadata(source)
         if metadata.num_rows != int(row.get("record_count", -1)):
-            raise CanonicalFreezeError("physical research partition row-count mismatch")
+            raise SourceFreezeError("physical research partition row-count mismatch")
         schema_names = set(metadata.schema.to_arrow_schema().names)
         if "raw_json" in schema_names or "observable_json" not in schema_names:
-            raise CanonicalFreezeError("physical research partition exposes raw payload")
+            raise SourceFreezeError("physical research partition exposes raw payload")
         if str(row.get("max_availability_date") or "") > "20191231":
-            raise CanonicalFreezeError("post-research data leaked into physical research view")
+            raise SourceFreezeError("post-research data leaked into physical research view")
         actual_partitions.append(
             {
                 "path": row["view_relative_path"],
@@ -579,19 +608,19 @@ def validate_physical_research_view(path: str | Path) -> dict[str, Any]:
             }
         )
     if _canonical_hash(actual_partitions) != manifest.get("partition_root"):
-        raise CanonicalFreezeError("physical research partition root mismatch")
+        raise SourceFreezeError("physical research partition root mismatch")
     derived = manifest.get("strict_derived_bundle") or {}
     frozen_artifacts = list(derived.get("frozen_artifacts") or [])
     for row in frozen_artifacts:
         source = (root / str(row.get("view_relative_path") or "")).resolve()
         if not source.is_relative_to(root) or not source.is_file() or source.is_symlink():
-            raise CanonicalFreezeError("physical research derived artifact containment failure")
+            raise SourceFreezeError("physical research derived artifact containment failure")
         if source.stat().st_size != int(row.get("size_bytes", -1)) or _sha256(source) != row.get("sha256"):
-            raise CanonicalFreezeError("physical research derived artifact drift")
+            raise SourceFreezeError("physical research derived artifact drift")
     if frozen_artifacts and _canonical_hash(frozen_artifacts) != derived.get("frozen_artifact_root"):
-        raise CanonicalFreezeError("physical research derived artifact root mismatch")
+        raise SourceFreezeError("physical research derived artifact root mismatch")
     if any("sealed_holdout" in str(value) for value in _walk_strings(manifest)):
-        raise CanonicalFreezeError("physical research view exposes sealed holdout locator")
+        raise SourceFreezeError("physical research view exposes sealed holdout locator")
     return manifest | {"manifest_path": str(manifest_path), "view_root": str(root)}
 
 
@@ -607,7 +636,7 @@ class PhysicalResearchDataView:
     def dataset_partitions(self, dataset: str) -> tuple[Path, ...]:
         paths = tuple(sorted(self._datasets.get(str(dataset), [])))
         if not paths:
-            raise CanonicalFreezeError(f"research dataset unavailable in physical view: {dataset}")
+            raise SourceFreezeError(f"research dataset unavailable in physical view: {dataset}")
         return paths
 
     def iter_observable_records(self, dataset: str) -> Iterable[dict[str, Any]]:
@@ -617,7 +646,7 @@ class PhysicalResearchDataView:
                 for raw in batch.column(0).to_pylist():
                     payload = json.loads(raw)
                     if not isinstance(payload, dict):
-                        raise CanonicalFreezeError("research observable payload is not an object")
+                        raise SourceFreezeError("research observable payload is not an object")
                     yield payload
 
 
@@ -633,7 +662,7 @@ def _materialize_dataset(
     dataset = str(source_row["dataset"])
     source = (governed_root / str(source_row["records_relative_path"])).resolve()
     if not source.is_relative_to(governed_root) or source.is_symlink():
-        raise CanonicalFreezeError(f"source containment failure during freeze build: {dataset}")
+        raise SourceFreezeError(f"source containment failure during freeze build: {dataset}")
     contract = dict(source_row["contract"])
     source_stat = source.stat()
     source_digest = hashlib.sha256()
@@ -671,9 +700,9 @@ def _materialize_dataset(
             try:
                 payload = json.loads(stripped)
             except json.JSONDecodeError as exc:
-                raise CanonicalFreezeError(f"source JSON parse error: {dataset}:{row_number}:{exc}") from exc
+                raise SourceFreezeError(f"source JSON parse error: {dataset}:{row_number}:{exc}") from exc
             if not isinstance(payload, dict):
-                raise CanonicalFreezeError(f"source row is not an object: {dataset}:{row_number}")
+                raise SourceFreezeError(f"source row is not an object: {dataset}:{row_number}")
             record_count += 1
             if payload.get("ts_code") not in {None, ""}:
                 distinct_ts_codes.add(str(payload["ts_code"]))
@@ -772,12 +801,12 @@ def _materialize_dataset(
                 search_partitions.append(research_partition)
     actual_sha = source_digest.hexdigest()
     if actual_sha != source_row.get("records_sha256"):
-        raise CanonicalFreezeError(f"source SHA drift during freeze build: {dataset}")
+        raise SourceFreezeError(f"source SHA drift during freeze build: {dataset}")
     after = source.stat()
     if (after.st_size, after.st_mtime_ns) != (source_stat.st_size, source_stat.st_mtime_ns):
-        raise CanonicalFreezeError(f"source mutated during freeze build: {dataset}")
+        raise SourceFreezeError(f"source mutated during freeze build: {dataset}")
     if record_count != int(source_row.get("record_count", -1)):
-        raise CanonicalFreezeError(f"source record count drift during freeze build: {dataset}")
+        raise SourceFreezeError(f"source record count drift during freeze build: {dataset}")
     missing_counts = {
         field: int(null_counts.get(field, 0) + record_count - present_counts.get(field, 0))
         for field in sorted(fields | set(contract["required_fields"]))
@@ -894,7 +923,7 @@ def _build_search_view_manifest(
 ) -> dict[str, Any]:
     rows = list(partitions)
     semantic = {
-        "schema_version": "physical_ashare_research_view_v1",
+        "schema_version": "source_ashare_research_view_v1",
         "generation_id": generation_id,
         "freeze_content_hash": freeze_hash,
         "allowed_periods": ["bootstrap", "research"],
@@ -908,7 +937,7 @@ def _build_search_view_manifest(
         "partitions": rows,
         "source_semantic_hash": core["source_semantic_hash"],
         "strict_derived_bundle": core["strict_derived_bundle"],
-        "alpha_search_authorized": not core["blockers"],
+        "alpha_search_authorized": False,
         "candidate_identity_freeze_required_before_evaluation_views": True,
         "holdout_locator_exposed": False,
     }
@@ -945,7 +974,7 @@ def _dataset_contract(dataset: str) -> dict[str, Any]:
         }
     definition = DATASET_DEFINITIONS.get(dataset)
     if definition is None:
-        raise CanonicalFreezeError(f"missing governed dataset contract: {dataset}")
+        raise SourceFreezeError(f"missing governed dataset contract: {dataset}")
     required_fields = set(definition.primary_key)
     required_fields.update(field for field in (definition.availability_date_field, definition.effective_date_field) if field)
     if dataset in {"income_statements", "balance_sheets", "cashflow_statements"}:
@@ -1131,11 +1160,11 @@ def _resolve_reviewed_raw_index(governed_root: Path) -> Path:
             continue
         candidates.append((int(payload.get("dataset_count", 0) or 0), str(payload.get("built_at") or ""), path))
     if not candidates:
-        raise CanonicalFreezeError("validated reviewed raw index not found under governed root")
+        raise SourceFreezeError("validated reviewed raw index not found under governed root")
     candidates.sort(reverse=True)
     best = candidates[0]
     if any(row[:2] == best[:2] and row[2] != best[2] for row in candidates[1:]):
-        raise CanonicalFreezeError("ambiguous reviewed raw index candidates")
+        raise SourceFreezeError("ambiguous reviewed raw index candidates")
     return best[2]
 
 
@@ -1153,27 +1182,27 @@ def _discover_derived_bundle(governed_root: Path) -> dict[str, Any]:
         }
     payload = _read_json(pointer)
     if payload.get("schema_version") != "canonical_derived_pointer_v1":
-        raise CanonicalFreezeError("canonical derived bundle pointer schema mismatch")
+        raise SourceFreezeError("derived bundle pointer schema mismatch")
     manifest = (pointer.parent / str(payload.get("manifest") or "")).resolve()
     if not manifest.is_relative_to(pointer.parent.resolve()) or not manifest.is_file():
-        raise CanonicalFreezeError("canonical derived bundle pointer containment failure")
+        raise SourceFreezeError("derived bundle pointer containment failure")
     bundle = _read_json(manifest)
     semantic = {key: value for key, value in bundle.items() if key != "content_hash"}
     if _canonical_hash(semantic) != bundle.get("content_hash"):
-        raise CanonicalFreezeError("canonical derived bundle semantic hash mismatch")
+        raise SourceFreezeError("derived bundle semantic hash mismatch")
     if payload.get("content_hash") != bundle.get("content_hash"):
-        raise CanonicalFreezeError("canonical derived pointer content hash mismatch")
+        raise SourceFreezeError("derived pointer content hash mismatch")
     artifacts: dict[str, dict[str, Any]] = {}
     for row in bundle.get("artifacts") or []:
         role = str(row.get("role") or "")
         relative = str(row.get("relative_path") or "")
         source = (manifest.parent / relative).resolve()
         if not role or role in artifacts:
-            raise CanonicalFreezeError("canonical derived bundle artifact role invalid")
+            raise SourceFreezeError("derived bundle artifact role invalid")
         if not source.is_relative_to(manifest.parent) or not source.is_file() or source.is_symlink():
-            raise CanonicalFreezeError(f"canonical derived bundle artifact containment failure: {role}")
+            raise SourceFreezeError(f"derived bundle artifact containment failure: {role}")
         if source.stat().st_size != int(row.get("size_bytes", -1)) or _sha256(source) != row.get("sha256"):
-            raise CanonicalFreezeError(f"canonical derived bundle artifact drift: {role}")
+            raise SourceFreezeError(f"derived bundle artifact drift: {role}")
         artifacts[role] = dict(row)
     strict_matrix_present = "strict_matrix_manifest" in artifacts
     feature_values_present = "feature_values" in artifacts
@@ -1222,28 +1251,34 @@ def _discover_derived_bundle(governed_root: Path) -> dict[str, Any]:
 def _discover_source_coverage_proof(governed_root: Path) -> dict[str, Any]:
     pointer = governed_root / "governance" / "canonical_source_coverage" / "current.json"
     if not pointer.is_file():
-        return {"status": "missing", "content_hash": None, "datasets": {}}
+        return {
+            "status": "missing",
+            "evidence_grade": "legacy_unproven",
+            "admission_eligible": False,
+            "content_hash": None,
+            "datasets": {},
+        }
     payload = _read_json(pointer)
     if payload.get("schema_version") != "canonical_source_coverage_pointer_v1":
-        raise CanonicalFreezeError("canonical source coverage pointer schema mismatch")
+        raise SourceFreezeError("legacy source coverage pointer schema mismatch")
     manifest = (pointer.parent / str(payload.get("manifest") or "")).resolve()
     if not manifest.is_relative_to(pointer.parent.resolve()) or not manifest.is_file():
-        raise CanonicalFreezeError("canonical source coverage pointer containment failure")
+        raise SourceFreezeError("legacy source coverage pointer containment failure")
     proof = _read_json(manifest)
     semantic = {key: value for key, value in proof.items() if key != "content_hash"}
     if _canonical_hash(semantic) != proof.get("content_hash") or payload.get("content_hash") != proof.get("content_hash"):
-        raise CanonicalFreezeError("canonical source coverage proof hash mismatch")
+        raise SourceFreezeError("legacy source coverage proof hash mismatch")
     datasets: dict[str, dict[str, Any]] = {}
     for row in proof.get("datasets") or []:
         dataset = str(row.get("dataset") or "")
         if not dataset or dataset in datasets:
-            raise CanonicalFreezeError("canonical source coverage dataset identity invalid")
+            raise SourceFreezeError("legacy source coverage dataset identity invalid")
         complete = bool(row.get("complete"))
         security_count = int(row.get("security_count", 0) or 0)
         start_date = _valid_date(row.get("start_date"))
         end_date = _valid_date(row.get("end_date"))
         if complete and (security_count <= 0 or start_date is None or end_date is None or end_date > SOURCE_CUTOFF):
-            raise CanonicalFreezeError(f"canonical source coverage range invalid: {dataset}")
+            raise SourceFreezeError(f"legacy source coverage range invalid: {dataset}")
         datasets[dataset] = {
             "complete": complete,
             "security_count": security_count,
@@ -1254,6 +1289,8 @@ def _discover_source_coverage_proof(governed_root: Path) -> dict[str, Any]:
         }
     return {
         "status": "present",
+        "evidence_grade": "legacy_unproven",
+        "admission_eligible": False,
         "manifest_relative_path": manifest.relative_to(governed_root).as_posix(),
         "manifest_sha256": _sha256(manifest),
         "content_hash": proof.get("content_hash"),
@@ -1284,7 +1321,7 @@ def _validate_derived_artifact_contract(
     matrix = _read_json(path_for("strict_matrix_manifest"))
     shape = tuple(int(value) for value in matrix.get("shape") or ())
     if len(shape) != 2 or min(shape, default=0) <= 0:
-        raise CanonicalFreezeError("canonical derived strict matrix shape invalid")
+        raise SourceFreezeError("derived strict matrix shape invalid")
     stock_axis = _read_json_array(path_for("stock_axis"))
     date_axis = _read_json_array(path_for("date_axis"))
     feature_axis = _read_json_array(path_for("feature_axis"))
@@ -1295,36 +1332,36 @@ def _validate_derived_artifact_contract(
     }
     for role, axis_hash in axis_hashes.items():
         if artifacts[role].get("axis_hash") != axis_hash:
-            raise CanonicalFreezeError(f"canonical derived axis hash mismatch: {role}")
+            raise SourceFreezeError(f"derived axis hash mismatch: {role}")
     if len(stock_axis) != shape[0] or len(date_axis) != shape[1] or not feature_axis:
-        raise CanonicalFreezeError("canonical derived axis shape mismatch")
+        raise SourceFreezeError("derived axis shape mismatch")
     if any(_valid_date(value) is None for value in date_axis):
-        raise CanonicalFreezeError("canonical derived date axis invalid")
+        raise SourceFreezeError("derived date axis invalid")
     if list(date_axis) != sorted(date_axis) or len(date_axis) != len(set(date_axis)):
-        raise CanonicalFreezeError("canonical derived date axis order invalid")
+        raise SourceFreezeError("derived date axis order invalid")
     if str(max(date_axis)) > "20191231":
-        raise CanonicalFreezeError("canonical derived artifacts expose post-research dates")
+        raise SourceFreezeError("derived artifacts expose post-research dates")
     if matrix.get("stock_axis_hash") != axis_hashes["stock_axis"] or matrix.get("date_axis_hash") != axis_hashes[
         "date_axis"
     ]:
-        raise CanonicalFreezeError("canonical derived matrix axis lineage mismatch")
+        raise SourceFreezeError("derived matrix axis lineage mismatch")
     values = np.load(path_for("feature_values"), mmap_mode="r", allow_pickle=False)
     validity = np.load(path_for("feature_validity"), mmap_mode="r", allow_pickle=False)
     target = np.load(path_for("target_availability"), mmap_mode="r", allow_pickle=False)
     expected_feature_shape = (shape[0], len(feature_axis), shape[1])
     if tuple(values.shape) != expected_feature_shape or tuple(validity.shape) != expected_feature_shape:
-        raise CanonicalFreezeError("canonical derived feature tensor shape mismatch")
+        raise SourceFreezeError("derived feature tensor shape mismatch")
     if tuple(target.shape) != shape:
-        raise CanonicalFreezeError("canonical derived target mask shape mismatch")
+        raise SourceFreezeError("derived target mask shape mismatch")
     if values.dtype != np.float32 or validity.dtype != np.bool_ or target.dtype != np.bool_:
-        raise CanonicalFreezeError("canonical derived dtype contract mismatch")
+        raise SourceFreezeError("derived dtype contract mismatch")
     partition_sha = matrix.get("partition_sha256") or {}
     for role in ("target_availability",):
         row = artifacts[role]
         basename = Path(str(row["relative_path"])).name
         declared = partition_sha.get(basename)
         if declared is not None and declared != row["sha256"]:
-            raise CanonicalFreezeError(f"canonical derived matrix partition lineage mismatch: {role}")
+            raise SourceFreezeError(f"derived matrix partition lineage mismatch: {role}")
     return {
         "shape": list(shape),
         "feature_shape": list(expected_feature_shape),
@@ -1346,12 +1383,12 @@ def _copy_derived_bundle_to_search_view(
         role = str(row["role"])
         source = (governed_root / str(row["source_relative_path"])).resolve()
         if not source.is_relative_to(governed_root) or not source.is_file() or source.is_symlink():
-            raise CanonicalFreezeError(f"derived source containment failure during freeze build: {role}")
+            raise SourceFreezeError(f"derived source containment failure during freeze build: {role}")
         target = staging / "search_view" / "derived" / role / Path(str(row["relative_path"])).name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
         if _sha256(target) != row["sha256"]:
-            raise CanonicalFreezeError(f"derived artifact copy drift: {role}")
+            raise SourceFreezeError(f"derived artifact copy drift: {role}")
         frozen.append(
             {
                 "role": role,
@@ -1509,13 +1546,13 @@ def _validate_partition_dates(path: Path, row: Mapping[str, Any]) -> None:
     values = [value for value in table.column("availability_date").to_pylist() if value]
     if values:
         if min(values) != row.get("min_availability_date") or max(values) != row.get("max_availability_date"):
-            raise CanonicalFreezeError(f"partition availability range drift: {path.name}")
+            raise SourceFreezeError(f"partition availability range drift: {path.name}")
         period = str(row["period"])
         bounds = {name: (start, end) for name, start, end, _view in PERIODS}
         if period in bounds and not all(bounds[period][0] <= value <= bounds[period][1] for value in values):
-            raise CanonicalFreezeError(f"partition availability boundary violation: {path.name}")
+            raise SourceFreezeError(f"partition availability boundary violation: {path.name}")
     elif row.get("period") != "unknown_availability":
-        raise CanonicalFreezeError(f"known period partition has no availability dates: {path.name}")
+        raise SourceFreezeError(f"known period partition has no availability dates: {path.name}")
 
 
 def _period_content_root(partitions: list[dict[str, Any]], period: str) -> str:
@@ -1616,7 +1653,7 @@ def _source_semantic_hash() -> str:
 
 def _root_identity(root: Path) -> dict[str, Any]:
     if not root.is_dir() or root.is_symlink():
-        raise CanonicalFreezeError("governed root is missing or symlinked")
+        raise SourceFreezeError("governed root is missing or symlinked")
     return {
         "kind": "governed_ashare_lake",
         "layout_version": "canonical_source_catalog_v1",
@@ -1644,20 +1681,20 @@ def _walk_strings(value: Any) -> Iterable[str]:
 def _read_json(path: str | Path) -> dict[str, Any]:
     target = Path(path)
     if not target.is_file() or target.is_symlink():
-        raise CanonicalFreezeError(f"required immutable JSON missing or symlinked: {target}")
+        raise SourceFreezeError(f"required immutable JSON missing or symlinked: {target}")
     payload = json.loads(target.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
-        raise CanonicalFreezeError(f"expected JSON object: {target}")
+        raise SourceFreezeError(f"expected JSON object: {target}")
     return payload
 
 
 def _read_json_array(path: str | Path) -> list[Any]:
     target = Path(path)
     if not target.is_file() or target.is_symlink():
-        raise CanonicalFreezeError(f"required immutable JSON array missing or symlinked: {target}")
+        raise SourceFreezeError(f"required immutable JSON array missing or symlinked: {target}")
     payload = json.loads(target.read_text(encoding="utf-8"))
     if not isinstance(payload, list):
-        raise CanonicalFreezeError(f"expected JSON array: {target}")
+        raise SourceFreezeError(f"expected JSON array: {target}")
     return payload
 
 

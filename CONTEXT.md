@@ -48,6 +48,10 @@ _Avoid_: adaptive unlimited budget, best-effort cap
 An immutable, content-addressed declaration that classifies each provider-neutral dataset contract as base-required, feature-family-conditional, or inactive and locks its field and evidence obligations. A Research Contract references one profile; changing the profile creates a new identity.
 _Avoid_: global required-dataset list, per-campaign data switches
 
+**Provider Acquisition Contract**:
+A profile-activated, content-addressed evidence contract that locks one provider adapter's endpoint, API and schema versions, non-secret permission context, approved capture-key identity, exact canonical output fields, read-only rule, row cap, retryable failure kinds, retry ceiling, and deterministic split-tree limit. It governs how a provider-neutral dataset may be acquired without making vendor field names part of the canonical data contract.
+_Avoid_: self-declared request metadata, mutable adapter defaults
+
 **Data Admission Verdict**:
 The deterministic admit-or-block result for one Source Freeze Generation scope under a Data Admission Profile, access view, date span, and As-of Market Date. An admitted verdict creates a Canonical Data Freeze; admission never grants access to another view or period.
 _Avoid_: global readiness flag, reusable warning
@@ -61,7 +65,7 @@ One atomic expectation that a dataset-subject-date or dataset-subject-span fact 
 _Avoid_: inferred completeness, row-count target
 
 **Coverage Receipt**:
-The immutable evidence for one source-request attempt, binding its normalized request, endpoint and schema identity, permission context, response hash, row count, pagination state, attempt outcome, and journal lineage. A retry creates another receipt identity and never rewrites an earlier attempt.
+The immutable signed evidence for one source-request attempt, binding its Provider Acquisition Contract, normalized request, response hash, row count, pagination state, attempt outcome, and journal lineage. A retry creates another receipt identity and never rewrites an earlier attempt.
 _Avoid_: API log line, mutable request status
 
 **Coverage Root**:

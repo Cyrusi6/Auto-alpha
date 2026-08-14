@@ -12,28 +12,33 @@ from auto_alpha.platform.artifacts.schema.validator import validate_artifact
 from auto_alpha.research.search.models import AlphaCampaignConfig
 from auto_alpha.research.search.workflow import _resolve_data_dir
 from auto_alpha.research.search.workflow import _validate_production_research_config
-from auto_alpha.data.lake.store.canonical_freeze import (
-    REQUIRED_DATASETS,
-    CanonicalFreezeConfig,
-    CanonicalFreezeError,
+from auto_alpha.data.lake.store.source_freeze import (
+    SOURCE_INVENTORY_DATASETS,
+    SourceFreezeConfig,
+    SourceFreezeError,
     PhysicalResearchDataView,
     _canonical_hash,
     _dataset_contract,
-    audit_canonical_freeze_sources,
-    build_canonical_research_freeze,
-    validate_canonical_research_freeze,
+    audit_source_freeze_sources,
+    build_source_freeze_generation,
+    validate_source_freeze_generation,
     validate_physical_research_view,
 )
 from auto_alpha.data.lake.store.validator import validate_research_input
+from auto_alpha.data.lake.store.admission import (
+    DataAdmissionScope,
+    first_data_admission_profile,
+    verify_data_admission,
+)
 
 
-def test_canonical_freeze_is_deterministic_and_physically_hides_later_periods(tmp_path: Path) -> None:
+def test_source_freeze_is_deterministic_and_physically_hides_later_periods(tmp_path: Path) -> None:
     governed = _governed_fixture(tmp_path / "lake")
-    first = build_canonical_research_freeze(
-        CanonicalFreezeConfig(str(governed), str(tmp_path / "freeze_a"), batch_rows=64, sample_size=32)
+    first = build_source_freeze_generation(
+        SourceFreezeConfig(str(governed), str(tmp_path / "freeze_a"), batch_rows=64, sample_size=32)
     )
-    second = build_canonical_research_freeze(
-        CanonicalFreezeConfig(
+    second = build_source_freeze_generation(
+        SourceFreezeConfig(
             str(governed),
             str(tmp_path / "freeze_b"),
             batch_rows=64,
@@ -45,10 +50,38 @@ def test_canonical_freeze_is_deterministic_and_physically_hides_later_periods(tm
     assert first["content_hash"] == second["content_hash"]
     assert first["partition_root"] == second["partition_root"]
     assert first["search_partition_root"] == second["search_partition_root"]
-    assert first["alpha_search_authorized"] is True
+    assert first["alpha_search_authorized"] is False
+    assert first["search_view"]["alpha_search_authorized"] is False
+    pointer = json.loads(
+        (Path(first["generation_dir"]).parent.parent / "current.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert pointer["alpha_search_authorized"] is False
     assert first["sealed_holdout"]["historically_observed"] is True
     assert first["sealed_holdout"]["untouched"] is False
-    assert validate_research_input(data_freeze_dir=first["generation_dir"], require_freeze=True).status == "passed"
+    validation = validate_research_input(
+        data_freeze_dir=first["generation_dir"],
+        require_freeze=True,
+    )
+    assert validation.status == "error"
+    assert [issue.code for issue in validation.issues] == ["data_admission_verdict_required"]
+    profile_path = tmp_path / "first_profile.json"
+    profile_path.write_text(
+        json.dumps(first_data_admission_profile(), sort_keys=True),
+        encoding="utf-8",
+    )
+    verdict = verify_data_admission(
+        profile_path,
+        first["manifest_path"],
+        DataAdmissionScope("research", "20190102", "20190102", "20190102"),
+        tmp_path / "verdicts",
+    )
+    assert verdict.outcome == "blocked"
+    blocker_codes = {row.code for row in verdict.blockers}
+    assert "legacy_source_generation_evidence_unbound" not in blocker_codes
+    assert "coverage_population_evidence_missing" in blocker_codes
+    assert "source_artifact_root_invalid" not in blocker_codes
     assert validate_artifact(first["manifest_path"], strict=True).valid is True
     assert validate_artifact(first["search_view_manifest_path"], strict=True).valid is True
 
@@ -69,6 +102,22 @@ def test_canonical_freeze_is_deterministic_and_physically_hides_later_periods(tm
     assert "list_status" not in security
 
 
+def test_governed_validation_never_falls_back_to_a_legacy_freeze(tmp_path: Path) -> None:
+    legacy = tmp_path / "legacy"
+    legacy.mkdir()
+
+    validation = validate_research_input(
+        data_freeze_dir=legacy,
+        require_freeze=True,
+        governed_research=True,
+    )
+
+    assert validation.status == "error"
+    assert [issue.code for issue in validation.issues] == [
+        "source_freeze_manifest_required"
+    ]
+
+
 def test_financial_availability_uses_conservative_announcement_endpoint(tmp_path: Path) -> None:
     governed = _governed_fixture(tmp_path / "lake")
     income = governed / "data" / "income_statements" / "records.jsonl"
@@ -78,14 +127,14 @@ def test_financial_availability_uses_conservative_announcement_endpoint(tmp_path
     _write_jsonl(income, rows)
     _refresh_raw_index(governed)
 
-    freeze = build_canonical_research_freeze(
-        CanonicalFreezeConfig(str(governed), str(tmp_path / "freeze"), batch_rows=64)
+    freeze = build_source_freeze_generation(
+        SourceFreezeConfig(str(governed), str(tmp_path / "freeze"), batch_rows=64)
     )
-    manifest = validate_canonical_research_freeze(freeze["manifest_path"])
+    manifest = validate_source_freeze_generation(freeze["manifest_path"])
     income_partitions = [row for row in manifest["partitions"] if row["dataset"] == "income_statements"]
     assert {row["period"] for row in income_partitions} == {"validation"}
     view = PhysicalResearchDataView(manifest["search_view_manifest_path"])
-    with pytest.raises(CanonicalFreezeError, match="research dataset unavailable"):
+    with pytest.raises(SourceFreezeError, match="research dataset unavailable"):
         view.dataset_partitions("income_statements")
 
 
@@ -106,39 +155,71 @@ def test_missing_event_sources_and_legacy_suspension_fail_closed(tmp_path: Path)
             row["primary_key_fields"] = ["ts_code"]
     index_path.write_text(json.dumps(index, sort_keys=True), encoding="utf-8")
 
-    preflight = audit_canonical_freeze_sources(
-        CanonicalFreezeConfig(str(governed), str(tmp_path / "preflight"))
+    preflight = audit_source_freeze_sources(
+        SourceFreezeConfig(str(governed), str(tmp_path / "preflight"))
     )
     assert preflight["alpha_search_authorized"] is False
     assert "st_status_daily:dataset_missing_from_reviewed_raw_index" in preflight["blockers"]
     assert any("legacy_unusable_suspension_contract" in blocker for blocker in preflight["blockers"])
 
 
+def test_source_freeze_producer_cannot_restore_research_authorization(tmp_path: Path) -> None:
+    governed = _governed_fixture(tmp_path / "lake")
+    freeze = build_source_freeze_generation(
+        SourceFreezeConfig(str(governed), str(tmp_path / "freeze"), batch_rows=64)
+    )
+    manifest_path = Path(freeze["manifest_path"])
+    manifest_path.chmod(0o640)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["alpha_search_authorized"] = True
+    manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(SourceFreezeError, match="producer research authorization forbidden"):
+        validate_source_freeze_generation(manifest_path)
+
+
+def test_source_freeze_evidence_references_are_part_of_generation_identity(
+    tmp_path: Path,
+) -> None:
+    governed = _governed_fixture(tmp_path / "lake")
+    freeze = build_source_freeze_generation(
+        SourceFreezeConfig(str(governed), str(tmp_path / "freeze"), batch_rows=64)
+    )
+    manifest_path = Path(freeze["manifest_path"])
+    manifest_path.chmod(0o640)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["admission_evidence"] = {"coverage_evidence_relative_path": "swapped"}
+    manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(SourceFreezeError, match="semantic content hash mismatch"):
+        validate_source_freeze_generation(manifest_path)
+
+
 def test_search_partition_tampering_and_axis_drift_are_rejected(tmp_path: Path) -> None:
     governed = _governed_fixture(tmp_path / "lake")
-    freeze = build_canonical_research_freeze(
-        CanonicalFreezeConfig(str(governed), str(tmp_path / "freeze"), batch_rows=64)
+    freeze = build_source_freeze_generation(
+        SourceFreezeConfig(str(governed), str(tmp_path / "freeze"), batch_rows=64)
     )
     view = validate_physical_research_view(freeze["search_view_manifest_path"])
     partition = Path(view["view_root"]) / view["partitions"][0]["view_relative_path"]
     partition.chmod(0o640)
     with partition.open("ab") as handle:
         handle.write(b"tamper")
-    with pytest.raises(CanonicalFreezeError, match="partition hash mismatch"):
+    with pytest.raises(SourceFreezeError, match="partition hash mismatch"):
         validate_physical_research_view(freeze["search_view_manifest_path"])
 
     governed_b = _governed_fixture(tmp_path / "lake_b")
     date_axis = governed_b / "governance" / "canonical_derived" / "generations" / "derived" / "trade_dates.json"
     date_axis.write_text(json.dumps(["20190102", "20190103", "20250102"]), encoding="utf-8")
     _refresh_derived_bundle(governed_b)
-    with pytest.raises(CanonicalFreezeError, match="post-research dates"):
-        audit_canonical_freeze_sources(CanonicalFreezeConfig(str(governed_b), str(tmp_path / "blocked")))
+    with pytest.raises(SourceFreezeError, match="post-research dates"):
+        audit_source_freeze_sources(SourceFreezeConfig(str(governed_b), str(tmp_path / "blocked")))
 
 
 def test_source_mutation_after_publication_does_not_change_freeze(tmp_path: Path) -> None:
     governed = _governed_fixture(tmp_path / "lake")
-    freeze = build_canonical_research_freeze(
-        CanonicalFreezeConfig(str(governed), str(tmp_path / "freeze"), batch_rows=64)
+    freeze = build_source_freeze_generation(
+        SourceFreezeConfig(str(governed), str(tmp_path / "freeze"), batch_rows=64)
     )
     view = PhysicalResearchDataView(freeze["search_view_manifest_path"])
     before = list(view.iter_observable_records("daily_bars"))
@@ -169,14 +250,14 @@ def test_production_research_rejects_noncanonical_or_unbounded_inputs(tmp_path: 
         canonical_feature_validity_tensor_path=str(tmp_path / "validity.npy"),
         canonical_research_view_manifest_path=None,
     )
-    with pytest.raises(RuntimeError, match="canonical_freeze_manifest_required"):
+    with pytest.raises(RuntimeError, match="source_freeze_manifest_required"):
         _validate_production_research_config(config)
 
 
-def test_production_research_accepts_only_artifacts_inside_bounded_view(tmp_path: Path) -> None:
+def test_production_research_rejects_source_freeze_without_admitted_verdict(tmp_path: Path) -> None:
     governed = _governed_fixture(tmp_path / "lake")
-    freeze = build_canonical_research_freeze(
-        CanonicalFreezeConfig(str(governed), str(tmp_path / "freeze"), batch_rows=64)
+    freeze = build_source_freeze_generation(
+        SourceFreezeConfig(str(governed), str(tmp_path / "freeze"), batch_rows=64)
     )
     view_root = Path(freeze["search_view"]["view_root"])
     config = AlphaCampaignConfig(
@@ -203,7 +284,8 @@ def test_production_research_accepts_only_artifacts_inside_bounded_view(tmp_path
         holdout_start_date="20200101",
         label_horizon=2,
     )
-    _validate_production_research_config(config)
+    with pytest.raises(RuntimeError, match="data_admission_verdict_required"):
+        _validate_production_research_config(config)
     assert _resolve_data_dir(
         config.data_dir,
         config.data_freeze_dir,
@@ -219,10 +301,10 @@ def test_post_cutoff_rows_are_hashed_but_physically_excluded(tmp_path: Path) -> 
     row["trade_date"] = "20260701"
     _write_jsonl(margin, [row])
     _refresh_raw_index(governed)
-    report = audit_canonical_freeze_sources(CanonicalFreezeConfig(str(governed), str(tmp_path / "preflight")))
+    report = audit_source_freeze_sources(SourceFreezeConfig(str(governed), str(tmp_path / "preflight")))
     assert "margin_summary:source_requires_post_cutoff_filter" in report["warnings"]
-    freeze = build_canonical_research_freeze(
-        CanonicalFreezeConfig(str(governed), str(tmp_path / "freeze"), batch_rows=64)
+    freeze = build_source_freeze_generation(
+        SourceFreezeConfig(str(governed), str(tmp_path / "freeze"), batch_rows=64)
     )
     quality = json.loads((Path(freeze["generation_dir"]) / "quality_report.json").read_text(encoding="utf-8"))
     result = next(item for item in quality["datasets"] if item["dataset"] == "margin_summary")
@@ -241,8 +323,8 @@ def test_duplicate_keys_and_price_anomalies_are_reported_and_block_core(tmp_path
     rows.append(duplicate)
     _write_jsonl(daily, rows)
     _refresh_raw_index(governed)
-    freeze = build_canonical_research_freeze(
-        CanonicalFreezeConfig(str(governed), str(tmp_path / "freeze"), batch_rows=64)
+    freeze = build_source_freeze_generation(
+        SourceFreezeConfig(str(governed), str(tmp_path / "freeze"), batch_rows=64)
     )
     quality = json.loads((Path(freeze["generation_dir"]) / "quality_report.json").read_text(encoding="utf-8"))
     result = next(row for row in quality["datasets"] if row["dataset"] == "daily_bars")
@@ -255,7 +337,7 @@ def test_duplicate_keys_and_price_anomalies_are_reported_and_block_core(tmp_path
 def _governed_fixture(root: Path) -> Path:
     data = root / "data"
     rows_by_dataset: dict[str, list[dict[str, object]]] = {}
-    for dataset in REQUIRED_DATASETS:
+    for dataset in SOURCE_INVENTORY_DATASETS:
         rows_by_dataset[dataset] = [_generic_row(dataset, "20190102")]
 
     securities = []

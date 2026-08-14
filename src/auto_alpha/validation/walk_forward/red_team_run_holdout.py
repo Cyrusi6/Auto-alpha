@@ -13,7 +13,7 @@ from auto_alpha.validation.walk_forward.red_team_contracts import HoldoutCalibra
 from auto_alpha.validation.walk_forward.red_team_contracts import SealedHoldoutPolicy
 from auto_alpha.validation.walk_forward.red_team_contracts import publish_holdout_policy
 from auto_alpha.validation.walk_forward.red_team_evaluator import ValidationRedTeamAgent
-from auto_alpha.validation.walk_forward.red_team_preflight import preflight_canonical_holdout
+from auto_alpha.validation.walk_forward.red_team_preflight import preflight_source_holdout
 from auto_alpha.validation.walk_forward.red_team_verifier import verify_holdout_result
 
 
@@ -46,7 +46,7 @@ def _parser() -> argparse.ArgumentParser:
     verify.add_argument("--result-manifest", required=True)
 
     preflight = subparsers.add_parser("preflight")
-    preflight.add_argument("--canonical-freeze-manifest", required=True)
+    preflight.add_argument("--source-freeze-manifest", required=True)
     preflight.add_argument("--candidate-pool-manifest")
     preflight.add_argument("--output-root", required=True)
     return parser
@@ -86,8 +86,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         path = Path(args.result_manifest).resolve()
         payload = verify_holdout_result(path)
     else:
-        path, payload = preflight_canonical_holdout(
-            args.canonical_freeze_manifest,
+        path, payload = preflight_source_holdout(
+            args.source_freeze_manifest,
             args.output_root,
             candidate_pool_manifest_path=args.candidate_pool_manifest,
         )

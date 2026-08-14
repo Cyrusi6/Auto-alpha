@@ -9,7 +9,7 @@ from auto_alpha.validation.walk_forward.red_team_contracts import publish_holdou
 from auto_alpha.validation.walk_forward.red_team_contracts import validate_holdout_policy
 from auto_alpha.validation.walk_forward.red_team_evaluator import ValidationRedTeamAgent
 from auto_alpha.validation.walk_forward.red_team_evaluator import validate_sealed_holdout_view
-from auto_alpha.validation.walk_forward.red_team_preflight import preflight_canonical_holdout
+from auto_alpha.validation.walk_forward.red_team_preflight import preflight_source_holdout
 from auto_alpha.validation.walk_forward.red_team_verifier import verify_holdout_result
 
 __all__ = [
@@ -19,7 +19,7 @@ __all__ = [
     "ValidationRedTeamAgent",
     "freeze_candidate_pool",
     "publish_holdout_policy",
-    "preflight_canonical_holdout",
+    "preflight_source_holdout",
     "validate_candidate_pool_manifest",
     "validate_holdout_policy",
     "validate_sealed_holdout_view",

@@ -43,6 +43,7 @@ class AShareDataLoader:
         label_horizon: int = 1,
         canonical_feature_tensor_path: str | Path | None = None,
         canonical_feature_validity_tensor_path: str | Path | None = None,
+        data_admission_verdict_path: str | Path | None = None,
         production_research: bool = False,
     ):
         self.data_dir = Path(data_dir) if data_dir is not None else Path(ModelConfig.DATA_DIR)
@@ -69,6 +70,9 @@ class AShareDataLoader:
         self.label_horizon = int(label_horizon)
         self.canonical_feature_tensor_path = Path(canonical_feature_tensor_path) if canonical_feature_tensor_path else None
         self.canonical_feature_validity_tensor_path = Path(canonical_feature_validity_tensor_path) if canonical_feature_validity_tensor_path else None
+        self.data_admission_verdict_path = (
+            Path(data_admission_verdict_path) if data_admission_verdict_path else None
+        )
         self.production_research = bool(production_research)
         self.date_firewall = DateFirewall(research_end_date, holdout_start_date, label_horizon) if research_end_date else None
         self.firewall_source_trade_dates: list[str] = []
@@ -91,6 +95,28 @@ class AShareDataLoader:
         if not self.production_research:
             return
         blockers: list[str] = []
+        if self.data_admission_verdict_path is None:
+            blockers.append("data_admission_verdict_required")
+        else:
+            try:
+                from auto_alpha.data.lake.store.admission import (
+                    AdmissionVerificationError,
+                    validate_data_admission_verdict,
+                )
+
+                verdict = validate_data_admission_verdict(
+                    self.data_admission_verdict_path,
+                    require_admitted=True,
+                )
+                if verdict.scope.access_view != "research":
+                    blockers.append("data_admission_verdict_research_view_required")
+                if self.date_firewall and self.date_firewall.research_end_date > verdict.scope.date_end:
+                    blockers.append("research_cutoff_exceeds_admitted_scope")
+                # Governed inputs must ultimately be resolved from the verdict-
+                # bound bundle. Caller-selected legacy paths remain fail-closed.
+                blockers.append("admitted_bundle_resolver_required")
+            except AdmissionVerificationError as exc:
+                blockers.append(f"data_admission_verdict_invalid_or_blocked:{type(exc).__name__}")
         if self.device.type != "cuda":
             blockers.append("cuda_device_required")
         if not self.use_matrix_cache:

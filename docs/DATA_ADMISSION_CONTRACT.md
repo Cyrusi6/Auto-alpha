@@ -1,6 +1,6 @@
 # Governed A-share Data Admission Contract
 
-Status: accepted design, not yet implemented or activated
+Status: accepted contract; verifier foundation implemented, profile activation and canonical bundle resolution blocked
 
 Decision date: 2026-08-14
 
@@ -146,25 +146,31 @@ Every factor change must reconcile with a corporate-action version observable an
 
 ### 5.1 Coverage Plan and obligations
 
-A **Coverage Plan** is provider-neutral and immutable. It contains the profile, access view, date span, As-of Market Date, lifecycle-population root, dataset contracts, and canonically ordered **Coverage Obligations**. An obligation uses `(dataset, subject, date-or-span)`, where the subject can be a security, exchange, index, lifecycle version, or other provider-neutral partition key. Security-day and security-span obligations are the common event-data cases, not the only allowed geometry.
+A **Coverage Plan** is provider-neutral and immutable. It contains the profile, access view, date span, As-of Market Date, normalized lifecycle population and root, dataset contracts, and canonically ordered **Coverage Obligations**. An obligation uses `(dataset, subject, date-or-span)`, where the subject can be the whole A-share market, a security, exchange, index, lifecycle version, or other provider-neutral partition key. Security-day and security-span obligations are the common event-data cases, not the only allowed geometry. The verifier reconstructs the complete plan and obligation identities before accepting any receipt.
 
-An adapter may batch, paginate, or split obligations into provider calls, but request geometry cannot change the logical plan.
+The securities master uses locked `L`, `D`, and `P` list-status authority partitions whose union must reproduce the plan's complete listed/delisted lifecycle population. SSE and SZSE calendar obligations cover every calendar date through As-of Market Date and must reproduce the exact open-date population. CSI300 and other partition subjects are locked by the profile rather than supplied by a campaign result.
 
-### 5.2 Coverage Receipt
+An adapter may batch, paginate, or split obligations into provider calls, but request geometry cannot change the logical plan. The first verifier activates only profile-locked deterministic split contracts with a fixed row cap; a cursor-based endpoint is unsupported evidence and blocks until a later profile and verifier schema define its causal page-chain contract.
 
-Every request attempt produces an immutable receipt that binds at least:
+### 5.2 Attempt journal and Coverage Receipt
+
+Before transport, every request attempt durably appends an immutable `attempt_started`
+event. After transport returns or fails, it appends exactly one immutable
+`post_transport_receipt` event. A started attempt without that terminal receipt is
+`ambiguous_transport`; later recovery must not infer success from a cache or rewrite
+the first event. Together, the event pair binds at least:
 
 - receipt, attempt, previous-journal and evidence-use identities;
-- dataset contract, provider adapter, endpoint, API and schema versions;
+- exact approved fields plus a profile-activated provider, adapter, endpoint, API, schema and permission contract;
 - a non-secret permission-context identity;
 - normalized parameters, fields and request fingerprint;
 - obligation mapping and page/cursor or split-tree position;
 - locked row cap and terminal pagination evidence;
-- transport/provider outcome and local capture signature;
+- transport/provider outcome, profile-bound capture public-key identity and RSA-SHA256 signatures;
 - returned count, records hash, payload hash and raw-envelope locator/hash;
 - start/end capture times, retry predecessor and terminal state.
 
-The local signature proves that the system captured the provider payload over the governed transport and that the evidence was not rewritten. It is not a provider signature and does not prove that the provider never revises history.
+The activated acquisition contract locks the capture public-key identity before governed acquisition. Both attempt-start and post-transport events are signed, and the verifier validates those signatures as well as the journal chain. This proves possession of the approved capture key and detects post-capture rewriting; it is not a provider signature and does not prove that the provider never revises history.
 
 ### 5.3 Empty, cap and retry semantics
 
@@ -174,11 +180,19 @@ Only these obligation outcomes can admit:
 - `satisfied_empty`, backed by an **Observed Empty** receipt;
 - `not_applicable`, derived from separately proved lifecycle or calendar evidence.
 
+For a suspension-derived `not_applicable`, the verifier reconstructs the security's
+state from valid `S`/`R` records, including the pre-span seed, and applies conservative
+resumption timing. A non-empty suspension response is not itself proof: a same-day
+pre-open `R`, an invalid event type, conflicting events, or a mismatched security/date
+must block the exemption. Securities-master records likewise must match their locked
+`L`/`D`/`P` authority partition; the partition label cannot be inferred from the
+producer's response.
+
 Permission failure, schema mismatch, coverage gap, `cap_suspected`, unresolved conflict, or terminal transport ambiguity blocks.
 
 An empty provider response is valid only when request identity, permission, schema, success, pagination termination, and absence of truncation are proved. A count equal to the endpoint cap is never terminal without a provider cursor/end marker; otherwise the adapter must create a deterministic, gap-free and overlap-free split tree until every leaf is below the cap.
 
-Network and rate-limit failures may receive bounded retries only for an endpoint declared read-only. Each retry receives a new attempt identity and retains earlier outcomes. An attempt missing its post-transport receipt remains `ambiguous_transport`; it is never rewritten as a later success.
+Network and rate-limit failures may receive bounded retries only for an endpoint declared read-only by the activated profile contract. The contract enumerates retryable failure kinds; a generic `failed` label without signed transport/provider failure evidence cannot authorize a retry. Each deterministic page has one root attempt and one causal, non-forking retry chain; retry time must follow the failed receipt. Each retry receives a new attempt identity and retains earlier outcomes. An attempt missing its post-transport receipt remains `ambiguous_transport`; it is never rewritten as a later success.
 
 ### 5.4 Coverage Root
 
@@ -186,7 +200,7 @@ The Admission Verifier recomputes SHA-256 leaves and an ordered content tree ove
 
 1. the Coverage Plan;
 2. every Coverage Obligation;
-3. every attempt Coverage Receipt, including success, empty, failure and ambiguity, plus every journal link;
+3. every attempt-start and post-transport receipt event, including success, empty, failure and ambiguity, plus every journal link;
 4. the attempt-to-obligation mapping and exactly one terminal disposition for each obligation;
 5. the resulting coverage completeness and evidence grade.
 
@@ -218,7 +232,7 @@ Ordinary Alpha fields may use explicit `validity=false`; they may never be imput
 
 ## 7. Data Scope Root and deterministic replay
 
-The **Data Scope Root** binds only the active closure for its profile and scope:
+The **Data Scope Root** binds only the active closure for its profile and scope. It uses per-dataset active source roots rather than the containing generation's global source root, so a change confined to inactive data does not change the matching scope:
 
 - profile, access view, date span and As-of Market Date;
 - active dataset, approved field and consumer-role contracts;

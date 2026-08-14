@@ -2213,13 +2213,13 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
     "go_live_gate_decision": _definition("go_live_gate_decision", ["status", "passed", "required_remediation"], ["go_live_gate_decision.json"]),
     "go_live_gate_checks": _definition("go_live_gate_checks", ["check_id", "status", "severity"], ["go_live_gate_checks.jsonl"], kind="jsonl", allow_empty=True),
     "go_live_review_package": _definition("go_live_review_package", ["review_id", "go_live_status", "status"], ["go_live_review_package.json"]),
-    "canonical_freeze_preflight": _definition(
-        "canonical_freeze_preflight",
+    "source_freeze_preflight": _definition(
+        "source_freeze_preflight",
         ["status", "source_catalog_hash", "source_catalog", "blockers", "alpha_search_authorized"],
-        ["canonical_freeze_preflight.json"],
+        ["source_freeze_preflight.json"],
     ),
-    "canonical_freeze_source_catalog": _definition(
-        "canonical_freeze_source_catalog",
+    "source_freeze_source_catalog": _definition(
+        "source_freeze_source_catalog",
         [
             "governed_root_identity",
             "raw_index_sha256",
@@ -2235,8 +2235,8 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         ],
         ["source_catalog.json"],
     ),
-    "canonical_freeze_quality": _definition(
-        "canonical_freeze_quality",
+    "source_freeze_quality": _definition(
+        "source_freeze_quality",
         [
             "datasets",
             "cross_source_reconciliation",
@@ -2246,12 +2246,13 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         ],
         ["quality_report.json"],
     ),
-    "canonical_freeze_manifest": _definition(
-        "canonical_freeze_manifest",
+    "source_freeze_manifest": _definition(
+        "source_freeze_manifest",
         [
             "generation_id",
             "content_hash",
             "source_catalog_hash",
+            "source_artifact_root",
             "partition_root",
             "search_partition_root",
             "period_coverage",
@@ -2267,6 +2268,8 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
             "search_view_manifest_sha256",
             "source_semantic_hash",
             "strict_derived_bundle",
+            "admission_evidence",
+            "admission_evidence_root",
             "status",
             "warnings",
             "blockers",
@@ -2274,7 +2277,85 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
             "certification_ready",
             "sealed_holdout",
         ],
-        ["canonical_freeze_manifest.json"],
+        ["source_freeze_manifest.json"],
+    ),
+    "data_admission_profile": _definition(
+        "data_admission_profile",
+        [
+            "schema_version",
+            "profile_id",
+            "content_hash",
+            "profile_name",
+            "activation_status",
+            "activated_feature_families",
+            "admission_prerequisites",
+            "datasets",
+        ],
+        ["data_admission_profile.json"],
+    ),
+    "data_admission_verdict": _definition(
+        "data_admission_verdict",
+        [
+            "schema_version",
+            "generation_id",
+            "content_hash",
+            "outcome",
+            "profile_id",
+            "profile_content_hash",
+            "source_generation_id",
+            "source_content_hash",
+            "scope",
+            "active_dataset_closure",
+            "coverage_plan_content_hash",
+            "coverage_root",
+            "data_scope_root",
+            "metrics",
+            "deterministic_replay_verified",
+            "blockers",
+            "producer_claims_ignored",
+            "verifier_identity",
+        ],
+        ["data_admission_verdict.json"],
+    ),
+    "data_coverage_plan": _definition(
+        "data_coverage_plan",
+        [
+            "schema_version",
+            "profile_id",
+            "scope",
+            "population",
+            "population_root",
+            "dataset_contracts",
+            "obligations",
+            "content_hash",
+        ],
+        ["coverage_plan.json"],
+    ),
+    "data_coverage_evidence": _definition(
+        "data_coverage_evidence",
+        [
+            "schema_version",
+            "coverage_plan_content_hash",
+            "attempt_journal",
+            "content_hash",
+        ],
+        ["coverage_evidence_manifest.json"],
+        optional=["producer_claim"],
+    ),
+    "data_coverage_journal_event": _definition(
+        "data_coverage_journal_event",
+        [
+            "schema_version",
+            "event_type",
+            "event_id",
+            "event_hash",
+            "attempt_id",
+            "sequence",
+            "previous_event_hash",
+            "occurred_at",
+        ],
+        ["coverage_attempt_journal.jsonl"],
+        kind="jsonl",
     ),
     "physical_ashare_research_view": _definition(
         "physical_ashare_research_view",
@@ -2419,7 +2500,7 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
     "sealed_holdout_preflight": _definition(
         "sealed_holdout_preflight",
         [
-            "status", "canonical_freeze_content_hash", "canonical_freeze_manifest_sha256",
+            "status", "source_freeze_content_hash", "source_freeze_manifest_sha256",
             "candidate_pool_root", "candidate_pool_frozen", "sealed_period",
             "sealed_period_historically_observed", "sealed_period_untouched", "holdout_capability_issuable",
             "holdout_market_values_read", "holdout_evaluation_executed", "blockers",
@@ -2430,7 +2511,7 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
     "task056e_preflight_summary": _definition(
         "task056e_preflight_summary",
         [
-            "status", "canonical_freeze_content_hash", "canonical_freeze_manifest_sha256",
+            "status", "source_freeze_content_hash", "source_freeze_manifest_sha256",
             "preflight_manifest_sha256", "sealed_period", "sealed_period_historically_observed",
             "sealed_period_untouched", "candidate_pool_frozen", "holdout_capability_issuable",
             "holdout_market_values_read", "holdout_evaluation_executed", "network_request_count",

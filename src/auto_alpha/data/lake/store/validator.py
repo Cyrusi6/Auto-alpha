@@ -25,6 +25,8 @@ def validate_research_input(
     data_dir: str | Path | None = None,
     data_freeze_dir: str | Path | None = None,
     require_freeze: bool = False,
+    data_admission_verdict_path: str | Path | None = None,
+    governed_research: bool = False,
 ) -> FreezeValidationReport:
     if data_freeze_dir is None:
         if require_freeze:
@@ -50,12 +52,12 @@ def validate_research_input(
             content_hash=None,
             created_at="",
         )
-    canonical_manifest = Path(data_freeze_dir) / "canonical_freeze_manifest.json"
-    if canonical_manifest.is_file():
+    source_manifest = Path(data_freeze_dir) / "source_freeze_manifest.json"
+    if source_manifest.is_file():
         try:
-            from .canonical_freeze import validate_canonical_research_freeze
+            from .source_freeze import validate_source_freeze_generation
 
-            payload = validate_canonical_research_freeze(canonical_manifest)
+            payload = validate_source_freeze_generation(source_manifest)
         except Exception as exc:
             return FreezeValidationReport(
                 freeze_id=None,
@@ -67,32 +69,92 @@ def validate_research_input(
                 issues=[
                     FreezeValidationIssue(
                         "error",
-                        "canonical_freeze_validation_failed",
+                        "source_freeze_validation_failed",
                         f"{type(exc).__name__}: {exc}",
-                        str(canonical_manifest),
+                        str(source_manifest),
                     )
                 ],
                 content_hash=None,
                 created_at="",
             )
-        blockers = list(payload.get("blockers") or [])
+        producer_blockers = list(payload.get("blockers") or [])
         warnings = list(payload.get("warnings") or [])
+        admission_issues: list[FreezeValidationIssue] = []
+        if data_admission_verdict_path is None:
+            severity = "error" if require_freeze else "warning"
+            admission_issues.append(
+                FreezeValidationIssue(
+                    severity,
+                    "data_admission_verdict_required",
+                    "a Source Freeze Generation cannot authorize governed research",
+                    str(source_manifest),
+                )
+            )
+        else:
+            try:
+                from .admission import (
+                    AdmissionVerificationError,
+                    validate_data_admission_verdict,
+                )
+
+                validate_data_admission_verdict(
+                    data_admission_verdict_path,
+                    expected_source_generation_id=str(payload.get("generation_id") or ""),
+                    require_admitted=True,
+                )
+            except AdmissionVerificationError as exc:
+                admission_issues.append(
+                    FreezeValidationIssue(
+                        "error",
+                        "data_admission_verdict_invalid_or_blocked",
+                        f"{type(exc).__name__}: {exc}",
+                        str(data_admission_verdict_path),
+                    )
+                )
+        producer_issues = [
+            FreezeValidationIssue(
+                "warning",
+                "source_freeze_producer_check",
+                blocker,
+                str(source_manifest),
+            )
+            for blocker in producer_blockers
+        ]
+        warning_issues = [
+            FreezeValidationIssue("warning", "source_freeze_warning", warning, str(source_manifest))
+            for warning in warnings
+        ]
+        issues = admission_issues + producer_issues + warning_issues
+        error_count = sum(issue.severity == "error" for issue in issues)
+        warning_count = sum(issue.severity == "warning" for issue in issues)
         return FreezeValidationReport(
             freeze_id=str(payload.get("generation_id") or ""),
             freeze_dir=str(data_freeze_dir),
-            status="passed" if not blockers else "error",
+            status="error" if error_count else "passed",
             checked_files=int(payload.get("partition_count", 0) or 0),
-            error_count=len(blockers),
-            warning_count=len(warnings),
-            issues=[
-                FreezeValidationIssue("error", "canonical_freeze_blocker", blocker, str(canonical_manifest))
-                for blocker in blockers
-            ]
-            + [
-                FreezeValidationIssue("warning", "canonical_freeze_warning", warning, str(canonical_manifest))
-                for warning in warnings
-            ],
+            error_count=error_count,
+            warning_count=warning_count,
+            issues=issues,
             content_hash=str(payload.get("content_hash") or ""),
+            created_at="",
+        )
+    if governed_research or data_admission_verdict_path is not None:
+        return FreezeValidationReport(
+            freeze_id=None,
+            freeze_dir=str(data_freeze_dir),
+            status="error",
+            checked_files=0,
+            error_count=1,
+            warning_count=0,
+            issues=[
+                FreezeValidationIssue(
+                    "error",
+                    "source_freeze_manifest_required",
+                    "governed research requires source_freeze_manifest.json and an admitted verdict",
+                    str(source_manifest),
+                )
+            ],
+            content_hash=None,
             created_at="",
         )
     return validate_freeze(data_freeze_dir)

@@ -6,7 +6,7 @@ import subprocess
 from dataclasses import dataclass
 
 
-class Task055KSigningError(RuntimeError):
+class ReceiptSigningError(RuntimeError):
     pass
 
 
@@ -36,9 +36,9 @@ def verify_signature(*, public_key_pem: bytes, payload: bytes, signature_b64: st
     try:
         signature = base64.b64decode(signature_b64, validate=True)
     except ValueError as exc:
-        raise Task055KSigningError("task055k_receipt_signature_encoding_invalid") from exc
-    key_fd = _memfd("task055k-public-key", public_key_pem)
-    signature_fd = _memfd("task055k-signature", signature)
+        raise ReceiptSigningError("receipt_signature_encoding_invalid") from exc
+    key_fd = _memfd("receipt-public-key", public_key_pem)
+    signature_fd = _memfd("receipt-signature", signature)
     try:
         result = subprocess.run(
             [
@@ -59,7 +59,7 @@ def verify_signature(*, public_key_pem: bytes, payload: bytes, signature_b64: st
         os.close(key_fd)
         os.close(signature_fd)
     if result.returncode != 0:
-        raise Task055KSigningError("task055k_receipt_signature_invalid")
+        raise ReceiptSigningError("receipt_signature_invalid")
 
 
 def _openssl(arguments: list[str], *, input_bytes: bytes | None = None) -> bytes:
@@ -70,7 +70,7 @@ def _openssl(arguments: list[str], *, input_bytes: bytes | None = None) -> bytes
         check=False,
     )
     if result.returncode != 0:
-        raise Task055KSigningError("task055k_openssl_operation_failed")
+        raise ReceiptSigningError("openssl_operation_failed")
     return result.stdout
 
 
@@ -80,7 +80,7 @@ def _openssl_with_key(
     *,
     input_bytes: bytes | None = None,
 ) -> bytes:
-    key_fd = _memfd("task055k-private-key", private_key_pem)
+    key_fd = _memfd("receipt-private-key", private_key_pem)
     try:
         resolved = [value.replace("{key}", f"/proc/self/fd/{key_fd}") for value in arguments]
         result = subprocess.run(
@@ -93,13 +93,13 @@ def _openssl_with_key(
     finally:
         os.close(key_fd)
     if result.returncode != 0:
-        raise Task055KSigningError("task055k_openssl_key_operation_failed")
+        raise ReceiptSigningError("openssl_key_operation_failed")
     return result.stdout
 
 
 def _memfd(name: str, payload: bytes) -> int:
     if not hasattr(os, "memfd_create"):
-        raise Task055KSigningError("task055k_memory_only_key_storage_unavailable")
+        raise ReceiptSigningError("memory_only_key_storage_unavailable")
     descriptor = os.memfd_create(name, flags=0)
     os.write(descriptor, payload)
     os.lseek(descriptor, 0, os.SEEK_SET)

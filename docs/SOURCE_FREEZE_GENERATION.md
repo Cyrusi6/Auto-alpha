@@ -1,4 +1,4 @@
-# Task 056-C Historical A-share Source Freeze Generation
+# Historical A-share Source Freeze Generation
 
 > This document records the existing Task 056-C implementation. The accepted [Governed A-share Data Admission Contract](DATA_ADMISSION_CONTRACT.md) now distinguishes a physical Source Freeze Generation from an admitted Canonical Data Freeze. The real generation described here is blocked and therefore is not canonical research data under the accepted domain language.
 
@@ -16,7 +16,7 @@ The `data lake` subsystem is the only publisher for the historical immutable A-s
 
 The dates are versioned policy inputs, not a claim of untouched evidence. Existing project artifacts have already observed data through 2026-06-30, so the sealed period is `historically_observed=true` and `untouched=false`. It cannot support certification.
 
-The physical research view contains only bootstrap/research Parquet partitions. It removes `raw_json`, exposes only PIT-observable fields, carries compact default-plus-override field availability/effective-date maps, and has no path or locator for controlled or sealed partitions. Production Alpha Factory mode requires this validated view and rejects legacy/manifest-only freezes or derived artifacts outside the view.
+The physical research view contains only bootstrap/research Parquet partitions. It removes `raw_json`, exposes only PIT-observable fields, carries compact default-plus-override field availability/effective-date maps, and has no path or locator for controlled or sealed partitions. Governed Alpha Factory mode requires this validated view plus an independently admitted Data Admission Verdict and rejects legacy/manifest-only freezes or derived artifacts outside the verdict-bound scope.
 
 ## Historical fail-closed gates
 
@@ -37,11 +37,10 @@ auto-alpha data freeze build \
   --workers 4
 
 auto-alpha data freeze validate \
-  --manifest <generation>/canonical_freeze_manifest.json
+  --manifest <generation>/source_freeze_manifest.json
 
 auto-alpha data freeze validate-research-view \
-  --manifest <generation>/search_view/research_view_manifest.json \
-  --require-research-ready
+  --manifest <generation>/search_view/research_view_manifest.json
 ```
 
 No command downloads data, mutates the raw lake, or silently falls back to a mutable source directory.

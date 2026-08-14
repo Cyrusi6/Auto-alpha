@@ -26,7 +26,7 @@ from auto_alpha.validation.walk_forward.red_team_io import HoldoutContractError
 from auto_alpha.validation.walk_forward.red_team_io import atomic_json
 from auto_alpha.validation.walk_forward.red_team_io import sha256_file
 from auto_alpha.validation.walk_forward.red_team_io import stable_hash
-from auto_alpha.validation.walk_forward.red_team_preflight import preflight_canonical_holdout
+from auto_alpha.validation.walk_forward.red_team_preflight import preflight_source_holdout
 from auto_alpha.validation.walk_forward.red_team_verifier import verify_holdout_result
 from auto_alpha.validation.walk_forward.red_team_view import VIEW_CORE_FIELDS
 
@@ -244,11 +244,11 @@ def test_schema_dashboard_monitoring_and_search_feedback_firewall(tmp_path):
     assert not output_dir.exists()
 
 
-def test_contaminated_canonical_freeze_preflight_stays_blocked(tmp_path, monkeypatch):
-    freeze_manifest = tmp_path / "canonical_freeze_manifest.json"
+def test_contaminated_source_freeze_preflight_stays_blocked(tmp_path, monkeypatch):
+    freeze_manifest = tmp_path / "source_freeze_manifest.json"
     freeze_manifest.write_text("{}", encoding="utf-8")
     monkeypatch.setattr(
-        "auto_alpha.validation.walk_forward.red_team_preflight.validate_canonical_research_freeze",
+        "auto_alpha.validation.walk_forward.red_team_preflight.validate_source_freeze_generation",
         lambda path: {
             "content_hash": "a" * 64,
             "sealed_holdout": {
@@ -259,7 +259,7 @@ def test_contaminated_canonical_freeze_preflight_stays_blocked(tmp_path, monkeyp
             "certification_ready": False,
         },
     )
-    path, payload = preflight_canonical_holdout(freeze_manifest, tmp_path / "preflight")
+    path, payload = preflight_source_holdout(freeze_manifest, tmp_path / "preflight")
     assert payload["status"] == "blocked"
     assert payload["holdout_capability_issuable"] is False
     assert payload["holdout_market_values_read"] is False

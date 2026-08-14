@@ -151,6 +151,8 @@ class AlphaFactoryRunner:
             data_dir=self.config.data_dir,
             data_freeze_dir=self.config.data_freeze_dir,
             require_freeze=self.config.require_data_freeze,
+            data_admission_verdict_path=self.config.data_admission_verdict_path,
+            governed_research=self.config.production_research,
         )
         if freeze.error_count:
             raise RuntimeError(f"data freeze validation failed: {freeze.status}")
@@ -226,6 +228,7 @@ class AlphaFactoryRunner:
             label_horizon=self.config.label_horizon,
             canonical_feature_tensor_path=self.config.canonical_feature_tensor_path,
             canonical_feature_validity_tensor_path=self.config.canonical_feature_validity_tensor_path,
+            data_admission_verdict_path=self.config.data_admission_verdict_path,
             production_research=self.config.production_research,
         ).load_data()
         novelty = score_novelty(candidates, self.store.load_factors())
@@ -442,6 +445,7 @@ class AlphaFactoryRunner:
                 label_horizon=self.config.label_horizon,
                 canonical_feature_tensor_path=self.config.canonical_feature_tensor_path,
                 canonical_feature_validity_tensor_path=self.config.canonical_feature_validity_tensor_path,
+                data_admission_verdict_path=self.config.data_admission_verdict_path,
                 production_research=self.config.production_research,
             ).load_data()
             result = build_feature_tensor_artifacts(
@@ -1237,7 +1241,7 @@ def _resolve_data_dir(
     if production_research:
         if not canonical_research_view_manifest_path:
             raise RuntimeError("production research blocked: physical_research_view_required")
-        from auto_alpha.data.lake.store.canonical_freeze import validate_physical_research_view
+        from auto_alpha.data.lake.store.source_freeze import validate_physical_research_view
 
         view = validate_physical_research_view(canonical_research_view_manifest_path)
         return str(Path(view["view_root"]) / "data")
@@ -1345,28 +1349,41 @@ def _validate_production_research_config(config: AlphaCampaignConfig) -> None:
         blockers.append("point_in_time_required")
     if not config.require_data_freeze or not config.data_freeze_dir:
         blockers.append("immutable_data_freeze_required")
-    canonical_manifest = (
-        Path(config.data_freeze_dir) / "canonical_freeze_manifest.json"
+    if not config.data_admission_verdict_path:
+        blockers.append("data_admission_verdict_required")
+    source_manifest = (
+        Path(config.data_freeze_dir) / "source_freeze_manifest.json"
         if config.data_freeze_dir
         else None
     )
-    if canonical_manifest is None or not canonical_manifest.is_file():
-        blockers.append("canonical_freeze_manifest_required")
+    if source_manifest is None or not source_manifest.is_file():
+        blockers.append("source_freeze_manifest_required")
     if not config.canonical_research_view_manifest_path:
         blockers.append("physical_research_view_required")
-    elif canonical_manifest is not None and canonical_manifest.is_file():
+    elif source_manifest is not None and source_manifest.is_file():
         try:
-            from auto_alpha.data.lake.store.canonical_freeze import (
-                validate_canonical_research_freeze,
+            from auto_alpha.data.lake.store.source_freeze import (
+                validate_source_freeze_generation,
                 validate_physical_research_view,
             )
 
-            freeze = validate_canonical_research_freeze(canonical_manifest)
+            freeze = validate_source_freeze_generation(source_manifest)
             view = validate_physical_research_view(config.canonical_research_view_manifest_path)
             if view.get("freeze_content_hash") != freeze.get("content_hash"):
                 blockers.append("physical_research_view_freeze_lineage_mismatch")
-            if not freeze.get("alpha_search_authorized") or not view.get("alpha_search_authorized"):
-                blockers.append("canonical_freeze_research_gate_blocked")
+            if config.data_admission_verdict_path:
+                from auto_alpha.data.lake.store.admission import validate_data_admission_verdict
+
+                verdict = validate_data_admission_verdict(
+                    config.data_admission_verdict_path,
+                    expected_source_generation_id=str(freeze.get("generation_id") or ""),
+                    require_admitted=True,
+                )
+                if verdict.scope.access_view != "research":
+                    blockers.append("data_admission_verdict_research_view_required")
+                research_end = str(config.research_end_date or "")
+                if research_end and research_end > verdict.scope.date_end:
+                    blockers.append("research_cutoff_exceeds_admitted_scope")
             research_end = str(config.research_end_date or "")
             if not research_end or research_end > str(view.get("max_availability_date") or ""):
                 blockers.append("research_cutoff_exceeds_physical_view")
@@ -1381,7 +1398,7 @@ def _validate_production_research_config(config: AlphaCampaignConfig) -> None:
                     blockers.append("derived_research_artifact_outside_physical_view")
                     break
         except Exception as exc:
-            blockers.append(f"canonical_freeze_validation_failed:{type(exc).__name__}")
+            blockers.append(f"source_freeze_validation_failed:{type(exc).__name__}")
     if not config.matrix_cache_dir or not (Path(config.matrix_cache_dir) / "task_052a_strict_matrix_manifest.json").is_file():
         blockers.append("strict_matrix_manifest_required")
     if not config.feature_set_manifest_path:
@@ -1452,6 +1469,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--campaign-id")
     parser.add_argument("--data-dir", required=False, default="data/ashare")
     parser.add_argument("--data-freeze-dir")
+    parser.add_argument("--data-admission-verdict-path")
     parser.add_argument("--data-version-manifest-path")
     parser.add_argument("--require-data-freeze", action="store_true")
     parser.add_argument("--real-data-profile-path")
@@ -1562,6 +1580,7 @@ def main(argv: list[str] | None = None) -> int:
         factor_store_dir=args.factor_store_dir,
         report_dir=args.report_dir,
         data_freeze_dir=args.data_freeze_dir,
+        data_admission_verdict_path=args.data_admission_verdict_path,
         data_version_manifest_path=args.data_version_manifest_path,
         require_data_freeze=args.require_data_freeze or args.require_real_data_freeze,
         formula_corpus_path=args.formula_corpus_path,
