@@ -44,9 +44,69 @@ _Avoid_: failed campaign, empty failure
 The preregistered limits for trials, accelerator time, storage, network access, retries, and related campaign resources. Exhaustion stops the Research Campaign and cannot be overridden by the loop itself.
 _Avoid_: adaptive unlimited budget, best-effort cap
 
+**Data Admission Profile**:
+An immutable, content-addressed declaration that classifies each provider-neutral dataset contract as base-required, feature-family-conditional, or inactive and locks its field and evidence obligations. A Research Contract references one profile; changing the profile creates a new identity.
+_Avoid_: global required-dataset list, per-campaign data switches
+
+**Data Admission Verdict**:
+The deterministic admit-or-block result for one Source Freeze Generation scope under a Data Admission Profile, access view, date span, and As-of Market Date. An admitted verdict creates a Canonical Data Freeze; admission never grants access to another view or period.
+_Avoid_: global readiness flag, reusable warning
+
+**Coverage Plan**:
+The immutable, provider-neutral set of Coverage Obligations generated for a Data Admission Profile, access view, date span, and point-in-time A-share lifecycle population. Provider request batching is an execution detail and cannot change the plan.
+_Avoid_: API call list, aggregate coverage claim
+
+**Coverage Obligation**:
+One atomic expectation that a dataset-subject-date or dataset-subject-span fact is positively observed, validly absent, or not applicable; a subject may be a security, exchange, index, lifecycle version, or other provider-neutral partition key. Every active obligation needs one satisfying terminal disposition before its Data Admission Verdict can be admitted.
+_Avoid_: inferred completeness, row-count target
+
+**Coverage Receipt**:
+The immutable evidence for one source-request attempt, binding its normalized request, endpoint and schema identity, permission context, response hash, row count, pagination state, attempt outcome, and journal lineage. A retry creates another receipt identity and never rewrites an earlier attempt.
+_Avoid_: API log line, mutable request status
+
+**Coverage Root**:
+The verifier-recomputed SHA-256 content root over a Coverage Plan, its canonically ordered obligations, every attempt Coverage Receipt and journal link, and one terminal disposition per obligation. Completeness and the root are derived results, never producer attestations.
+_Avoid_: caller-supplied root, aggregate completeness hash
+
+**Observed Empty**:
+A zero-row provider response whose Coverage Receipt proves successful exhaustive execution without permission, schema, pagination, truncation, or transport ambiguity. It is single-provider absence evidence, not a claim that the provider is infallible.
+_Avoid_: any empty response, universal negative fact
+
+**PIT Event Version**:
+An immutable lifecycle or corporate-action event version with separate observation and economic-effect times. A correction appends a version instead of rewriting history or exposing final fields at an earlier announcement.
+_Avoid_: mutable interval row, final-record backfill
+
+**Control-Only Field**:
+A point-in-time universe, lifecycle, ST, suspension, price-limit, benchmark, corporate-action, or raw adjustment state that may constrain eligibility, evaluation, target validity, or execution but cannot be used as a formula input. Listing age and causally validated adjusted prices are research features rather than Control-Only Fields.
+_Avoid_: tradability alpha, missingness signal
+
+**Legacy-Unproven Source Evidence**:
+Retained source data or audit material whose file integrity is known but whose request, pagination, or valid-absence completeness cannot be replayed. It may support repair and reconciliation but cannot satisfy a Data Admission Verdict.
+_Avoid_: grandfathered coverage, trusted old cache
+
+**Data Scope Root**:
+The content identity of the active source-to-derived-to-consumer closure admitted for one Data Admission Profile, access view, date span, and as-of market date. Changes outside that closure may change the lake generation but cannot trigger its Research Campaign.
+_Avoid_: whole-lake change flag, file timestamp trigger
+
+**As-of Market Date**:
+The latest market date whose required observations, events, and coverage evidence are complete for a Data Admission Verdict. Carrying an older required value forward does not advance this date.
+_Avoid_: newest file date, mixed dataset watermark
+
+**Source Freeze Generation**:
+An immutable, content-addressed physical snapshot of source and derived data plus its evidence, whether admitted or blocked. A blocked generation remains auditable but carries no research authorization.
+_Avoid_: blocked Canonical Data Freeze, mutable lake snapshot
+
 **Canonical Data Freeze**:
-An immutable, content-addressed, provider-neutral A-share research dataset whose point-in-time and validity evidence passed the data gate. A new freeze, not an in-place mutation, is the only data change that can trigger a new Research Campaign.
+The admitted Data Scope Root within a Source Freeze Generation whose independent Data Admission Verdict passed for a specific profile, view, date span, and As-of Market Date. Only a new matching scope root, never an in-place mutation or unrelated lake change, can trigger a Research Campaign.
 _Avoid_: latest data folder, mutable dataset
+
+**Admission Verifier**:
+The independent authority that reconstructs coverage, validity, lineage, and content identities from underlying evidence and issues a content-addressed Data Admission Verdict. Producer readiness flags and human-edited statuses cannot authorize research.
+_Avoid_: producer self-attestation, manual ready flag
+
+**Deterministic Freeze Replay**:
+Rebuilding a data scope from the same immutable inputs and locked toolchain to obtain byte-identical artifacts, roots, and identities. A changed code or toolchain identity creates a new scope even when observed values appear equal.
+_Avoid_: approximate rebuild, matching row count
 
 ## Candidate lifecycle
 

@@ -2,6 +2,24 @@
 
 This file records only the current A-share architecture and recent governed milestones. Detailed historical implementation is available through Git history rather than duplicated task-by-task prose.
 
+## 2026-08-14 — Profile-scoped governed data admission contract
+
+### Outcome
+
+- Replaced the ambiguous global `41 required / 15 hard-gated` governance model with immutable, content-addressed Data Admission Profiles referenced by Research Contracts.
+- Classified the first profile into 11 base-required, 23 feature-family-conditional, and 7 inactive dataset contracts; inactive or unactivated data cannot influence the admitted scope or trigger its campaign.
+- Distinguished immutable physical Source Freeze Generations from Canonical Data Freezes. Only a profile/view/span scope with an independent admitted Data Admission Verdict is canonical research data; blocked generations remain audit evidence without authorization.
+- Required provider-neutral Coverage Plans, atomic Coverage Obligations, immutable per-attempt Coverage Receipts, strict empty/cap/retry semantics, and verifier-recomputed Coverage Roots instead of producer-supplied `complete` or `coverage_root` declarations.
+- Locked full A-share lifecycle coverage, including delisted securities, while limiting obligations to each security's `[list_date, delist_date)` interval.
+- Locked PIT semantics for authoritative daily ST state, conservative suspension/resumption timing, immutable name-change revisions, multi-stage corporate actions, publication-proven index membership, and event-reconciled adjustment factors.
+- Made universe, lifecycle, ST, suspension, price-limit, benchmark, corporate-action, and raw adjustment-factor fields control-only; they cannot be exploited as formula inputs or missingness signals.
+- Required zero unexplained structural, PIT, coverage, lineage, parsing, duplicate, and conflict errors. Ordinary Alpha-field gaps remain explicit validity rather than semantic zero and are governed by preregistered per-date breadth thresholds.
+- Bound each Data Scope Root to its active source-to-derived-to-consumer closure, axes, feature values/validity, frozen target values/availability/formula, code and toolchain; identical replay must be byte-deterministic.
+- Allowed incremental reuse only by exact content identity while requiring full exact-cover and root verification for every new verdict. Permanent source evidence includes plans, all terminal receipts, journals, successful raw envelopes, admitted partitions, manifests, roots, and replay verdicts.
+- Kept profile activation and threshold changes behind human approval. The autonomous loop may update and verify data under an activated profile but cannot relax its own evidence requirements.
+- Confirmed that the current real lake remains blocked: ST and governed suspension evidence are absent, corporate-action and adjustment-factor causality is unresolved, CSI300 membership lacks complete publication-proven history, and no unified strict target/validity lineage bundle exists.
+- Added the detailed contract at `docs/DATA_ADMISSION_CONTRACT.md` and recorded the architectural choice in ADR 0001. No production authorization or market-data acquisition was performed.
+
 ## 2026-08-13 — Autonomous research loop vocabulary
 
 ### Outcome
@@ -100,7 +118,7 @@ This file records only the current A-share architecture and recent governed mile
 
 ### Safety state
 
-- `alpha_search_authorized=false` for the current governed freeze baseline.
+- `alpha_search_authorized=false` for the current governed Source Freeze Generation baseline.
 - `certification_ready=false`.
 - `portfolio_ready=false`.
 - `paper_ready=false`.
@@ -126,10 +144,10 @@ This file records only the current A-share architecture and recent governed mile
 - GPU leases, strict device enforcement, no CPU fallback, immutable manifests, resume fingerprints, and resource telemetry are part of the workflow contract.
 - Campaign size progresses through correctness, throughput, and governed research pilots; no million-formula default is implied.
 
-### 056-C: canonical freeze
+### 056-C: source freeze generation
 
-- A content-addressed canonical freeze was built from governed artifacts without committing market data.
-- The freeze retains historical securities and CSI300 snapshot proof but remains research-gate blocked.
+- A content-addressed Source Freeze Generation was built from governed artifacts without committing market data.
+- The generation retains historical securities and CSI300 snapshot material but remains research-gate blocked; later adjudication determined that the snapshots do not prove PIT publication availability.
 - Missing strict matrix/tensor validity lineage, incomplete historical ST/suspension/name-change proof, industry transition proof, and corporate-action availability remain explicit blockers.
 - The historically observed 2025-01-01 through 2026-06-30 interval is not an untouched holdout.
 
