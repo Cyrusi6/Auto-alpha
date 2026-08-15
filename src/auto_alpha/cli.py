@@ -29,6 +29,10 @@ COMMANDS = {
         "auto_alpha.data.lake.store.run_source_freeze",
         "Build a Source Freeze and verify data admission",
     ),
+    ("data", "local-bundle"): CommandSpec(
+        "auto_alpha.data.lake.store.run_local_development_bundle",
+        "Build or validate an offline development-replay bundle",
+    ),
     ("data", "operate"): CommandSpec("auto_alpha.data.lake.operations.run_real_data", "Run governed real-data operations"),
     ("data", "quality"): CommandSpec("auto_alpha.data.quality.lab.run_quality_lab", "Run data-quality diagnostics"),
     ("data", "compare"): CommandSpec("auto_alpha.data.quality.cross_source.run_compare", "Compare governed sources"),

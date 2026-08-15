@@ -45,6 +45,29 @@ auto-alpha data freeze validate-research-view \
 
 No command downloads data, mutates the raw lake, or silently falls back to a mutable source directory.
 
+## Offline local-data rehabilitation
+
+When provider access is unavailable, a structurally valid Source Freeze research view may be reconstructed into a **Local Development Replay Bundle**:
+
+```bash
+auto-alpha data local-bundle build \
+  --source-freeze-manifest <generation>/source_freeze_manifest.json \
+  --output-root <new-sibling-output> \
+  --date-start 20120101 \
+  --date-end 20191231 \
+  --index-code 000300.SH \
+  --workers 4
+
+auto-alpha data local-bundle validate \
+  --manifest <local-generation>/local_development_bundle.json
+```
+
+The legacy manifest name `canonical_freeze_manifest.json` is accepted only through an explicit `legacy_unproven` adapter. The adapter revalidates the bound physical research view and search partition root without upgrading provider, PIT, ST, suspension, adjustment-revision, or corporate-action evidence.
+
+The bundle contains its own axes, accepted retrospective CSI300 snapshots, membership/known/weight matrices, raw values and validity, Alpha feature tensor and validity, observed `t+1 open → t+2 open` target and availability, quality/reconciliation reports, and source-to-derived lineage. Validation independently rebuilds membership, features, and target; requires the exact artifact closure; and rejects mutable, symlinked, extra, missing, self-consistently re-signed, or source-drifted evidence.
+
+This path is deliberately outside governed admission. It never creates a Canonical Data Freeze or permits Alpha search, candidate publication, holdout access, shadow, paper, or live operation. See [Local Development Replay Bundle](LOCAL_DEVELOPMENT_BUNDLE.md).
+
 ## Real 2026-07-30 Source Freeze Generation
 
 The real immutable generation is structurally valid but research-gate blocked. Its freeze content hash is `125cb21b...143c0a`, with 41 declared datasets, 37 materialized datasets, 105,208,161 in-scope rows, 1,176 Parquet partitions, and 134 post-cutoff rows represented only by exclusion hashes. Later adjudication found that CSI300 membership is absent for 2012-2015 and lacks real publication-time proof thereafter, so the historical snapshot count is not governed PIT evidence. The source also lacks governed ST/suspension coverage, corporate-action and adjustment-factor causal proof, and the strict values/validity/target lineage bundle. It remains a blocked Source Freeze Generation with `alpha_search_authorized=false`. The Git-safe summary is `evidence/task_056c/task056c_canonical_freeze_summary.json`.

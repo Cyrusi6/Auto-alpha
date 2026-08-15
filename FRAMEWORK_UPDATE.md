@@ -2,6 +2,22 @@
 
 This file records only the current A-share architecture and recent governed milestones. Detailed historical implementation is available through Git history rather than duplicated task-by-task prose.
 
+## 2026-08-16 — Offline local-data rehabilitation
+
+### Outcome
+
+- Added the provider-independent `Local Development Replay Bundle` for rehabilitating an immutable Source Freeze research view while Tushare access is unavailable. The command performs no network or token access and never writes into the source generation.
+- Added explicit adapters for current Source Freeze Generations and historical `canonical_ashare_research_freeze_v1` evidence. The legacy adapter verifies the bound physical research view and partition identities but permanently preserves the `legacy_unproven` evidence grade.
+- Materialized a self-contained `development_matrix/` with stock/date/feature axes, accepted retrospective CSI300 snapshots, 45-calendar-day membership expiry, membership/known/weight arrays, all raw values and validity, ten Alpha feature channels, observed open-to-open target values/availability, quality, reconciliation, and source lineage.
+- Kept 2012–2015 membership unknown rather than projecting later constituents backward. Snapshot publication time, ST state, suspension state, adjustment revision history, corporate-action causal lineage, and provider request coverage remain explicit blockers.
+- Made build identity bind the Source Freeze and search roots, locked scope, builder plus Source Freeze/storage source hashes, Python/NumPy/PyArrow runtime, artifact closure, and all evidence flags. One-worker and four-worker builds are byte-identical; compatible reruns replay trusted source semantics without republishing or creating a new matrix generation.
+- Strengthened validation to reject mutable generations, any leaf or ancestor symlink, special or extra files, missing raw controls, wrong generation prefixes, negative index weights, duplicated calendars, source drift, incoherent price bands, and self-consistently re-signed feature or target arrays. Membership, feature values/validity, observed target, quality, reconciliation, and lineage are independently reconstructed from the frozen bundle evidence.
+- Moved large prepared-directory publication behind the platform immutable-generation owner. Publication validates before and after atomic rename, uses per-generation locks, requires exact byte closure for same-identity reuse, and recovers safely when a process stops before the mutable current pointer advances.
+- Registered the manifest schema and unified CLI command. Domain errors now return structured `blocked` JSON with exit code 2 instead of an internal traceback.
+- Rebuilt the actual legacy lake offline into generation `local_development_bundle_d3012bcc31b7f37fab62106f` (content `d3012bcc31b7f37fab62106fa00a0342ebf39ede813b70e8ad0e8f8de3609dc1`, artifact root `e1c906408dbeec543a8b83b795d56068c12d98f29e2e164797f7bca9d820a53`): shape `469 × 1,945` over `20120104`–`20191231`, 48 retrospective snapshots, 10 features, 2,767,930 valid feature slots, and 275,471 observed targets. The source and research-view manifest hashes stayed unchanged, and a trusted repeat run was a validated cache hit.
+- Replaced embedded raw Source Freeze manifests with a sanitized source-identity binding receipt; only the exact bootstrap/research view manifest is retained, and controlled-period locator strings are rejected. The source remains `legacy_unproven` and blocked for admission.
+- Preserved the governance boundary: every local bundle has `mode=development_replay`, `data_admission_eligible=false`, `alpha_search_authorized=false`, and `lifecycle_publication_allowed=false`. No holdout, autonomous search, candidate promotion, shadow, paper, or live action was opened.
+
 ## 2026-08-14 — Data admission verifier foundation
 
 ### Outcome

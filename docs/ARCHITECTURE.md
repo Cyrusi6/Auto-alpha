@@ -37,7 +37,7 @@ auto_alpha/
     └── observability/
 ```
 
-The tree contains 54 Python package directories and 437 Python source files. Hard ceilings are 55 and 450. Committed evidence remains capped at four current files.
+The tree contains 54 Python package directories and 439 Python source files. Hard ceilings are 55 and 450. Committed evidence remains capped at four current files.
 
 ## File Convention
 
@@ -105,6 +105,7 @@ Research, validation, portfolio, and execution remain flat below their visible s
 | Formula candidate requests | `research/formulas/candidates.py` |
 | Composite factors | `research/factors/composite.py` |
 | Security-date truth | `data/pit/truth.py` |
+| Offline local-data rehabilitation | `data/lake/store/local_development_bundle.py` |
 | Fee workflow and calculator | `portfolio/simulator/fees.py` |
 | Production firewall sentinel | `validation/firewall/production_sentinel_sentinel.py` |
 | Immutable generation storage | `platform/artifacts/storage.py` |

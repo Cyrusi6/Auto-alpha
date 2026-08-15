@@ -1,9 +1,35 @@
 import json
 
 from auto_alpha.platform.artifacts.schema.manifest import build_artifact_manifest, write_artifact_manifest
+from auto_alpha.platform.artifacts.schema.registry import get_definition, infer_artifact_type
 from auto_alpha.platform.artifacts.schema.run_validate import main as validate_main
 from auto_alpha.platform.artifacts.schema.validator import validate_artifact
 from auto_alpha.platform.artifacts.schema.writer import write_json_artifact, write_jsonl_artifact
+
+
+def test_local_development_bundle_manifest_is_registered() -> None:
+    artifact_type = infer_artifact_type("local_development_bundle.json")
+    definition = get_definition(artifact_type)
+
+    assert artifact_type == "local_development_bundle"
+    assert definition is not None
+    assert {
+        "source_evidence_grade",
+        "source_content_hash",
+        "source_declared_blockers",
+        "source_manifest_sha256",
+        "source_semantic_hash",
+        "builder_semantic_hash",
+        "search_partition_root",
+        "search_view_manifest_sha256",
+        "source_partition_selection_root",
+        "artifact_root",
+        "evidence_flags",
+        "blockers",
+        "data_admission_eligible",
+        "alpha_search_authorized",
+        "lifecycle_publication_allowed",
+    } <= set(definition.required_fields)
 
 
 def test_json_artifact_strict_and_legacy_validation(tmp_path):
