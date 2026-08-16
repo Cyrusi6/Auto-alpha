@@ -231,6 +231,14 @@ This file records only the current A-share architecture and recent governed mile
 - Introduced the unified `auto-alpha <domain> <command>` surface and repository layout audit.
 - Reduced package directories from 118 to 57 before this second deletion pass.
 
+## 2026-08 — Free domestic source feasibility
+
+- Recorded the official-source review in `docs/research/FREE_DOMESTIC_ASHARE_DATA_SOURCES.md`.
+- A bounded live probe confirmed that Baostock can return 2012 daily `isST`, `tradestatus`, and historical CSI300 snapshots without credentials; this is capability evidence only, not governed admission evidence.
+- The preferred free acquisition topology is Baostock for daily control-state values, CSI official announcements for membership publication/effective events, and CNINFO announcements for ST, suspension, corporate-action, and correction versions. AkShare is an adapter and reconciliation aid, not an authority contract.
+- No free source was found that exposes historical adjustment-factor revision vintages. The viable governed design is to derive versioned factors from PIT corporate-action events under a separately approved profile and use provider factors only for reconciliation.
+- No bulk acquisition, profile activation, holdout access, autonomous search, paper trading, or live trading was authorized by this research.
+
 ## Architecture rules
 
 1. Delete obsolete behavior instead of hiding it behind compatibility adapters.
