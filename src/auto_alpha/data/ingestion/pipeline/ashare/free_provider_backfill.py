@@ -97,10 +97,13 @@ SAFETY_FLAGS = (
     "live_trading_authorized",
 )
 TERMINAL_STATES = frozenset({"positive", "empty", "error"})
-RETRYABLE_ERROR_PREFIXES = (
+BAOSTOCK_RETRYABLE_ERROR_PREFIXES = (
+    "baostock_transport:SessionExpired:",
     "baostock_transport:TimeoutError",
     "baostock_transport:ConnectionError",
     "baostock_transport:OSError",
+)
+RETRYABLE_ERROR_PREFIXES = (
     "http_status:429",
     "http_status:500",
     "http_status:502",
@@ -113,6 +116,57 @@ RETRYABLE_ERROR_PREFIXES = (
 )
 _HEX_64 = re.compile(r"^[0-9a-f]{64}$")
 _CAPTURE_ENGINE_ROOT_CACHE: str | None = None
+
+_BAOSTOCK_OPERATION_BY_CASE = {
+    "adjust_factor": "query_adjust_factor",
+    "all_stock": "query_all_stock",
+    "dividend": "query_dividend_data",
+    "history": "query_history_k_data_plus",
+    "history_custom": "query_history_k_data_plus",
+    "hs300": "query_hs300_stocks",
+    "stock_basic": "query_stock_basic",
+    "trade_calendar": "query_trade_dates",
+}
+_BAOSTOCK_REQUEST_PARAMETER_INDEXES = {
+    "adjust_factor": {"code": 4, "start": 5, "end": 6},
+    "all_stock": {"date": 4},
+    "dividend": {"code": 4, "year": 5},
+    "history": {"code": 4, "fields": 5, "start": 6, "end": 7},
+    "history_custom": {"code": 4, "fields": 5, "start": 6, "end": 7},
+    "hs300": {"date": 4},
+    "stock_basic": {"code": 4},
+    "trade_calendar": {"start": 4, "end": 5},
+}
+_BAOSTOCK_RESPONSE_FIELDS_INDEX = {
+    "query_adjust_factor": 10,
+    "query_all_stock": 8,
+    "query_dividend_data": 10,
+    "query_history_k_data_plus": 8,
+    "query_hs300_stocks": 8,
+    "query_stock_basic": 9,
+    "query_trade_dates": 9,
+}
+_BAOSTOCK_RESPONSE_REQUEST_INDEX_PAIRS = {
+    "query_adjust_factor": ((7, 4), (8, 5), (9, 6)),
+    "query_all_stock": ((7, 4),),
+    "query_dividend_data": ((7, 4), (8, 5), (9, 6)),
+    "query_history_k_data_plus": (
+        (7, 4),
+        (8, 5),
+        (9, 6),
+        (10, 7),
+        (11, 8),
+        (12, 9),
+    ),
+    "query_hs300_stocks": ((7, 4),),
+    "query_stock_basic": ((7, 4), (8, 5)),
+    "query_trade_dates": ((7, 4), (8, 5)),
+}
+_BAOSTOCK_HEADER_LENGTH = 21
+_BAOSTOCK_COMPRESSED_RESPONSE_TYPES = frozenset({"96", "99", "9B", "9D"})
+_BAOSTOCK_RESPONSE_TRAILER = re.compile(
+    rb"\x01(?P<crc>[0-9]{1,10})\n?<!\[CDATA\[\]\]>\n$"
+)
 
 
 class CaptureSigner(Protocol):
@@ -134,7 +188,10 @@ BackfillTransport = Callable[
 class RecoveringBaostockTransport:
     """Reconnect the pinned Baostock session between bounded retry attempts."""
 
-    RETRYABLE_SESSION_ERROR_CODES = frozenset({"baostock:10001001"})
+    SESSION_EXPIRED_PROVIDER_ERROR = "baostock:10001001"
+    SESSION_EXPIRED_TRANSPORT_ERROR = (
+        "baostock_transport:SessionExpired:10001001"
+    )
 
     def __init__(self) -> None:
         self._transport = BaostockProbeTransport()
@@ -147,7 +204,29 @@ class RecoveringBaostockTransport:
         except Exception:
             self._replace()
             raise
-        if _retryable(observation.error_code):
+        if (
+            request.provider == "baostock"
+            and observation.terminal_state == "error"
+            and observation.error_code == self.SESSION_EXPIRED_PROVIDER_ERROR
+        ):
+            observation = ProviderProbeObservation(
+                terminal_state=observation.terminal_state,
+                raw_payload=observation.raw_payload,
+                row_count=observation.row_count,
+                status_code=observation.status_code,
+                error_code=self.SESSION_EXPIRED_TRANSPORT_ERROR,
+                diagnostics={
+                    **dict(observation.diagnostics),
+                    "session_recovery": {
+                        "adapter": type(self).__name__,
+                        "original_error_code": observation.error_code,
+                        "transport_replaced": True,
+                    },
+                },
+                checks=observation.checks,
+                transport_exchange_count=observation.transport_exchange_count,
+            )
+        if _retryable(observation.error_code, provider=request.provider):
             self._replace()
         return observation
 
@@ -342,7 +421,10 @@ def run_free_provider_backfill(
             }:
                 continue
             if current is not None and (
-                not _retryable(str(current.get("error_code") or ""))
+                not _retryable(
+                    str(current.get("error_code") or ""),
+                    provider=contract.provider,
+                )
                 or int(current.get("retry_ordinal", -1))
                 >= contract.budget.max_retries
             ):
@@ -514,7 +596,10 @@ def run_free_provider_backfill(
                         usage=usage,
                     )
                 if (
-                    not _retryable(observation.error_code)
+                    not _retryable(
+                        observation.error_code,
+                        provider=contract.provider,
+                    )
                     or retry_ordinal >= contract.budget.max_retries
                 ):
                     _pause_activity(
@@ -891,7 +976,16 @@ def validate_free_provider_backfill(path: str | Path) -> dict[str, Any]:
             or pause.get("attempt_id") != event.get("attempt_id")
             or pause.get("terminal_state") != "error"
             or terminal_event is None
-            or not _manual_resume_required(terminal_event)
+            or not _manual_resume_required(
+                terminal_event,
+                provider=str(
+                    (
+                        request_by_id.get(str(event.get("request_id") or ""))
+                        or {}
+                    ).get("provider")
+                    or ""
+                ),
+            )
             or pause.get("error_code") != terminal_event.get("error_code")
             or pause.get("status_code") != terminal_event.get("status_code")
             or _parse_utc(str(event.get("not_before") or ""))
@@ -1891,7 +1985,10 @@ def _read_and_validate_journal(
             if (
                 terminal_event is None
                 or terminal_event.get("terminal_state") != "error"
-                or not _manual_resume_required(terminal_event)
+                or not _manual_resume_required(
+                    terminal_event,
+                    provider=str((request_row or {}).get("provider") or ""),
+                )
                 or terminal_event.get("request_id") != request_id
                 or event.get("authorized_next_retry_ordinal") != int(retry_ordinal) + 1
                 or (
@@ -1939,7 +2036,10 @@ def _read_and_validate_journal(
             )
             if (
                 prior_attempt is not None
-                and _manual_resume_required(prior_attempt)
+                and _manual_resume_required(
+                    prior_attempt,
+                    provider=str((request_row or {}).get("provider") or ""),
+                )
                 and resume_authorization is None
             ):
                 raise ValueError(
@@ -2179,18 +2279,28 @@ def _budget_exceeded_reason(
     return None
 
 
-def _retryable(error_code: str | None) -> bool:
+def _retryable(error_code: str | None, *, provider: str) -> bool:
     value = str(error_code or "")
     return (
         value == "ambiguous_transport"
-        or value in RecoveringBaostockTransport.RETRYABLE_SESSION_ERROR_CODES
         or value.startswith(RETRYABLE_ERROR_PREFIXES)
+        or (
+            provider == "baostock"
+            and value.startswith(BAOSTOCK_RETRYABLE_ERROR_PREFIXES)
+        )
     )
 
 
-def _manual_resume_required(terminal: Mapping[str, Any]) -> bool:
+def _manual_resume_required(
+    terminal: Mapping[str, Any],
+    *,
+    provider: str,
+) -> bool:
     return terminal.get("terminal_state") == "error" and (
-        not _retryable(str(terminal.get("error_code") or ""))
+        not _retryable(
+            str(terminal.get("error_code") or ""),
+            provider=provider,
+        )
         or terminal.get("status_code") in {403, 429}
         or bool((terminal.get("diagnostics") or {}).get("waf_html_observed"))
     )
@@ -2524,115 +2634,394 @@ def _validate_baostock_wire_envelope(
     request: Mapping[str, Any],
     terminal_state: str,
 ) -> None:
-    envelope = json.loads(raw_payload)
-    exchanges = envelope.get("wire_exchanges") if isinstance(envelope, Mapping) else None
+    (
+        envelope,
+        fields,
+        rows,
+        business_requests,
+        wire_provider_results,
+        partial_response_observed,
+    ) = _decode_baostock_wire_envelope(
+        raw_payload, allow_partial_response=terminal_state == "error"
+    )
+    exchanges = envelope.get("wire_exchanges")
     if (
         envelope.get("schema_version") != "baostock_wire_probe_envelope_v1"
         or envelope.get("package_distribution_version") != "0.9.3"
         or envelope.get("client_protocol_version") != "00.9.30"
+        or envelope.get("request_id") != request.get("request_id")
         or not isinstance(exchanges, list)
         or len(exchanges) != expected_exchange_count
     ):
         raise ValueError("free_provider_backfill_baostock_wire_closure_invalid")
-    protocol_requests: list[str] = []
-    for exchange in exchanges:
-        if not isinstance(exchange, Mapping):
-            raise ValueError("free_provider_backfill_baostock_wire_closure_invalid")
-        try:
-            request_bytes = base64.b64decode(
-                str(exchange.get("wire_request_base64") or ""), validate=True
-            )
-            response_bytes = base64.b64decode(
-                str(exchange.get("wire_response_base64") or ""), validate=True
-            )
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "free_provider_backfill_baostock_wire_closure_invalid"
-            ) from exc
-        peer = exchange.get("socket_peer")
-        if (
-            hashlib.sha256(request_bytes).hexdigest()
-            != exchange.get("request_sha256")
-            or len(request_bytes) != exchange.get("request_size_bytes")
-            or hashlib.sha256(response_bytes).hexdigest()
-            != exchange.get("wire_response_sha256")
-            or len(response_bytes) != exchange.get("wire_size_bytes")
-            or not isinstance(peer, list)
-            or len(peer) < 2
-            or (terminal_state in {"positive", "empty"} and not response_bytes)
-            or (
-                terminal_state in {"positive", "empty"}
-                and exchange.get("terminal_marker_present") is not True
-            )
-        ):
-            raise ValueError("free_provider_backfill_baostock_wire_closure_invalid")
-        protocol_requests.append(request_bytes.decode("utf-8"))
-    parsed = urlsplit(str(request.get("url") or ""))
-    expected_values = {
-        value
-        for key, values in parse_qs(parsed.query).items()
-        if key in {"code", "date", "end", "fields", "start", "year"}
-        for value in values
-    }
-    non_login_tokens = [
-        set(message.rstrip("\n").split("\x01"))
-        for message in protocol_requests
-        if "login" not in message.rstrip("\n").split("\x01")
-    ]
-    if expected_values and not any(
-        expected_values <= tokens for tokens in non_login_tokens
-    ):
+
+    metadata = request.get("metadata")
+    case = str(metadata.get("case") or "") if isinstance(metadata, Mapping) else ""
+    expected_operation = _BAOSTOCK_OPERATION_BY_CASE.get(case)
+    if expected_operation is None:
         raise ValueError("free_provider_backfill_baostock_request_binding_invalid")
+    parsed = urlsplit(str(request.get("url") or ""))
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    parameter_indexes = _BAOSTOCK_REQUEST_PARAMETER_INDEXES[case]
+    request_bound = bool(business_requests)
+    for tokens in business_requests:
+        if tokens[0] != expected_operation:
+            request_bound = False
+            break
+        for name, index in parameter_indexes.items():
+            values = query.get(name)
+            if (
+                values is None
+                or len(values) != 1
+                or len(tokens) <= index
+                or tokens[index] != values[0]
+            ):
+                request_bound = False
+                break
+        if not request_bound:
+            break
+    if terminal_state in {"positive", "empty"} and not request_bound:
+        raise ValueError("free_provider_backfill_baostock_request_binding_invalid")
+    if business_requests and not request_bound:
+        raise ValueError("free_provider_backfill_baostock_request_binding_invalid")
+
+    _reconcile_baostock_parsed_payload(envelope, fields=fields, rows=rows)
+    provider_error = envelope.get("provider_error")
+    if wire_provider_results and (
+        not isinstance(provider_error, Mapping)
+        or str(provider_error.get("code") or "")
+        != wire_provider_results[-1][0]
+        or str(provider_error.get("message") or "")
+        != wire_provider_results[-1][1]
+        or (
+            terminal_state in {"positive", "empty"}
+            and any(code != "0" for code, _message in wire_provider_results)
+        )
+    ):
+        raise ValueError("free_provider_backfill_baostock_logical_binding_invalid")
+    if not wire_provider_results and (
+        terminal_state != "error"
+        or not partial_response_observed
+        or not isinstance(provider_error, Mapping)
+        or not str(provider_error.get("type") or "")
+        or "code" in provider_error
+    ):
+        raise ValueError("free_provider_backfill_baostock_logical_binding_invalid")
 
 
 def _baostock_logical_rows(raw_payload: bytes) -> tuple[list[str], list[list[str]]]:
-    envelope = json.loads(raw_payload)
-    parsed = envelope.get("parsed") if isinstance(envelope, Mapping) else None
-    if not isinstance(parsed, Mapping):
-        raise ValueError("baostock_backfill_raw_envelope_invalid")
-    fields = [str(value) for value in parsed.get("fields") or ()]
-    if isinstance(parsed.get("items"), list):
-        items = [[str(value) for value in row] for row in parsed["items"]]
-    else:
-        items: list[list[str]] = []
-        exchanges = envelope.get("wire_exchanges") or ()
-        if not isinstance(exchanges, Sequence):
-            raise ValueError("baostock_backfill_wire_capture_invalid")
-        for exchange in exchanges:
-            if not isinstance(exchange, Mapping):
-                raise ValueError("baostock_backfill_wire_capture_invalid")
-            wire = base64.b64decode(
-                str(exchange.get("wire_response_base64") or ""), validate=True
+    (
+        _envelope,
+        fields,
+        rows,
+        _business_requests,
+        _wire_provider_results,
+        _partial_response_observed,
+    ) = (
+        _decode_baostock_wire_envelope(raw_payload)
+    )
+    _reconcile_baostock_parsed_payload(_envelope, fields=fields, rows=rows)
+    return fields, rows
+
+
+def _reconcile_baostock_parsed_payload(
+    envelope: Mapping[str, Any],
+    *,
+    fields: Sequence[str],
+    rows: Sequence[Sequence[str]],
+) -> None:
+    parsed_payload = envelope.get("parsed")
+    if not isinstance(parsed_payload, Mapping) or not {
+        "canonical_logical_payload_sha256",
+        "fields",
+        "first_rows",
+        "last_rows",
+        "pages",
+        "row_count",
+    } <= set(parsed_payload):
+        raise ValueError("free_provider_backfill_baostock_logical_binding_invalid")
+    parsed_fields = parsed_payload.get("fields")
+    parsed_items = parsed_payload.get("items")
+    if (
+        not isinstance(parsed_fields, list)
+        or [str(value) for value in parsed_fields] != list(fields)
+        or parsed_payload.get("row_count") != len(rows)
+        or parsed_payload.get("canonical_logical_payload_sha256")
+        != canonical_hash({"fields": list(fields), "rows": list(rows)})
+        or (
+            parsed_items is not None
+            and (
+                not isinstance(parsed_items, list)
+                or [[str(value) for value in row] for row in parsed_items]
+                != list(rows)
             )
-            if len(wire) < 21:
-                raise ValueError("baostock_backfill_wire_header_truncated")
-            header = wire[:21].decode("utf-8")
-            parts = header.split("\x01")
-            if len(parts) != 3:
-                raise ValueError("baostock_backfill_wire_header_invalid")
-            declared = int(parts[2])
-            body = wire[21 : 21 + declared]
-            if len(body) != declared:
-                raise ValueError("baostock_backfill_wire_body_truncated")
-            try:
-                decoded = zlib.decompress(body).decode("utf-8")
-            except zlib.error:
-                decoded = body.decode("utf-8")
-            payload = None
-            for token in reversed(decoded.split("\x01")):
-                if token.startswith("{"):
-                    payload = json.loads(token)
-                    break
-            records = payload.get("record") if isinstance(payload, Mapping) else None
-            if records is None:
-                continue
-            if not isinstance(records, list):
+        )
+        or parsed_payload.get("first_rows") != list(rows[:3])
+        or parsed_payload.get("last_rows") != list(rows[-3:])
+    ):
+        raise ValueError("free_provider_backfill_baostock_logical_binding_invalid")
+    pages = parsed_payload.get("pages")
+    if (
+        not isinstance(pages, list)
+        or any(
+            not isinstance(page, Mapping)
+            or not isinstance(page.get("row_count"), int)
+            or isinstance(page.get("row_count"), bool)
+            or int(page["row_count"]) < 0
+            for page in pages
+        )
+        or sum(int(page["row_count"]) for page in pages) != len(rows)
+    ):
+        raise ValueError("free_provider_backfill_baostock_logical_binding_invalid")
+
+
+def _decode_baostock_wire_envelope(
+    raw_payload: bytes,
+    *,
+    allow_partial_response: bool = False,
+) -> tuple[
+    Mapping[str, Any],
+    list[str],
+    list[list[str]],
+    list[list[str]],
+    list[tuple[str, str]],
+    bool,
+]:
+    envelope = json.loads(raw_payload)
+    if not isinstance(envelope, Mapping):
+        raise ValueError("baostock_backfill_raw_envelope_invalid")
+    exchanges = envelope.get("wire_exchanges")
+    if not isinstance(exchanges, list):
+        raise ValueError("baostock_backfill_wire_capture_invalid")
+    fields: list[str] | None = None
+    rows: list[list[str]] = []
+    business_requests: list[list[str]] = []
+    wire_provider_results: list[tuple[str, str]] = []
+    partial_response_observed = allow_partial_response and not exchanges
+    for exchange in exchanges:
+        if not isinstance(exchange, Mapping):
+            raise ValueError("baostock_backfill_wire_capture_invalid")
+        request_bytes = _baostock_exchange_bytes(
+            exchange,
+            payload_key="wire_request_base64",
+            hash_key="request_sha256",
+            size_key="request_size_bytes",
+        )
+        response_bytes = _baostock_exchange_bytes(
+            exchange,
+            payload_key="wire_response_base64",
+            hash_key="wire_response_sha256",
+            size_key="wire_size_bytes",
+        )
+        peer = exchange.get("socket_peer")
+        if not isinstance(peer, list) or len(peer) < 2:
+            raise ValueError("baostock_backfill_wire_capture_invalid")
+        request_tokens = _parse_baostock_request_frame(request_bytes)
+        marker_value = exchange.get("terminal_marker_present")
+        if not isinstance(marker_value, bool):
+            raise ValueError("baostock_backfill_wire_response_partial_invalid")
+        marker_complete = marker_value is True
+        if not marker_complete:
+            if (
+                not allow_partial_response
+                or response_bytes.endswith(b"<![CDATA[]]>\n")
+            ):
+                raise ValueError("baostock_backfill_wire_response_partial_invalid")
+            partial_response_observed = True
+            if request_tokens[0] != "login":
+                business_requests.append(request_tokens)
+            continue
+        response_tokens = _parse_baostock_response_frame(response_bytes)
+        operation = request_tokens[0]
+        if operation == "login":
+            if len(response_tokens) < 3 or response_tokens[2] != "login":
+                raise ValueError("baostock_backfill_wire_operation_mismatch")
+            continue
+        business_requests.append(request_tokens)
+        if len(response_tokens) < 2:
+            raise ValueError("baostock_backfill_wire_response_invalid")
+        wire_provider_results.append((response_tokens[0], response_tokens[1]))
+        if response_tokens[0] != "0":
+            continue
+        if len(response_tokens) <= 6 or response_tokens[2] != operation:
+            raise ValueError("baostock_backfill_wire_operation_mismatch")
+        response_request_pairs = _BAOSTOCK_RESPONSE_REQUEST_INDEX_PAIRS.get(
+            operation
+        )
+        if response_request_pairs is None or any(
+            len(response_tokens) <= response_index
+            or len(request_tokens) <= request_index
+            or response_tokens[response_index] != request_tokens[request_index]
+            for response_index, request_index in response_request_pairs
+        ):
+            raise ValueError("baostock_backfill_wire_parameter_mismatch")
+        field_index = _BAOSTOCK_RESPONSE_FIELDS_INDEX.get(operation)
+        if field_index is None or len(response_tokens) <= field_index:
+            raise ValueError("baostock_backfill_wire_fields_invalid")
+        response_fields = [
+            value.strip() for value in response_tokens[field_index].split(",")
+        ]
+        if not response_fields or any(not value for value in response_fields):
+            raise ValueError("baostock_backfill_wire_fields_invalid")
+        if fields is None:
+            fields = response_fields
+        elif fields != response_fields:
+            raise ValueError("baostock_backfill_wire_fields_drift")
+        try:
+            records_payload = json.loads(response_tokens[6])
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ValueError("baostock_backfill_wire_records_invalid") from exc
+        records = (
+            records_payload.get("record")
+            if isinstance(records_payload, Mapping)
+            else None
+        )
+        if not isinstance(records, list):
+            raise ValueError("baostock_backfill_wire_records_invalid")
+        for row in records:
+            if not isinstance(row, list):
                 raise ValueError("baostock_backfill_wire_records_invalid")
-            items.extend([[str(value) for value in row] for row in records])
-    expected_hash = str(parsed.get("canonical_logical_payload_sha256") or "")
-    if expected_hash and expected_hash != canonical_hash({"fields": fields, "rows": items}):
-        raise ValueError("baostock_backfill_logical_hash_mismatch")
-    return fields, items
+            rows.append([str(value) for value in row])
+    if allow_partial_response and not wire_provider_results:
+        partial_response_observed = True
+    return (
+        envelope,
+        fields or [],
+        rows,
+        business_requests,
+        wire_provider_results,
+        partial_response_observed,
+    )
+
+
+def _baostock_exchange_bytes(
+    exchange: Mapping[str, Any],
+    *,
+    payload_key: str,
+    hash_key: str,
+    size_key: str,
+) -> bytes:
+    try:
+        payload = base64.b64decode(
+            str(exchange.get(payload_key) or ""), validate=True
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("baostock_backfill_wire_capture_invalid") from exc
+    if (
+        hashlib.sha256(payload).hexdigest() != exchange.get(hash_key)
+        or len(payload) != exchange.get(size_key)
+    ):
+        raise ValueError("baostock_backfill_wire_capture_invalid")
+    return payload
+
+
+def _parse_baostock_request_frame(wire: bytes) -> list[str]:
+    if len(wire) <= _BAOSTOCK_HEADER_LENGTH:
+        raise ValueError("baostock_backfill_wire_request_truncated")
+    header = wire[:_BAOSTOCK_HEADER_LENGTH]
+    try:
+        header_text = header.decode("ascii")
+    except UnicodeDecodeError as exc:
+        raise ValueError("baostock_backfill_wire_request_header_invalid") from exc
+    parts = header_text.split("\x01")
+    if (
+        len(parts) != 3
+        or parts[0] != "00.9.30"
+        or not re.fullmatch(r"[0-9A-F]{2}", parts[1])
+        or not re.fullmatch(r"[0-9]{10}", parts[2])
+    ):
+        raise ValueError("baostock_backfill_wire_request_header_invalid")
+    trailer = re.search(rb"\x01(?P<crc>[0-9]{1,10})\n$", wire)
+    if trailer is None or trailer.start() <= _BAOSTOCK_HEADER_LENGTH:
+        raise ValueError("baostock_backfill_wire_request_trailer_invalid")
+    body_bytes = wire[_BAOSTOCK_HEADER_LENGTH : trailer.start()]
+    try:
+        body = body_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("baostock_backfill_wire_request_body_invalid") from exc
+    if (
+        len(body) != int(parts[2])
+        or int(trailer.group("crc")) != zlib.crc32(header + body_bytes)
+    ):
+        raise ValueError("baostock_backfill_wire_request_length_invalid")
+    tokens = body.split("\x01")
+    if not tokens or not tokens[0]:
+        raise ValueError("baostock_backfill_wire_request_body_invalid")
+    return tokens
+
+
+def _parse_baostock_response_frame(wire: bytes) -> list[str]:
+    if len(wire) <= _BAOSTOCK_HEADER_LENGTH:
+        raise ValueError("baostock_backfill_wire_response_truncated")
+    header = wire[:_BAOSTOCK_HEADER_LENGTH]
+    try:
+        header_text = header.decode("ascii")
+    except UnicodeDecodeError as exc:
+        raise ValueError("baostock_backfill_wire_response_header_invalid") from exc
+    parts = header_text.split("\x01")
+    if (
+        len(parts) != 3
+        or parts[0] != "00.9.00"
+        or not re.fullmatch(r"[0-9A-F]{2}", parts[1])
+        or not re.fullmatch(r"[0-9]{10}", parts[2])
+    ):
+        raise ValueError("baostock_backfill_wire_response_header_invalid")
+    trailer = _BAOSTOCK_RESPONSE_TRAILER.search(wire)
+    if trailer is None or trailer.start() <= _BAOSTOCK_HEADER_LENGTH:
+        raise ValueError("baostock_backfill_wire_response_trailer_invalid")
+    body_bytes = wire[_BAOSTOCK_HEADER_LENGTH : trailer.start()]
+    try:
+        if parts[1] in _BAOSTOCK_COMPRESSED_RESPONSE_TYPES:
+            if len(body_bytes) != int(parts[2]):
+                raise ValueError("baostock_backfill_wire_response_length_invalid")
+            body = zlib.decompress(body_bytes).decode("utf-8")
+        else:
+            body = body_bytes.decode("utf-8")
+            if (
+                len(body) != int(parts[2])
+                or int(trailer.group("crc"))
+                != zlib.crc32(header + body_bytes)
+            ):
+                raise ValueError("baostock_backfill_wire_response_length_invalid")
+    except (UnicodeDecodeError, zlib.error) as exc:
+        raise ValueError("baostock_backfill_wire_response_body_invalid") from exc
+    tokens = body.split("\x01")
+    if not tokens or not tokens[0]:
+        raise ValueError("baostock_backfill_wire_response_body_invalid")
+    return tokens
+
+
+def baostock_wire_protocol_root() -> str:
+    """Content-address the complete v2 Baostock wire replay implementation."""
+
+    return canonical_hash(
+        {
+            "operation_by_case": _BAOSTOCK_OPERATION_BY_CASE,
+            "request_parameter_indexes": _BAOSTOCK_REQUEST_PARAMETER_INDEXES,
+            "response_fields_index": _BAOSTOCK_RESPONSE_FIELDS_INDEX,
+            "response_request_index_pairs": (
+                _BAOSTOCK_RESPONSE_REQUEST_INDEX_PAIRS
+            ),
+            "header_length": _BAOSTOCK_HEADER_LENGTH,
+            "compressed_response_types": sorted(
+                _BAOSTOCK_COMPRESSED_RESPONSE_TYPES
+            ),
+            "response_trailer": _BAOSTOCK_RESPONSE_TRAILER.pattern.decode(
+                "latin-1"
+            ),
+            "validator": inspect.getsource(_validate_baostock_wire_envelope),
+            "logical_rows": inspect.getsource(_baostock_logical_rows),
+            "parsed_reconciliation": inspect.getsource(
+                _reconcile_baostock_parsed_payload
+            ),
+            "envelope_decoder": inspect.getsource(
+                _decode_baostock_wire_envelope
+            ),
+            "exchange_decoder": inspect.getsource(_baostock_exchange_bytes),
+            "request_frame": inspect.getsource(_parse_baostock_request_frame),
+            "response_frame": inspect.getsource(_parse_baostock_response_frame),
+        }
+    )
 
 
 def _request_from_semantic(row: Mapping[str, Any]) -> ProviderProbeRequest:

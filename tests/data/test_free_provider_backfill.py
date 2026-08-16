@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import zlib
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -80,13 +84,21 @@ def test_baostock_session_expiry_replaces_transport_before_bounded_retry(
         "BaostockProbeTransport",
         SessionExpiryTransport,
     )
-    request = _request("session-expiry")
+    request = _baostock_request("session-expiry")
     transport = RecoveringBaostockTransport()
 
     first = transport(request, 3.0)
     second = transport(request, 3.0)
 
-    assert first.error_code == "baostock:10001001"
+    assert first.error_code == "baostock_transport:SessionExpired:10001001"
+    assert first.diagnostics == {
+        "provider_error_message": "session expired",
+        "session_recovery": {
+            "adapter": "RecoveringBaostockTransport",
+            "original_error_code": "baostock:10001001",
+            "transport_replaced": True,
+        },
+    }
     assert second.terminal_state == "positive"
     assert len(instances) == 2
     assert instances[0].closed is True
@@ -107,6 +119,30 @@ def _request(request_id: str) -> ProviderProbeRequest:
         expected_terminal_states=("positive",),
         required_checks=("provider_success",),
         metadata={"case": "history", "ts_code": "600000.SH"},
+    )
+
+
+def _baostock_request(request_id: str) -> ProviderProbeRequest:
+    return ProviderProbeRequest(
+        request_id=request_id,
+        provider="baostock",
+        endpoint="history_state_daily",
+        method="GET",
+        url=(
+            "https://public-api.baostock.com/history"
+            "?code=sh.600000&start=2012-01-01&end=2012-01-02"
+            "&fields=date,code"
+        ),
+        disposition="bounded_backfill",
+        evidence_semantics="raw_sdk_socket_response_plus_locked_parser",
+        expected_terminal_states=("positive",),
+        required_checks=("provider_success",),
+        metadata={
+            "case": "history_custom",
+            "ts_code": "600000.SH",
+            "provider_code": "sh.600000",
+            "expected_fields": ("date", "code"),
+        },
     )
 
 
@@ -135,6 +171,216 @@ def _observation(request_id: str) -> ProviderProbeObservation:
     )
 
 
+def _baostock_wire_observation(
+    request: ProviderProbeRequest,
+    *,
+    session_expired: bool,
+    rows_override: list[list[str]] | None = None,
+) -> ProviderProbeObservation:
+    query = {
+        key: values[-1]
+        for key, values in parse_qs(urlsplit(request.url).query).items()
+    }
+    fields_value = query["fields"]
+    request_body = (
+        "query_history_k_data_plus\x01anonymous\x011\x012000\x01"
+        f"{query['code']}\x01{fields_value}\x01{query['start']}\x01"
+        f"{query['end']}\x01d\x013"
+    )
+    request_header = f"00.9.30\x0195\x01{len(request_body):010d}".encode()
+    request_head_body = request_header + request_body.encode()
+    wire_request = (
+        request_head_body
+        + f"\x01{zlib.crc32(request_head_body)}\n".encode()
+    )
+    rows = (
+        []
+        if session_expired
+        else rows_override or [[query["end"], query["code"]]]
+    )
+    fields = [] if session_expired else fields_value.split(",")
+    if session_expired:
+        response_body = "10001001\x01session expired"
+        response_header = f"00.9.00\x0104\x01{len(response_body):010d}".encode()
+        response_payload = response_body.encode()
+    else:
+        response_body = "\x01".join(
+            [
+                "0",
+                "success",
+                "query_history_k_data_plus",
+                "anonymous",
+                "1",
+                "2000",
+                json.dumps({"record": rows}, separators=(",", ":")),
+                query["code"],
+                fields_value,
+                query["start"],
+                query["end"],
+                "d",
+                "3",
+            ]
+        )
+        response_payload = zlib.compress(response_body.encode())
+        response_header = (
+            f"00.9.00\x0196\x01{len(response_payload):010d}".encode()
+        )
+    response_crc = zlib.crc32(response_header + response_payload)
+    wire_response = (
+        response_header
+        + response_payload
+        + f"\x01{response_crc}".encode()
+        + (b"\n" if not session_expired else b"")
+        + b"<![CDATA[]]>\n"
+    )
+    exchange = {
+        "wire_request_base64": base64.b64encode(wire_request).decode(),
+        "request_sha256": hashlib.sha256(wire_request).hexdigest(),
+        "request_size_bytes": len(wire_request),
+        "socket_peer": ["1.2.3.4", 10030],
+        "wire_response_base64": base64.b64encode(wire_response).decode(),
+        "wire_response_sha256": hashlib.sha256(wire_response).hexdigest(),
+        "wire_size_bytes": len(wire_response),
+        "terminal_marker_present": True,
+    }
+    envelope = {
+        "schema_version": "baostock_wire_probe_envelope_v1",
+        "package_distribution_version": "0.9.3",
+        "client_protocol_version": "00.9.30",
+        "request_id": request.request_id,
+        "wire_exchanges": [exchange],
+        "parsed": {
+            "fields": fields,
+            "row_count": len(rows),
+            "pages": [] if session_expired else [
+                {"page": 1, "row_count": len(rows), "provider_page_size": 2000}
+            ],
+            "first_rows": rows[:3],
+            "last_rows": rows[-3:],
+            "canonical_logical_payload_sha256": canonical_hash(
+                {"fields": fields, "rows": rows}
+            ),
+        },
+        "provider_error": {
+            "code": "10001001" if session_expired else "0",
+            "message": "session expired" if session_expired else "success",
+        },
+    }
+    return ProviderProbeObservation(
+        terminal_state="error" if session_expired else "positive",
+        raw_payload=json.dumps(envelope, sort_keys=True).encode(),
+        row_count=None if session_expired else len(rows),
+        status_code=None if session_expired else 0,
+        error_code="baostock:10001001" if session_expired else None,
+        diagnostics=(
+            {"provider_error_message": "session expired"}
+            if session_expired
+            else {}
+        ),
+        checks={"provider_success": not session_expired},
+        transport_exchange_count=1,
+    )
+
+
+def _baostock_partial_timeout_observation(
+    request: ProviderProbeRequest,
+) -> ProviderProbeObservation:
+    complete = _baostock_wire_observation(request, session_expired=False)
+    envelope = json.loads(complete.raw_payload)
+    exchange = envelope["wire_exchanges"][0]
+    exchange.update(
+        {
+            "wire_response_base64": "",
+            "wire_response_sha256": hashlib.sha256(b"").hexdigest(),
+            "wire_size_bytes": 0,
+            "terminal_marker_present": False,
+        }
+    )
+    envelope["parsed"] = {
+        "fields": [],
+        "row_count": 0,
+        "pages": [],
+        "first_rows": [],
+        "last_rows": [],
+        "canonical_logical_payload_sha256": canonical_hash(
+            {"fields": [], "rows": []}
+        ),
+    }
+    envelope["provider_error"] = {
+        "type": "TimeoutError",
+        "message": "timed out before terminal marker",
+    }
+    return ProviderProbeObservation(
+        terminal_state="error",
+        raw_payload=json.dumps(envelope, sort_keys=True).encode(),
+        row_count=None,
+        error_code="baostock_transport:TimeoutError",
+        diagnostics={"wire_capture_count": 1},
+        checks={"transport_completed": False},
+        transport_exchange_count=1,
+    )
+
+
+def _baostock_login_only_transport_error_observation(
+    request: ProviderProbeRequest,
+) -> ProviderProbeObservation:
+    request_body = "login\x01anonymous\x01123456\x010"
+    request_header = f"00.9.30\x0100\x01{len(request_body):010d}".encode()
+    request_head_body = request_header + request_body.encode()
+    wire_request = (
+        request_head_body
+        + f"\x01{zlib.crc32(request_head_body)}\n".encode()
+    )
+    response_body = "0\x01success\x01login\x01anonymous\x01fixture"
+    response_header = f"00.9.00\x0101\x01{len(response_body):010d}".encode()
+    response_head_body = response_header + response_body.encode()
+    wire_response = (
+        response_head_body
+        + f"\x01{zlib.crc32(response_head_body)}".encode()
+        + b"<![CDATA[]]>\n"
+    )
+    exchange = {
+        "wire_request_base64": base64.b64encode(wire_request).decode(),
+        "request_sha256": hashlib.sha256(wire_request).hexdigest(),
+        "request_size_bytes": len(wire_request),
+        "socket_peer": ["1.2.3.4", 10030],
+        "wire_response_base64": base64.b64encode(wire_response).decode(),
+        "wire_response_sha256": hashlib.sha256(wire_response).hexdigest(),
+        "wire_size_bytes": len(wire_response),
+        "terminal_marker_present": True,
+    }
+    envelope = {
+        "schema_version": "baostock_wire_probe_envelope_v1",
+        "package_distribution_version": "0.9.3",
+        "client_protocol_version": "00.9.30",
+        "request_id": request.request_id,
+        "wire_exchanges": [exchange],
+        "parsed": {
+            "fields": [],
+            "row_count": 0,
+            "pages": [],
+            "first_rows": [],
+            "last_rows": [],
+            "canonical_logical_payload_sha256": canonical_hash(
+                {"fields": [], "rows": []}
+            ),
+        },
+        "provider_error": {
+            "type": "OSError",
+            "message": "business send failed after login",
+        },
+    }
+    return ProviderProbeObservation(
+        terminal_state="error",
+        raw_payload=json.dumps(envelope, sort_keys=True).encode(),
+        row_count=None,
+        error_code="baostock_transport:OSError",
+        diagnostics={"wire_capture_count": 1},
+        checks={"transport_completed": False},
+        transport_exchange_count=1,
+    )
+
+
 def _forbidden_observation() -> ProviderProbeObservation:
     return ProviderProbeObservation(
         terminal_state="error",
@@ -149,13 +395,15 @@ def _forbidden_observation() -> ProviderProbeObservation:
 
 
 def _contract(
-    output: Path, signer: EphemeralReceiptSigner, *, max_requests: int = 4
+    output: Path,
+    signer: EphemeralReceiptSigner,
+    *,
+    max_requests: int = 4,
+    provider: str = "cninfo",
 ) -> FreeProviderBackfillContract:
-    import base64
-
     return FreeProviderBackfillContract(
         activity_name="fixture_backfill_v1",
-        provider="cninfo",
+        provider=provider,
         output_root=output,
         permission_context_id="human-approved-fixture",
         population_root="a" * 64,
@@ -165,7 +413,11 @@ def _contract(
         scope_end="20120102",
         request_start="20120101",
         request_end="20120102",
-        allowed_hosts=("www.cninfo.com.cn",),
+        allowed_hosts=(
+            ("public-api.baostock.com",)
+            if provider == "baostock"
+            else ("www.cninfo.com.cn",)
+        ),
         budget=BackfillResourceBudget(
             max_requests=max_requests,
             max_wire_exchanges=max_requests,
@@ -215,43 +467,211 @@ def test_signed_backfill_publishes_valid_raw_closure_and_is_idempotent(
     assert cached["cache_hit"] is True
 
 
-def test_capture_engine_retries_baostock_session_expiry_within_budget(
+@pytest.mark.parametrize(
+    "error_code",
+    (
+        "baostock:10001001",
+        "baostock_transport:SessionExpired:10001001",
+    ),
+)
+def test_capture_engine_does_not_retry_unscoped_baostock_provider_error(
     tmp_path: Path,
+    error_code: str,
 ) -> None:
     signer = EphemeralReceiptSigner.generate()
     request = _request("session-expiry")
-    observations = [
-        ProviderProbeObservation(
-            terminal_state="error",
-            raw_payload=b"expired-session",
-            row_count=None,
-            error_code="baostock:10001001",
-            diagnostics={"provider_error_message": "session expired"},
-            checks={"provider_success": False},
-            transport_exchange_count=1,
-        ),
-        _observation(request.request_id),
-    ]
+    observation = ProviderProbeObservation(
+        terminal_state="error",
+        raw_payload=b"expired-session",
+        row_count=None,
+        error_code=error_code,
+        diagnostics={"provider_error_message": "session expired"},
+        checks={"provider_success": False},
+        transport_exchange_count=1,
+    )
     calls: list[str] = []
 
     def transport(
         current: ProviderProbeRequest, _timeout_seconds: float
     ) -> ProviderProbeObservation:
         calls.append(current.request_id)
+        return observation
+
+    with pytest.raises(ProviderBackfillPaused, match="terminal_error"):
+        run_free_provider_backfill(
+            _contract(tmp_path / "capture", signer),
+            [request],
+            transport=transport,
+            signer=signer,
+            runtime_implementation_root=FIXTURE_IMPLEMENTATION_ROOT,
+        )
+
+    assert calls == [request.request_id]
+
+
+def test_recovering_baostock_transport_retries_and_publishes_signed_wire_closure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = _baostock_request("session-expiry")
+    signer = EphemeralReceiptSigner.generate()
+    instances: list[SignedWireSessionTransport] = []
+
+    class SignedWireSessionTransport:
+        def __init__(self) -> None:
+            self.instance_ordinal = len(instances)
+            self.closed = False
+            instances.append(self)
+
+        def __call__(
+            self, current: ProviderProbeRequest, _timeout_seconds: float
+        ) -> ProviderProbeObservation:
+            return _baostock_wire_observation(
+                current, session_expired=self.instance_ordinal == 0
+            )
+
+        def close(self) -> None:
+            self.closed = True
+
+        def restore(
+            self, _request: ProviderProbeRequest, _record: object
+        ) -> None:
+            return None
+
+    monkeypatch.setattr(
+        free_provider_backfill,
+        "BaostockProbeTransport",
+        SignedWireSessionTransport,
+    )
+    published = run_free_provider_backfill(
+        _contract(tmp_path / "capture", signer, provider="baostock"),
+        [request],
+        transport=RecoveringBaostockTransport(),
+        signer=signer,
+        runtime_implementation_root=FIXTURE_IMPLEMENTATION_ROOT,
+    )
+    validated = validate_free_provider_backfill(published["manifest_path"])
+
+    assert published["status"] == "succeeded"
+    assert published["terminal_attempt_count"] == 2
+    assert published["resource_usage"]["attempt_count"] == 2
+    assert validated["publication_signature_verified"] is True
+    assert len(instances) == 2
+    assert instances[0].closed is True
+
+
+def test_baostock_partial_timeout_then_retry_publishes_valid_wire_closure(
+    tmp_path: Path,
+) -> None:
+    request = _baostock_request("partial-timeout")
+    signer = EphemeralReceiptSigner.generate()
+    observations = [
+        _baostock_partial_timeout_observation(request),
+        _baostock_wire_observation(request, session_expired=False),
+    ]
+
+    def transport(
+        _request: ProviderProbeRequest, _timeout_seconds: float
+    ) -> ProviderProbeObservation:
         return observations.pop(0)
 
     published = run_free_provider_backfill(
-        _contract(tmp_path / "capture", signer),
+        _contract(tmp_path / "capture", signer, provider="baostock"),
         [request],
         transport=transport,
         signer=signer,
         runtime_implementation_root=FIXTURE_IMPLEMENTATION_ROOT,
     )
+    validated = validate_free_provider_backfill(published["manifest_path"])
 
     assert published["status"] == "succeeded"
     assert published["terminal_attempt_count"] == 2
-    assert published["resource_usage"]["attempt_count"] == 2
+    assert validated["publication_signature_verified"] is True
+    assert observations == []
+
+
+def test_baostock_login_only_error_then_retry_publishes_valid_wire_closure(
+    tmp_path: Path,
+) -> None:
+    request = _baostock_request("login-only-error")
+    signer = EphemeralReceiptSigner.generate()
+    observations = [
+        _baostock_login_only_transport_error_observation(request),
+        _baostock_wire_observation(request, session_expired=False),
+    ]
+
+    def transport(
+        _request: ProviderProbeRequest, _timeout_seconds: float
+    ) -> ProviderProbeObservation:
+        return observations.pop(0)
+
+    published = run_free_provider_backfill(
+        _contract(tmp_path / "capture", signer, provider="baostock"),
+        [request],
+        transport=transport,
+        signer=signer,
+        runtime_implementation_root=FIXTURE_IMPLEMENTATION_ROOT,
+    )
+    validated = validate_free_provider_backfill(published["manifest_path"])
+
+    assert published["terminal_attempt_count"] == 2
+    assert validated["status"] == "succeeded"
+    assert observations == []
+
+
+def test_recovering_baostock_transport_stops_after_repeated_session_expiry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = _baostock_request("repeated-session-expiry")
+    signer = EphemeralReceiptSigner.generate()
+    calls: list[str] = []
+
+    class AlwaysExpiredSessionTransport:
+        def __call__(
+            self, current: ProviderProbeRequest, _timeout_seconds: float
+        ) -> ProviderProbeObservation:
+            calls.append(current.request_id)
+            return _baostock_wire_observation(current, session_expired=True)
+
+        def close(self) -> None:
+            return None
+
+        def restore(
+            self, _request: ProviderProbeRequest, _record: object
+        ) -> None:
+            return None
+
+    monkeypatch.setattr(
+        free_provider_backfill,
+        "BaostockProbeTransport",
+        AlwaysExpiredSessionTransport,
+    )
+    with pytest.raises(ProviderBackfillPaused, match="terminal_error"):
+        run_free_provider_backfill(
+            _contract(tmp_path / "capture", signer, provider="baostock"),
+            [request],
+            transport=RecoveringBaostockTransport(),
+            signer=signer,
+            runtime_implementation_root=FIXTURE_IMPLEMENTATION_ROOT,
+        )
+
     assert calls == [request.request_id, request.request_id]
+    activity = next((tmp_path / ".capture.activities").glob("[0-9a-f]*"))
+    terminal_rows = [
+        json.loads(line)
+        for line in (activity / "capture_journal.jsonl").read_text().splitlines()
+        if '"event_type":"capture_attempt_terminal"' in line
+    ]
+    assert [row["retry_ordinal"] for row in terminal_rows] == [0, 1]
+    assert {
+        row["error_code"] for row in terminal_rows
+    } == {"baostock_transport:SessionExpired:10001001"}
+    assert all(
+        row["diagnostics"]["session_recovery"]["original_error_code"]
+        == "baostock:10001001"
+        for row in terminal_rows
+    )
 
 
 def test_validator_rejects_raw_capture_tampering(tmp_path: Path) -> None:
@@ -448,46 +868,47 @@ def test_plan_freezes_only_lifecycle_intersection(tmp_path: Path) -> None:
 def test_normalizer_replays_full_archived_items_without_using_live_transport(
     tmp_path: Path,
 ) -> None:
-    request = _request("state")
+    fields = [
+        "date",
+        "code",
+        "open",
+        "high",
+        "low",
+        "close",
+        "preclose",
+        "volume",
+        "amount",
+        "tradestatus",
+        "isST",
+    ]
+    rows = [
+        ["2012-01-04", "sh.600000", "1", "1", "1", "1", "1", "1", "1", "1", "0"],
+        ["2012-01-05", "sh.600000", "", "", "", "", "1", "0", "0", "0", "1"],
+    ]
     request = ProviderProbeRequest(
-        **{
-            **request.__dict__,
-            "metadata": {"case": "history", "ts_code": "600000.SH"},
-        }
+        request_id="state",
+        provider="baostock",
+        endpoint="history_state_daily",
+        method="BAOSTOCK",
+        url=(
+            "baostock://public-api.baostock.com/history?code=sh.600000"
+            "&start=2012-01-01&end=2012-01-05&fields="
+            + ",".join(fields)
+        ),
+        disposition="bounded_backfill",
+        evidence_semantics="raw_custom_socket_response_plus_locked_parser",
+        expected_terminal_states=("positive",),
+        required_checks=("provider_success",),
+        metadata={"case": "history", "ts_code": "600000.SH"},
     )
-    raw = {
-        "parsed": {
-            "fields": [
-                "date",
-                "code",
-                "open",
-                "high",
-                "low",
-                "close",
-                "preclose",
-                "volume",
-                "amount",
-                "tradestatus",
-                "isST",
-            ],
-            "items": [
-                ["2012-01-04", "sh.600000", "1", "1", "1", "1", "1", "1", "1", "1", "0"],
-                ["2012-01-05", "sh.600000", "", "", "", "", "1", "0", "0", "0", "1"],
-            ],
-        },
-        "wire_exchanges": [],
-    }
-    raw["parsed"]["canonical_logical_payload_sha256"] = canonical_hash(
-        {"fields": raw["parsed"]["fields"], "rows": raw["parsed"]["items"]}
+    observation = _baostock_wire_observation(
+        request, session_expired=False, rows_override=rows
     )
+    payload = observation.raw_payload
     wrapper = {
         "schema_version": "free_provider_backfill_raw_envelope_v1",
-        "raw_payload_base64": __import__("base64").b64encode(
-            json.dumps(raw).encode()
-        ).decode(),
-        "raw_payload_sha256": __import__("hashlib").sha256(
-            json.dumps(raw).encode()
-        ).hexdigest(),
+        "raw_payload_base64": base64.b64encode(payload).decode(),
+        "raw_payload_sha256": hashlib.sha256(payload).hexdigest(),
     }
     wrapper_path = tmp_path / "raw_envelopes/state.json"
     wrapper_path.parent.mkdir()

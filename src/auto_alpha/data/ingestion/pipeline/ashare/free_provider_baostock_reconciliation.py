@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import inspect
 import json
 import os
+import re
+import urllib.parse
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -21,6 +25,7 @@ from .free_provider_backfill import (
     _baostock_logical_rows,
     _from_baostock_code,
     _public_key_hash,
+    baostock_wire_protocol_root,
     build_baostock_state_plan,
     run_free_provider_backfill,
     validate_free_provider_backfill,
@@ -45,6 +50,15 @@ SECURITIES_PATH = LAKE_ROOT / "data/securities/records.jsonl"
 CALENDAR_PATH = LAKE_ROOT / "data/trade_calendar/records.jsonl"
 CAPTURE_KEY = LAKE_ROOT / "governance/capture_keys/free_domestic_backfill_20260816.pem"
 PERMISSION_CONTEXT = "human_authorization_20260816_free_domestic_missing_data_backfill_v1"
+SECURITY_SNAPSHOT_SEED_DATE = "20111230"
+SECURITY_SNAPSHOT_APPROVED_OPEN_DATE_ROOT = (
+    "2b277e1c53c76d17032fb74c676ea260cb150437c394aa35f8a06d81355abbc6"
+)
+SECURITY_SNAPSHOT_APPROVED_POPULATION_ROOT = (
+    "f171e5952f9998abdbd202b0e7fa0876b34c8b29cd34989b8da00cce453b47f2"
+)
+SECURITY_SNAPSHOT_OPEN_DATE_COUNT = 1_945
+SECURITY_SNAPSHOT_REQUEST_COUNT = 1_946
 
 
 def build_security_basic_plan(
@@ -86,6 +100,78 @@ def build_security_basic_plan(
         for row in population
     ]
     return population, requests
+
+
+def build_security_snapshot_plan(
+    calendar_path: str | Path = CALENDAR_PATH,
+) -> tuple[list[str], list[ProviderProbeRequest]]:
+    """Freeze one full-provider security snapshot for every governed open day."""
+
+    open_dates = [
+        str(row.get("trade_date") or "")
+        for row in _read_jsonl(Path(calendar_path))
+        if row.get("is_open") is True
+        and "20120101" <= str(row.get("trade_date") or "") <= "20191231"
+    ]
+    if len(open_dates) != len(set(open_dates)):
+        raise ValueError("baostock_security_snapshot_calendar_duplicate")
+    if any(not _strict_compact_date(value) for value in open_dates):
+        raise ValueError("baostock_security_snapshot_calendar_date_invalid")
+    governed_dates = sorted(open_dates)
+    if (
+        len(governed_dates) != SECURITY_SNAPSHOT_OPEN_DATE_COUNT
+        or governed_dates[:1] != ["20120104"]
+        or governed_dates[-1:] != ["20191231"]
+        or canonical_hash(governed_dates)
+        != SECURITY_SNAPSHOT_APPROVED_OPEN_DATE_ROOT
+    ):
+        raise ValueError(
+            "baostock_security_snapshot_calendar_unexpected:"
+            f"{len(governed_dates)}"
+        )
+    snapshot_dates = [SECURITY_SNAPSHOT_SEED_DATE, *governed_dates]
+    if (
+        len(snapshot_dates) != SECURITY_SNAPSHOT_REQUEST_COUNT
+        or canonical_hash(snapshot_dates)
+        != SECURITY_SNAPSHOT_APPROVED_POPULATION_ROOT
+    ):
+        raise ValueError("baostock_security_snapshot_population_root_invalid")
+    requests = [
+        ProviderProbeRequest(
+            request_id=f"baostock_security_snapshot_{date}",
+            provider="baostock",
+            endpoint="security_snapshot_reconciliation",
+            method="BAOSTOCK",
+            url=(
+                "baostock://public-api.baostock.com/all_stock"
+                f"?date={date[:4]}-{date[4:6]}-{date[6:]}"
+            ),
+            disposition="provider_cannot_prove",
+            evidence_semantics="raw_custom_socket_response_plus_locked_parser",
+            expected_terminal_states=("positive",),
+            required_checks=(
+                "provider_success",
+                "raw_wire_captured",
+                "terminal_marker_complete",
+                "pagination_terminal_unambiguous",
+                "row_width_matches_fields",
+                "all_stock_fields_exact",
+                "snapshot_query_date_bound",
+                "unique_provider_code",
+                "all_stock_values_nonempty",
+                "trade_status_domain_valid",
+            ),
+            metadata={
+                "case": "all_stock",
+                "snapshot_query_date": date,
+                "provider_code_name_pit_proven": False,
+                "alias_adjudicated": False,
+                "usage": "provider_reconciliation_only",
+            },
+        )
+        for date in snapshot_dates
+    ]
+    return snapshot_dates, requests
 
 
 def build_index_daily_plan() -> tuple[list[str], list[ProviderProbeRequest]]:
@@ -286,6 +372,288 @@ def build_dividend_plan(
                 )
             )
     return population, requests
+
+
+def normalize_security_snapshots(
+    run_root: Path,
+    requests: Sequence[ProviderProbeRequest],
+    terminal: Mapping[str, Mapping[str, Any]],
+) -> Sequence[NormalizedArtifact]:
+    """Replay full-market provider snapshots without adjudicating code aliases."""
+
+    _assert_security_snapshot_request_closure(requests)
+    output = run_root / "normalized"
+    output.mkdir(exist_ok=True)
+    rows_path = output / "security_snapshots.jsonl"
+    coverage_path = output / "security_snapshot_coverage.jsonl"
+    conflicts_path = output / "conflicts.jsonl"
+    conflicts: list[dict[str, Any]] = []
+    record_count = 0
+    coverage_count = 0
+    observed_query_dates: set[str] = set()
+    if set(terminal) != {request.request_id for request in requests}:
+        raise ValueError("baostock_security_snapshot_terminal_closure_invalid")
+    with rows_path.open("wb") as rows_handle, coverage_path.open(
+        "wb"
+    ) as coverage_handle:
+        for request in requests:
+            try:
+                query_date = _security_snapshot_query_date(request)
+            except ValueError as exc:
+                conflicts.append(
+                    {
+                        "request_id": request.request_id,
+                        "reason": str(exc),
+                    }
+                )
+                continue
+            if query_date in observed_query_dates:
+                conflicts.append(
+                    {
+                        "request_id": request.request_id,
+                        "reason": "snapshot_query_date_duplicate",
+                        "snapshot_query_date": query_date,
+                    }
+                )
+                continue
+            observed_query_dates.add(query_date)
+            receipt = terminal[request.request_id]
+            wrapper = read_json(
+                run_root / str(receipt["raw_envelope_relative_path"])
+            )
+            try:
+                raw_payload = base64.b64decode(
+                    str(wrapper.get("raw_payload_base64") or ""), validate=True
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "baostock_security_snapshot_raw_payload_invalid"
+                ) from exc
+            source_payload_sha256 = hashlib.sha256(raw_payload).hexdigest()
+            if (
+                receipt.get("terminal_state") != "positive"
+                or wrapper.get("request_id") != request.request_id
+                or wrapper.get("raw_payload_sha256") != source_payload_sha256
+            ):
+                conflicts.append(
+                    {
+                        "request_id": request.request_id,
+                        "reason": "snapshot_source_binding_invalid",
+                    }
+                )
+                continue
+            try:
+                fields, items = _baostock_logical_rows(raw_payload)
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                conflicts.append(
+                    {
+                        "request_id": request.request_id,
+                        "reason": "snapshot_wire_decode_invalid",
+                        "detail": str(exc),
+                    }
+                )
+                continue
+            if fields != ["code", "tradeStatus", "code_name"]:
+                conflicts.append(
+                    {
+                        "request_id": request.request_id,
+                        "reason": "snapshot_schema_mismatch",
+                        "fields": fields,
+                    }
+                )
+                continue
+            source_request_semantic_hash = canonical_hash(request.semantic())
+            normalized_rows: list[dict[str, Any]] = []
+            provider_codes: set[str] = set()
+            row_conflict: dict[str, Any] | None = None
+            for item in items:
+                try:
+                    provider_code, ts_code, trade_status, provider_name = (
+                        _strict_security_snapshot_row(item)
+                    )
+                except ValueError as exc:
+                    row_conflict = {
+                        "request_id": request.request_id,
+                        "reason": str(exc),
+                        "row": list(item),
+                    }
+                    break
+                if provider_code in provider_codes:
+                    row_conflict = {
+                        "request_id": request.request_id,
+                        "reason": "snapshot_provider_code_duplicate",
+                        "provider_code": provider_code,
+                    }
+                    break
+                provider_codes.add(provider_code)
+                normalized_rows.append(
+                    {
+                        "snapshot_query_date": query_date,
+                        "provider_code": provider_code,
+                        "ts_code": ts_code,
+                        "trade_status": trade_status,
+                        "provider_code_name": provider_name,
+                        "provider_code_name_pit_proven": False,
+                        "alias_adjudicated": False,
+                        "usage": "provider_reconciliation_only",
+                        "source_request_id": request.request_id,
+                        "source_request_semantic_hash": (
+                            source_request_semantic_hash
+                        ),
+                        "source_payload_sha256": source_payload_sha256,
+                    }
+                )
+            if row_conflict is not None:
+                conflicts.append(row_conflict)
+                continue
+            if not normalized_rows:
+                conflicts.append(
+                    {
+                        "request_id": request.request_id,
+                        "reason": "snapshot_rows_empty",
+                    }
+                )
+                continue
+            for row in sorted(
+                normalized_rows, key=lambda value: str(value["provider_code"])
+            ):
+                _write_row(rows_handle, row)
+                record_count += 1
+            _write_row(
+                coverage_handle,
+                {
+                    "snapshot_query_date": query_date,
+                    "terminal_state": "positive",
+                    "returned_count": len(normalized_rows),
+                    "source_request_id": request.request_id,
+                    "source_request_semantic_hash": source_request_semantic_hash,
+                    "source_payload_sha256": source_payload_sha256,
+                },
+            )
+            coverage_count += 1
+        for handle in (rows_handle, coverage_handle):
+            handle.flush()
+            os.fsync(handle.fileno())
+    _atomic_jsonl(conflicts_path, conflicts)
+    if conflicts:
+        raise ValueError(
+            f"baostock_security_snapshot_normalization_invalid:"
+            f"{conflicts[0]['reason']}"
+        )
+    manifest_path = output / "normalized_manifest.json"
+    manifest = {
+        "schema_version": "baostock_security_snapshot_normalization_v1",
+        "snapshot_count": coverage_count,
+        "record_count": record_count,
+        "conflict_count": 0,
+        "rows_sha256": sha256_file(rows_path),
+        "coverage_sha256": sha256_file(coverage_path),
+        "admission_ready": False,
+        "usage": "provider_reconciliation_only",
+        "provider_code_name_pit_proven": False,
+        "alias_adjudicated": False,
+        "raw_market_data_rewritten": False,
+        "blockers": [
+            "provider_code_name_is_not_pit_evidence",
+            "historical_provider_code_aliases_not_adjudicated",
+            "snapshot_cannot_rewrite_or_rename_archived_market_rows",
+        ],
+    }
+    manifest["content_hash"] = canonical_hash(manifest)
+    _atomic_json(manifest_path, manifest)
+    return (
+        NormalizedArtifact(
+            "security_snapshot_reconciliation",
+            "normalized/security_snapshots.jsonl",
+            record_count,
+        ),
+        NormalizedArtifact(
+            "security_snapshot_coverage",
+            "normalized/security_snapshot_coverage.jsonl",
+            coverage_count,
+        ),
+        NormalizedArtifact("conflicts", "normalized/conflicts.jsonl", 0),
+        NormalizedArtifact(
+            "normalized_manifest", "normalized/normalized_manifest.json", 1
+        ),
+    )
+
+
+def _assert_security_snapshot_request_closure(
+    requests: Sequence[ProviderProbeRequest],
+) -> list[str]:
+    if len(requests) != SECURITY_SNAPSHOT_REQUEST_COUNT:
+        raise ValueError("baostock_security_snapshot_request_count_invalid")
+    dates = [_security_snapshot_query_date(request) for request in requests]
+    if (
+        dates[:1] != [SECURITY_SNAPSHOT_SEED_DATE]
+        or dates[1:] != sorted(dates[1:])
+        or len(dates) != len(set(dates))
+        or len(dates[1:]) != SECURITY_SNAPSHOT_OPEN_DATE_COUNT
+        or canonical_hash(dates[1:])
+        != SECURITY_SNAPSHOT_APPROVED_OPEN_DATE_ROOT
+        or canonical_hash(dates)
+        != SECURITY_SNAPSHOT_APPROVED_POPULATION_ROOT
+    ):
+        raise ValueError("baostock_security_snapshot_request_closure_invalid")
+    return dates
+
+
+def _security_snapshot_query_date(request: ProviderProbeRequest) -> str:
+    query_date = str(request.metadata.get("snapshot_query_date") or "")
+    if not _strict_compact_date(query_date):
+        raise ValueError("snapshot_query_date_invalid")
+    parsed = urllib.parse.urlsplit(request.url)
+    query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+    expected_date = f"{query_date[:4]}-{query_date[4:6]}-{query_date[6:]}"
+    if (
+        request.provider != "baostock"
+        or request.method.upper() != "BAOSTOCK"
+        or request.endpoint != "security_snapshot_reconciliation"
+        or request.metadata.get("case") != "all_stock"
+        or request.metadata.get("provider_code_name_pit_proven") is not False
+        or request.metadata.get("alias_adjudicated") is not False
+        or request.metadata.get("usage") != "provider_reconciliation_only"
+        or request.request_id != f"baostock_security_snapshot_{query_date}"
+        or parsed.scheme != "baostock"
+        or parsed.netloc != "public-api.baostock.com"
+        or parsed.hostname != "public-api.baostock.com"
+        or parsed.path != "/all_stock"
+        or bool(parsed.fragment)
+        or query != {"date": [expected_date]}
+    ):
+        raise ValueError("snapshot_query_date_binding_invalid")
+    return query_date
+
+
+def _strict_compact_date(value: str) -> bool:
+    try:
+        datetime.strptime(value, "%Y%m%d")
+    except (TypeError, ValueError):
+        return False
+    return len(value) == 8
+
+
+def _strict_security_snapshot_row(
+    item: Sequence[Any],
+) -> tuple[str, str, str, str]:
+    if len(item) != 3 or any(not str(value).strip() for value in item):
+        raise ValueError("snapshot_row_value_empty_or_width_invalid")
+    provider_code, trade_status, provider_name = (
+        str(item[0]),
+        str(item[1]),
+        str(item[2]),
+    )
+    if not re.fullmatch(r"(?:sh|sz)\.[0-9]{6}", provider_code):
+        raise ValueError("snapshot_provider_code_invalid")
+    if trade_status not in {"0", "1"}:
+        raise ValueError("snapshot_trade_status_invalid")
+    return (
+        provider_code,
+        _from_baostock_code(provider_code),
+        trade_status,
+        provider_name,
+    )
 
 
 def normalize_adjustments(
@@ -598,9 +966,20 @@ def _contract(
     retries: int,
     permission_context_id: str,
 ) -> FreeProviderBackfillContract:
+    if phase == "security-snapshots" and (
+        request_count != SECURITY_SNAPSHOT_REQUEST_COUNT
+        or population_root != SECURITY_SNAPSHOT_APPROVED_POPULATION_ROOT
+    ):
+        raise ValueError("baostock_security_snapshot_contract_closure_invalid")
     request_start = (
         "20110101"
-        if phase in {"dividends", "hs300-snapshots", "turnover"}
+        if phase
+        in {
+            "dividends",
+            "hs300-snapshots",
+            "security-snapshots",
+            "turnover",
+        }
         else "20120101"
     )
     return FreeProviderBackfillContract(
@@ -637,8 +1016,23 @@ def _contract(
 def _implementation_root() -> str:
     return canonical_hash(
         {
+            "contract_builder": inspect.getsource(_contract),
             "adjustment_plan": inspect.getsource(build_adjustment_plan),
             "security_basic_plan": inspect.getsource(build_security_basic_plan),
+            "security_snapshot_plan": inspect.getsource(
+                build_security_snapshot_plan
+            ),
+            "security_snapshot_contract": {
+                "seed_date": SECURITY_SNAPSHOT_SEED_DATE,
+                "approved_open_date_root": (
+                    SECURITY_SNAPSHOT_APPROVED_OPEN_DATE_ROOT
+                ),
+                "approved_population_root": (
+                    SECURITY_SNAPSHOT_APPROVED_POPULATION_ROOT
+                ),
+                "open_date_count": SECURITY_SNAPSHOT_OPEN_DATE_COUNT,
+                "request_count": SECURITY_SNAPSHOT_REQUEST_COUNT,
+            },
             "index_daily_plan": inspect.getsource(build_index_daily_plan),
             "turnover_plan": inspect.getsource(build_turnover_plan),
             "hs300_plan": inspect.getsource(build_hs300_snapshot_plan),
@@ -646,11 +1040,30 @@ def _implementation_root() -> str:
             "tabular_normalizer": inspect.getsource(_normalize_tabular),
             "hs300_normalizer": inspect.getsource(normalize_hs300_snapshots),
             "security_basic_normalizer": inspect.getsource(normalize_security_basic),
+            "security_snapshot_normalizer": inspect.getsource(
+                normalize_security_snapshots
+            ),
+            "security_snapshot_query_binding": inspect.getsource(
+                _security_snapshot_query_date
+            ),
+            "security_snapshot_request_closure": inspect.getsource(
+                _assert_security_snapshot_request_closure
+            ),
+            "security_snapshot_row_parser": inspect.getsource(
+                _strict_security_snapshot_row
+            ),
+            "strict_compact_date": inspect.getsource(_strict_compact_date),
             "index_daily_normalizer": inspect.getsource(normalize_index_daily),
             "turnover_normalizer": inspect.getsource(normalize_turnover),
             "provider_transport": inspect.getsource(BaostockProbeTransport),
             "recovering_transport": inspect.getsource(RecoveringBaostockTransport),
             "wire_decoder": inspect.getsource(_baostock_logical_rows),
+            "wire_protocol_root": baostock_wire_protocol_root(),
+            "provider_code_converter": inspect.getsource(_from_baostock_code),
+            "read_jsonl": inspect.getsource(_read_jsonl),
+            "write_row": inspect.getsource(_write_row),
+            "atomic_json": inspect.getsource(_atomic_json),
+            "atomic_jsonl": inspect.getsource(_atomic_jsonl),
             "baostock_distribution_record_root": baostock_distribution_record_root(),
         }
     )
@@ -665,6 +1078,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "hs300-snapshots",
             "dividends",
             "security-basic",
+            "security-snapshots",
             "index-daily",
             "turnover",
         ),
@@ -701,6 +1115,9 @@ def main(argv: list[str] | None = None) -> int:
             args.securities_path, include_codes=args.security_code
         )
         normalizer = normalize_security_basic
+    elif args.phase == "security-snapshots":
+        population, requests = build_security_snapshot_plan(args.calendar_path)
+        normalizer = normalize_security_snapshots
     elif args.phase == "index-daily":
         population, requests = build_index_daily_plan()
         normalizer = normalize_index_daily

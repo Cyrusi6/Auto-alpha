@@ -805,6 +805,8 @@ class BaostockProbeTransport:
                 )
             elif case == "stock_basic":
                 result = self._bs.query_stock_basic(code=params["code"])
+            elif case == "all_stock":
+                result = self._bs.query_all_stock(params["date"])
             elif case == "trade_calendar":
                 result = self._bs.query_trade_dates(
                     start_date=params["start"], end_date=params["end"]
@@ -1199,6 +1201,42 @@ class BaostockProbeTransport:
                     and row[0] == str(request.metadata.get("provider_code") or "")
                     for row in rows
                 )
+            )
+        elif case == "all_stock":
+            expected_query_date = str(
+                request.metadata.get("snapshot_query_date") or ""
+            )
+            parsed_query = urllib.parse.parse_qs(
+                urllib.parse.urlsplit(request.url).query,
+                keep_blank_values=True,
+            )
+            requested_dates = parsed_query.get("date") or []
+            provider_codes = [str(row[0]) for row in rows if len(row) >= 1]
+            checks["all_stock_fields_exact"] = list(fields) == [
+                "code",
+                "tradeStatus",
+                "code_name",
+            ]
+            checks["snapshot_query_date_bound"] = (
+                len(requested_dates) == 1
+                and requested_dates[0] == (
+                    f"{expected_query_date[:4]}-{expected_query_date[4:6]}-"
+                    f"{expected_query_date[6:]}"
+                )
+                and len(expected_query_date) == 8
+                and expected_query_date.isdigit()
+            )
+            checks["unique_provider_code"] = (
+                bool(rows)
+                and len(provider_codes) == len(rows)
+                and len(set(provider_codes)) == len(provider_codes)
+            )
+            checks["all_stock_values_nonempty"] = bool(rows) and all(
+                len(row) == 3 and all(str(value).strip() for value in row)
+                for row in rows
+            )
+            checks["trade_status_domain_valid"] = bool(rows) and all(
+                len(row) >= 2 and str(row[1]) in {"0", "1"} for row in rows
             )
         elif case == "trade_calendar":
             checks["calendar_fields"] = list(fields) == [

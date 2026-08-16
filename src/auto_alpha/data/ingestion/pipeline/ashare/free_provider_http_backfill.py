@@ -32,6 +32,7 @@ from .free_provider_backfill import (
     FreeProviderBackfillContract,
     NormalizedArtifact,
     _public_key_hash,
+    _request_from_semantic,
     replay_normalized_artifacts,
     run_free_provider_backfill,
     validate_free_provider_backfill,
@@ -65,6 +66,34 @@ DEFAULT_PERMISSION_CONTEXT = (
 CNINFO_PAGE_SIZE = 30
 CNINFO_MAX_PAGES_PER_LEAF = 100
 CNINFO_DOCUMENT_BODY_MAX_BYTES = 96 * 1024 * 1024
+CNINFO_SOURCE_ANCESTRY_SCHEMA = "cninfo_source_ancestry_v1"
+CNINFO_SOURCE_BINDING_SCHEMA = "cninfo_source_binding_v1"
+CNINFO_GOVERNANCE_QUALIFICATION_SCHEMA = (
+    "cninfo_governance_qualification_v1"
+)
+CNINFO_SCOPE = {
+    "date_start": "20120101",
+    "date_end": "20191231",
+    "request_start": "20110101",
+    "request_end": "20191231",
+}
+# This is the already-running, ancestry-free 2011 document activity sealed
+# before source ancestry became mandatory.  No other plan may use this escape.
+CNINFO_LEGACY_2011_DOCUMENT_REQUEST_PLAN_HASH = (
+    "b666f4b60a308e74f60747e560e3c28725a0e6f17b2d2d83d572033c03861172"
+)
+CNINFO_LEGACY_2011_DOCUMENT_ACTIVITY_ID = (
+    "c8cf6651d00be2882877ff5f938000b351405b5fa0d31724b46d195de7ac89de"
+)
+CNINFO_LEGACY_2011_DOCUMENT_CONTRACT_ID = (
+    "f958eab0b83d4045e746642d4792122893441196c8019b16f38324467dbd7cc4"
+)
+CNINFO_LEGACY_2011_DOCUMENT_INPUT_CAPTURE_HASH = (
+    "69514a282f301d58508c0ae4a3b180a8148c6ec49e372c7457e3b6bff21604b8"
+)
+CNINFO_LEGACY_2011_DOCUMENT_IMPLEMENTATION_ROOT = (
+    "85c0ff0718f21c5b0440f7e4c05d02b9dfc55964cd8690b8f039e710400baed9"
+)
 CNINFO_LEAF_KINDS = (
     (
         "st_delist",
@@ -172,6 +201,7 @@ class CNINFODocumentTransport:
             "http_envelope_schema_exact": official.get("schema_version")
             == "official_http_probe_envelope_v1",
             "request_method_bound": official.get("method") == "GET",
+            "http_status_success": official.get("status_code") == 200,
             "redirect_not_followed": official.get("redirect_followed") is False,
             "request_url_bound": str(official.get("url") or "") == request.url,
             "body_sha256_matches": str(official.get("body_sha256") or "")
@@ -225,6 +255,557 @@ class CNINFODocumentTransport:
         )
 
 
+def _decode_cninfo_official_http_envelope(
+    wrapper: Mapping[str, Any],
+    *,
+    request: ProviderProbeRequest | Mapping[str, Any],
+    terminal: Mapping[str, Any],
+) -> tuple[dict[str, Any], bytes]:
+    """Recompute the transport binding before any CNINFO bytes are consumed."""
+
+    request_id = (
+        request.request_id
+        if isinstance(request, ProviderProbeRequest)
+        else str(request.get("request_id") or "")
+    )
+    request_method = (
+        request.method
+        if isinstance(request, ProviderProbeRequest)
+        else str(request.get("method") or "")
+    ).upper()
+    request_url = (
+        request.url
+        if isinstance(request, ProviderProbeRequest)
+        else str(request.get("url") or "")
+    )
+    try:
+        raw_payload = base64.b64decode(
+            str(wrapper.get("raw_payload_base64") or ""),
+            validate=True,
+        )
+        official = json.loads(raw_payload)
+        if not isinstance(official, dict):
+            raise ValueError("official_envelope_object_required")
+        body = base64.b64decode(
+            str(official.get("body_base64") or ""),
+            validate=True,
+        )
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("cninfo_official_http_envelope_invalid:decode") from exc
+    official_status = official.get("status_code")
+    terminal_status = terminal.get("status_code")
+    if (
+        wrapper.get("schema_version")
+        != "free_provider_backfill_raw_envelope_v1"
+        or str(wrapper.get("request_id") or "") != request_id
+        or str(wrapper.get("raw_payload_sha256") or "")
+        != hashlib.sha256(raw_payload).hexdigest()
+        or official.get("schema_version")
+        != "official_http_probe_envelope_v1"
+        or str(official.get("method") or "") != request_method
+        or str(official.get("url") or "") != request_url
+        or isinstance(official_status, bool)
+        or official_status != 200
+        or isinstance(terminal_status, bool)
+        or terminal_status != official_status
+        or official.get("redirect_followed") is not False
+        or str(official.get("body_sha256") or "")
+        != hashlib.sha256(body).hexdigest()
+    ):
+        raise ValueError(
+            f"cninfo_official_http_envelope_invalid:{request_id or 'missing'}"
+        )
+    return official, body
+
+
+def _cninfo_direct_source(
+    validated: Mapping[str, Any],
+    *,
+    expected_phase: str,
+    leaf_profile: str,
+) -> dict[str, Any]:
+    root = Path(str(validated.get("manifest_path") or "")).parent
+    source_contract = read_json(root / "activity_contract.json")
+    adapter_identity = source_contract.get("adapter_identity") or {}
+    source_adapter = str(adapter_identity.get("adapter") or "")
+    implementation_root = str(adapter_identity.get("implementation_root") or "")
+    source_scope = dict(source_contract.get("scope") or {})
+    if (
+        source_contract.get("provider") != "cninfo"
+        or source_adapter != f"cninfo_{expected_phase}_signed_http_capture_v1"
+        or source_scope != CNINFO_SCOPE
+        or adapter_identity.get("leaf_profile") != leaf_profile
+        or re.fullmatch(r"[0-9a-f]{64}", implementation_root) is None
+    ):
+        raise ValueError("cninfo_discovery_source_contract_invalid")
+    signed = validated.get("publication_signature_verified") is True
+    normalized_trusted = validated.get("normalized_artifacts_trusted") is True
+    direct = {
+        "source_capture_schema": validated.get("schema_version"),
+        "source_generation_id": validated.get("generation_id"),
+        "source_content_hash": validated.get("content_hash"),
+        "source_contract_id": validated.get("contract_id"),
+        "source_contract_content_hash": canonical_hash(source_contract),
+        "source_provider": "cninfo",
+        "source_phase": expected_phase,
+        "source_adapter": source_adapter,
+        "source_leaf_profile": leaf_profile,
+        "source_scope": source_scope,
+        "source_implementation_root": implementation_root,
+        "source_publication_signature_verified": signed,
+        "source_normalized_artifacts_trusted": normalized_trusted,
+        "weak_source_ancestry": not (signed and normalized_trusted),
+    }
+    _validate_cninfo_direct_source(direct, leaf_profile=leaf_profile)
+    return direct
+
+
+def _cninfo_source_ancestry(
+    *,
+    source_stage: str,
+    leaf_profile: str,
+    direct_sources: Sequence[Mapping[str, Any]],
+    upstream_ancestry: Sequence[Mapping[str, Any]] = (),
+) -> dict[str, Any]:
+    direct = sorted(
+        (dict(row) for row in direct_sources),
+        key=lambda row: (
+            str(row.get("source_generation_id") or ""),
+            str(row.get("source_content_hash") or ""),
+        ),
+    )
+    upstream = sorted(
+        (dict(row) for row in upstream_ancestry),
+        key=lambda row: str(row.get("ancestry_root") or ""),
+    )
+    semantic = {
+        "schema_version": CNINFO_SOURCE_ANCESTRY_SCHEMA,
+        "source_stage": source_stage,
+        "leaf_profile": leaf_profile,
+        "direct_sources": direct,
+        "upstream_ancestry": upstream,
+        "weak_source_ancestry": any(
+            row.get("weak_source_ancestry") is True for row in (*direct, *upstream)
+        ),
+    }
+    ancestry = semantic | {"ancestry_root": canonical_hash(semantic)}
+    _validate_cninfo_source_ancestry(
+        ancestry,
+        expected_stage=source_stage,
+        expected_leaf_profile=leaf_profile,
+    )
+    return ancestry
+
+
+def _validate_cninfo_direct_source(
+    value: Mapping[str, Any],
+    *,
+    leaf_profile: str,
+) -> None:
+    phase = str(value.get("source_phase") or "")
+    signed = value.get("source_publication_signature_verified")
+    trusted = value.get("source_normalized_artifacts_trusted")
+    content_hash = str(value.get("source_content_hash") or "")
+    contract_id = str(value.get("source_contract_id") or "")
+    if (
+        set(value)
+        != {
+            "source_capture_schema",
+            "source_generation_id",
+            "source_content_hash",
+            "source_contract_id",
+            "source_contract_content_hash",
+            "source_provider",
+            "source_phase",
+            "source_adapter",
+            "source_leaf_profile",
+            "source_scope",
+            "source_implementation_root",
+            "source_publication_signature_verified",
+            "source_normalized_artifacts_trusted",
+            "weak_source_ancestry",
+        }
+        or value.get("source_capture_schema")
+        not in {
+            "free_provider_backfill_capture_v1",
+            "free_provider_backfill_capture_v2",
+        }
+        or value.get("source_provider") != "cninfo"
+        or phase not in {"cninfo-discovery", "cninfo-inventory"}
+        or value.get("source_adapter")
+        != f"cninfo_{phase}_signed_http_capture_v1"
+        or value.get("source_leaf_profile") != leaf_profile
+        or value.get("source_scope") != CNINFO_SCOPE
+        or not all(
+            re.fullmatch(r"[0-9a-f]{64}", str(value.get(key) or ""))
+            for key in (
+                "source_content_hash",
+                "source_contract_id",
+                "source_contract_content_hash",
+                "source_implementation_root",
+            )
+        )
+        or value.get("source_generation_id")
+        != f"free_provider_backfill_{content_hash[:24]}"
+        or value.get("source_contract_content_hash") != contract_id
+        or not isinstance(signed, bool)
+        or not isinstance(trusted, bool)
+        or value.get("weak_source_ancestry") is not (not (signed and trusted))
+    ):
+        raise ValueError("cninfo_source_ancestry_invalid")
+
+
+def _validate_cninfo_source_ancestry(
+    value: Any,
+    *,
+    expected_stage: str,
+    expected_leaf_profile: str | None = None,
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError("cninfo_source_ancestry_invalid")
+    leaf_profile = str(value.get("leaf_profile") or "")
+    direct = value.get("direct_sources")
+    upstream = value.get("upstream_ancestry")
+    semantic = {key: item for key, item in value.items() if key != "ancestry_root"}
+    if (
+        set(value)
+        != {
+            "schema_version",
+            "source_stage",
+            "leaf_profile",
+            "direct_sources",
+            "upstream_ancestry",
+            "weak_source_ancestry",
+            "ancestry_root",
+        }
+        or value.get("schema_version") != CNINFO_SOURCE_ANCESTRY_SCHEMA
+        or value.get("source_stage") != expected_stage
+        or leaf_profile not in CNINFO_LEAF_PROFILES
+        or (
+            expected_leaf_profile is not None
+            and leaf_profile != expected_leaf_profile
+        )
+        or not isinstance(direct, list)
+        or not direct
+        or not isinstance(upstream, list)
+        or value.get("ancestry_root") != canonical_hash(semantic)
+    ):
+        raise ValueError("cninfo_source_ancestry_invalid")
+    for row in direct:
+        if not isinstance(row, Mapping):
+            raise ValueError("cninfo_source_ancestry_invalid")
+        _validate_cninfo_direct_source(row, leaf_profile=leaf_profile)
+    if expected_stage == "discovery_capture_set":
+        if upstream or any(
+            row.get("source_phase") != "cninfo-discovery" for row in direct
+        ):
+            raise ValueError("cninfo_source_ancestry_invalid")
+    elif expected_stage == "inventory_capture":
+        if (
+            len(direct) != 1
+            or direct[0].get("source_phase") != "cninfo-inventory"
+            or len(upstream) != 1
+        ):
+            raise ValueError("cninfo_source_ancestry_invalid")
+        _validate_cninfo_source_ancestry(
+            upstream[0],
+            expected_stage="discovery_capture_set",
+            expected_leaf_profile=leaf_profile,
+        )
+    else:
+        raise ValueError("cninfo_source_ancestry_invalid")
+    derived_weak = any(
+        row.get("weak_source_ancestry") is True for row in [*direct, *upstream]
+    )
+    if value.get("weak_source_ancestry") is not derived_weak:
+        raise ValueError("cninfo_source_ancestry_invalid")
+    return dict(value)
+
+
+def _cninfo_upstream_content_hashes(
+    source_ancestry: Mapping[str, Any],
+) -> list[str]:
+    hashes: list[str] = []
+
+    def visit(value: Mapping[str, Any]) -> None:
+        for row in value.get("direct_sources") or ():
+            content_hash = str(row.get("source_content_hash") or "")
+            if re.fullmatch(r"[0-9a-f]{64}", content_hash) is None:
+                raise ValueError("cninfo_source_ancestry_invalid")
+            hashes.append(content_hash)
+        for upstream in value.get("upstream_ancestry") or ():
+            if not isinstance(upstream, Mapping):
+                raise ValueError("cninfo_source_ancestry_invalid")
+            visit(upstream)
+
+    visit(source_ancestry)
+    return sorted(hashes)
+
+
+def _cninfo_source_binding(
+    *,
+    phase: str,
+    input_capture_content_hash: str,
+    source_ancestry: Mapping[str, Any],
+    derivation: Mapping[str, Any],
+) -> dict[str, Any]:
+    expected_stage = {
+        "cninfo-inventory": "discovery_capture_set",
+        "cninfo-documents": "inventory_capture",
+    }.get(phase)
+    if expected_stage is None:
+        raise ValueError("cninfo_source_binding_phase_invalid")
+    ancestry = _validate_cninfo_source_ancestry(
+        source_ancestry,
+        expected_stage=expected_stage,
+    )
+    upstream_hashes = _cninfo_upstream_content_hashes(ancestry)
+    semantic = {
+        "schema_version": CNINFO_SOURCE_BINDING_SCHEMA,
+        "phase": phase,
+        "input_capture_content_hash": input_capture_content_hash,
+        "source_ancestry_root": ancestry["ancestry_root"],
+        "source_leaf_profile": ancestry["leaf_profile"],
+        "upstream_content_hashes": upstream_hashes,
+        "upstream_content_hashes_root": canonical_hash(upstream_hashes),
+        "derivation": dict(derivation),
+    }
+    if re.fullmatch(r"[0-9a-f]{64}", input_capture_content_hash) is None:
+        raise ValueError("cninfo_source_binding_invalid")
+    return semantic | {"content_hash": canonical_hash(semantic)}
+
+
+def _validate_cninfo_source_binding(
+    value: Any,
+    *,
+    phase: str,
+    source_ancestry: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError("cninfo_source_binding_invalid")
+    ancestry = _validate_cninfo_source_ancestry(
+        source_ancestry,
+        expected_stage=(
+            "discovery_capture_set"
+            if phase == "cninfo-inventory"
+            else "inventory_capture"
+        ),
+    )
+    semantic = {key: item for key, item in value.items() if key != "content_hash"}
+    upstream_hashes = _cninfo_upstream_content_hashes(ancestry)
+    if (
+        set(value)
+        != {
+            "schema_version",
+            "phase",
+            "input_capture_content_hash",
+            "source_ancestry_root",
+            "source_leaf_profile",
+            "upstream_content_hashes",
+            "upstream_content_hashes_root",
+            "derivation",
+            "content_hash",
+        }
+        or value.get("schema_version") != CNINFO_SOURCE_BINDING_SCHEMA
+        or value.get("phase") != phase
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(value.get("input_capture_content_hash") or ""),
+        )
+        is None
+        or value.get("source_ancestry_root") != ancestry["ancestry_root"]
+        or value.get("source_leaf_profile") != ancestry["leaf_profile"]
+        or value.get("upstream_content_hashes") != upstream_hashes
+        or value.get("upstream_content_hashes_root")
+        != canonical_hash(upstream_hashes)
+        or not isinstance(value.get("derivation"), Mapping)
+        or value.get("content_hash") != canonical_hash(semantic)
+    ):
+        raise ValueError("cninfo_source_binding_invalid")
+    return dict(value)
+
+
+def _with_cninfo_source_binding(
+    request: ProviderProbeRequest,
+    source_ancestry: Mapping[str, Any],
+    source_binding: Mapping[str, Any],
+) -> ProviderProbeRequest:
+    return ProviderProbeRequest(
+        **{
+            **request.__dict__,
+            "metadata": dict(request.metadata)
+            | {
+                "source_ancestry": dict(source_ancestry),
+                "source_binding": dict(source_binding),
+            },
+        }
+    )
+
+
+def _cninfo_request_source_evidence(
+    requests: Sequence[ProviderProbeRequest],
+    *,
+    phase: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    ancestry_rows = [request.metadata.get("source_ancestry") for request in requests]
+    binding_rows = [request.metadata.get("source_binding") for request in requests]
+    if (
+        not ancestry_rows
+        or ancestry_rows[0] is None
+        or any(row != ancestry_rows[0] for row in ancestry_rows)
+        or not binding_rows
+        or binding_rows[0] is None
+        or any(row != binding_rows[0] for row in binding_rows)
+    ):
+        raise ValueError("cninfo_source_evidence_missing_or_mixed")
+    expected_stage = (
+        "discovery_capture_set"
+        if phase == "cninfo-inventory"
+        else "inventory_capture"
+    )
+    ancestry = _validate_cninfo_source_ancestry(
+        ancestry_rows[0],
+        expected_stage=expected_stage,
+    )
+    binding = _validate_cninfo_source_binding(
+        binding_rows[0],
+        phase=phase,
+        source_ancestry=ancestry,
+    )
+    return ancestry, binding
+
+
+def _cninfo_activity_context(
+    run_root: Path,
+    requests: Sequence[ProviderProbeRequest],
+    *,
+    expected_phase: str,
+    expected_activity_id: str | None = None,
+    require_activity_root: bool,
+) -> dict[str, Any]:
+    contract = read_json(run_root / "activity_contract.json")
+    plan = read_json(run_root / "request_plan.json")
+    request_rows = [request.semantic() for request in requests]
+    request_plan_hash = canonical_hash(request_rows)
+    contract_id = canonical_hash(contract)
+    activity_id = canonical_hash(
+        {"contract_id": contract_id, "request_plan_hash": request_plan_hash}
+    )
+    adapter_identity = contract.get("adapter_identity") or {}
+    if (
+        contract.get("schema_version") != "free_provider_backfill_contract_v2"
+        or contract.get("provider") != "cninfo"
+        or contract.get("scope") != CNINFO_SCOPE
+        or adapter_identity.get("adapter")
+        != f"cninfo_{expected_phase}_signed_http_capture_v1"
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(adapter_identity.get("implementation_root") or ""),
+        )
+        is None
+        or plan.get("schema_version")
+        != "free_provider_backfill_request_plan_v1"
+        or plan.get("requests") != request_rows
+        or plan.get("request_plan_hash") != request_plan_hash
+        or (expected_activity_id is not None and activity_id != expected_activity_id)
+        or (require_activity_root and run_root.name != activity_id)
+    ):
+        raise ValueError("cninfo_sealed_activity_context_invalid")
+    return {
+        "activity_id": activity_id,
+        "contract_id": contract_id,
+        "request_plan_hash": request_plan_hash,
+        "contract": contract,
+        "adapter_identity": dict(adapter_identity),
+    }
+
+
+def _validate_cninfo_context_source_binding(
+    context: Mapping[str, Any],
+    *,
+    phase: str,
+    source_ancestry: Mapping[str, Any],
+    source_binding: Mapping[str, Any],
+) -> None:
+    adapter_identity = context.get("adapter_identity") or {}
+    binding = _validate_cninfo_source_binding(
+        source_binding,
+        phase=phase,
+        source_ancestry=source_ancestry,
+    )
+    if (
+        adapter_identity.get("input_capture_content_hash")
+        != binding["input_capture_content_hash"]
+        or adapter_identity.get("source_binding_root") != binding["content_hash"]
+        or adapter_identity.get("source_ancestry_root")
+        != binding["source_ancestry_root"]
+        or adapter_identity.get("source_upstream_content_hashes_root")
+        != binding["upstream_content_hashes_root"]
+        or adapter_identity.get("leaf_profile") != binding["source_leaf_profile"]
+    ):
+        raise ValueError("cninfo_contract_source_binding_invalid")
+
+
+def _validate_cninfo_binding_derivation(
+    source_ancestry: Mapping[str, Any],
+    source_binding: Mapping[str, Any],
+    *,
+    phase: str,
+    expected_implementation_root: str | None = None,
+) -> None:
+    derivation = dict(source_binding.get("derivation") or {})
+    if phase == "cninfo-inventory":
+        direct_hashes = sorted(
+            str(row.get("source_content_hash") or "")
+            for row in source_ancestry.get("direct_sources") or ()
+        )
+        expected_derivation = {
+            "discovery_capture_content_hashes": direct_hashes,
+        }
+        expected_input = canonical_hash(
+            {
+                "leaf_profile": source_ancestry["leaf_profile"],
+                **expected_derivation,
+                "source_ancestry": dict(source_ancestry),
+            }
+        )
+    elif phase == "cninfo-documents":
+        direct = list(source_ancestry.get("direct_sources") or ())
+        if len(direct) != 1:
+            raise ValueError("cninfo_source_binding_derivation_invalid")
+        expected_derivation = {
+            "capture_content_hash": direct[0]["source_content_hash"],
+            "normalized_replay_root": derivation.get("normalized_replay_root"),
+            "implementation_root": expected_implementation_root,
+        }
+        if (
+            re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(expected_derivation["normalized_replay_root"] or ""),
+            )
+            is None
+            or re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(expected_implementation_root or ""),
+            )
+            is None
+        ):
+            raise ValueError("cninfo_source_binding_derivation_invalid")
+        expected_input = canonical_hash(
+            {
+                **expected_derivation,
+                "source_ancestry": dict(source_ancestry),
+            }
+        )
+    else:
+        raise ValueError("cninfo_source_binding_phase_invalid")
+    if (
+        derivation != expected_derivation
+        or source_binding.get("input_capture_content_hash") != expected_input
+    ):
+        raise ValueError("cninfo_source_binding_derivation_invalid")
+
+
 def build_cninfo_discovery_plan(
     include_leaf_ids: Sequence[str] | None = None,
     include_years: Sequence[int] | None = None,
@@ -261,22 +842,55 @@ def build_cninfo_inventory_plan(
     ]
     if any(row.get("status") != "succeeded" for row in validated_rows):
         raise ValueError("cninfo_discovery_capture_blocked")
-    page_ones: dict[str, dict[str, Any]] = {}
+    direct_sources = [
+        _cninfo_direct_source(
+            row,
+            expected_phase="cninfo-discovery",
+            leaf_profile=leaf_profile,
+        )
+        for row in validated_rows
+    ]
+    source_ancestry = _cninfo_source_ancestry(
+        source_stage="discovery_capture_set",
+        leaf_profile=leaf_profile,
+        direct_sources=direct_sources,
+    )
+    captured: dict[str, dict[str, Any]] = {}
     for validated in validated_rows:
-        for request_id, payload in _captured_cninfo_pages(
+        for request_id, row in _captured_cninfo_pages(
             validated["manifest_path"]
         ).items():
-            prior = page_ones.setdefault(request_id, payload)
-            if prior != payload:
+            prior = captured.setdefault(request_id, row)
+            if prior != row:
                 raise ValueError(f"cninfo_discovery_duplicate_conflict:{request_id}")
     leaves = _cninfo_month_leaves(leaf_profile)
-    requests: list[ProviderProbeRequest] = [_cninfo_org_map_request()]
+    expected_requests = {
+        request.request_id: request
+        for request in (
+            _cninfo_org_map_request(),
+            *(_cninfo_leaf_request(leaf, page=1) for leaf in leaves),
+        )
+    }
+    captured_ids = set(captured)
+    expected_ids = set(expected_requests)
+    if "cninfo_security_org_map" not in captured_ids:
+        raise ValueError("cninfo_discovery_org_map_missing")
+    extra_ids = sorted(captured_ids - expected_ids)
+    if extra_ids:
+        raise ValueError(f"cninfo_discovery_leaf_extra:{extra_ids[0]}")
+    missing_ids = sorted(expected_ids - captured_ids)
+    if missing_ids:
+        raise ValueError(f"cninfo_discovery_leaf_missing:{missing_ids[0]}")
+    for request_id, expected in expected_requests.items():
+        if captured[request_id]["request"] != expected.semantic():
+            raise ValueError(f"cninfo_discovery_request_semantics_invalid:{request_id}")
+    requests: list[ProviderProbeRequest] = [
+        _with_source_ancestry(_cninfo_org_map_request(), source_ancestry)
+    ]
     resolved: list[dict[str, Any]] = []
     for leaf in leaves:
         request_id = _cninfo_request_id(leaf, 1)
-        capture = page_ones.get(request_id)
-        if capture is None:
-            raise ValueError(f"cninfo_discovery_leaf_missing:{leaf['leaf_id']}")
+        capture = captured[request_id]["payload"]
         total = _nonnegative_int(capture.get("totalAnnouncement"))
         if total is None:
             raise ValueError(f"cninfo_discovery_total_invalid:{leaf['leaf_id']}")
@@ -291,7 +905,10 @@ def build_cninfo_inventory_plan(
         }
         resolved.append(resolved_leaf)
         requests.extend(
-            _cninfo_leaf_request(resolved_leaf, page=page)
+            _with_source_ancestry(
+                _cninfo_leaf_request(resolved_leaf, page=page),
+                source_ancestry,
+            )
             for page in range(1, page_count + 1)
         )
     input_root = canonical_hash(
@@ -300,8 +917,23 @@ def build_cninfo_inventory_plan(
             "discovery_capture_content_hashes": sorted(
                 str(row["content_hash"]) for row in validated_rows
             ),
+            "source_ancestry": source_ancestry,
         }
     )
+    source_binding = _cninfo_source_binding(
+        phase="cninfo-inventory",
+        input_capture_content_hash=input_root,
+        source_ancestry=source_ancestry,
+        derivation={
+            "discovery_capture_content_hashes": sorted(
+                str(row["content_hash"]) for row in validated_rows
+            )
+        },
+    )
+    requests = [
+        _with_cninfo_source_binding(request, source_ancestry, source_binding)
+        for request in requests
+    ]
     return resolved, requests, input_root
 
 
@@ -314,37 +946,76 @@ def build_cninfo_document_plan(
         raise ValueError("cninfo_inventory_capture_blocked")
     source_root = Path(str(validated["manifest_path"])).parent
     source_contract = read_json(source_root / "activity_contract.json")
-    source_scope = dict(source_contract.get("scope") or {})
-    source_adapter = str(
-        (source_contract.get("adapter_identity") or {}).get("adapter") or ""
-    )
-    if (
-        source_contract.get("provider") != "cninfo"
-        or not source_adapter.startswith("cninfo_cninfo-inventory_")
-        or source_scope.get("date_start") != "20120101"
-        or source_scope.get("date_end") != "20191231"
-        or source_scope.get("request_start") != "20110101"
-        or source_scope.get("request_end") != "20191231"
-    ):
+    source_adapter_identity = source_contract.get("adapter_identity") or {}
+    leaf_profile = str(source_adapter_identity.get("leaf_profile") or "")
+    if leaf_profile not in CNINFO_LEAF_PROFILES:
         raise ValueError("cninfo_document_source_contract_invalid")
-    source_signed = validated.get("publication_signature_verified") is True
-    source_ancestry = {
-        "source_capture_schema": validated.get("schema_version"),
-        "source_generation_id": validated.get("generation_id"),
-        "source_content_hash": validated.get("content_hash"),
-        "source_contract_id": validated.get("contract_id"),
-        "source_contract_content_hash": canonical_hash(source_contract),
-        "source_provider": source_contract.get("provider"),
-        "source_adapter": source_adapter,
-        "source_scope": source_scope,
-        "source_publication_signature_verified": source_signed,
-        "source_normalized_artifacts_trusted": source_signed,
-        "weak_source_ancestry": not source_signed,
-    }
-    replayed, replay_root = replay_normalized_artifacts(
+    try:
+        direct_source = _cninfo_direct_source(
+            validated,
+            expected_phase="cninfo-inventory",
+            leaf_profile=leaf_profile,
+        )
+    except ValueError as exc:
+        raise ValueError("cninfo_document_source_contract_invalid") from exc
+    replayed, replay_root = _replay_cninfo_inventory_artifacts(
         validated["manifest_path"],
-        normalizer=normalize_cninfo_inventory,
-        required_roles=("cninfo_announcement_inventory",),
+        required_roles=(
+            "cninfo_announcement_inventory",
+            "cninfo_page_coverage",
+            "normalized_manifest",
+        ),
+    )
+    normalized_manifest = json.loads(replayed["normalized_manifest"])
+    normalized_semantic = {
+        key: value
+        for key, value in normalized_manifest.items()
+        if key != "content_hash"
+    }
+    if (
+        normalized_manifest.get("schema_version")
+        != "cninfo_announcement_inventory_normalization_v2"
+        or normalized_manifest.get("content_hash")
+        != canonical_hash(normalized_semantic)
+        or normalized_manifest.get("source_ancestry") is None
+        or normalized_manifest.get("source_binding") is None
+    ):
+        raise ValueError("cninfo_document_source_ancestry_missing")
+    upstream_ancestry = _validate_cninfo_source_ancestry(
+        normalized_manifest["source_ancestry"],
+        expected_stage="discovery_capture_set",
+        expected_leaf_profile=leaf_profile,
+    )
+    inventory_binding = _validate_cninfo_source_binding(
+        normalized_manifest["source_binding"],
+        phase="cninfo-inventory",
+        source_ancestry=upstream_ancestry,
+    )
+    _validate_cninfo_context_source_binding(
+        _cninfo_activity_context(
+            source_root,
+            [
+                _request_from_semantic(row)
+                for row in read_json(source_root / "request_plan.json")["requests"]
+            ],
+            expected_phase="cninfo-inventory",
+            expected_activity_id=str(validated.get("activity_id") or ""),
+            require_activity_root=False,
+        ),
+        phase="cninfo-inventory",
+        source_ancestry=upstream_ancestry,
+        source_binding=inventory_binding,
+    )
+    _validate_cninfo_inventory_normalized_closure(
+        normalized_manifest,
+        replayed["cninfo_page_coverage"],
+        leaf_profile=leaf_profile,
+    )
+    source_ancestry = _cninfo_source_ancestry(
+        source_stage="inventory_capture",
+        leaf_profile=leaf_profile,
+        direct_sources=(direct_source,),
+        upstream_ancestry=(upstream_ancestry,),
     )
     rows = [
         json.loads(line)
@@ -371,6 +1042,24 @@ def build_cninfo_document_plan(
         prior = unique.setdefault(announcement_id, row)
         if str(prior.get("adjunct_url")) != adjunct_url:
             raise ValueError(f"cninfo_announcement_document_url_conflict:{announcement_id}")
+    input_root = canonical_hash(
+        {
+            "capture_content_hash": validated["content_hash"],
+            "normalized_replay_root": replay_root,
+            "source_ancestry": source_ancestry,
+            "implementation_root": _implementation_root(),
+        }
+    )
+    source_binding = _cninfo_source_binding(
+        phase="cninfo-documents",
+        input_capture_content_hash=input_root,
+        source_ancestry=source_ancestry,
+        derivation={
+            "capture_content_hash": validated["content_hash"],
+            "normalized_replay_root": replay_root,
+            "implementation_root": _implementation_root(),
+        },
+    )
     requests = [
         ProviderProbeRequest(
             request_id=f"cninfo_document_{announcement_id}",
@@ -388,6 +1077,7 @@ def build_cninfo_document_plan(
             required_checks=(
                 "http_envelope_schema_exact",
                 "request_method_bound",
+                "http_status_success",
                 "redirect_not_followed",
                 "request_url_bound",
                 "body_sha256_matches",
@@ -405,18 +1095,11 @@ def build_cninfo_document_plan(
                 "adjunct_url": row["adjunct_url"],
                 "adjunct_size_kb": row.get("adjunct_size_kb"),
                 "source_ancestry": source_ancestry,
+                "source_binding": source_binding,
             },
         )
         for announcement_id, row in sorted(unique.items())
     ]
-    input_root = canonical_hash(
-        {
-            "capture_content_hash": validated["content_hash"],
-            "normalized_replay_root": replay_root,
-            "source_ancestry": source_ancestry,
-            "implementation_root": _implementation_root(),
-        }
-    )
     return [unique[key] for key in sorted(unique)], requests, input_root
 
 
@@ -438,45 +1121,97 @@ def normalize_cninfo_inventory(
     requests: Sequence[ProviderProbeRequest],
     terminal: Mapping[str, Mapping[str, Any]],
 ) -> Sequence[NormalizedArtifact]:
+    sealed_context = _cninfo_activity_context(
+        run_root,
+        requests,
+        expected_phase="cninfo-inventory",
+        require_activity_root=True,
+    )
     return _normalize_cninfo_pages(
         run_root,
         requests,
         terminal,
         require_full_page_chains=True,
+        sealed_context=sealed_context,
     )
+
+
+def _cninfo_document_source_ancestry(
+    requests: Sequence[ProviderProbeRequest],
+    *,
+    sealed_context: Mapping[str, Any],
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    ancestry_rows = [request.metadata.get("source_ancestry") for request in requests]
+    if ancestry_rows and all(row is None for row in ancestry_rows):
+        adapter_identity = sealed_context.get("adapter_identity") or {}
+        if (
+            sealed_context.get("activity_id")
+            == CNINFO_LEGACY_2011_DOCUMENT_ACTIVITY_ID
+            and sealed_context.get("contract_id")
+            == CNINFO_LEGACY_2011_DOCUMENT_CONTRACT_ID
+            and sealed_context.get("request_plan_hash")
+            == CNINFO_LEGACY_2011_DOCUMENT_REQUEST_PLAN_HASH
+            and adapter_identity.get("input_capture_content_hash")
+            == CNINFO_LEGACY_2011_DOCUMENT_INPUT_CAPTURE_HASH
+            and adapter_identity.get("implementation_root")
+            == CNINFO_LEGACY_2011_DOCUMENT_IMPLEMENTATION_ROOT
+        ):
+            return None, None
+        raise ValueError("cninfo_document_source_ancestry_missing")
+    source_ancestry, source_binding = _cninfo_request_source_evidence(
+        requests,
+        phase="cninfo-documents",
+    )
+    _validate_cninfo_context_source_binding(
+        sealed_context,
+        phase="cninfo-documents",
+        source_ancestry=source_ancestry,
+        source_binding=source_binding,
+    )
+    _validate_cninfo_binding_derivation(
+        source_ancestry,
+        source_binding,
+        phase="cninfo-documents",
+        expected_implementation_root=str(
+            (sealed_context.get("adapter_identity") or {}).get(
+                "implementation_root"
+            )
+            or ""
+        ),
+    )
+    return source_ancestry, source_binding
 
 
 def normalize_cninfo_documents(
     run_root: Path,
     requests: Sequence[ProviderProbeRequest],
     terminal: Mapping[str, Mapping[str, Any]],
+    *,
+    _sealed_context: Mapping[str, Any] | None = None,
 ) -> Sequence[NormalizedArtifact]:
     output = run_root / "normalized"
     output.mkdir(exist_ok=True)
     index_path = output / "document_index.jsonl"
-    ancestry_rows = [request.metadata.get("source_ancestry") for request in requests]
-    source_ancestry = ancestry_rows[0] if ancestry_rows else None
-    if any(row != source_ancestry for row in ancestry_rows):
-        raise ValueError("cninfo_document_source_ancestry_mixed")
-    if source_ancestry is not None and (
-        not isinstance(source_ancestry, Mapping)
-        or source_ancestry.get("source_provider") != "cninfo"
-        or not isinstance(source_ancestry.get("weak_source_ancestry"), bool)
-        or source_ancestry.get("source_publication_signature_verified")
-        is not (not source_ancestry["weak_source_ancestry"])
-        or source_ancestry.get("source_normalized_artifacts_trusted")
-        is not (not source_ancestry["weak_source_ancestry"])
-    ):
-        raise ValueError("cninfo_document_source_ancestry_invalid")
+    sealed_context = _sealed_context or _cninfo_activity_context(
+        run_root,
+        requests,
+        expected_phase="cninfo-documents",
+        require_activity_root=True,
+    )
+    source_ancestry, source_binding = _cninfo_document_source_ancestry(
+        requests,
+        sealed_context=sealed_context,
+    )
     count = 0
     with index_path.open("wb") as handle:
         for request in requests:
             receipt = terminal[request.request_id]
             wrapper = read_json(run_root / str(receipt["raw_envelope_relative_path"]))
-            official = json.loads(
-                base64.b64decode(wrapper["raw_payload_base64"], validate=True)
+            official, body = _decode_cninfo_official_http_envelope(
+                wrapper,
+                request=request,
+                terminal=receipt,
             )
-            body = base64.b64decode(str(official.get("body_base64") or ""), validate=True)
             document_format = _document_format(
                 body,
                 adjunct_url=str(request.metadata["adjunct_url"]),
@@ -487,14 +1222,7 @@ def normalize_cninfo_documents(
                 for key, value in (official.get("response_headers") or {}).items()
             }
             if (
-                official.get("schema_version")
-                != "official_http_probe_envelope_v1"
-                or official.get("method") != "GET"
-                or official.get("redirect_followed") is not False
-                or str(official.get("url") or "") != request.url
-                or str(official.get("body_sha256") or "")
-                != hashlib.sha256(body).hexdigest()
-                or document_format is None
+                document_format is None
                 or block_reason is not None
                 or not _content_length_matches(
                     response_headers.get("content-length"), len(body)
@@ -549,6 +1277,7 @@ def normalize_cninfo_documents(
     }
     if source_ancestry is not None:
         manifest["source_ancestry"] = dict(source_ancestry)
+        manifest["source_binding"] = dict(source_binding or {})
         if source_ancestry["weak_source_ancestry"]:
             manifest["blockers"].append("weak_source_acquisition_ancestry")
     manifest["content_hash"] = canonical_hash(manifest)
@@ -565,21 +1294,54 @@ def _normalize_cninfo_pages(
     terminal: Mapping[str, Mapping[str, Any]],
     *,
     require_full_page_chains: bool,
+    sealed_context: Mapping[str, Any] | None = None,
 ) -> Sequence[NormalizedArtifact]:
     output = run_root / "normalized"
     output.mkdir(exist_ok=True)
+    source_ancestry: dict[str, Any] | None = None
+    source_binding: dict[str, Any] | None = None
+    if require_full_page_chains:
+        if sealed_context is None:
+            raise ValueError("cninfo_inventory_sealed_context_missing")
+        source_ancestry, source_binding = _cninfo_request_source_evidence(
+            requests,
+            phase="cninfo-inventory",
+        )
+        _validate_cninfo_context_source_binding(
+            sealed_context,
+            phase="cninfo-inventory",
+            source_ancestry=source_ancestry,
+            source_binding=source_binding,
+        )
+        _validate_cninfo_binding_derivation(
+            source_ancestry,
+            source_binding,
+            phase="cninfo-inventory",
+        )
+    elif any(
+        request.metadata.get(key) is not None
+        for request in requests
+        for key in ("source_ancestry", "source_binding")
+    ):
+        raise ValueError("cninfo_discovery_source_ancestry_unexpected")
     inventory_path = output / "announcement_inventory.jsonl"
     coverage_path = output / "page_coverage.jsonl"
     conflicts_path = output / "conflicts.jsonl"
     pages_by_leaf: dict[str, list[tuple[ProviderProbeRequest, dict[str, Any], str]]] = defaultdict(list)
     org_map_count = 0
+    org_map_requests: list[ProviderProbeRequest] = []
     for request in requests:
         wrapper = read_json(
             run_root / str(terminal[request.request_id]["raw_envelope_relative_path"])
         )
-        official = json.loads(base64.b64decode(wrapper["raw_payload_base64"], validate=True))
-        body = json.loads(base64.b64decode(official["body_base64"], validate=True))
+        _official, body_bytes = _decode_cninfo_official_http_envelope(
+            wrapper,
+            request=request,
+            terminal=terminal[request.request_id],
+        )
+        body = json.loads(body_bytes)
         if request.metadata.get("case") == "cninfo_org_map":
+            org_map_requests.append(request)
             rows = body.get("stockList") if isinstance(body, Mapping) else None
             if not isinstance(rows, list):
                 rows = body if isinstance(body, list) else []
@@ -587,6 +1349,15 @@ def _normalize_cninfo_pages(
             continue
         leaf_id = str(request.metadata.get("leaf_id") or "")
         pages_by_leaf[leaf_id].append((request, body, wrapper["raw_payload_sha256"]))
+
+    if require_full_page_chains:
+        _validate_cninfo_inventory_request_closure(
+            requests=requests,
+            org_map_requests=org_map_requests,
+            pages_by_leaf=pages_by_leaf,
+            source_ancestry=source_ancestry or {},
+            source_binding=source_binding or {},
+        )
 
     conflicts: list[dict[str, Any]] = []
     coverage_rows: list[dict[str, Any]] = []
@@ -714,10 +1485,15 @@ def _normalize_cninfo_pages(
     _atomic_jsonl(conflicts_path, conflicts)
     manifest_path = output / "normalized_manifest.json"
     manifest = {
-        "schema_version": "cninfo_announcement_inventory_normalization_v1",
+        "schema_version": (
+            "cninfo_announcement_inventory_normalization_v2"
+            if source_ancestry is not None
+            else "cninfo_announcement_inventory_normalization_v1"
+        ),
         "require_full_page_chains": require_full_page_chains,
         "leaf_count": len(pages_by_leaf),
         "org_map_count": org_map_count,
+        "org_map_request_count": len(org_map_requests),
         "announcement_count": len(inventory),
         "conflict_count": len(conflicts),
         "all_page_chains_valid": require_full_page_chains and not conflicts,
@@ -726,6 +1502,11 @@ def _normalize_cninfo_pages(
         "conflicts_sha256": sha256_file(conflicts_path),
         "pit_field_parsing_complete": False,
     }
+    if source_ancestry is not None:
+        manifest["source_ancestry"] = source_ancestry
+        manifest["source_binding"] = source_binding
+        if source_ancestry["weak_source_ancestry"]:
+            manifest["blockers"] = ["weak_source_acquisition_ancestry"]
     manifest["content_hash"] = canonical_hash(manifest)
     _atomic_json(manifest_path, manifest)
     return (
@@ -733,6 +1514,205 @@ def _normalize_cninfo_pages(
         NormalizedArtifact("cninfo_page_coverage", "normalized/page_coverage.jsonl", len(coverage_rows)),
         NormalizedArtifact("conflicts", "normalized/conflicts.jsonl", len(conflicts)),
         NormalizedArtifact("normalized_manifest", "normalized/normalized_manifest.json", 1),
+    )
+
+
+def _validate_cninfo_inventory_request_closure(
+    *,
+    requests: Sequence[ProviderProbeRequest],
+    org_map_requests: Sequence[ProviderProbeRequest],
+    pages_by_leaf: Mapping[
+        str,
+        Sequence[tuple[ProviderProbeRequest, Mapping[str, Any], str]],
+    ],
+    source_ancestry: Mapping[str, Any],
+    source_binding: Mapping[str, Any],
+) -> None:
+    leaf_profile = str(source_ancestry.get("leaf_profile") or "")
+    leaves = _cninfo_month_leaves(leaf_profile)
+    expected_by_id = {leaf["leaf_id"]: leaf for leaf in leaves}
+    if (
+        len(org_map_requests) != 1
+        or set(pages_by_leaf) != set(expected_by_id)
+        or len({request.request_id for request in requests}) != len(requests)
+    ):
+        raise ValueError("cninfo_inventory_request_closure_invalid")
+    expected_org = _with_cninfo_source_binding(
+        _cninfo_org_map_request(),
+        source_ancestry,
+        source_binding,
+    )
+    if org_map_requests[0].semantic() != expected_org.semantic():
+        raise ValueError("cninfo_inventory_org_map_semantics_invalid")
+    expected_request_count = 1
+    for leaf_id, leaf in expected_by_id.items():
+        captured = list(pages_by_leaf[leaf_id])
+        totals = {
+            _nonnegative_int(body.get("totalAnnouncement"))
+            for _request, body, _source_hash in captured
+        }
+        if len(totals) != 1 or None in totals:
+            raise ValueError(f"cninfo_inventory_total_invalid:{leaf_id}")
+        total = next(iter(totals))
+        page_count = max(1, math.ceil(int(total) / CNINFO_PAGE_SIZE))
+        if page_count > CNINFO_MAX_PAGES_PER_LEAF:
+            raise ValueError(f"cninfo_inventory_page_budget_invalid:{leaf_id}")
+        actual_by_page: dict[int, ProviderProbeRequest] = {}
+        for request, _body, _source_hash in captured:
+            page = _nonnegative_int(request.metadata.get("page"))
+            if page is None or page <= 0 or page in actual_by_page:
+                raise ValueError(f"cninfo_inventory_page_identity_invalid:{leaf_id}")
+            actual_by_page[page] = request
+        if set(actual_by_page) != set(range(1, page_count + 1)):
+            raise ValueError(f"cninfo_inventory_page_closure_invalid:{leaf_id}")
+        resolved_leaf = dict(leaf) | {
+            "reported_total": total,
+            "page_count": page_count,
+        }
+        for page, actual in actual_by_page.items():
+            expected = _with_cninfo_source_binding(
+                _cninfo_leaf_request(resolved_leaf, page=page),
+                source_ancestry,
+                source_binding,
+            )
+            if actual.semantic() != expected.semantic():
+                raise ValueError(
+                    f"cninfo_inventory_request_semantics_invalid:{actual.request_id}"
+                )
+        expected_request_count += page_count
+    if len(requests) != expected_request_count:
+        raise ValueError("cninfo_inventory_request_count_invalid")
+
+
+def _validate_cninfo_inventory_normalized_closure(
+    normalized_manifest: Mapping[str, Any],
+    coverage_payload: bytes,
+    *,
+    leaf_profile: str,
+) -> None:
+    expected_leaf_ids = {
+        leaf["leaf_id"] for leaf in _cninfo_month_leaves(leaf_profile)
+    }
+    try:
+        coverage = [
+            json.loads(line)
+            for line in coverage_payload.decode("utf-8").splitlines()
+            if line.strip()
+        ]
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("cninfo_inventory_coverage_invalid") from exc
+    by_leaf = {
+        str(row.get("leaf_id") or ""): row
+        for row in coverage
+        if isinstance(row, Mapping)
+    }
+    if (
+        len(by_leaf) != len(coverage)
+        or set(by_leaf) != expected_leaf_ids
+        or normalized_manifest.get("leaf_count") != len(expected_leaf_ids)
+        or normalized_manifest.get("org_map_request_count") != 1
+        or not isinstance(normalized_manifest.get("org_map_count"), int)
+        or int(normalized_manifest.get("org_map_count") or 0) <= 0
+        or normalized_manifest.get("conflict_count") != 0
+        or normalized_manifest.get("all_page_chains_valid") is not True
+    ):
+        raise ValueError("cninfo_inventory_normalized_closure_invalid")
+    for leaf_id, row in by_leaf.items():
+        expected_page_count = _nonnegative_int(row.get("expected_page_count"))
+        captured_pages = row.get("captured_pages")
+        if (
+            expected_page_count is None
+            or expected_page_count <= 0
+            or captured_pages != list(range(1, expected_page_count + 1))
+            or row.get("full_page_chain_valid") is not True
+        ):
+            raise ValueError(
+                f"cninfo_inventory_normalized_leaf_invalid:{leaf_id}"
+            )
+
+
+def _replay_cninfo_inventory_artifacts(
+    path: str | Path,
+    *,
+    required_roles: Sequence[str],
+) -> tuple[dict[str, bytes], str]:
+    validated = validate_free_provider_backfill(path)
+    source_root = Path(str(validated["manifest_path"])).parent
+    plan = read_json(source_root / "request_plan.json")
+    requests = [
+        _request_from_semantic(row) for row in plan.get("requests") or ()
+    ]
+    sealed_context = _cninfo_activity_context(
+        source_root,
+        requests,
+        expected_phase="cninfo-inventory",
+        expected_activity_id=str(validated.get("activity_id") or ""),
+        require_activity_root=False,
+    )
+
+    def replay_normalizer(
+        run_root: Path,
+        replay_requests: Sequence[ProviderProbeRequest],
+        terminal: Mapping[str, Mapping[str, Any]],
+    ) -> Sequence[NormalizedArtifact]:
+        if [request.semantic() for request in replay_requests] != [
+            request.semantic() for request in requests
+        ]:
+            raise ValueError("cninfo_inventory_replay_plan_invalid")
+        return _normalize_cninfo_pages(
+            run_root,
+            replay_requests,
+            terminal,
+            require_full_page_chains=True,
+            sealed_context=sealed_context,
+        )
+
+    return replay_normalized_artifacts(
+        validated["manifest_path"],
+        normalizer=replay_normalizer,
+        required_roles=required_roles,
+    )
+
+
+def _replay_cninfo_document_artifacts(
+    path: str | Path,
+    *,
+    required_roles: Sequence[str],
+) -> tuple[dict[str, bytes], str]:
+    validated = validate_free_provider_backfill(path)
+    source_root = Path(str(validated["manifest_path"])).parent
+    plan = read_json(source_root / "request_plan.json")
+    requests = [
+        _request_from_semantic(row) for row in plan.get("requests") or ()
+    ]
+    sealed_context = _cninfo_activity_context(
+        source_root,
+        requests,
+        expected_phase="cninfo-documents",
+        expected_activity_id=str(validated.get("activity_id") or ""),
+        require_activity_root=False,
+    )
+
+    def replay_normalizer(
+        run_root: Path,
+        replay_requests: Sequence[ProviderProbeRequest],
+        terminal: Mapping[str, Mapping[str, Any]],
+    ) -> Sequence[NormalizedArtifact]:
+        if [request.semantic() for request in replay_requests] != [
+            request.semantic() for request in requests
+        ]:
+            raise ValueError("cninfo_document_replay_plan_invalid")
+        return normalize_cninfo_documents(
+            run_root,
+            replay_requests,
+            terminal,
+            _sealed_context=sealed_context,
+        )
+
+    return replay_normalized_artifacts(
+        validated["manifest_path"],
+        normalizer=replay_normalizer,
+        required_roles=required_roles,
     )
 
 
@@ -760,6 +1740,19 @@ def _cninfo_month_leaves(leaf_profile: str = "base") -> list[dict[str, str]]:
                     }
                 )
     return leaves
+
+
+def _with_source_ancestry(
+    request: ProviderProbeRequest,
+    source_ancestry: Mapping[str, Any],
+) -> ProviderProbeRequest:
+    return ProviderProbeRequest(
+        **{
+            **request.__dict__,
+            "metadata": dict(request.metadata)
+            | {"source_ancestry": dict(source_ancestry)},
+        }
+    )
 
 
 def _cninfo_leaf_request(leaf: Mapping[str, Any], *, page: int) -> ProviderProbeRequest:
@@ -1029,12 +2022,22 @@ def _captured_cninfo_pages(manifest_path: str | Path) -> dict[str, dict[str, Any
         wrapper_path = root / str(terminal["raw_envelope_relative_path"])
         wrapper = read_json(wrapper_path)
         request = request_rows.get(request_id)
-        if not request or (request.get("metadata") or {}).get("case") != "cninfo_list":
-            continue
-        official = json.loads(base64.b64decode(wrapper["raw_payload_base64"], validate=True))
-        pages[request_id] = json.loads(
-            base64.b64decode(official["body_base64"], validate=True)
+        if not request:
+            raise ValueError(f"cninfo_discovery_request_missing:{request_id}")
+        _official, body = _decode_cninfo_official_http_envelope(
+            wrapper,
+            request=request,
+            terminal=terminal,
         )
+        payload = json.loads(body)
+        if not isinstance(payload, (dict, list)):
+            raise ValueError(f"cninfo_discovery_payload_shape_invalid:{request_id}")
+        pages[request_id] = {
+            "request": request,
+            "payload": payload,
+        }
+    if set(pages) != set(request_rows):
+        raise ValueError("cninfo_discovery_terminal_request_closure_invalid")
     return pages
 
 
@@ -1052,6 +2055,7 @@ def _contract(
     max_total_bytes: int,
     permission_context_id: str,
     leaf_profile: str,
+    source_binding: Mapping[str, Any] | None = None,
 ) -> FreeProviderBackfillContract:
     adapter_identity = {
         "adapter": f"cninfo_{phase}_signed_http_capture_v1",
@@ -1061,6 +2065,35 @@ def _contract(
     }
     if input_capture_hash:
         adapter_identity["input_capture_content_hash"] = input_capture_hash
+    if source_binding is not None:
+        binding_semantic = {
+            key: value
+            for key, value in source_binding.items()
+            if key != "content_hash"
+        }
+        if (
+            phase not in {"cninfo-inventory", "cninfo-documents"}
+            or source_binding.get("content_hash")
+            != canonical_hash(binding_semantic)
+            or source_binding.get("phase") != phase
+            or source_binding.get("input_capture_content_hash")
+            != input_capture_hash
+            or source_binding.get("source_leaf_profile") != leaf_profile
+        ):
+            raise ValueError("cninfo_contract_source_binding_invalid")
+        adapter_identity.update(
+            {
+                "source_binding_root": str(source_binding["content_hash"]),
+                "source_ancestry_root": str(
+                    source_binding["source_ancestry_root"]
+                ),
+                "source_upstream_content_hashes_root": str(
+                    source_binding["upstream_content_hashes_root"]
+                ),
+            }
+        )
+    elif phase in {"cninfo-inventory", "cninfo-documents"}:
+        raise ValueError("cninfo_contract_source_binding_missing")
     if phase == "cninfo-documents":
         adapter_identity["document_body_max_bytes"] = (
             CNINFO_DOCUMENT_BODY_MAX_BYTES
@@ -1100,11 +2133,40 @@ def _implementation_root() -> str:
         {
             "discovery_plan": inspect.getsource(build_cninfo_discovery_plan),
             "inventory_plan": inspect.getsource(build_cninfo_inventory_plan),
+            "captured_pages": inspect.getsource(_captured_cninfo_pages),
+            "nonnegative_int": inspect.getsource(_nonnegative_int),
             "month_leaf_plan": inspect.getsource(_cninfo_month_leaves)
-            + inspect.getsource(_cninfo_leaf_request),
+            + inspect.getsource(_cninfo_leaf_request)
+            + inspect.getsource(_with_source_ancestry),
             "document_plan": inspect.getsource(build_cninfo_document_plan),
+            "official_envelope_decoder": inspect.getsource(
+                _decode_cninfo_official_http_envelope
+            ),
+            "source_ancestry": inspect.getsource(_cninfo_direct_source)
+            + inspect.getsource(_cninfo_source_ancestry)
+            + inspect.getsource(_validate_cninfo_direct_source)
+            + inspect.getsource(_validate_cninfo_source_ancestry)
+            + inspect.getsource(_cninfo_document_source_ancestry),
+            "source_binding": inspect.getsource(_cninfo_upstream_content_hashes)
+            + inspect.getsource(_cninfo_source_binding)
+            + inspect.getsource(_validate_cninfo_source_binding)
+            + inspect.getsource(_with_cninfo_source_binding)
+            + inspect.getsource(_cninfo_request_source_evidence)
+            + inspect.getsource(_cninfo_activity_context)
+            + inspect.getsource(_validate_cninfo_context_source_binding)
+            + inspect.getsource(_validate_cninfo_binding_derivation),
             "page_normalizer": inspect.getsource(_normalize_cninfo_pages),
+            "inventory_closure": inspect.getsource(
+                _validate_cninfo_inventory_request_closure
+            )
+            + inspect.getsource(_validate_cninfo_inventory_normalized_closure)
+            + inspect.getsource(_replay_cninfo_inventory_artifacts)
+            + inspect.getsource(_replay_cninfo_document_artifacts),
             "document_normalizer": inspect.getsource(normalize_cninfo_documents),
+            "governance_qualification": inspect.getsource(
+                _cninfo_governance_qualification
+            )
+            + inspect.getsource(validate_cninfo_governance),
             "document_transport": inspect.getsource(CNINFODocumentTransport),
             "document_url": inspect.getsource(_cninfo_document_url),
             "document_format": inspect.getsource(_document_format),
@@ -1126,8 +2188,176 @@ def _implementation_root() -> str:
                 for name, rows in sorted(CNINFO_LEAF_PROFILES.items())
             },
             "cninfo_document_body_max_bytes": CNINFO_DOCUMENT_BODY_MAX_BYTES,
+            "cninfo_page_size": CNINFO_PAGE_SIZE,
+            "cninfo_max_pages_per_leaf": CNINFO_MAX_PAGES_PER_LEAF,
+            "cninfo_scope": CNINFO_SCOPE,
+            "cninfo_source_ancestry_schema": CNINFO_SOURCE_ANCESTRY_SCHEMA,
+            "cninfo_source_binding_schema": CNINFO_SOURCE_BINDING_SCHEMA,
+            "legacy_2011_document_identity": {
+                "activity_id": CNINFO_LEGACY_2011_DOCUMENT_ACTIVITY_ID,
+                "contract_id": CNINFO_LEGACY_2011_DOCUMENT_CONTRACT_ID,
+                "request_plan_hash": (
+                    CNINFO_LEGACY_2011_DOCUMENT_REQUEST_PLAN_HASH
+                ),
+                "input_capture_content_hash": (
+                    CNINFO_LEGACY_2011_DOCUMENT_INPUT_CAPTURE_HASH
+                ),
+                "implementation_root": (
+                    CNINFO_LEGACY_2011_DOCUMENT_IMPLEMENTATION_ROOT
+                ),
+            },
         }
     )
+
+
+def _cninfo_governance_qualification(
+    *,
+    context: Mapping[str, Any],
+    phase: str,
+    normalized_manifest: Mapping[str, Any],
+    publication_signature_verified: bool,
+) -> dict[str, Any]:
+    adapter_identity = context["adapter_identity"]
+    exact_legacy = (
+        context["activity_id"] == CNINFO_LEGACY_2011_DOCUMENT_ACTIVITY_ID
+        and context["contract_id"] == CNINFO_LEGACY_2011_DOCUMENT_CONTRACT_ID
+        and context["request_plan_hash"]
+        == CNINFO_LEGACY_2011_DOCUMENT_REQUEST_PLAN_HASH
+        and adapter_identity.get("input_capture_content_hash")
+        == CNINFO_LEGACY_2011_DOCUMENT_INPUT_CAPTURE_HASH
+        and adapter_identity.get("implementation_root")
+        == CNINFO_LEGACY_2011_DOCUMENT_IMPLEMENTATION_ROOT
+    )
+    blockers: list[str] = []
+    weak_source_ancestry = False
+    source_lineage_complete = False
+    if exact_legacy:
+        if normalized_manifest.get("schema_version") != "cninfo_document_normalization_v1":
+            raise ValueError("cninfo_legacy_normalized_schema_invalid")
+        blockers.append("legacy_2011_document_source_ancestry_incomplete")
+        weak_source_ancestry = True
+    elif phase == "cninfo-discovery":
+        source_lineage_complete = publication_signature_verified
+        weak_source_ancestry = not source_lineage_complete
+    else:
+        source_ancestry = normalized_manifest.get("source_ancestry")
+        source_binding = normalized_manifest.get("source_binding")
+        try:
+            ancestry = _validate_cninfo_source_ancestry(
+                source_ancestry,
+                expected_stage=(
+                    "discovery_capture_set"
+                    if phase == "cninfo-inventory"
+                    else "inventory_capture"
+                ),
+            )
+            binding = _validate_cninfo_source_binding(
+                source_binding,
+                phase=phase,
+                source_ancestry=ancestry,
+            )
+            _validate_cninfo_context_source_binding(
+                context,
+                phase=phase,
+                source_ancestry=ancestry,
+                source_binding=binding,
+            )
+            _validate_cninfo_binding_derivation(
+                ancestry,
+                binding,
+                phase=phase,
+                expected_implementation_root=(
+                    str(
+                        (context.get("adapter_identity") or {}).get(
+                            "implementation_root"
+                        )
+                        or ""
+                    )
+                    if phase == "cninfo-documents"
+                    else None
+                ),
+            )
+            source_lineage_complete = True
+            weak_source_ancestry = ancestry["weak_source_ancestry"] is True
+        except ValueError:
+            blockers.append("cninfo_source_lineage_binding_invalid")
+            weak_source_ancestry = True
+    if weak_source_ancestry:
+        blockers.append("weak_source_acquisition_ancestry")
+    governed_evidence_eligible = bool(
+        publication_signature_verified
+        and source_lineage_complete
+        and not weak_source_ancestry
+    )
+    if not governed_evidence_eligible:
+        blockers.append("cninfo_governed_evidence_ineligible")
+    qualification_semantic = {
+        "schema_version": CNINFO_GOVERNANCE_QUALIFICATION_SCHEMA,
+        "activity_id": context["activity_id"],
+        "contract_id": context["contract_id"],
+        "request_plan_hash": context["request_plan_hash"],
+        "phase": phase,
+        "source_lineage_complete": source_lineage_complete,
+        "weak_source_ancestry": weak_source_ancestry,
+        "quarantined": not governed_evidence_eligible,
+        "governed_evidence_eligible": governed_evidence_eligible,
+        "blockers": sorted(set(blockers)),
+    }
+    return qualification_semantic | {
+        "content_hash": canonical_hash(qualification_semantic)
+    }
+
+
+def validate_cninfo_governance(path: str | Path) -> dict[str, Any]:
+    """Validate capture integrity and derive a fail-closed CNINFO lineage verdict."""
+
+    validated = validate_free_provider_backfill(path)
+    source_root = Path(str(validated["manifest_path"])).parent
+    contract = read_json(source_root / "activity_contract.json")
+    adapter = str((contract.get("adapter_identity") or {}).get("adapter") or "")
+    phase = next(
+        (
+            candidate
+            for candidate in (
+                "cninfo-discovery",
+                "cninfo-inventory",
+                "cninfo-documents",
+            )
+            if adapter == f"cninfo_{candidate}_signed_http_capture_v1"
+        ),
+        "",
+    )
+    if not phase:
+        raise ValueError("cninfo_governance_phase_invalid")
+    plan = read_json(source_root / "request_plan.json")
+    requests = [
+        _request_from_semantic(row) for row in plan.get("requests") or ()
+    ]
+    context = _cninfo_activity_context(
+        source_root,
+        requests,
+        expected_phase=phase,
+        expected_activity_id=str(validated.get("activity_id") or ""),
+        require_activity_root=False,
+    )
+    normalized_manifest = read_json(source_root / "normalized/normalized_manifest.json")
+    qualification = _cninfo_governance_qualification(
+        context=context,
+        phase=phase,
+        normalized_manifest=normalized_manifest,
+        publication_signature_verified=(
+            validated.get("publication_signature_verified") is True
+        ),
+    )
+    governed_evidence_eligible = qualification["governed_evidence_eligible"] is True
+    return validated | {
+        "normalized_artifacts_integrity_verified": validated.get(
+            "normalized_artifacts_trusted"
+        )
+        is True,
+        "normalized_artifacts_trusted": governed_evidence_eligible,
+        "cninfo_governance_qualification": qualification,
+    }
 
 
 def _default_output(phase: str) -> Path:
@@ -1170,7 +2400,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     if args.validate:
         try:
-            payload = validate_free_provider_backfill(args.validate)
+            payload = validate_cninfo_governance(args.validate)
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             print(json.dumps({"status": "blocked", "reason": str(exc)}, sort_keys=True))
             return 1
@@ -1210,6 +2440,14 @@ def main(argv: list[str] | None = None) -> int:
         max_total_bytes = 256 * 1024 * 1024 * 1024
     population_root = canonical_hash(
         {"population": population, "input_capture_content_hash": input_hash}
+    )
+    source_binding = (
+        None
+        if args.phase == "cninfo-discovery"
+        else _cninfo_request_source_evidence(
+            requests,
+            phase=args.phase,
+        )[1]
     )
     preview = {
         "schema_version": "free_provider_http_backfill_plan_preview_v1",
@@ -1253,8 +2491,9 @@ def main(argv: list[str] | None = None) -> int:
         leaf_profile=(
             args.leaf_profile
             if args.phase in {"cninfo-discovery", "cninfo-inventory"}
-            else "inventory_bound"
+            else str(source_binding["source_leaf_profile"])
         ),
+        source_binding=source_binding,
     )
     if args.plan_only:
         print(

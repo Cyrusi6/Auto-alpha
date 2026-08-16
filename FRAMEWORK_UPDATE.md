@@ -295,6 +295,34 @@ This file records only the current A-share architecture and recent governed mile
   CSI300 weights remain incomplete.
 - No Data Admission Profile, alpha search, holdout, paper, shadow or live capability was activated.
 
+## 2026-08 — Provider ancestry closure and historical security snapshots
+
+- CNINFO discovery input now closes exactly over one immutable leaf profile, all required month
+  leaves and the org-map request. Mixed profiles, missing/extra leaves, scope drift and request
+  semantic drift fail before a downstream inventory plan can be created.
+- CNINFO replay independently recomputes the official HTTP envelope schema, method, URL, status,
+  redirect disposition and raw/body hashes. Recursive discovery → inventory → document ancestry
+  preserves weak-source status instead of allowing a newly signed downstream capture to launder it.
+- New CNINFO document plans require complete source ancestry. The single ancestry-free 2011 activity
+  already in flight is isolated by its exact sealed request-plan hash; older inventory without a
+  leaf-profile identity cannot start another year.
+- Baostock session expiry recovery is adapter-scoped. The raw provider code is not globally
+  retryable, reconnects remain bounded by the immutable activity budget, and repeated expiry stops
+  with signed terminal evidence.
+- Added a governed `security-snapshots` reconciliation phase: 2011-12-30 plus every 2012–2019 open
+  day, 1,946 immutable `query_all_stock(day)` requests. Output retains historical provider code,
+  trade status, provider name and raw lineage while explicitly forbidding PIT-name claims, alias
+  adjudication and archived-market-row rewrites.
+- Baostock v2 validation now derives operation, request parameters, fields, provider errors and
+  records from the captured protocol frames. SDK `parsed` values are reconciliation assertions,
+  never the source of normalized rows; the approved calendar roots are rechecked at plan,
+  contract and normalization time.
+- The exact legacy CNINFO activity has a separate content-addressed qualification: byte integrity
+  remains verifiable, while incomplete lineage forces quarantine and governed-evidence
+  ineligibility. Reusing its request plan under another activity or contract is rejected.
+- These changes collect and preserve missing evidence only. Data Admission, alpha search, holdout,
+  paper, shadow and live capabilities remain false.
+
 ## Architecture rules
 
 1. Delete obsolete behavior instead of hiding it behind compatibility adapters.

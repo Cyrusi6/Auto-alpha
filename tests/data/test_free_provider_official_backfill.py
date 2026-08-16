@@ -6,14 +6,19 @@ import io
 import json
 import urllib.request
 import zipfile
+import zlib
+from dataclasses import replace
+from datetime import date, timedelta
 from pathlib import Path
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
 from auto_alpha.data.ingestion.pipeline.ashare import (
+    free_provider_backfill as capture_backfill,
     free_provider_baostock_reconciliation as baostock_reconciliation,
     free_provider_csindex_backfill as csindex_backfill,
+    free_provider_http_backfill as cninfo_backfill,
 )
 from auto_alpha.data.ingestion.pipeline.ashare.free_provider_baostock_reconciliation import (
     _implementation_root as baostock_reconciliation_implementation_root,
@@ -21,7 +26,9 @@ from auto_alpha.data.ingestion.pipeline.ashare.free_provider_baostock_reconcilia
     build_dividend_plan,
     build_index_daily_plan,
     build_security_basic_plan,
+    build_security_snapshot_plan,
     build_turnover_plan,
+    normalize_security_snapshots,
     normalize_turnover,
 )
 from auto_alpha.data.ingestion.pipeline.ashare.free_provider_backfill import (
@@ -48,16 +55,21 @@ from auto_alpha.data.ingestion.pipeline.ashare.free_provider_csindex_backfill im
 )
 from auto_alpha.data.ingestion.pipeline.ashare.free_provider_http_backfill import (
     CNINFODocumentTransport,
+    _contract as cninfo_contract,
     _cninfo_document_url,
+    _implementation_root as cninfo_implementation_root,
     _adjunct_size_reasonable,
     _content_length_matches,
     _content_type_compatible,
     _document_block_reason,
     _document_format,
     _document_structure_valid,
+    build_cninfo_document_plan,
     build_cninfo_discovery_plan,
+    build_cninfo_inventory_plan,
     normalize_cninfo_documents,
     normalize_cninfo_discovery,
+    normalize_cninfo_inventory,
 )
 from auto_alpha.data.ingestion.pipeline.ashare.provider_probe import (
     ProviderProbeObservation,
@@ -93,58 +105,477 @@ def _attachment_source_ancestry(*, weak: bool = False) -> dict[str, object]:
     }
 
 
+def _cninfo_discovery_source_ancestry(
+    *,
+    weak: bool = True,
+) -> dict[str, object]:
+    discovery_source = {
+        **_attachment_source_ancestry(weak=weak),
+        "source_generation_id": "free_provider_backfill_" + "a" * 24,
+        "source_contract_content_hash": "b" * 64,
+        "source_provider": "cninfo",
+        "source_phase": "cninfo-discovery",
+        "source_adapter": "cninfo_cninfo-discovery_signed_http_capture_v1",
+        "source_leaf_profile": "supplemental",
+        "source_implementation_root": "d" * 64,
+    }
+    discovery_semantic: dict[str, object] = {
+        "schema_version": "cninfo_source_ancestry_v1",
+        "source_stage": "discovery_capture_set",
+        "leaf_profile": "supplemental",
+        "direct_sources": [discovery_source],
+        "upstream_ancestry": [],
+        "weak_source_ancestry": weak,
+    }
+    discovery_ancestry = discovery_semantic | {
+        "ancestry_root": canonical_hash(discovery_semantic)
+    }
+    return discovery_ancestry
+
+
 def _cninfo_source_ancestry(*, weak: bool = True) -> dict[str, object]:
-    ancestry = _attachment_source_ancestry(weak=weak)
-    ancestry["source_provider"] = "cninfo"
-    ancestry["source_adapter"] = "cninfo_cninfo-inventory_signed_http_capture_v1"
-    return ancestry
+    discovery_ancestry = _cninfo_discovery_source_ancestry(weak=weak)
+    inventory_source = {
+        **_attachment_source_ancestry(weak=False),
+        "source_generation_id": "free_provider_backfill_" + "a" * 24,
+        "source_contract_content_hash": "b" * 64,
+        "source_provider": "cninfo",
+        "source_phase": "cninfo-inventory",
+        "source_adapter": "cninfo_cninfo-inventory_signed_http_capture_v1",
+        "source_leaf_profile": "supplemental",
+        "source_implementation_root": "e" * 64,
+    }
+    inventory_semantic: dict[str, object] = {
+        "schema_version": "cninfo_source_ancestry_v1",
+        "source_stage": "inventory_capture",
+        "leaf_profile": "supplemental",
+        "direct_sources": [inventory_source],
+        "upstream_ancestry": [discovery_ancestry],
+        "weak_source_ancestry": weak,
+    }
+    return inventory_semantic | {
+        "ancestry_root": canonical_hash(inventory_semantic)
+    }
 
 
-def _official_wrapper(body: dict, request_id: str) -> tuple[dict, dict]:
+def _official_wrapper(
+    body: dict,
+    request: ProviderProbeRequest,
+    *,
+    envelope_overrides: dict[str, object] | None = None,
+) -> tuple[dict, dict]:
     provider_body = json.dumps(body, ensure_ascii=False, sort_keys=True).encode()
+    official_payload = {
+        "schema_version": "official_http_probe_envelope_v1",
+        "url": request.url,
+        "method": request.method.upper(),
+        "status_code": 200,
+        "response_headers": {},
+        "body_base64": base64.b64encode(provider_body).decode(),
+        "body_sha256": hashlib.sha256(provider_body).hexdigest(),
+        "redirect_followed": False,
+    }
+    official_payload.update(envelope_overrides or {})
     official = json.dumps(
-        {
-            "schema_version": "official_http_probe_envelope_v1",
-            "status_code": 200,
-            "body_base64": base64.b64encode(provider_body).decode(),
-        },
+        official_payload,
         sort_keys=True,
     ).encode()
     wrapper = {
         "schema_version": "free_provider_backfill_raw_envelope_v1",
-        "request_id": request_id,
+        "request_id": request.request_id,
         "raw_payload_base64": base64.b64encode(official).decode(),
         "raw_payload_sha256": __import__("hashlib").sha256(official).hexdigest(),
     }
     terminal = {
-        "raw_envelope_relative_path": f"raw_envelopes/{request_id}.json",
+        "raw_envelope_relative_path": f"raw_envelopes/{request.request_id}.json",
         "terminal_state": "positive",
+        "status_code": 200,
     }
     return wrapper, terminal
 
 
-def _baostock_wrapper(
-    *, request_id: str, fields: list[str], rows: list[list[str]]
-) -> tuple[dict, dict]:
-    raw = {
-        "parsed": {
-            "fields": fields,
-            "items": rows,
-            "canonical_logical_payload_sha256": canonical_hash(
-                {"fields": fields, "rows": rows}
-            ),
-        },
-        "wire_exchanges": [],
+def _cninfo_zero_or_one_body(
+    request: ProviderProbeRequest,
+    *,
+    announcement_leaf_id: str | None = None,
+) -> dict[str, object]:
+    if request.metadata.get("case") == "cninfo_org_map":
+        return {"stockList": [{"code": "600000"}]}
+    if request.metadata.get("leaf_id") == announcement_leaf_id:
+        return {
+            "totalAnnouncement": 1,
+            "announcements": [
+                {
+                    "announcementId": "58854747",
+                    "secCode": "600000",
+                    "secName": "浦发银行",
+                    "orgId": "gssh0600000",
+                    "announcementTitle": "更正公告",
+                    "announcementTime": 1294093800000,
+                    "adjunctUrl": "finalpage/2011-01-04/58854747.PDF",
+                    "adjunctSize": 1,
+                    "announcementType": "x",
+                    "columnId": "y",
+                }
+            ],
+            "hasMore": False,
+        }
+    return {"totalAnnouncement": 0, "announcements": None, "hasMore": False}
+
+
+class _FastFixtureSigner:
+    public_key_pem = b"-----BEGIN PUBLIC KEY-----\nfixture\n-----END PUBLIC KEY-----\n"
+
+    def sign(self, payload: bytes) -> str:
+        return base64.b64encode(hashlib.sha256(payload).digest()).decode()
+
+
+def _publish_cninfo_capture(
+    output_root: Path,
+    *,
+    phase: str,
+    requests: list[ProviderProbeRequest],
+    normalizer: object,
+    leaf_profile: str,
+    input_capture_hash: str | None = None,
+    announcement_leaf_id: str | None = None,
+    contract_provider: str = "cninfo",
+    contract_adapter: str | None = None,
+    contract_leaf_profile: str | None = None,
+    omit_contract_leaf_profile: bool = False,
+    scope_start: str = "20120101",
+    request_start: str = "20110101",
+    signer: object | None = None,
+) -> str:
+    signer = signer or EphemeralReceiptSigner.generate()
+    source_binding = (
+        requests[0].metadata.get("source_binding")
+        if phase in {"cninfo-inventory", "cninfo-documents"} and requests
+        else None
+    )
+    contract = cninfo_contract(
+        phase=phase,
+        output_root=output_root,
+        signer=signer,
+        population_root=canonical_hash([row.semantic() for row in requests]),
+        request_count=len(requests),
+        input_capture_hash=input_capture_hash,
+        delay=0,
+        timeout=3,
+        max_retries=0,
+        max_total_bytes=128 * 1024 * 1024,
+        permission_context_id="human-approved-fixture",
+        leaf_profile=leaf_profile,
+        source_binding=source_binding,
+    )
+    adapter_identity = dict(contract.adapter_identity)
+    if contract_adapter is not None:
+        adapter_identity["adapter"] = contract_adapter
+    if contract_leaf_profile is not None:
+        adapter_identity["leaf_profile"] = contract_leaf_profile
+    if omit_contract_leaf_profile:
+        adapter_identity.pop("leaf_profile", None)
+    contract = replace(
+        contract,
+        provider=contract_provider,
+        scope_start=scope_start,
+        request_start=request_start,
+        adapter_identity=adapter_identity,
+    )
+    bound_requests = [
+        replace(request, provider=contract_provider) for request in requests
+    ]
+
+    def transport(
+        request: ProviderProbeRequest,
+        _timeout: float,
+    ) -> ProviderProbeObservation:
+        body = _cninfo_zero_or_one_body(
+            request,
+            announcement_leaf_id=announcement_leaf_id,
+        )
+        provider_body = json.dumps(body, ensure_ascii=False, sort_keys=True).encode()
+        raw = json.dumps(
+            {
+                "schema_version": "official_http_probe_envelope_v1",
+                "url": request.url,
+                "method": request.method.upper(),
+                "status_code": 200,
+                "response_headers": {},
+                "body_base64": base64.b64encode(provider_body).decode(),
+                "body_sha256": hashlib.sha256(provider_body).hexdigest(),
+                "redirect_followed": False,
+            },
+            sort_keys=True,
+        ).encode()
+        is_empty = body.get("totalAnnouncement") == 0
+        return ProviderProbeObservation(
+            terminal_state="empty" if is_empty else "positive",
+            raw_payload=raw,
+            row_count=0 if is_empty else 1,
+            status_code=200,
+            checks={name: True for name in request.required_checks},
+            transport_exchange_count=1,
+        )
+
+    result = run_free_provider_backfill(
+        contract,
+        bound_requests,
+        transport=transport,
+        signer=signer,
+        normalizer=normalizer,  # type: ignore[arg-type]
+        runtime_implementation_root=cninfo_implementation_root(),
+    )
+    assert result["status"] == "succeeded"
+    return str(result["manifest_path"])
+
+
+def _cninfo_document_binding(
+    source_ancestry: dict[str, object],
+) -> tuple[str, dict[str, object]]:
+    derivation = {
+        "capture_content_hash": source_ancestry["direct_sources"][0][
+            "source_content_hash"
+        ],
+        "normalized_replay_root": "9" * 64,
+        "implementation_root": cninfo_implementation_root(),
     }
-    payload = json.dumps(raw, sort_keys=True).encode()
+    input_root = canonical_hash(
+        {**derivation, "source_ancestry": source_ancestry}
+    )
+    binding = cninfo_backfill._cninfo_source_binding(
+        phase="cninfo-documents",
+        input_capture_content_hash=input_root,
+        source_ancestry=source_ancestry,
+        derivation=derivation,
+    )
+    return input_root, binding
+
+
+def _write_cninfo_activity_context(
+    base: Path,
+    requests: list[ProviderProbeRequest],
+    *,
+    phase: str,
+    input_capture_hash: str,
+    source_binding: dict[str, object],
+    legacy: bool = False,
+) -> tuple[Path, dict[str, str]]:
+    signer = EphemeralReceiptSigner.generate()
+    contract = cninfo_contract(
+        phase=phase,
+        output_root=base / "published",
+        signer=signer,
+        population_root=canonical_hash([request.semantic() for request in requests]),
+        request_count=len(requests),
+        input_capture_hash=input_capture_hash,
+        delay=0,
+        timeout=3,
+        max_retries=0,
+        max_total_bytes=128 * 1024 * 1024,
+        permission_context_id="human-approved-fixture",
+        leaf_profile=str(source_binding["source_leaf_profile"]),
+        source_binding=source_binding,
+    )
+    contract_row = contract.semantic()
+    if legacy:
+        adapter = dict(contract_row["adapter_identity"])
+        for key in (
+            "leaf_profile",
+            "source_binding_root",
+            "source_ancestry_root",
+            "source_upstream_content_hashes_root",
+            "document_body_max_bytes",
+        ):
+            adapter.pop(key, None)
+        contract_row["adapter_identity"] = adapter
+    request_rows = [request.semantic() for request in requests]
+    request_plan_hash = canonical_hash(request_rows)
+    contract_id = canonical_hash(contract_row)
+    activity_id = canonical_hash(
+        {"contract_id": contract_id, "request_plan_hash": request_plan_hash}
+    )
+    run_root = base / ".documents.activities" / activity_id
+    run_root.mkdir(parents=True)
+    (run_root / "activity_contract.json").write_text(
+        json.dumps(contract_row, sort_keys=True),
+        encoding="utf-8",
+    )
+    (run_root / "request_plan.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "free_provider_backfill_request_plan_v1",
+                "request_plan_hash": request_plan_hash,
+                "requests": request_rows,
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    return run_root, {
+        "activity_id": activity_id,
+        "contract_id": contract_id,
+        "request_plan_hash": request_plan_hash,
+        "input_capture_content_hash": str(
+            contract_row["adapter_identity"]["input_capture_content_hash"]
+        ),
+        "implementation_root": str(
+            contract_row["adapter_identity"]["implementation_root"]
+        ),
+    }
+
+
+def _baostock_request_frame(
+    operation: str, arguments: list[str], *, message_type: str
+) -> bytes:
+    body = "\x01".join([operation, *arguments])
+    header = f"00.9.30\x01{message_type}\x01{len(body):010d}"
+    head_body = (header + body).encode()
+    return head_body + f"\x01{zlib.crc32(head_body)}\n".encode()
+
+
+def _baostock_response_frame(
+    operation: str,
+    *,
+    rows: list[list[str]],
+    response_suffix: list[str],
+    message_type: str,
+) -> bytes:
+    record = json.dumps(
+        {"record": rows}, ensure_ascii=False, separators=(",", ":")
+    )
+    body = "\x01".join(
+        [
+            "0",
+            "success",
+            operation,
+            "anonymous",
+            "1",
+            "2000",
+            record,
+            *response_suffix,
+        ]
+    )
+    if message_type == "96":
+        encoded_body = zlib.compress(body.encode())
+        declared = len(encoded_body)
+    else:
+        encoded_body = body.encode()
+        declared = len(body)
+    header = f"00.9.00\x01{message_type}\x01{declared:010d}".encode()
+    crc = zlib.crc32(header + encoded_body)
+    separator = b"\n" if message_type == "96" else b""
+    return (
+        header
+        + encoded_body
+        + f"\x01{crc}".encode()
+        + separator
+        + b"<![CDATA[]]>\n"
+    )
+
+
+def _security_or_history_payload(
+    request: ProviderProbeRequest,
+    *,
+    fields: list[str],
+    rows: list[list[str]],
+    parsed_items: list[list[str]] | None = None,
+    operation_override: str | None = None,
+    response_override: bytes | None = None,
+    query_overrides: dict[str, str] | None = None,
+) -> bytes:
+    query = {
+        key: values[-1]
+        for key, values in parse_qs(urlsplit(request.url).query).items()
+    }
+    query.update(query_overrides or {})
+    if request.metadata.get("case") == "all_stock":
+        operation = operation_override or "query_all_stock"
+        request_arguments = ["anonymous", "1", "2000", query["date"]]
+        response_suffix = [query["date"], ",".join(fields)]
+        request_type, response_type = "35", "36"
+    else:
+        operation = operation_override or "query_history_k_data_plus"
+        request_arguments = [
+            "anonymous",
+            "1",
+            "2000",
+            query["code"],
+            query["fields"],
+            query["start"],
+            query["end"],
+            "d",
+            "3",
+        ]
+        response_suffix = [
+            query["code"],
+            ",".join(fields),
+            query["start"],
+            query["end"],
+            "d",
+            "3",
+        ]
+        request_type, response_type = "95", "96"
+    wire_request = _baostock_request_frame(
+        operation, request_arguments, message_type=request_type
+    )
+    wire_response = response_override or _baostock_response_frame(
+        operation,
+        rows=rows,
+        response_suffix=response_suffix,
+        message_type=response_type,
+    )
+    exchange = {
+        "wire_request_base64": base64.b64encode(wire_request).decode(),
+        "request_sha256": hashlib.sha256(wire_request).hexdigest(),
+        "request_size_bytes": len(wire_request),
+        "socket_peer": ["1.2.3.4", 10030],
+        "wire_response_base64": base64.b64encode(wire_response).decode(),
+        "wire_response_sha256": hashlib.sha256(wire_response).hexdigest(),
+        "wire_size_bytes": len(wire_response),
+        "terminal_marker_present": True,
+    }
+    parsed: dict[str, object] = {
+        "fields": fields,
+        "row_count": len(rows),
+        "pages": [
+            {"page": 1, "row_count": len(rows), "provider_page_size": 2000}
+        ],
+        "first_rows": rows[:3],
+        "last_rows": rows[-3:],
+        "canonical_logical_payload_sha256": canonical_hash(
+            {"fields": fields, "rows": rows}
+        ),
+    }
+    if parsed_items is not None:
+        parsed["items"] = parsed_items
+    return json.dumps(
+        {
+            "schema_version": "baostock_wire_probe_envelope_v1",
+            "package_distribution_version": "0.9.3",
+            "client_protocol_version": "00.9.30",
+            "request_id": request.request_id,
+            "wire_exchanges": [exchange],
+            "parsed": parsed,
+            "provider_error": {"code": "0", "message": "success"},
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    ).encode()
+
+
+def _baostock_wrapper(
+    *, request: ProviderProbeRequest, fields: list[str], rows: list[list[str]]
+) -> tuple[dict, dict]:
+    payload = _security_or_history_payload(request, fields=fields, rows=rows)
     wrapper = {
         "schema_version": "free_provider_backfill_raw_envelope_v1",
-        "request_id": request_id,
+        "request_id": request.request_id,
         "raw_payload_base64": base64.b64encode(payload).decode(),
-        "raw_payload_sha256": __import__("hashlib").sha256(payload).hexdigest(),
+        "raw_payload_sha256": hashlib.sha256(payload).hexdigest(),
     }
     terminal = {
-        "raw_envelope_relative_path": f"raw_envelopes/{request_id}.json",
+        "raw_envelope_relative_path": f"raw_envelopes/{request.request_id}.json",
         "terminal_state": "positive",
     }
     return wrapper, terminal
@@ -193,6 +624,339 @@ def test_cninfo_supplemental_profile_locks_seven_monthly_category_families() -> 
     assert params["category"] == ["category_pg_szsh;"]
     with pytest.raises(ValueError, match="leaf_filter_unknown"):
         build_cninfo_discovery_plan(["rights_issues_201202"])
+
+
+@pytest.mark.parametrize(
+    "contract_change",
+    (
+        {"contract_provider": "csindex"},
+        {"contract_adapter": "cninfo_cninfo-inventory_signed_http_capture_v1"},
+        {"scope_start": "20130101"},
+        {"contract_leaf_profile": "base"},
+    ),
+)
+def test_cninfo_inventory_plan_rejects_discovery_contract_outside_profile_scope(
+    tmp_path: Path,
+    contract_change: dict[str, object],
+) -> None:
+    _leaves, requests = build_cninfo_discovery_plan(
+        ["corrections_201101"],
+        leaf_profile="supplemental",
+    )
+    manifest_path = _publish_cninfo_capture(
+        tmp_path / "discovery",
+        phase="cninfo-discovery",
+        requests=requests,
+        normalizer=normalize_cninfo_discovery,
+        leaf_profile="supplemental",
+        **contract_change,  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ValueError, match="cninfo_discovery_source_contract_invalid"):
+        build_cninfo_inventory_plan(
+            [manifest_path],
+            leaf_profile="supplemental",
+        )
+
+
+@pytest.mark.parametrize(
+    ("captured_profile", "leaf_id", "drop_org_map", "reason"),
+    (
+        ("supplemental", "corrections_201101", False, "leaf_missing"),
+        ("base", "st_delist_201101", False, "leaf_extra"),
+        ("supplemental", "corrections_201101", True, "org_map_missing"),
+    ),
+)
+def test_cninfo_inventory_plan_requires_exact_profile_leaf_and_org_closure(
+    tmp_path: Path,
+    captured_profile: str,
+    leaf_id: str,
+    drop_org_map: bool,
+    reason: str,
+) -> None:
+    _leaves, requests = build_cninfo_discovery_plan(
+        [leaf_id],
+        leaf_profile=captured_profile,
+    )
+    if drop_org_map:
+        requests = requests[1:]
+    manifest_path = _publish_cninfo_capture(
+        tmp_path / "discovery",
+        phase="cninfo-discovery",
+        requests=requests,
+        normalizer=normalize_cninfo_discovery,
+        leaf_profile="supplemental",
+    )
+
+    with pytest.raises(ValueError, match=f"cninfo_discovery_{reason}"):
+        build_cninfo_inventory_plan(
+            [manifest_path],
+            leaf_profile="supplemental",
+        )
+
+
+def test_cninfo_signed_inventory_preserves_weak_discovery_ancestry_in_documents(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Durability/fsync behavior belongs to the shared capture-engine tests.  This
+    # test exercises CNINFO closure and ancestry over 1,500 local fixture writes.
+    monkeypatch.setattr(capture_backfill.os, "fsync", lambda _fd: None)
+    monkeypatch.setattr(
+        capture_backfill,
+        "verify_signature",
+        lambda **_kwargs: None,
+    )
+    signer = _FastFixtureSigner()
+    _leaves, discovery_requests = build_cninfo_discovery_plan(
+        leaf_profile="supplemental"
+    )
+    discovery_manifest = _publish_cninfo_capture(
+        tmp_path / "discovery",
+        phase="cninfo-discovery",
+        requests=discovery_requests,
+        normalizer=normalize_cninfo_discovery,
+        leaf_profile="supplemental",
+        announcement_leaf_id="corrections_201101",
+        signer=signer,
+    )
+    _population, inventory_requests, input_root = build_cninfo_inventory_plan(
+        [discovery_manifest],
+        leaf_profile="supplemental",
+    )
+    strong_ancestry = inventory_requests[0].metadata["source_ancestry"]
+    assert all(
+        request.metadata["source_ancestry"] == strong_ancestry
+        for request in inventory_requests
+    )
+    assert strong_ancestry["source_stage"] == "discovery_capture_set"
+    assert len(strong_ancestry["direct_sources"]) == 1
+    assert strong_ancestry["weak_source_ancestry"] is False
+
+    weak_ancestry = json.loads(json.dumps(strong_ancestry))
+    weak_ancestry["direct_sources"][0][
+        "source_publication_signature_verified"
+    ] = False
+    weak_ancestry["direct_sources"][0][
+        "source_normalized_artifacts_trusted"
+    ] = False
+    weak_ancestry["direct_sources"][0]["weak_source_ancestry"] = True
+    weak_ancestry["weak_source_ancestry"] = True
+    weak_semantic = {
+        key: value
+        for key, value in weak_ancestry.items()
+        if key != "ancestry_root"
+    }
+    weak_ancestry["ancestry_root"] = canonical_hash(weak_semantic)
+    weak_derivation = {
+        "discovery_capture_content_hashes": sorted(
+            row["source_content_hash"]
+            for row in weak_ancestry["direct_sources"]
+        )
+    }
+    weak_input_root = canonical_hash(
+        {
+            "leaf_profile": "supplemental",
+            **weak_derivation,
+            "source_ancestry": weak_ancestry,
+        }
+    )
+    weak_binding = cninfo_backfill._cninfo_source_binding(
+        phase="cninfo-inventory",
+        input_capture_content_hash=weak_input_root,
+        source_ancestry=weak_ancestry,
+        derivation=weak_derivation,
+    )
+    inventory_requests = [
+        replace(
+            request,
+            metadata=dict(request.metadata)
+            | {
+                "source_ancestry": weak_ancestry,
+                "source_binding": weak_binding,
+            },
+        )
+        for request in inventory_requests
+    ]
+    inventory_manifest = _publish_cninfo_capture(
+        tmp_path / "inventory",
+        phase="cninfo-inventory",
+        requests=inventory_requests,
+        normalizer=normalize_cninfo_inventory,
+        leaf_profile="supplemental",
+        input_capture_hash=weak_input_root,
+        announcement_leaf_id="corrections_201101",
+        signer=signer,
+    )
+    inventory_verdict = cninfo_backfill.validate_cninfo_governance(
+        inventory_manifest
+    )["cninfo_governance_qualification"]
+    assert inventory_verdict["source_lineage_complete"] is True
+    assert inventory_verdict["weak_source_ancestry"] is True
+    assert inventory_verdict["governed_evidence_eligible"] is False
+
+    _rows, document_requests, _document_input_root = build_cninfo_document_plan(
+        inventory_manifest,
+        include_years=[2011],
+    )
+    document_ancestry = document_requests[0].metadata["source_ancestry"]
+    assert document_ancestry["source_stage"] == "inventory_capture"
+    assert document_ancestry["direct_sources"][0][
+        "source_publication_signature_verified"
+    ] is True
+    assert document_ancestry["upstream_ancestry"][0][
+        "weak_source_ancestry"
+    ] is True
+    assert document_ancestry["weak_source_ancestry"] is True
+
+
+def test_cninfo_inventory_rejects_weak_ancestry_rewritten_as_strong(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(capture_backfill.os, "fsync", lambda _fd: None)
+    monkeypatch.setattr(capture_backfill, "verify_signature", lambda **_kwargs: None)
+    signer = _FastFixtureSigner()
+    _leaves, discovery_requests = build_cninfo_discovery_plan(
+        leaf_profile="supplemental"
+    )
+    discovery_manifest = _publish_cninfo_capture(
+        tmp_path / "discovery",
+        phase="cninfo-discovery",
+        requests=discovery_requests,
+        normalizer=normalize_cninfo_discovery,
+        leaf_profile="supplemental",
+        signer=signer,
+    )
+    _population, inventory_requests, input_root = build_cninfo_inventory_plan(
+        [discovery_manifest],
+        leaf_profile="supplemental",
+    )
+    original_ancestry = inventory_requests[0].metadata["source_ancestry"]
+    weak_ancestry = json.loads(json.dumps(original_ancestry))
+    weak_ancestry["direct_sources"][0][
+        "source_publication_signature_verified"
+    ] = False
+    weak_ancestry["direct_sources"][0][
+        "source_normalized_artifacts_trusted"
+    ] = False
+    weak_ancestry["direct_sources"][0]["weak_source_ancestry"] = True
+    weak_ancestry["weak_source_ancestry"] = True
+    weak_ancestry["ancestry_root"] = canonical_hash(
+        {
+            key: value
+            for key, value in weak_ancestry.items()
+            if key != "ancestry_root"
+        }
+    )
+    weak_derivation = {
+        "discovery_capture_content_hashes": sorted(
+            row["source_content_hash"]
+            for row in weak_ancestry["direct_sources"]
+        )
+    }
+    weak_input_root = canonical_hash(
+        {
+            "leaf_profile": "supplemental",
+            **weak_derivation,
+            "source_ancestry": weak_ancestry,
+        }
+    )
+    weak_binding = cninfo_backfill._cninfo_source_binding(
+        phase="cninfo-inventory",
+        input_capture_content_hash=weak_input_root,
+        source_ancestry=weak_ancestry,
+        derivation=weak_derivation,
+    )
+    weak_requests = [
+        replace(
+            request,
+            metadata=dict(request.metadata)
+            | {
+                "source_ancestry": weak_ancestry,
+                "source_binding": weak_binding,
+            },
+        )
+        for request in inventory_requests
+    ]
+    forged_strong = json.loads(json.dumps(weak_ancestry))
+    forged_strong["direct_sources"][0][
+        "source_publication_signature_verified"
+    ] = True
+    forged_strong["direct_sources"][0][
+        "source_normalized_artifacts_trusted"
+    ] = True
+    forged_strong["direct_sources"][0]["weak_source_ancestry"] = False
+    forged_strong["weak_source_ancestry"] = False
+    forged_strong["ancestry_root"] = canonical_hash(
+        {
+            key: value
+            for key, value in forged_strong.items()
+            if key != "ancestry_root"
+        }
+    )
+    forged_requests = [
+        replace(
+            request,
+            metadata=dict(request.metadata)
+            | {"source_ancestry": forged_strong},
+        )
+        for request in weak_requests
+    ]
+
+    with pytest.raises(ValueError, match="source_binding"):
+        _publish_cninfo_capture(
+            tmp_path / "forged_inventory",
+            phase="cninfo-inventory",
+            requests=forged_requests,
+            normalizer=normalize_cninfo_inventory,
+            leaf_profile="supplemental",
+            input_capture_hash=weak_input_root,
+            signer=signer,
+        )
+
+    assert input_root != weak_input_root
+
+
+def test_cninfo_inventory_normalizer_rejects_partial_profile_closure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(capture_backfill.os, "fsync", lambda _fd: None)
+    monkeypatch.setattr(capture_backfill, "verify_signature", lambda **_kwargs: None)
+    signer = _FastFixtureSigner()
+    _leaves, discovery_requests = build_cninfo_discovery_plan(
+        leaf_profile="supplemental",
+    )
+    discovery_manifest = _publish_cninfo_capture(
+        tmp_path / "discovery",
+        phase="cninfo-discovery",
+        requests=discovery_requests,
+        normalizer=normalize_cninfo_discovery,
+        leaf_profile="supplemental",
+        signer=signer,
+    )
+    _population, inventory_requests, input_root = build_cninfo_inventory_plan(
+        [discovery_manifest],
+        leaf_profile="supplemental",
+    )
+    partial_requests = [
+        request
+        for request in inventory_requests
+        if request.metadata.get("leaf_id") != "risk_warnings_201912"
+    ]
+    assert len(partial_requests) == len(inventory_requests) - 1
+
+    with pytest.raises(ValueError, match="request_closure"):
+        _publish_cninfo_capture(
+            tmp_path / "partial_inventory",
+            phase="cninfo-inventory",
+            requests=partial_requests,
+            normalizer=normalize_cninfo_inventory,
+            leaf_profile="supplemental",
+            input_capture_hash=input_root,
+            signer=signer,
+        )
 
 
 def test_csindex_discovery_uses_all_rebalance_topics_by_month() -> None:
@@ -333,7 +1097,7 @@ def test_cninfo_discovery_normalizer_archives_announcement_identity(tmp_path: Pa
     }
     terminal = {}
     for request, body in zip(requests, (org_body, list_body)):
-        wrapper, receipt = _official_wrapper(body, request.request_id)
+        wrapper, receipt = _official_wrapper(body, request)
         path = tmp_path / receipt["raw_envelope_relative_path"]
         path.parent.mkdir(exist_ok=True)
         path.write_text(json.dumps(wrapper), encoding="utf-8")
@@ -353,6 +1117,50 @@ def test_cninfo_discovery_normalizer_archives_announcement_identity(tmp_path: Pa
         "cninfo_announcement_inventory",
         "cninfo_page_coverage",
     }
+
+
+@pytest.mark.parametrize(
+    "envelope_overrides",
+    (
+        {"schema_version": "official_http_probe_envelope_v0"},
+        {"method": "GET"},
+        {"method": "post"},
+        {"url": "https://www.cninfo.com.cn/wrong"},
+        {"status_code": 201},
+        {"redirect_followed": True},
+        {"body_sha256": "0" * 64},
+    ),
+)
+def test_cninfo_page_replay_rejects_unbound_official_http_envelope(
+    tmp_path: Path,
+    envelope_overrides: dict[str, object],
+) -> None:
+    _leaves, requests = build_cninfo_discovery_plan(["st_delist_201201"])
+    terminal = {}
+    for request, body in zip(
+        requests,
+        (
+            {"stockList": [{"code": "600000"}]},
+            {"totalAnnouncement": 0, "announcements": None, "hasMore": False},
+        ),
+    ):
+        overrides = (
+            envelope_overrides
+            if request.metadata.get("case") == "cninfo_list"
+            else None
+        )
+        wrapper, receipt = _official_wrapper(
+            body,
+            request,
+            envelope_overrides=overrides,
+        )
+        path = tmp_path / receipt["raw_envelope_relative_path"]
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(json.dumps(wrapper), encoding="utf-8")
+        terminal[request.request_id] = receipt
+
+    with pytest.raises(ValueError, match="cninfo_official_http_envelope_invalid"):
+        normalize_cninfo_discovery(tmp_path, requests, terminal)
 
 
 def test_csindex_discovery_normalizer_detects_canonical_list_identity(tmp_path: Path) -> None:
@@ -377,7 +1185,7 @@ def test_csindex_discovery_normalizer_detects_canonical_list_identity(tmp_path: 
     }
     terminal = {}
     for request, body in zip(requests, (filter_body, list_body)):
-        wrapper, receipt = _official_wrapper(body, request.request_id)
+        wrapper, receipt = _official_wrapper(body, request)
         path = tmp_path / receipt["raw_envelope_relative_path"]
         path.parent.mkdir(exist_ok=True)
         path.write_text(json.dumps(wrapper), encoding="utf-8")
@@ -485,6 +1293,19 @@ def test_cninfo_document_transport_and_normalizer_bind_envelope_and_weak_ancestr
             "source_ancestry": _cninfo_source_ancestry(),
         },
     )
+    source_ancestry = request.metadata["source_ancestry"]
+    input_root, source_binding = _cninfo_document_binding(source_ancestry)
+    request = replace(
+        request,
+        metadata=dict(request.metadata) | {"source_binding": source_binding},
+    )
+    run_root, _identity = _write_cninfo_activity_context(
+        tmp_path,
+        [request],
+        phase="cninfo-documents",
+        input_capture_hash=input_root,
+        source_binding=source_binding,
+    )
     official_payload = {
         "schema_version": "official_http_probe_envelope_v1",
         "url": request.url,
@@ -532,21 +1353,310 @@ def test_cninfo_document_transport_and_normalizer_bind_envelope_and_weak_ancestr
         "raw_payload_sha256": hashlib.sha256(official).hexdigest(),
     }
     relative = f"raw_envelopes/{request.request_id}.json"
-    path = tmp_path / relative
+    path = run_root / relative
     path.parent.mkdir()
     path.write_text(json.dumps(wrapper), encoding="utf-8")
     normalize_cninfo_documents(
-        tmp_path,
+        run_root,
         [request],
-        {request.request_id: {"raw_envelope_relative_path": relative}},
+        {
+            request.request_id: {
+                "raw_envelope_relative_path": relative,
+                "status_code": 200,
+            }
+        },
     )
     manifest = json.loads(
-        (tmp_path / "normalized/normalized_manifest.json").read_text()
+        (run_root / "normalized/normalized_manifest.json").read_text()
     )
 
     assert manifest["schema_version"] == "cninfo_document_normalization_v2"
     assert manifest["source_ancestry"]["weak_source_ancestry"] is True
     assert "weak_source_acquisition_ancestry" in manifest["blockers"]
+
+    inconsistent_status = dict(official_payload) | {"status_code": 201}
+    inconsistent_raw = json.dumps(inconsistent_status, sort_keys=True).encode()
+    wrapper["raw_payload_base64"] = base64.b64encode(inconsistent_raw).decode()
+    wrapper["raw_payload_sha256"] = hashlib.sha256(inconsistent_raw).hexdigest()
+    path.write_text(json.dumps(wrapper), encoding="utf-8")
+    with pytest.raises(ValueError, match="cninfo_official_http_envelope_invalid"):
+        normalize_cninfo_documents(
+            run_root,
+            [request],
+            {
+                request.request_id: {
+                    "raw_envelope_relative_path": relative,
+                    "status_code": 200,
+                }
+            },
+        )
+
+
+def test_cninfo_new_document_normalization_rejects_missing_source_ancestry(
+    tmp_path: Path,
+) -> None:
+    body = b"%PDF-1.7\n" + b"x" * 64 + b"\nstartxref\n9\n%%EOF\n"
+    request = ProviderProbeRequest(
+        request_id="cninfo_document_new_without_ancestry",
+        provider="cninfo",
+        endpoint="announcement_document",
+        method="GET",
+        url="https://static.cninfo.com.cn/finalpage/2012-01-02/new.PDF",
+        disposition="bounded_backfill",
+        evidence_semantics="official_http_response_envelope",
+        expected_terminal_states=("positive",),
+        metadata={
+            "case": "cninfo_document",
+            "announcement_id": "new",
+            "announcement_time": 1325462400000,
+            "adjunct_url": "finalpage/2012-01-02/new.PDF",
+            "adjunct_size_kb": 1,
+        },
+    )
+    fixture_ancestry = _cninfo_source_ancestry()
+    fixture_input_root, fixture_binding = _cninfo_document_binding(
+        fixture_ancestry
+    )
+    run_root, _identity = _write_cninfo_activity_context(
+        tmp_path,
+        [request],
+        phase="cninfo-documents",
+        input_capture_hash=fixture_input_root,
+        source_binding=fixture_binding,
+    )
+    raw = json.dumps(
+        {
+            "schema_version": "official_http_probe_envelope_v1",
+            "url": request.url,
+            "method": "GET",
+            "status_code": 200,
+            "response_headers": {
+                "Content-Length": str(len(body)),
+                "Content-Type": "application/pdf",
+            },
+            "body_base64": base64.b64encode(body).decode(),
+            "body_sha256": hashlib.sha256(body).hexdigest(),
+            "redirect_followed": False,
+        },
+        sort_keys=True,
+    ).encode()
+    wrapper = {
+        "schema_version": "free_provider_backfill_raw_envelope_v1",
+        "request_id": request.request_id,
+        "raw_payload_base64": base64.b64encode(raw).decode(),
+        "raw_payload_sha256": hashlib.sha256(raw).hexdigest(),
+    }
+    relative = f"raw_envelopes/{request.request_id}.json"
+    path = run_root / relative
+    path.parent.mkdir()
+    path.write_text(json.dumps(wrapper), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="cninfo_document_source_ancestry_missing"):
+        normalize_cninfo_documents(
+            run_root,
+            [request],
+            {
+                request.request_id: {
+                    "raw_envelope_relative_path": relative,
+                    "status_code": 200,
+                }
+            },
+        )
+
+
+def test_cninfo_exact_legacy_2011_plan_keeps_v1_normalized_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert cninfo_backfill.CNINFO_LEGACY_2011_DOCUMENT_REQUEST_PLAN_HASH == (
+        "b666f4b60a308e74f60747e560e3c28725a0e6f17b2d2d83d572033c03861172"
+    )
+    assert cninfo_backfill.CNINFO_LEGACY_2011_DOCUMENT_ACTIVITY_ID.startswith(
+        "c8cf6651"
+    )
+    assert cninfo_backfill.CNINFO_LEGACY_2011_DOCUMENT_CONTRACT_ID.startswith(
+        "f958eab0"
+    )
+    assert (
+        cninfo_backfill.CNINFO_LEGACY_2011_DOCUMENT_INPUT_CAPTURE_HASH
+    ).startswith("69514a28")
+    assert (
+        cninfo_backfill.CNINFO_LEGACY_2011_DOCUMENT_IMPLEMENTATION_ROOT
+    ).startswith("85c0ff07")
+    body = b"%PDF-1.7\n" + b"x" * 64 + b"\nstartxref\n9\n%%EOF\n"
+    request = ProviderProbeRequest(
+        request_id="cninfo_document_legacy_fixture",
+        provider="cninfo",
+        endpoint="announcement_document",
+        method="GET",
+        url="https://static.cninfo.com.cn/finalpage/2011-01-04/legacy.PDF",
+        disposition="bounded_backfill",
+        evidence_semantics="official_http_response_envelope",
+        expected_terminal_states=("positive",),
+        metadata={
+            "case": "cninfo_document",
+            "announcement_id": "legacy",
+            "announcement_time": 1294093800000,
+            "adjunct_url": "finalpage/2011-01-04/legacy.PDF",
+            "adjunct_size_kb": 1,
+        },
+    )
+    fixture_ancestry = _cninfo_source_ancestry()
+    fixture_input_root, fixture_binding = _cninfo_document_binding(
+        fixture_ancestry
+    )
+    run_root, identity = _write_cninfo_activity_context(
+        tmp_path,
+        [request],
+        phase="cninfo-documents",
+        input_capture_hash=fixture_input_root,
+        source_binding=fixture_binding,
+        legacy=True,
+    )
+    for name, value in (
+        ("CNINFO_LEGACY_2011_DOCUMENT_ACTIVITY_ID", identity["activity_id"]),
+        ("CNINFO_LEGACY_2011_DOCUMENT_CONTRACT_ID", identity["contract_id"]),
+        (
+            "CNINFO_LEGACY_2011_DOCUMENT_REQUEST_PLAN_HASH",
+            identity["request_plan_hash"],
+        ),
+        (
+            "CNINFO_LEGACY_2011_DOCUMENT_INPUT_CAPTURE_HASH",
+            identity["input_capture_content_hash"],
+        ),
+        (
+            "CNINFO_LEGACY_2011_DOCUMENT_IMPLEMENTATION_ROOT",
+            identity["implementation_root"],
+        ),
+    ):
+        monkeypatch.setattr(cninfo_backfill, name, value)
+    raw = json.dumps(
+        {
+            "schema_version": "official_http_probe_envelope_v1",
+            "url": request.url,
+            "method": "GET",
+            "status_code": 200,
+            "response_headers": {
+                "Content-Length": str(len(body)),
+                "Content-Type": "application/pdf",
+            },
+            "body_base64": base64.b64encode(body).decode(),
+            "body_sha256": hashlib.sha256(body).hexdigest(),
+            "redirect_followed": False,
+        },
+        sort_keys=True,
+    ).encode()
+    wrapper = {
+        "schema_version": "free_provider_backfill_raw_envelope_v1",
+        "request_id": request.request_id,
+        "raw_payload_base64": base64.b64encode(raw).decode(),
+        "raw_payload_sha256": hashlib.sha256(raw).hexdigest(),
+    }
+    relative = f"raw_envelopes/{request.request_id}.json"
+    path = run_root / relative
+    path.parent.mkdir()
+    path.write_text(json.dumps(wrapper), encoding="utf-8")
+
+    normalize_cninfo_documents(
+        run_root,
+        [request],
+        {
+            request.request_id: {
+                "raw_envelope_relative_path": relative,
+                "status_code": 200,
+            }
+        },
+    )
+
+    expected_row = {
+        "announcement_id": "legacy",
+        "announcement_time": 1294093800000,
+        "adjunct_url": "finalpage/2011-01-04/legacy.PDF",
+        "document_format": "pdf",
+        "document_sha256": hashlib.sha256(body).hexdigest(),
+        "document_size_bytes": len(body),
+        "declared_adjunct_size_kb": 1,
+        "source_request_id": request.request_id,
+        "source_payload_sha256": wrapper["raw_payload_sha256"],
+        "content_length": str(len(body)),
+        "content_type": "application/pdf",
+    }
+    expected_index = (
+        json.dumps(
+            expected_row,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        + b"\n"
+    )
+    expected_manifest = {
+        "schema_version": "cninfo_document_normalization_v1",
+        "document_count": 1,
+        "document_index_sha256": hashlib.sha256(expected_index).hexdigest(),
+        "documents_extracted": False,
+        "raw_capture_contains_exact_document_bytes": True,
+        "pit_field_parsing_complete": False,
+        "blockers": ["corporate_action_pdf_field_parser_not_run"],
+    }
+    expected_manifest["content_hash"] = canonical_hash(expected_manifest)
+    expected_manifest_bytes = (
+        json.dumps(
+            expected_manifest,
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode()
+
+    assert (run_root / "normalized/document_index.jsonl").read_bytes() == expected_index
+    assert (
+        run_root / "normalized/normalized_manifest.json"
+    ).read_bytes() == expected_manifest_bytes
+    sealed_context = cninfo_backfill._cninfo_activity_context(
+        run_root,
+        [request],
+        expected_phase="cninfo-documents",
+        require_activity_root=True,
+    )
+    qualification = cninfo_backfill._cninfo_governance_qualification(
+        context=sealed_context,
+        phase="cninfo-documents",
+        normalized_manifest=expected_manifest,
+        publication_signature_verified=True,
+    )
+    assert qualification["source_lineage_complete"] is False
+    assert qualification["quarantined"] is True
+    assert qualification["governed_evidence_eligible"] is False
+    assert "legacy_2011_document_source_ancestry_incomplete" in qualification[
+        "blockers"
+    ]
+
+    clone_root, clone_identity = _write_cninfo_activity_context(
+        tmp_path / "clone",
+        [request],
+        phase="cninfo-documents",
+        input_capture_hash=fixture_input_root,
+        source_binding=fixture_binding,
+        legacy=True,
+    )
+    clone_path = clone_root / relative
+    clone_path.parent.mkdir()
+    clone_path.write_text(json.dumps(wrapper), encoding="utf-8")
+    assert clone_identity["request_plan_hash"] == identity["request_plan_hash"]
+    assert clone_identity["contract_id"] != identity["contract_id"]
+    with pytest.raises(ValueError, match="source_ancestry_missing"):
+        normalize_cninfo_documents(
+            clone_root,
+            [request],
+            {
+                request.request_id: {
+                    "raw_envelope_relative_path": relative,
+                    "status_code": 200,
+                }
+            },
+        )
 
 
 def test_cninfo_document_url_is_confined_to_official_static_host() -> None:
@@ -1028,6 +2138,36 @@ def test_csindex_attachment_identity_binds_shared_http_transport_module(
     assert csindex_implementation_root() != baseline
 
 
+def test_cninfo_identity_binds_capture_replay_helpers_and_page_limits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline = cninfo_implementation_root()
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(
+            cninfo_backfill,
+            "_captured_cninfo_pages",
+            lambda _path: {},
+        )
+        assert cninfo_implementation_root() != baseline
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(
+            cninfo_backfill,
+            "_nonnegative_int",
+            lambda _value: 0,
+        )
+        assert cninfo_implementation_root() != baseline
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(cninfo_backfill, "CNINFO_PAGE_SIZE", 31)
+        assert cninfo_implementation_root() != baseline
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(cninfo_backfill, "CNINFO_MAX_PAGES_PER_LEAF", 101)
+        assert cninfo_implementation_root() != baseline
+
+
 def test_csindex_attachment_transport_marks_html_block_as_waf() -> None:
     body = "\ufeff<html>访问被阻断</html>".encode()
     population = [
@@ -1116,7 +2256,7 @@ def test_cninfo_structured_empty_month_is_valid_negative_evidence(tmp_path: Path
         requests,
         ({"stockList": [{"code": "600000"}]}, {"totalAnnouncement": 0, "announcements": None, "hasMore": False}),
     ):
-        wrapper, receipt = _official_wrapper(body, request.request_id)
+        wrapper, receipt = _official_wrapper(body, request)
         path = tmp_path / receipt["raw_envelope_relative_path"]
         path.parent.mkdir(exist_ok=True)
         path.write_text(json.dumps(wrapper), encoding="utf-8")
@@ -1214,45 +2354,43 @@ def test_baostock_custom_history_checks_bind_rows_to_requested_code(
 
 def test_baostock_wire_validator_binds_actual_protocol_request_bytes() -> None:
     _population, requests = build_index_daily_plan()
-    request = requests[0].semantic()
-    wire_request = (
-        "00.9.30\x01000\x01000\x01query_history_k_data_plus\x01"
-        "sh.000300\x012012-01-01\x012019-12-31\x01"
-        + BAOSTOCK_FIELDS
-        + "\n"
-    ).encode()
-    wire_response = b"response<![CDATA[]]>\n"
-    exchange = {
-        "wire_request_base64": base64.b64encode(wire_request).decode(),
-        "request_sha256": hashlib.sha256(wire_request).hexdigest(),
-        "request_size_bytes": len(wire_request),
-        "socket_peer": ["1.2.3.4", 10030],
-        "wire_response_base64": base64.b64encode(wire_response).decode(),
-        "wire_response_sha256": hashlib.sha256(wire_response).hexdigest(),
-        "wire_size_bytes": len(wire_response),
-        "terminal_marker_present": True,
-    }
-    envelope = {
-        "schema_version": "baostock_wire_probe_envelope_v1",
-        "package_distribution_version": "0.9.3",
-        "client_protocol_version": "00.9.30",
-        "wire_exchanges": [exchange],
-    }
+    request = requests[0]
+    rows = [["2012-01-04", "sh.000300", *(["1"] * 9)]]
+    raw = _security_or_history_payload(
+        request, fields=BAOSTOCK_FIELDS.split(","), rows=rows
+    )
 
     _validate_baostock_wire_envelope(
-        json.dumps(envelope).encode(),
+        raw,
         expected_exchange_count=1,
-        request=request,
+        request=request.semantic(),
         terminal_state="positive",
     )
-    exchange["wire_request_base64"] = base64.b64encode(
-        wire_request.replace(b"sh.000300", b"sz.000001")
-    ).decode()
-    with pytest.raises(ValueError, match="wire_closure_invalid"):
+    envelope = json.loads(raw)
+    wrong_request = _baostock_request_frame(
+        "query_history_k_data_plus",
+        [
+            "anonymous",
+            "1",
+            "2000",
+            "sz.000001",
+            BAOSTOCK_FIELDS,
+            "2012-01-01",
+            "2019-12-31",
+            "d",
+            "3",
+        ],
+        message_type="95",
+    )
+    exchange = envelope["wire_exchanges"][0]
+    exchange["wire_request_base64"] = base64.b64encode(wrong_request).decode()
+    exchange["request_sha256"] = hashlib.sha256(wrong_request).hexdigest()
+    exchange["request_size_bytes"] = len(wrong_request)
+    with pytest.raises(ValueError, match="parameter_mismatch"):
         _validate_baostock_wire_envelope(
             json.dumps(envelope).encode(),
             expected_exchange_count=1,
-            request=request,
+            request=request.semantic(),
             terminal_state="positive",
         )
 
@@ -1276,7 +2414,7 @@ def test_baostock_normalizer_rejects_archived_rows_for_another_code(
     _population, requests = build_turnover_plan(securities)
     request = requests[0]
     wrapper, receipt = _baostock_wrapper(
-        request_id=request.request_id,
+        request=request,
         fields=["date", "code", "turn"],
         rows=[["2012-01-04", "sz.000001", "1.2"]],
     )
@@ -1328,3 +2466,506 @@ def test_baostock_reconciliation_identity_binds_transport_and_wire_decoder(
         baostock_reconciliation.RecoveringBaostockTransport,
         baostock_reconciliation._baostock_logical_rows,
     }.issubset(set(seen))
+
+
+def test_baostock_snapshot_identity_binds_contract_protocol_and_output_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline = baostock_reconciliation_implementation_root()
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(
+            baostock_reconciliation,
+            "SECURITY_SNAPSHOT_APPROVED_OPEN_DATE_ROOT",
+            "f" * 64,
+        )
+        assert baostock_reconciliation_implementation_root() != baseline
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(
+            baostock_reconciliation,
+            "baostock_wire_protocol_root",
+            lambda: "e" * 64,
+        )
+        assert baostock_reconciliation_implementation_root() != baseline
+
+    original_write_row = baostock_reconciliation._write_row
+
+    def changed_write_row(handle: object, row: object) -> None:
+        original_write_row(handle, row)  # type: ignore[arg-type]
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(
+            baostock_reconciliation, "_write_row", changed_write_row
+        )
+        assert baostock_reconciliation_implementation_root() != baseline
+
+
+def _write_security_snapshot_calendar(
+    path: Path, *, count: int = 1_945
+) -> list[str]:
+    values = [
+        (date(2012, 1, 4) + timedelta(days=offset)).strftime("%Y%m%d")
+        for offset in range(max(count - 1, 0))
+    ]
+    if count:
+        values.append("20191231")
+    path.write_text(
+        "".join(
+            json.dumps({"trade_date": value, "is_open": True}) + "\n"
+            for value in values
+        ),
+        encoding="utf-8",
+    )
+    return values
+
+
+def _approve_security_snapshot_calendar(
+    monkeypatch: pytest.MonkeyPatch, path: Path
+) -> list[str]:
+    values = _write_security_snapshot_calendar(path)
+    monkeypatch.setattr(
+        baostock_reconciliation,
+        "SECURITY_SNAPSHOT_APPROVED_OPEN_DATE_ROOT",
+        canonical_hash(values),
+    )
+    monkeypatch.setattr(
+        baostock_reconciliation,
+        "SECURITY_SNAPSHOT_APPROVED_POPULATION_ROOT",
+        canonical_hash(["20111230", *values]),
+    )
+    return values
+
+
+def _narrow_security_snapshot_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        baostock_reconciliation, "SECURITY_SNAPSHOT_OPEN_DATE_COUNT", 0
+    )
+    monkeypatch.setattr(
+        baostock_reconciliation, "SECURITY_SNAPSHOT_REQUEST_COUNT", 1
+    )
+    monkeypatch.setattr(
+        baostock_reconciliation,
+        "SECURITY_SNAPSHOT_APPROVED_OPEN_DATE_ROOT",
+        canonical_hash([]),
+    )
+    monkeypatch.setattr(
+        baostock_reconciliation,
+        "SECURITY_SNAPSHOT_APPROVED_POPULATION_ROOT",
+        canonical_hash(["20111230"]),
+    )
+
+
+def _security_snapshot_raw_payload(
+    request: ProviderProbeRequest,
+    *,
+    rows: list[list[str]],
+    wire_date: str | None = None,
+    operation: str | None = None,
+    parsed_items: list[list[str]] | None = None,
+    response_override: bytes | None = None,
+) -> bytes:
+    fields = ["code", "tradeStatus", "code_name"]
+    return _security_or_history_payload(
+        request,
+        fields=fields,
+        rows=rows,
+        parsed_items=parsed_items,
+        operation_override=operation,
+        response_override=response_override,
+        query_overrides={"date": wire_date} if wire_date else None,
+    )
+
+
+def _archive_security_snapshot_raw(
+    root: Path,
+    request: ProviderProbeRequest,
+    *,
+    rows: list[list[str]],
+) -> dict[str, object]:
+    payload = _security_snapshot_raw_payload(request, rows=rows)
+    wrapper = {
+        "schema_version": "free_provider_backfill_raw_envelope_v1",
+        "request_id": request.request_id,
+        "raw_payload_base64": base64.b64encode(payload).decode(),
+        "raw_payload_sha256": hashlib.sha256(payload).hexdigest(),
+    }
+    relative = f"raw_envelopes/{request.request_id}.json"
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(wrapper), encoding="utf-8")
+    return {
+        "raw_envelope_relative_path": relative,
+        "terminal_state": "positive",
+    }
+
+
+def test_baostock_security_snapshot_plan_is_exact_and_content_addressed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calendar = tmp_path / "calendar.jsonl"
+    _approve_security_snapshot_calendar(monkeypatch, calendar)
+
+    population, requests = build_security_snapshot_plan(calendar)
+    first_root = canonical_hash([request.semantic() for request in requests])
+    calendar.write_text(
+        "".join(reversed(calendar.read_text(encoding="utf-8").splitlines(True))),
+        encoding="utf-8",
+    )
+    repeated_population, repeated_requests = build_security_snapshot_plan(calendar)
+
+    assert len(population) == len(requests) == 1_946
+    assert population[:2] == ["20111230", "20120104"]
+    assert population[-1] == "20191231"
+    assert repeated_population == population
+    assert canonical_hash(
+        [request.semantic() for request in repeated_requests]
+    ) == first_root
+    assert requests[0].url.endswith("date=2011-12-30")
+    assert requests[0].metadata == {
+        "case": "all_stock",
+        "snapshot_query_date": "20111230",
+        "provider_code_name_pit_proven": False,
+        "alias_adjudicated": False,
+        "usage": "provider_reconciliation_only",
+    }
+    assert requests[0].expected_terminal_states == ("positive",)
+    assert "snapshot_query_date_bound" in requests[0].required_checks
+
+
+def test_baostock_security_snapshot_plan_rejects_incomplete_calendar(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calendar = tmp_path / "calendar.jsonl"
+    _approve_security_snapshot_calendar(monkeypatch, calendar)
+    _write_security_snapshot_calendar(calendar, count=1_944)
+
+    with pytest.raises(
+        ValueError, match="baostock_security_snapshot_calendar_unexpected"
+    ):
+        build_security_snapshot_plan(calendar)
+
+
+def test_baostock_security_snapshot_plan_rejects_wrong_same_count_calendar(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calendar = tmp_path / "calendar.jsonl"
+    values = _approve_security_snapshot_calendar(monkeypatch, calendar)
+    values[100] = "20180101"
+    calendar.write_text(
+        "".join(
+            json.dumps({"trade_date": value, "is_open": True}) + "\n"
+            for value in values
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError, match="baostock_security_snapshot_calendar_unexpected"
+    ):
+        build_security_snapshot_plan(calendar)
+
+
+def test_baostock_security_snapshot_transport_uses_exact_sdk_call_and_fields(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calendar = tmp_path / "calendar.jsonl"
+    _approve_security_snapshot_calendar(monkeypatch, calendar)
+    _population, requests = build_security_snapshot_plan(calendar)
+    request = requests[0]
+    called: list[str] = []
+
+    class Result:
+        fields = ["code", "tradeStatus", "code_name"]
+        error_code = "0"
+        error_msg = ""
+
+    class FakeBaostock:
+        def query_all_stock(self, day: str) -> Result:
+            called.append(day)
+            return Result()
+
+    transport = BaostockProbeTransport()
+    transport._bs = FakeBaostock()
+    transport._ensure_session = lambda _timeout: None  # type: ignore[method-assign]
+    transport._collect = lambda _result: (  # type: ignore[method-assign]
+        [["sh.600000", "1", "浦发银行"]],
+        [{"page": 0, "row_count": 1, "provider_page_size": 2000}],
+        True,
+    )
+
+    observation = transport(request, 3)
+
+    assert called == ["2011-12-30"]
+    assert observation.terminal_state == "positive"
+    assert observation.checks["all_stock_fields_exact"] is True
+    assert observation.checks["snapshot_query_date_bound"] is True
+    assert observation.checks["unique_provider_code"] is True
+    assert observation.checks["all_stock_values_nonempty"] is True
+    assert observation.checks["trade_status_domain_valid"] is True
+
+
+def test_baostock_security_snapshot_wire_binding_rejects_another_query_date(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calendar = tmp_path / "calendar.jsonl"
+    _approve_security_snapshot_calendar(monkeypatch, calendar)
+    _population, requests = build_security_snapshot_plan(calendar)
+    request = requests[0]
+
+    with pytest.raises(ValueError, match="request_binding_invalid"):
+        _validate_baostock_wire_envelope(
+            _security_snapshot_raw_payload(
+                request,
+                rows=[["sh.600000", "1", "浦发银行"]],
+                wire_date="2012-01-04",
+            ),
+            expected_exchange_count=1,
+            request=request.semantic(),
+            terminal_state="positive",
+        )
+
+
+def test_baostock_security_snapshot_wire_binding_rejects_same_date_wrong_operation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calendar = tmp_path / "calendar.jsonl"
+    _approve_security_snapshot_calendar(monkeypatch, calendar)
+    _population, requests = build_security_snapshot_plan(calendar)
+    request = requests[0]
+
+    with pytest.raises(ValueError, match="request_binding_invalid"):
+        _validate_baostock_wire_envelope(
+            _security_snapshot_raw_payload(
+                request,
+                rows=[["sh.600000", "1", "浦发银行"]],
+                operation="query_hs300_stocks",
+            ),
+            expected_exchange_count=1,
+            request=request.semantic(),
+            terminal_state="positive",
+        )
+
+
+def test_baostock_security_snapshot_wire_replay_rejects_parsed_item_conflict(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calendar = tmp_path / "calendar.jsonl"
+    _approve_security_snapshot_calendar(monkeypatch, calendar)
+    _population, requests = build_security_snapshot_plan(calendar)
+    request = requests[0]
+
+    with pytest.raises(ValueError, match="logical_binding_invalid"):
+        _validate_baostock_wire_envelope(
+            _security_snapshot_raw_payload(
+                request,
+                rows=[["sh.600000", "1", "浦发银行"]],
+                parsed_items=[["sz.000001", "1", "伪造解析行"]],
+            ),
+            expected_exchange_count=1,
+            request=request.semantic(),
+            terminal_state="positive",
+        )
+
+
+def test_baostock_security_snapshot_wire_replay_rejects_bad_response_frame(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calendar = tmp_path / "calendar.jsonl"
+    _approve_security_snapshot_calendar(monkeypatch, calendar)
+    _population, requests = build_security_snapshot_plan(calendar)
+    request = requests[0]
+
+    with pytest.raises(ValueError, match="wire_response"):
+        _validate_baostock_wire_envelope(
+            _security_snapshot_raw_payload(
+                request,
+                rows=[["sh.600000", "1", "浦发银行"]],
+                response_override=b"not-a-baostock-frame<![CDATA[]]>\n",
+            ),
+            expected_exchange_count=1,
+            request=request.semantic(),
+            terminal_state="positive",
+        )
+
+
+def test_baostock_security_snapshot_partial_request_set_cannot_publish(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calendar = tmp_path / "calendar.jsonl"
+    values = _approve_security_snapshot_calendar(monkeypatch, calendar)
+    population, requests = build_security_snapshot_plan(calendar)
+    signer = EphemeralReceiptSigner.generate()
+
+    with pytest.raises(
+        ValueError, match="baostock_security_snapshot_request_count_invalid"
+    ):
+        normalize_security_snapshots(tmp_path, requests[:1], {})
+    with pytest.raises(
+        ValueError, match="baostock_security_snapshot_contract_closure_invalid"
+    ):
+        baostock_reconciliation._contract(
+            phase="security-snapshots",
+            output_root=tmp_path / "capture",
+            signer=signer,
+            population_root=canonical_hash(population),
+            request_count=1,
+            delay=0,
+            timeout=3,
+            retries=0,
+            permission_context_id="human-approved-fixture",
+        )
+    assert len(values) == 1_945
+
+
+def test_baostock_security_snapshot_signed_capture_replays_identically(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calendar = tmp_path / "calendar.jsonl"
+    _approve_security_snapshot_calendar(monkeypatch, calendar)
+    population, requests = build_security_snapshot_plan(calendar)
+    request = requests[0]
+    _narrow_security_snapshot_fixture(monkeypatch)
+    rows = [
+        ["sz.000001", "1", "平安银行"],
+        ["sh.600000", "1", "浦发银行"],
+    ]
+    raw = _security_snapshot_raw_payload(request, rows=rows)
+    signer = EphemeralReceiptSigner.generate()
+    contract = baostock_reconciliation._contract(
+        phase="security-snapshots",
+        output_root=tmp_path / "capture",
+        signer=signer,
+        population_root=canonical_hash([population[0]]),
+        request_count=1,
+        delay=0,
+        timeout=3,
+        retries=0,
+        permission_context_id="human-approved-fixture",
+    )
+
+    def transport(
+        captured_request: ProviderProbeRequest,
+        _timeout: float,
+    ) -> ProviderProbeObservation:
+        assert captured_request == request
+        return ProviderProbeObservation(
+            terminal_state="positive",
+            raw_payload=raw,
+            row_count=2,
+            status_code=0,
+            checks={name: True for name in request.required_checks},
+            transport_exchange_count=1,
+        )
+
+    published = run_free_provider_backfill(
+        contract,
+        [request],
+        transport=transport,
+        signer=signer,
+        normalizer=normalize_security_snapshots,
+        runtime_implementation_root=(
+            baostock_reconciliation_implementation_root()
+        ),
+    )
+    validated = validate_free_provider_backfill(published["manifest_path"])
+    replayed, replay_root = replay_normalized_artifacts(
+        validated["manifest_path"],
+        normalizer=normalize_security_snapshots,
+        required_roles=(
+            "security_snapshot_reconciliation",
+            "security_snapshot_coverage",
+            "normalized_manifest",
+        ),
+    )
+    replayed_rows = [
+        json.loads(line)
+        for line in replayed["security_snapshot_reconciliation"]
+        .decode()
+        .splitlines()
+    ]
+    manifest = json.loads(replayed["normalized_manifest"])
+
+    assert validated["status"] == "succeeded"
+    assert validated["publication_signature_verified"] is True
+    assert [row["provider_code"] for row in replayed_rows] == [
+        "sh.600000",
+        "sz.000001",
+    ]
+    assert all(row["provider_code_name_pit_proven"] is False for row in replayed_rows)
+    assert all(row["alias_adjudicated"] is False for row in replayed_rows)
+    assert manifest["usage"] == "provider_reconciliation_only"
+    assert manifest["raw_market_data_rewritten"] is False
+    assert len(replay_root) == 64
+
+
+@pytest.mark.parametrize(
+    ("rows", "reason"),
+    [
+        (
+            [["sh.600000", "1", "浦发银行"], ["sh.600000", "1", "重复"]],
+            "snapshot_provider_code_duplicate",
+        ),
+        ([["sh.600000", "2", "浦发银行"]], "snapshot_trade_status_invalid"),
+        ([["sh.600000", "1", ""]], "snapshot_row_value_empty_or_width_invalid"),
+    ],
+)
+def test_baostock_security_snapshot_normalizer_rejects_invalid_rows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    rows: list[list[str]],
+    reason: str,
+) -> None:
+    calendar = tmp_path / "calendar.jsonl"
+    _approve_security_snapshot_calendar(monkeypatch, calendar)
+    _population, requests = build_security_snapshot_plan(calendar)
+    request = requests[0]
+    _narrow_security_snapshot_fixture(monkeypatch)
+    receipt = _archive_security_snapshot_raw(tmp_path, request, rows=rows)
+
+    with pytest.raises(ValueError, match=reason):
+        normalize_security_snapshots(
+            tmp_path,
+            [request],
+            {request.request_id: receipt},
+        )
+
+
+def test_baostock_security_snapshot_normalizer_rejects_query_date_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calendar = tmp_path / "calendar.jsonl"
+    _approve_security_snapshot_calendar(monkeypatch, calendar)
+    _population, requests = build_security_snapshot_plan(calendar)
+    _narrow_security_snapshot_fixture(monkeypatch)
+    request = replace(
+        requests[0],
+        url=(
+            "baostock://public-api.baostock.com/all_stock?date=2012-01-04"
+        ),
+    )
+    receipt = _archive_security_snapshot_raw(
+        tmp_path,
+        request,
+        rows=[["sh.600000", "1", "浦发银行"]],
+    )
+
+    with pytest.raises(ValueError, match="snapshot_query_date_binding_invalid"):
+        normalize_security_snapshots(
+            tmp_path,
+            [request],
+            {request.request_id: receipt},
+        )

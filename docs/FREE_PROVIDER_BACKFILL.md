@@ -78,12 +78,27 @@ normalized 输出明确标为不可信；下游只能从签名 raw 重新运行�
 - 交易日历请求一次；
 - 每只证券请求 `2011-12-01` 至 `2019-12-31` 的未复权日线，跨度低于 2,000
   行 page cap；
+- 另按 `2011-12-30` seed 和 1,945 个研究期开市日调用
+  `query_all_stock(day)`，形成 1,946 个全市场证券代码/交易状态快照；历史简称只作
+  provider reconciliation，不能作为 PIT 身份，代码别名在独立裁决前不得改写行情；
 - 原始 socket response 完整保存；
 - 从归档字节重放 `isST`、`tradestatus`，生成 ST 正状态、保守停牌日、逐日
   provider state 和覆盖 staging。
 
 Baostock 的 `isST` 不能区分 ST/*ST/退市风险，`tradestatus` 不提供盘中 timing；
-因此 normalized manifest 明确保留这两个 blocker。
+`query_all_stock` 返回的 `code_name` 也没有历史发布时点。normalized manifest 因此
+明确保留这些 blocker。匿名 session 返回 `10001001` 时，只能由 Baostock 恢复
+adapter 转换为带供应商上下文的 bounded retry；采集引擎仍会再次核对
+`provider=baostock`，不会把原始或转换后的同名错误码当成其他供应商可重试错误。
+
+`security-snapshots` 同时锁定 1,945 个 open date 的内容根
+`2b277e1c...55abbc6` 和 seed + open dates 的 population root
+`f171e595...3b47f2`。计划、合同和 normalizer 三层都重建 1,946 请求闭包；只传一个
+请求或用相同数量的错误日期都不能发布。v2 Baostock 重放直接解析真实 21-byte
+protocol header、operation/参数、压缩 frame 和 `record`；SDK `parsed` 只用于对账，
+不能提供数据。未压缩响应的 CRC 会重算；type `96` 的官方客户端不验证且实测 trailer
+不等于标准 raw-frame CRC，因此这里只验证 declared compressed bytes、zlib 和 trailer
+结构，不伪造一个不存在的 CRC 语义。
 
 ### 巨潮资讯
 
@@ -94,11 +109,25 @@ Baostock 的 `isST` 不能区分 ST/*ST/退市风险，`tradestatus` 不提供�
 - 上交所监管停复牌；
 - 深交所监管停复牌。
 
+首期补充 profile 另锁定补充更正、配股、首次发行、退市整理、增发、股权变动和
+风险提示。`base` 与 `supplemental` 是两个不可变 leaf profile；inventory 输入必须
+精确覆盖所选 profile 的全部月份叶和唯一 org-map 请求，混入另一 profile、缺叶或
+多叶都会阻断。
+
 先抓每个叶的第一页并冻结 `totalAnnouncement`，再生成完整连续 page plan。任何月
 超过 100 页必须进一步拆分，不把前端 cap 视为完整。完整 inventory 重算稳定 total、
 连续页、末页 `hasMore=false`、叶内公告 ID 唯一和 ID 总数。
 
 PDF 计划只能从通过分页验证的唯一公告 ID/URL inventory 生成。
+Discovery、inventory 和 documents 之间携带递归、内容寻址的 source ancestry；
+每一级都重新验证 provider、phase、scope、profile、HTTP method/URL/status、禁止
+redirect 及 raw/body hash。上游 v1 或不可信 normalized 证据会永久传播
+`weak_source_ancestry=true`，不能由下游 v2 签名洗白。旧的 ancestry-free inventory
+不能创建任何新文档计划；仅当前已在运行的 2011 固定 request-plan hash 可按显式
+legacy 规则完成和重放。
+该 legacy 代次即使 publication bytes 和签名完整，CNINFO 专用治理裁决仍固定返回
+`source_lineage_complete=false`、`quarantined=true`、
+`governed_evidence_eligible=false`；字节完整性不能替代来源血缘。
 
 ### 中证指数官网
 
@@ -116,6 +145,8 @@ chain。validator 同时核对请求页与 provider `currentPage`，防止越界
 ```bash
 auto-alpha data free-backfill --plan-only --pretty
 auto-alpha data free-cninfo-backfill --phase cninfo-discovery --plan-only --pretty
+auto-alpha data free-cninfo-backfill --phase cninfo-discovery \
+  --leaf-profile supplemental --plan-only --pretty
 auto-alpha data free-csindex-backfill --phase csindex-discovery --plan-only --pretty
 ```
 
@@ -125,6 +156,10 @@ auto-alpha data free-csindex-backfill --phase csindex-discovery --plan-only --pr
 auto-alpha data free-backfill \
   --allow-network \
   --permission-context-id human_authorization_20260816_free_domestic_missing_data_backfill_v1
+
+uv run --with baostock==0.9.3 python -m \
+  auto_alpha.data.ingestion.pipeline.ashare.free_provider_baostock_reconciliation \
+  --phase security-snapshots --allow-network --pretty
 ```
 
 巨潮和中证采用发现 → 完整清单 → 文档/详情三段式计划。后一段必须通过
