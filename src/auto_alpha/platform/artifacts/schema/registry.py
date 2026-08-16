@@ -2313,6 +2313,27 @@ ARTIFACT_SCHEMA_REGISTRY: dict[str, ArtifactSchemaDefinition] = {
         ],
         ["local_development_bundle.json"],
     ),
+    "ashare_provider_capability_probe": _definition(
+        "ashare_provider_capability_probe",
+        [
+            "schema_version",
+            "generation_id",
+            "content_hash",
+            "mode",
+            "probe_id",
+            "contract_id",
+            "request_plan_hash",
+            "request_count",
+            "terminal_counts",
+            "endpoint_dispositions",
+            "status",
+            "raw_evidence",
+            "resource_usage",
+            "files",
+            "safety",
+        ],
+        ["provider_probe_evidence.json"],
+    ),
     "fixed_factor_replay_evidence": _definition(
         "fixed_factor_replay_evidence",
         [

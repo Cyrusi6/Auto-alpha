@@ -56,7 +56,29 @@ Baostock（日状态与交叉值）
 
 ## 2026-08-16 本机 bounded probe
 
-以下只是能力探测，不是准入证据，也没有启动批量回填：
+本次有限探测已按锁定请求计划执行完毕，三份最新 generation 均为
+`status=succeeded`。这里的 **capability probe success** 只表示探测任务完成、
+正值/空值/错误响应均已留档，并能给出下一步 handoff disposition；它不表示
+Data Admission 通过，也不授权激活 Data Admission Profile、批量回填、研究搜索、
+留出集、模拟盘或实盘。三份 manifest 的所有安全授权位均保持 `false`。
+
+证据归档根：
+`/home/lijunsi/data/auto-alpha/ashare_lake/provider_probes/free_domestic_missing_data_v2`
+
+| 来源 | 最新 generation / content hash | 有限请求终态 | endpoint handoff disposition | 能力边界 |
+| --- | --- | --- | --- | --- |
+| Baostock | `provider_probe_a42ce345190d186195e58901` / `a42ce345190d186195e589017c4f6474833ffd989724f2ed189578b5708cea46` | 68 次：64 positive、4 empty、0 error；72 次 wire exchange | `history_state_daily`、`trade_calendar` → `bounded_backfill`；`hs300_snapshot`、`dividend_reconciliation`、`adjust_factor_reconciliation` → `provider_cannot_prove` | 日状态与交易日历的有限接口几何成立；历史成分快照不能证明公告可见时点，分红聚合值和复权因子不能证明历史 revision/vintage |
+| 巨潮资讯 | `provider_probe_6e2996cbc39647342f586c99` / `6e2996cbc39647342f586c9934b459b21ac880daee2d2bcd10ab54d6479bca0e` | 25 次：23 positive、2 empty、0 error | 证券/org 映射、全市场 ST/退市与停复牌列表、公司行为公告及 PDF → `bounded_backfill`；证券级停牌过滤 → `provider_cannot_prove` | 2012 ST/退市类别 17 页共 483 个唯一公告并以 `hasMore=false` 终止；`600005` 的证券级监管停牌过滤却返回结构化空值，不能伪装成逐证券覆盖 |
+| 中证指数官网 | `provider_probe_23792b43c34646306a4868d7` / `23792b43c34646306a4868d7adde2c7f7f25328a03e43e39b00e794faf53af3b` | 18 次：17 positive、1 empty、0 error | 公告过滤、2012 分页列表和 2011–2019 沪深300检索 → `bounded_backfill`；公告详情 → `provider_cannot_prove` | 本轮详情正文、发布日期和 `2012 年 7 月 2 日` 生效语义均成功解析；但此前同 IP 的详情连续访问产生过已归档 WAF HTTP 403，且尚未完成全事件链，故不升级详情接口 |
+
+三份最终合同绑定同一个实现根
+`edd8c99731f87bb792885e163757f642e5016e7254df40310462ef453a54b3e5`，离线重验均通过，
+重复调用命中同一 generation 且不再访问网络。因此，“有限探测成功”与“所有接口
+可补采”是两个不同结论。尤其是中证公告详情和巨潮证券级停牌过滤仍然 fail closed；
+在这些路径获得可重复证据、Provider Acquisition
+Contract 经人工激活、并完成逐义务回执与 exact-cover 验证前，CSI300 PIT
+成分链和正式数据准入继续保持 blocked。以下接口观察是这次归档探测及其前置
+侦察的解释性摘要，不可单独作为 Admission Receipt：
 
 ### Baostock 0.9.3 / client 00.9.30
 
@@ -161,15 +183,18 @@ JQData 不能替代中证公告的 `known_at`，也不能提供历史 factor vin
 
 ### 6. 每个 probe 的唯一结论
 
-每个接口只允许落入一个终态：
+与 [Data Admission Contract](../DATA_ADMISSION_CONTRACT.md#11-bounded-provider-probe-handoff)
+一致，每个接口只允许落入一个正式 handoff disposition：
 
-- `bounded_backfill_eligible`
-- `reconciliation_only`
+- `local_repair`
+- `bounded_backfill`
 - `permission_missing`
 - `provider_cannot_prove`
-- `schema_or_pit_conflict`
 
-只有 `bounded_backfill_eligible` 能进入人工待激活的 Provider Acquisition Contract。其余状态保留证据并继续阻断，不用降低 Profile 门槛来迁就免费源。
+`bounded_backfill` 只说明可以起草一项明确边界的补采工作，不是补采授权，更不是
+Data Admission Verdict。真正执行仍须由人工激活 Provider Acquisition Contract；
+`local_repair` 仅允许指定本地规范化/重建工作，另外两种状态继续阻断。schema 或
+PIT 冲突是形成 `provider_cannot_prove` 的原因证据，不是第五种 disposition。
 
 ## 对用户的实际建议
 

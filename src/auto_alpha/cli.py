@@ -18,6 +18,10 @@ class CommandSpec:
 COMMANDS = {
     ("data", "sync"): CommandSpec("auto_alpha.data.ingestion.pipeline.run_pipeline", "Synchronize governed A-share data"),
     ("data", "validate"): CommandSpec("auto_alpha.data.quality.source_validation.run_smoke", "Validate a governed data source"),
+    ("data", "provider-probe"): CommandSpec(
+        "auto_alpha.data.ingestion.pipeline.ashare.run_provider_probe",
+        "Run a bounded non-admissible provider capability probe",
+    ),
     ("data", "land"): CommandSpec("auto_alpha.data.lake.catalog.run_landing", "Publish raw landing evidence"),
     ("data", "index"): CommandSpec("auto_alpha.data.lake.catalog.run_index", "Build the raw-data index"),
     ("data", "backfill"): CommandSpec("auto_alpha.data.ingestion.repair.run_backfill", "Run governed backfill"),

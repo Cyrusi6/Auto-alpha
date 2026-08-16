@@ -2,6 +2,17 @@
 
 This file records only the current A-share architecture and recent governed milestones. Detailed historical implementation is available through Git history rather than duplicated task-by-task prose.
 
+## 2026-08-16 — Bounded free-provider capability probe
+
+### Outcome
+
+- Added a dedicated `data provider-probe` seam for Baostock, the CSI official announcement service, and CNINFO. It owns a finite credential-free request plan, host allowlist, time/response/page bounds, single-flight official HTTP access, a safer Baostock socket transport, and explicit positive/empty/error terminal semantics; it does not reuse the governed Tushare canary or the canonical-value provider interface.
+- Persisted the exact contract and request plan before transport, then fsync'd attempt intents and every provider-observable response. Published generations bind raw bytes, response and file hashes, request semantics, parser checks, endpoint dispositions, implementation identity, and the append-only journal; validation independently recomputes expectation results and journal-to-plan/raw bindings.
+- Added identity-preserving recovery for interrupted runs, including Baostock calendar/repeat state and CNINFO cross-page state. Verified succeeded generations are cacheable without transport, blocked generations remain retryable, corrupt current evidence and output symlinks fail before network, and archived replay cannot upgrade a handoff disposition.
+- Locked the formal handoff vocabulary to `local_repair`, `bounded_backfill`, `permission_missing`, and `provider_cannot_prove`. Seven authorization flags are structurally fixed to `false`; a capability success cannot create an Admission Receipt, activate a Profile, run a bulk backfill, open a holdout, start Alpha search, or authorize paper/live trading.
+- Executed the bounded plan against real public sources and retained the complete raw evidence outside Git. Final succeeded generations are Baostock `provider_probe_a42ce345190d186195e58901` (68 logical requests/72 wire exchanges), CNINFO `provider_probe_6e2996cbc39647342f586c99` (25 requests), and CSI `provider_probe_23792b43c34646306a4868d7` (18 requests), all bound to implementation root `edd8c99731f87bb792885e163757f642e5016e7254df40310462ef453a54b3e5`; offline validation and no-network cache replays passed. Baostock daily state/calendar and bounded CNINFO/CSI announcement-list paths are eligible for a separately specified `bounded_backfill`; Baostock historical CSI300/dividend/adjust-factor paths, CNINFO security-filtered suspension lookup, and CSI detail remain `provider_cannot_prove`. CSI details succeeded after cooldown, but the prior WAF HTTP 403 evidence and unfinished full event chain prevent an upgrade.
+- Kept formal data admission blocked. The probe does not establish full-market exact cover, CSI300 publication/effective event closure, security-specific suspension coverage, corporate-action version causality, or adjustment-factor revision vintages; those require an approved Provider Acquisition Contract and independently verified coverage evidence.
+
 ## 2026-08-16 — Fixed-factor vertical development replay
 
 ### Outcome
