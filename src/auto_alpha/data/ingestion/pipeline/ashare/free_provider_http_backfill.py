@@ -40,6 +40,7 @@ from .provider_probe import (
     ProviderProbeObservation,
     ProviderProbeRequest,
 )
+from . import run_provider_probe as run_provider_probe_module
 from .run_provider_probe import (
     CNINFO_HEADERS,
     CNINFO_QUERY_URL,
@@ -63,6 +64,7 @@ DEFAULT_PERMISSION_CONTEXT = (
 )
 CNINFO_PAGE_SIZE = 30
 CNINFO_MAX_PAGES_PER_LEAF = 100
+CNINFO_DOCUMENT_BODY_MAX_BYTES = 96 * 1024 * 1024
 CNINFO_LEAF_KINDS = (
     (
         "st_delist",
@@ -89,6 +91,19 @@ CNINFO_LEAF_KINDS = (
         "jgjg_sz",
     ),
 )
+CNINFO_SUPPLEMENTAL_LEAF_KINDS = (
+    ("corrections", "category_bcgz_szsh;", "szse", ""),
+    ("rights_issues", "category_pg_szsh;", "szse", ""),
+    ("initial_offerings", "category_sf_szsh;", "szse", ""),
+    ("delisting_period", "category_tszlq_szsh;", "szse", ""),
+    ("secondary_offerings", "category_zf_szsh;", "szse", ""),
+    ("equity_changes", "category_gqbd_szsh;", "szse", ""),
+    ("risk_warnings", "category_fxts_szsh;", "szse", ""),
+)
+CNINFO_LEAF_PROFILES = {
+    "base": CNINFO_LEAF_KINDS,
+    "supplemental": CNINFO_SUPPLEMENTAL_LEAF_KINDS,
+}
 
 
 class CNINFODocumentTransport:
@@ -97,7 +112,7 @@ class CNINFODocumentTransport:
     def __init__(self, *, minimum_delay_seconds: float) -> None:
         self._transport = OfficialHttpProbeTransport(
             minimum_delay_seconds=minimum_delay_seconds,
-            max_response_bytes=96 * 1024 * 1024,
+            max_response_bytes=CNINFO_DOCUMENT_BODY_MAX_BYTES,
         )
 
     def __call__(
@@ -110,10 +125,25 @@ class CNINFODocumentTransport:
             }
         )
         observation = self._transport(probe_request, timeout_seconds)
-        if observation.status_code != 200:
+        if observation.terminal_state == "error" or observation.status_code != 200:
             return observation
-        official = json.loads(observation.raw_payload)
-        body = base64.b64decode(str(official.get("body_base64") or ""), validate=True)
+        try:
+            official = json.loads(observation.raw_payload)
+            body = base64.b64decode(
+                str(official.get("body_base64") or ""), validate=True
+            )
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            return ProviderProbeObservation(
+                terminal_state="error",
+                raw_payload=observation.raw_payload,
+                row_count=None,
+                status_code=observation.status_code,
+                error_code="cninfo_document_http_envelope_invalid",
+                diagnostics=dict(observation.diagnostics)
+                | {"envelope_error_type": type(exc).__name__},
+                checks={"http_envelope_decoded": False},
+                transport_exchange_count=observation.transport_exchange_count,
+            )
         document_format = _document_format(
             body,
             adjunct_url=str(request.metadata.get("adjunct_url") or ""),
@@ -138,8 +168,18 @@ class CNINFODocumentTransport:
         adjunct_size_reasonable = _adjunct_size_reasonable(
             request.metadata.get("adjunct_size_kb"), len(body)
         )
+        envelope_checks = {
+            "http_envelope_schema_exact": official.get("schema_version")
+            == "official_http_probe_envelope_v1",
+            "request_method_bound": official.get("method") == "GET",
+            "redirect_not_followed": official.get("redirect_followed") is False,
+            "request_url_bound": str(official.get("url") or "") == request.url,
+            "body_sha256_matches": str(official.get("body_sha256") or "")
+            == hashlib.sha256(body).hexdigest(),
+        }
         accepted = bool(
             body
+            and all(envelope_checks.values())
             and document_format
             and not blocked_document
             and content_length_matches
@@ -170,7 +210,8 @@ class CNINFODocumentTransport:
                 "actual_size_bytes": len(body),
                 "declared_adjunct_size_kb": request.metadata.get("adjunct_size_kb"),
             },
-            checks={
+            checks=envelope_checks
+            | {
                 "nonempty_document": bool(body),
                 "recognized_document_format": document_format
                 in {"pdf", "html", "javascript"}
@@ -187,12 +228,14 @@ class CNINFODocumentTransport:
 def build_cninfo_discovery_plan(
     include_leaf_ids: Sequence[str] | None = None,
     include_years: Sequence[int] | None = None,
+    *,
+    leaf_profile: str = "base",
 ) -> tuple[list[dict[str, str]], list[ProviderProbeRequest]]:
     selected = {str(value) for value in include_leaf_ids or ()}
     selected_years = {int(value) for value in include_years or ()}
     leaves = [
         leaf
-        for leaf in _cninfo_month_leaves()
+        for leaf in _cninfo_month_leaves(leaf_profile)
         if (not selected or leaf["leaf_id"] in selected)
         and (
             not selected_years
@@ -208,6 +251,8 @@ def build_cninfo_discovery_plan(
 
 def build_cninfo_inventory_plan(
     discovery_captures: Sequence[str | Path],
+    *,
+    leaf_profile: str = "base",
 ) -> tuple[list[dict[str, Any]], list[ProviderProbeRequest], str]:
     if not discovery_captures:
         raise ValueError("cninfo_discovery_capture_missing")
@@ -224,7 +269,7 @@ def build_cninfo_inventory_plan(
             prior = page_ones.setdefault(request_id, payload)
             if prior != payload:
                 raise ValueError(f"cninfo_discovery_duplicate_conflict:{request_id}")
-    leaves = _cninfo_month_leaves()
+    leaves = _cninfo_month_leaves(leaf_profile)
     requests: list[ProviderProbeRequest] = [_cninfo_org_map_request()]
     resolved: list[dict[str, Any]] = []
     for leaf in leaves:
@@ -250,7 +295,12 @@ def build_cninfo_inventory_plan(
             for page in range(1, page_count + 1)
         )
     input_root = canonical_hash(
-        sorted(str(row["content_hash"]) for row in validated_rows)
+        {
+            "leaf_profile": leaf_profile,
+            "discovery_capture_content_hashes": sorted(
+                str(row["content_hash"]) for row in validated_rows
+            ),
+        }
     )
     return resolved, requests, input_root
 
@@ -262,6 +312,35 @@ def build_cninfo_document_plan(
     validated = validate_free_provider_backfill(inventory_capture)
     if validated.get("status") != "succeeded":
         raise ValueError("cninfo_inventory_capture_blocked")
+    source_root = Path(str(validated["manifest_path"])).parent
+    source_contract = read_json(source_root / "activity_contract.json")
+    source_scope = dict(source_contract.get("scope") or {})
+    source_adapter = str(
+        (source_contract.get("adapter_identity") or {}).get("adapter") or ""
+    )
+    if (
+        source_contract.get("provider") != "cninfo"
+        or not source_adapter.startswith("cninfo_cninfo-inventory_")
+        or source_scope.get("date_start") != "20120101"
+        or source_scope.get("date_end") != "20191231"
+        or source_scope.get("request_start") != "20110101"
+        or source_scope.get("request_end") != "20191231"
+    ):
+        raise ValueError("cninfo_document_source_contract_invalid")
+    source_signed = validated.get("publication_signature_verified") is True
+    source_ancestry = {
+        "source_capture_schema": validated.get("schema_version"),
+        "source_generation_id": validated.get("generation_id"),
+        "source_content_hash": validated.get("content_hash"),
+        "source_contract_id": validated.get("contract_id"),
+        "source_contract_content_hash": canonical_hash(source_contract),
+        "source_provider": source_contract.get("provider"),
+        "source_adapter": source_adapter,
+        "source_scope": source_scope,
+        "source_publication_signature_verified": source_signed,
+        "source_normalized_artifacts_trusted": source_signed,
+        "weak_source_ancestry": not source_signed,
+    }
     replayed, replay_root = replay_normalized_artifacts(
         validated["manifest_path"],
         normalizer=normalize_cninfo_inventory,
@@ -307,6 +386,11 @@ def build_cninfo_document_plan(
             evidence_semantics="official_http_response_envelope",
             expected_terminal_states=("positive",),
             required_checks=(
+                "http_envelope_schema_exact",
+                "request_method_bound",
+                "redirect_not_followed",
+                "request_url_bound",
+                "body_sha256_matches",
                 "nonempty_document",
                 "recognized_document_format",
                 "content_length_matches",
@@ -320,6 +404,7 @@ def build_cninfo_document_plan(
                 "announcement_time": row.get("announcement_time"),
                 "adjunct_url": row["adjunct_url"],
                 "adjunct_size_kb": row.get("adjunct_size_kb"),
+                "source_ancestry": source_ancestry,
             },
         )
         for announcement_id, row in sorted(unique.items())
@@ -328,6 +413,7 @@ def build_cninfo_document_plan(
         {
             "capture_content_hash": validated["content_hash"],
             "normalized_replay_root": replay_root,
+            "source_ancestry": source_ancestry,
             "implementation_root": _implementation_root(),
         }
     )
@@ -368,6 +454,20 @@ def normalize_cninfo_documents(
     output = run_root / "normalized"
     output.mkdir(exist_ok=True)
     index_path = output / "document_index.jsonl"
+    ancestry_rows = [request.metadata.get("source_ancestry") for request in requests]
+    source_ancestry = ancestry_rows[0] if ancestry_rows else None
+    if any(row != source_ancestry for row in ancestry_rows):
+        raise ValueError("cninfo_document_source_ancestry_mixed")
+    if source_ancestry is not None and (
+        not isinstance(source_ancestry, Mapping)
+        or source_ancestry.get("source_provider") != "cninfo"
+        or not isinstance(source_ancestry.get("weak_source_ancestry"), bool)
+        or source_ancestry.get("source_publication_signature_verified")
+        is not (not source_ancestry["weak_source_ancestry"])
+        or source_ancestry.get("source_normalized_artifacts_trusted")
+        is not (not source_ancestry["weak_source_ancestry"])
+    ):
+        raise ValueError("cninfo_document_source_ancestry_invalid")
     count = 0
     with index_path.open("wb") as handle:
         for request in requests:
@@ -387,7 +487,14 @@ def normalize_cninfo_documents(
                 for key, value in (official.get("response_headers") or {}).items()
             }
             if (
-                document_format is None
+                official.get("schema_version")
+                != "official_http_probe_envelope_v1"
+                or official.get("method") != "GET"
+                or official.get("redirect_followed") is not False
+                or str(official.get("url") or "") != request.url
+                or str(official.get("body_sha256") or "")
+                != hashlib.sha256(body).hexdigest()
+                or document_format is None
                 or block_reason is not None
                 or not _content_length_matches(
                     response_headers.get("content-length"), len(body)
@@ -427,8 +534,12 @@ def normalize_cninfo_documents(
         handle.flush()
         os.fsync(handle.fileno())
     manifest_path = output / "normalized_manifest.json"
-    manifest = {
-        "schema_version": "cninfo_document_normalization_v1",
+    manifest: dict[str, Any] = {
+        "schema_version": (
+            "cninfo_document_normalization_v2"
+            if source_ancestry is not None
+            else "cninfo_document_normalization_v1"
+        ),
         "document_count": count,
         "document_index_sha256": sha256_file(index_path),
         "documents_extracted": False,
@@ -436,6 +547,10 @@ def normalize_cninfo_documents(
         "pit_field_parsing_complete": False,
         "blockers": ["corporate_action_pdf_field_parser_not_run"],
     }
+    if source_ancestry is not None:
+        manifest["source_ancestry"] = dict(source_ancestry)
+        if source_ancestry["weak_source_ancestry"]:
+            manifest["blockers"].append("weak_source_acquisition_ancestry")
     manifest["content_hash"] = canonical_hash(manifest)
     _atomic_json(manifest_path, manifest)
     return (
@@ -621,14 +736,17 @@ def _normalize_cninfo_pages(
     )
 
 
-def _cninfo_month_leaves() -> list[dict[str, str]]:
+def _cninfo_month_leaves(leaf_profile: str = "base") -> list[dict[str, str]]:
+    kinds = CNINFO_LEAF_PROFILES.get(leaf_profile)
+    if kinds is None:
+        raise ValueError("cninfo_leaf_profile_unknown")
     leaves: list[dict[str, str]] = []
     for year in range(2011, 2020):
         for month in range(1, 13):
             last_day = calendar.monthrange(year, month)[1]
             start = f"{year:04d}-{month:02d}-01"
             end = f"{year:04d}-{month:02d}-{last_day:02d}"
-            for kind, category, column, plate in CNINFO_LEAF_KINDS:
+            for kind, category, column, plate in kinds:
                 leaf_id = f"{kind}_{year:04d}{month:02d}"
                 leaves.append(
                     {
@@ -933,14 +1051,20 @@ def _contract(
     max_retries: int,
     max_total_bytes: int,
     permission_context_id: str,
+    leaf_profile: str,
 ) -> FreeProviderBackfillContract:
     adapter_identity = {
         "adapter": f"cninfo_{phase}_signed_http_capture_v1",
         "http": "python_urllib_no_redirect_v1",
         "implementation_root": _implementation_root(),
+        "leaf_profile": leaf_profile,
     }
     if input_capture_hash:
         adapter_identity["input_capture_content_hash"] = input_capture_hash
+    if phase == "cninfo-documents":
+        adapter_identity["document_body_max_bytes"] = (
+            CNINFO_DOCUMENT_BODY_MAX_BYTES
+        )
     return FreeProviderBackfillContract(
         activity_name=f"free_domestic_cninfo_{phase}_2011_2019_v1",
         provider="cninfo",
@@ -958,7 +1082,9 @@ def _contract(
             max_requests=request_count * (max_retries + 1),
             max_wire_exchanges=request_count * (max_retries + 1),
             max_response_bytes=(
-                96 * 1024 * 1024 if phase == "cninfo-documents" else 64 * 1024 * 1024
+                132 * 1024 * 1024
+                if phase == "cninfo-documents"
+                else 64 * 1024 * 1024
             ),
             max_total_response_bytes=max_total_bytes,
             timeout_seconds=timeout,
@@ -974,6 +1100,8 @@ def _implementation_root() -> str:
         {
             "discovery_plan": inspect.getsource(build_cninfo_discovery_plan),
             "inventory_plan": inspect.getsource(build_cninfo_inventory_plan),
+            "month_leaf_plan": inspect.getsource(_cninfo_month_leaves)
+            + inspect.getsource(_cninfo_leaf_request),
             "document_plan": inspect.getsource(build_cninfo_document_plan),
             "page_normalizer": inspect.getsource(_normalize_cninfo_pages),
             "document_normalizer": inspect.getsource(normalize_cninfo_documents),
@@ -990,6 +1118,14 @@ def _implementation_root() -> str:
                 _validate_inventory_announcement_dates
             ),
             "official_http_transport": inspect.getsource(OfficialHttpProbeTransport),
+            "official_http_transport_module_sha256": sha256_file(
+                Path(run_provider_probe_module.__file__)
+            ),
+            "cninfo_leaf_profiles": {
+                name: [list(row) for row in rows]
+                for name, rows in sorted(CNINFO_LEAF_PROFILES.items())
+            },
+            "cninfo_document_body_max_bytes": CNINFO_DOCUMENT_BODY_MAX_BYTES,
         }
     )
 
@@ -1006,6 +1142,12 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     parser.add_argument("--input-capture", action="append")
+    parser.add_argument(
+        "--leaf-profile",
+        choices=tuple(CNINFO_LEAF_PROFILES),
+        default="base",
+        help="Lock the CNINFO category family for discovery/inventory.",
+    )
     parser.add_argument(
         "--leaf-id",
         action="append",
@@ -1039,16 +1181,22 @@ def main(argv: list[str] | None = None) -> int:
         population, requests = build_cninfo_discovery_plan(
             args.leaf_id,
             args.year,
+            leaf_profile=args.leaf_profile,
         )
         normalizer = normalize_cninfo_discovery
         max_total_bytes = 2 * 1024 * 1024 * 1024
     elif args.phase == "cninfo-inventory":
         if not args.input_capture:
             raise SystemExit("--input-capture is required for cninfo-inventory")
-        population, requests, input_hash = build_cninfo_inventory_plan(args.input_capture)
+        population, requests, input_hash = build_cninfo_inventory_plan(
+            args.input_capture,
+            leaf_profile=args.leaf_profile,
+        )
         normalizer = normalize_cninfo_inventory
         max_total_bytes = 8 * 1024 * 1024 * 1024
     else:
+        if args.leaf_profile != "base":
+            raise SystemExit("--leaf-profile is only valid for discovery/inventory")
         if not args.input_capture or len(args.input_capture) != 1:
             raise SystemExit("--input-capture is required for cninfo-documents")
         population, requests, input_hash = build_cninfo_document_plan(
@@ -1102,6 +1250,11 @@ def main(argv: list[str] | None = None) -> int:
         max_retries=args.max_retries,
         max_total_bytes=max_total_bytes,
         permission_context_id=args.permission_context_id,
+        leaf_profile=(
+            args.leaf_profile
+            if args.phase in {"cninfo-discovery", "cninfo-inventory"}
+            else "inventory_bound"
+        ),
     )
     if args.plan_only:
         print(

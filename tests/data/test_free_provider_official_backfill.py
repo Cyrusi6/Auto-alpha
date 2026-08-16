@@ -47,6 +47,7 @@ from auto_alpha.data.ingestion.pipeline.ashare.free_provider_csindex_backfill im
     normalize_csindex_discovery,
 )
 from auto_alpha.data.ingestion.pipeline.ashare.free_provider_http_backfill import (
+    CNINFODocumentTransport,
     _cninfo_document_url,
     _adjunct_size_reasonable,
     _content_length_matches,
@@ -55,6 +56,7 @@ from auto_alpha.data.ingestion.pipeline.ashare.free_provider_http_backfill impor
     _document_format,
     _document_structure_valid,
     build_cninfo_discovery_plan,
+    normalize_cninfo_documents,
     normalize_cninfo_discovery,
 )
 from auto_alpha.data.ingestion.pipeline.ashare.provider_probe import (
@@ -89,6 +91,13 @@ def _attachment_source_ancestry(*, weak: bool = False) -> dict[str, object]:
         "source_normalized_artifacts_trusted": not weak,
         "weak_source_ancestry": weak,
     }
+
+
+def _cninfo_source_ancestry(*, weak: bool = True) -> dict[str, object]:
+    ancestry = _attachment_source_ancestry(weak=weak)
+    ancestry["source_provider"] = "cninfo"
+    ancestry["source_adapter"] = "cninfo_cninfo-inventory_signed_http_capture_v1"
+    return ancestry
 
 
 def _official_wrapper(body: dict, request_id: str) -> tuple[dict, dict]:
@@ -157,6 +166,33 @@ def test_cninfo_discovery_uses_four_monthly_leaf_families_without_annual_cap() -
     params = parse_qs(sample.body.decode())
     assert params["seDate"] == ["2012-02-01~2012-02-29"]
     assert params["pageSize"] == ["30"]
+
+
+def test_cninfo_supplemental_profile_locks_seven_monthly_category_families() -> None:
+    leaves, requests = build_cninfo_discovery_plan(
+        leaf_profile="supplemental"
+    )
+
+    assert len(leaves) == 9 * 12 * 7
+    assert len(requests) == len(leaves) + 1
+    assert {row["kind"] for row in leaves} == {
+        "corrections",
+        "rights_issues",
+        "initial_offerings",
+        "delisting_period",
+        "secondary_offerings",
+        "equity_changes",
+        "risk_warnings",
+    }
+    sample = next(
+        row
+        for row in requests
+        if row.request_id == "cninfo_rights_issues_201202_page_001"
+    )
+    params = parse_qs(sample.body.decode())
+    assert params["category"] == ["category_pg_szsh;"]
+    with pytest.raises(ValueError, match="leaf_filter_unknown"):
+        build_cninfo_discovery_plan(["rights_issues_201202"])
 
 
 def test_csindex_discovery_uses_all_rebalance_topics_by_month() -> None:
@@ -412,6 +448,105 @@ def test_cninfo_document_evidence_checks_size_headers_and_structure() -> None:
         announcement_id="123",
         announcement_time=1325347200000,
     ) is False
+
+
+def test_cninfo_document_transport_and_normalizer_bind_envelope_and_weak_ancestry(
+    tmp_path: Path,
+) -> None:
+    body = b"%PDF-1.7\n" + b"x" * 64 + b"\nstartxref\n0\n%%EOF\n"
+    request = ProviderProbeRequest(
+        request_id="cninfo_document_42",
+        provider="cninfo",
+        endpoint="announcement_document",
+        method="GET",
+        url="https://static.cninfo.com.cn/finalpage/2012-01-02/42.PDF",
+        disposition="bounded_backfill",
+        evidence_semantics="official_http_response_envelope",
+        expected_terminal_states=("positive",),
+        required_checks=(
+            "http_envelope_schema_exact",
+            "request_method_bound",
+            "redirect_not_followed",
+            "request_url_bound",
+            "body_sha256_matches",
+            "nonempty_document",
+            "recognized_document_format",
+            "content_length_matches",
+            "content_type_compatible",
+            "document_structure_valid",
+            "adjunct_size_reasonable",
+        ),
+        metadata={
+            "case": "cninfo_document",
+            "announcement_id": "42",
+            "announcement_time": 1325462400000,
+            "adjunct_url": "finalpage/2012-01-02/42.PDF",
+            "adjunct_size_kb": 1,
+            "source_ancestry": _cninfo_source_ancestry(),
+        },
+    )
+    official_payload = {
+        "schema_version": "official_http_probe_envelope_v1",
+        "url": request.url,
+        "method": "GET",
+        "status_code": 200,
+        "response_headers": {
+            "Content-Length": str(len(body)),
+            "Content-Type": "application/pdf",
+        },
+        "body_base64": base64.b64encode(body).decode(),
+        "body_sha256": hashlib.sha256(body).hexdigest(),
+        "redirect_followed": False,
+    }
+    official = json.dumps(official_payload, sort_keys=True).encode()
+    base_observation = ProviderProbeObservation(
+        terminal_state="positive",
+        raw_payload=official,
+        row_count=1,
+        status_code=200,
+        transport_exchange_count=1,
+    )
+    transport = CNINFODocumentTransport(minimum_delay_seconds=0)
+    transport._transport = lambda _request, _timeout: base_observation
+
+    observed = transport(request, 3)
+    assert observed.terminal_state == "positive"
+    assert all(observed.checks.values())
+
+    redirected_payload = dict(official_payload) | {"redirect_followed": True}
+    transport._transport = lambda _request, _timeout: ProviderProbeObservation(
+        terminal_state="positive",
+        raw_payload=json.dumps(redirected_payload, sort_keys=True).encode(),
+        row_count=1,
+        status_code=200,
+        transport_exchange_count=1,
+    )
+    redirected = transport(request, 3)
+    assert redirected.terminal_state == "error"
+    assert redirected.checks["redirect_not_followed"] is False
+
+    wrapper = {
+        "schema_version": "free_provider_backfill_raw_envelope_v1",
+        "request_id": request.request_id,
+        "raw_payload_base64": base64.b64encode(official).decode(),
+        "raw_payload_sha256": hashlib.sha256(official).hexdigest(),
+    }
+    relative = f"raw_envelopes/{request.request_id}.json"
+    path = tmp_path / relative
+    path.parent.mkdir()
+    path.write_text(json.dumps(wrapper), encoding="utf-8")
+    normalize_cninfo_documents(
+        tmp_path,
+        [request],
+        {request.request_id: {"raw_envelope_relative_path": relative}},
+    )
+    manifest = json.loads(
+        (tmp_path / "normalized/normalized_manifest.json").read_text()
+    )
+
+    assert manifest["schema_version"] == "cninfo_document_normalization_v2"
+    assert manifest["source_ancestry"]["weak_source_ancestry"] is True
+    assert "weak_source_acquisition_ancestry" in manifest["blockers"]
 
 
 def test_cninfo_document_url_is_confined_to_official_static_host() -> None:

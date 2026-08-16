@@ -219,6 +219,38 @@ GET、原 URL、禁止 redirect、Content-Length、MIME、文件 magic、body ha
 HTML/WAF。128 MiB body cap 是合同身份的一部分；超限响应保存安全响应头、读取前缀
 大小/哈希、64 KiB 样本哈希和真实 exchange count 后停止，不会丢成零交换异常。
 
+第一片真实附件已发布为
+`free_provider_backfill_88c03e4dcce007aef3b092af`：439/439 positive、0 error、
+439 个 wire exchange、33,876,978 bytes 签名响应 evidence。独立无网络重放得到 439
+个附件索引、163 个 blocked reference 及 root
+`76c9cc511a0776731f460c716a461b8ed95df1f927bbc8f37d56933f0b2afd98`。
+manifest 仍明确携带 `weak_source_acquisition_ancestry`、
+`csi300_attachment_semantic_parser_not_run`，`pit_membership_authorized=false`。
+
+附件命名审计还发现一类官方旧格式 `YYYYMMDD<index-codes>2cons.xls[x]`。其中 146
+个 URL 的前八位是合法研究期日期，但旧通用 token 规则因日期后紧接数字而保守阻断，
+包括关键 `201511302cons.xls` 与 `201605302cons.xls`。它们将以单独内容寻址的
+legacy-cons slice 补抓，不能通过放宽通用数字解析规则混入第一片 generation。
+
+### CNINFO supplemental 类别
+
+base profile 继续只表示既有 ST/退市、权益分派/限制措施、沪市停复牌、深市停复牌
+四族。新增 `supplemental` profile 独立锁定 7×108=756 个 category×month leaves：
+
+- `category_bcgz_szsh;` 补充更正；
+- `category_pg_szsh;` 配股；
+- `category_sf_szsh;` 首发；
+- `category_tszlq_szsh;` 退市整理期；
+- `category_zf_szsh;` 增发；
+- `category_gqbd_szsh;` 股权变动；
+- `category_fxts_szsh;` 风险提示。
+
+discovery 与 inventory 合同显式绑定 `leaf_profile`，不能用 base capture 满足
+supplemental 缺叶。document 请求记录上游 provider、adapter、scope、schema、contract、
+generation 和 publication-signature 状态；v1 上游只能 value-only。文档 transport 与
+normalizer同时重算 envelope schema、GET、原 URL、no redirect、body SHA-256、长度、
+MIME、文件结构和 WAF，shared HTTP module hash 也进入实现身份。
+
 ### 长连接过期
 
 全量 security-basic 首次运行在 `600035.SH` 收到 Baostock `10001001 用户未登录`。
