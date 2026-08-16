@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,11 @@ from auto_alpha.platform.governance.network import broker, gateway
 from auto_alpha.platform.governance.network.authority import normalize_ordered_keys, publish_candidate_checkpoint
 from auto_alpha.platform.governance.network.broker import request_from_checkpoint
 from auto_alpha.platform.governance.network.contracts import CANARY
+from auto_alpha.platform.governance.network.signing import (
+    PersistentReceiptSigner,
+    ReceiptSigningError,
+    verify_signature,
+)
 
 
 def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -167,6 +174,135 @@ def test_gateway_success_and_second_call_recover_without_post(
     second = gateway.execute_operator_authorized_single_canary(**kwargs)
     assert first.acceptance["content_hash"] == second.acceptance["content_hash"]
     assert counters == {"credential": 1, "post": 1}
+
+
+def test_persistent_receipt_signer_is_atomically_created_and_reopened(
+    tmp_path: Path,
+) -> None:
+    key_path = tmp_path / "signing" / "receipt-key.pem"
+
+    created = PersistentReceiptSigner.open_or_create(key_path)
+    reopened = PersistentReceiptSigner.open_or_create(key_path)
+    loaded = PersistentReceiptSigner.load(key_path)
+
+    assert key_path.stat().st_mode & 0o777 == 0o600
+    assert reopened.public_key_pem == created.public_key_pem
+    assert loaded.public_key_pem == created.public_key_pem
+    payload = b"durable coverage receipt"
+    signature = loaded.sign(payload)
+    verify_signature(
+        public_key_pem=created.public_key_pem,
+        payload=payload,
+        signature_b64=signature,
+    )
+
+
+def test_persistent_receipt_signer_rejects_symlink_and_broad_permissions(
+    tmp_path: Path,
+) -> None:
+    key_path = tmp_path / "receipt-key.pem"
+    PersistentReceiptSigner.open_or_create(key_path)
+    key_path.chmod(0o644)
+
+    with pytest.raises(ReceiptSigningError, match="receipt_signing_key_permissions_invalid"):
+        PersistentReceiptSigner.load(key_path)
+    with pytest.raises(ReceiptSigningError, match="receipt_signing_key_permissions_invalid"):
+        PersistentReceiptSigner.open_or_create(key_path)
+
+    key_path.chmod(0o600)
+    link = tmp_path / "receipt-key-link.pem"
+    link.symlink_to(key_path)
+    with pytest.raises(ReceiptSigningError, match="receipt_signing_key_symlink_forbidden"):
+        PersistentReceiptSigner.load(link)
+    with pytest.raises(ReceiptSigningError, match="receipt_signing_key_symlink_forbidden"):
+        PersistentReceiptSigner.open_or_create(link)
+    assert key_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_persistent_receipt_signer_concurrent_creation_has_one_identity(
+    tmp_path: Path,
+) -> None:
+    key_path = tmp_path / "receipt-key.pem"
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        public_keys = list(
+            executor.map(
+                lambda _ordinal: PersistentReceiptSigner.open_or_create(
+                    key_path
+                ).public_key_pem,
+                range(4),
+            )
+        )
+
+    assert len(set(public_keys)) == 1
+    assert key_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_persistent_receipt_signer_rejects_hardlinked_private_key(
+    tmp_path: Path,
+) -> None:
+    key_path = tmp_path / "receipt-key.pem"
+    PersistentReceiptSigner.open_or_create(key_path)
+    alias = tmp_path / "receipt-key-alias.pem"
+    os.link(key_path, alias)
+
+    with pytest.raises(ReceiptSigningError, match="receipt_signing_key_hardlink_forbidden"):
+        PersistentReceiptSigner.load(key_path)
+    with pytest.raises(ReceiptSigningError, match="receipt_signing_key_hardlink_forbidden"):
+        PersistentReceiptSigner.open_or_create(key_path)
+
+
+@pytest.mark.parametrize(
+    "arguments,error",
+    [
+        (
+            [
+                "genpkey",
+                "-algorithm",
+                "EC",
+                "-pkeyopt",
+                "ec_paramgen_curve:P-256",
+            ],
+            "receipt_signing_key_not_valid_rsa_private_key",
+        ),
+        (
+            [
+                "genpkey",
+                "-algorithm",
+                "RSA",
+                "-pkeyopt",
+                "rsa_keygen_bits:1024",
+            ],
+            "receipt_signing_key_rsa_size_invalid",
+        ),
+    ],
+)
+def test_persistent_receipt_signer_rejects_non_rsa_or_weak_key(
+    tmp_path: Path, arguments: list[str], error: str
+) -> None:
+    key_path = tmp_path / "unsafe-key.pem"
+    generated = subprocess.run(
+        ["openssl", *arguments], capture_output=True, check=True
+    ).stdout
+    key_path.write_bytes(generated)
+    key_path.chmod(0o600)
+
+    with pytest.raises(ReceiptSigningError, match=error):
+        PersistentReceiptSigner.load(key_path)
+
+
+def test_persistent_receipt_signer_rejects_ambiguous_private_key_pem(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "source-key.pem"
+    PersistentReceiptSigner.open_or_create(source_path)
+    ambiguous_path = tmp_path / "ambiguous-key.pem"
+    ambiguous_path.write_bytes(source_path.read_bytes() + b"unexpected trailing bytes\n")
+    ambiguous_path.chmod(0o600)
+
+    with pytest.raises(
+        ReceiptSigningError, match="receipt_signing_key_pem_structure_invalid"
+    ):
+        PersistentReceiptSigner.load(ambiguous_path)
 
 
 def test_gateway_has_no_separately_callable_private_post_boundary() -> None:

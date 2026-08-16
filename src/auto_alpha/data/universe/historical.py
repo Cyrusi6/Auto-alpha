@@ -202,7 +202,7 @@ def build_lifecycle_mask(securities: Iterable[dict[str, Any]], ts_codes: list[st
         delisted = str(row.get("delist_date") or "99999999")
         if not listed:
             continue
-        mask[stock_index] = np.asarray([listed <= date < delisted for date in trade_dates], dtype=np.bool_)
+        mask[stock_index] = np.asarray([listed <= date <= delisted for date in trade_dates], dtype=np.bool_)
     return mask
 
 

@@ -107,10 +107,8 @@ def _active_reason(
         return False, "st_excluded", age
     if security.list_status == "P" and not include_paused:
         return False, "paused", age
-    if security.delist_date and trade_date >= security.delist_date:
+    if security.delist_date and trade_date > security.delist_date:
         return False, "delisted", age
-    if security.list_status == "D" and not include_delisted_history and security.delist_date:
-        return False, "delisted_status", age
     return True, "active", age
 
 

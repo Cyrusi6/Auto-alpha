@@ -47,6 +47,7 @@ def test_coverage_plan_respects_lifecycle_and_inactive_dataset_roles() -> None:
     ] == [
         ("st_status_daily", "security", "000001.SZ", "20190102", "20190102"),
         ("st_status_daily", "security", "000001.SZ", "20190103", "20190103"),
+        ("st_status_daily", "security", "000001.SZ", "20190104", "20190104"),
     ]
 
 

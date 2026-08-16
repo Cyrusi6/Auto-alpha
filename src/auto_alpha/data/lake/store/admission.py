@@ -2973,7 +2973,7 @@ def _security_day_obligations(
                 raise AdmissionVerificationError("data_admission_trading_date_invalid")
             if not (scope.date_start <= trade_date <= coverage_end_date):
                 continue
-            if trade_date < security.list_date or (delist_date is not None and trade_date >= delist_date):
+            if trade_date < security.list_date or (delist_date is not None and trade_date > delist_date):
                 continue
             semantic = {
                 "dataset": dataset,

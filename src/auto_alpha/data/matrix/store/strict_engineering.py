@@ -728,7 +728,7 @@ def _build_lifecycle(
         list_date = str(row["list_date"])
         delist_date = str(row.get("delist_date") or "") if _valid_date(row.get("delist_date")) else None
         for date_position, trade_date in enumerate(trade_dates):
-            is_active = list_date <= trade_date and (delist_date is None or trade_date < delist_date)
+            is_active = list_date <= trade_date and (delist_date is None or trade_date <= delist_date)
             listed[stock_position, date_position] = is_active
             active[stock_position, date_position] = is_active
     return listed, active

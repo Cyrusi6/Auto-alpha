@@ -250,6 +250,35 @@ This file records only the current A-share architecture and recent governed mile
 - No free source was found that exposes historical adjustment-factor revision vintages. The viable governed design is to derive versioned factors from PIT corporate-action events under a separately approved profile and use provider factors only for reconciliation.
 - No bulk acquisition, profile activation, holdout access, autonomous search, paper trading, or live trading was authorized by this research.
 
+## 2026-08 — Signed free-provider backfill and raw coverage replay
+
+- Added a bounded, resumable physical-capture engine for Baostock, CNINFO and CSI official
+  archives. Every attempt signs and fsyncs its start before transport, archives raw HTTP/socket
+  bytes, then signs and fsyncs the terminal event.
+- Added persistent owner-only RSA capture keys, immutable publication, crash/torn-tail recovery,
+  strict request/page geometry, resource budgets and deterministic raw replay.
+- Capture v2 signs the publication manifest itself. Historical v1 normalized files are explicitly
+  untrusted; consumers replay the signed raw bytes under the current locked parser.
+- Added provider×host circuit breakers. A 403, 429 or WAF response opens a signed governance
+  breaker before stopping; CLI strings cannot authorize resume and changing output cannot bypass
+  the breaker.
+- Production capture CLIs load only the approved existing key and fixed staging namespaces.
+  Capture and coverage writers reject lake data, canonical-freeze, local-bundle and lake-root
+  targets. Official HTTP ignores environment proxies.
+- Baostock v2 archives anonymous login and query protocol request/response bytes, socket peer and
+  package RECORD identity. Validation recomputes exchange counts and binds actual code/date/fields/
+  year tokens to the sealed request.
+- Added raw-derived state coverage projection: one physical security-span response can prove many
+  logical security-day obligations without weakening exact-day gap detection. Gap files are bound
+  by hash, size, count and content root, and all research/trading safety flags are revalidated.
+- Unified lifecycle semantics across Admission, PIT, universe and strict matrices: `delist_date` is
+  the final valid listing day, not the first invalid day.
+- Real full-market evidence remains fail closed: Baostock returned three missing security-days and
+  one post-delist extra row after lifecycle correction; CNINFO closed 66,881 unique announcement
+  identities, but document parsing, event-state reconstruction, factor vintages and historical
+  CSI300 weights remain incomplete.
+- No Data Admission Profile, alpha search, holdout, paper, shadow or live capability was activated.
+
 ## Architecture rules
 
 1. Delete obsolete behavior instead of hiding it behind compatibility adapters.

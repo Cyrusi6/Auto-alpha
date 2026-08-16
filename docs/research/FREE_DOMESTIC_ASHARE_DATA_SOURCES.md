@@ -206,3 +206,20 @@ PIT 冲突是形成 `provider_cannot_prove` 的原因证据，不是第五种 di
 4. 如果能申请 JQData 三个月试用，用它做第二套逐日控制矩阵，显著降低误判风险；
 5. 复权 revision 不再寻找不存在的免费快照 API，改成“官方事件版本 → 锁定算法 → 因果复权因子”，经人工批准后实施；
 6. 任一公告链、退市证券、空结果或分页证据不完整，就保持正式准入 blocked，但本地 development replay 可以继续。
+
+## 2026-08-16 批量补采实测更新
+
+- Baostock 已完成 3,798 只生命周期相交 A 股、2011-12 seed 与 2012–2019 的
+  日状态/行情请求；签名 raw 重放得到 5,760,634 行。生命周期合同修正为包含
+  `delist_date` 后，仍有 3 个缺日和 1 个退市日后多余行，不能宣布 exact cover。
+- 巨潮 2011–2019 的四类月叶完整清单已闭合：2,459 个计划请求、66,881 个唯一
+  公告、432 个叶、0 分页冲突。正文按年单连接低速抓取，任何 WAF 会打开 host 级
+  熔断器并停止后续年份。
+- 中证调样公告清单为 1,098 条；详情抓取仍按 7.5 秒单连接执行。详情/附件只能从
+  签名 raw 重放后进入事件解析，历史每日权重仍没有免费权威接口。
+- Baostock v2 已验证 CSI300 1,945 个指数日、security-basic 和 turnover canary；
+  新捕获绑定实际 protocol request/response、socket peer、SDK RECORD 根和签名
+  publication manifest。
+- 免费来源能够补“值”和大量事件原文，但不能自动补成 PIT 状态机、修订 vintage、
+  历史权重或人工 Acquisition Contract。正式 Admission、搜索和任何交易阶段继续
+  fail closed。

@@ -22,6 +22,26 @@ COMMANDS = {
         "auto_alpha.data.ingestion.pipeline.ashare.run_provider_probe",
         "Run a bounded non-admissible provider capability probe",
     ),
+    ("data", "free-backfill"): CommandSpec(
+        "auto_alpha.data.ingestion.pipeline.ashare.free_provider_backfill",
+        "Run a signed resumable free-provider data backfill",
+    ),
+    ("data", "free-cninfo-backfill"): CommandSpec(
+        "auto_alpha.data.ingestion.pipeline.ashare.free_provider_http_backfill",
+        "Capture CNINFO announcement inventories and documents",
+    ),
+    ("data", "free-csindex-backfill"): CommandSpec(
+        "auto_alpha.data.ingestion.pipeline.ashare.free_provider_csindex_backfill",
+        "Capture CSI rebalance announcement inventories and details",
+    ),
+    ("data", "free-baostock-reconcile"): CommandSpec(
+        "auto_alpha.data.ingestion.pipeline.ashare.free_provider_baostock_reconciliation",
+        "Capture Baostock reconciliation snapshots and event aggregates",
+    ),
+    ("data", "free-coverage-use"): CommandSpec(
+        "auto_alpha.data.lake.store.free_provider_coverage_use",
+        "Audit exact security-day cover from signed provider captures",
+    ),
     ("data", "land"): CommandSpec("auto_alpha.data.lake.catalog.run_landing", "Publish raw landing evidence"),
     ("data", "index"): CommandSpec("auto_alpha.data.lake.catalog.run_index", "Build the raw-data index"),
     ("data", "backfill"): CommandSpec("auto_alpha.data.ingestion.repair.run_backfill", "Run governed backfill"),

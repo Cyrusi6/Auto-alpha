@@ -91,7 +91,7 @@ def test_multi_index_isolation_and_alias_requires_proof(tmp_path):
 def test_lifecycle_and_st_are_point_in_time():
     dates = ["20200101", "20210101", "20220101", "20230101"]
     active = build_lifecycle_mask([{"ts_code": "A", "list_date": "20200101", "delist_date": "20220101", "list_status": "D", "is_st": True}], ["A"], dates)
-    assert active.tolist() == [[True, True, False, False]]
+    assert active.tolist() == [[True, True, True, False]]
     st, known = build_st_masks([{"ts_code": "A", "start_date": "20210101", "end_date": "20230101", "ann_date": "20220101", "name": "ST A"}], ["A"], dates)
     assert not st[0, 1] and st[0, 2] and known[0, 2]
 

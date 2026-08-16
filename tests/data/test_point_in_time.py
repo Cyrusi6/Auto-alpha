@@ -35,8 +35,7 @@ def test_security_lifecycle_and_active_mask_handle_statuses():
     active = {(item.ts_code, item.trade_date): item for item in mask}
 
     assert active[("000001.SZ", "20240104")].is_active
-    assert not active[("000002.SZ", "20240103")].is_active
-    assert active[("000002.SZ", "20240103")].reason == "delisted"
+    assert active[("000002.SZ", "20240103")].is_active
     assert not active[("000003.SZ", "20240104")].is_active
     assert active[("000003.SZ", "20240104")].reason == "paused"
     assert not active[("000004.SZ", "20240103")].is_active

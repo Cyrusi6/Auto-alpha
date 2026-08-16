@@ -88,7 +88,7 @@ def _build_member_candidate(
         return None
 
     delist_date = security.get("delist_date")
-    if delist_date not in {None, ""} and str(delist_date) <= config.as_of_date:
+    if delist_date not in {None, ""} and str(delist_date) < config.as_of_date:
         rejected["delisted"] += 1
         return None
     if config.point_in_time and str(security.get("list_status") or "L").upper() == "P":

@@ -85,6 +85,27 @@ BAOSTOCK_SAMPLE_CODES = (
     "sz.002680",
     "sz.300372",
 )
+
+
+def baostock_distribution_record_root() -> str:
+    """Bind installed Baostock package bytes through its wheel RECORD."""
+
+    try:
+        distribution = importlib.metadata.distribution("baostock")
+    except importlib.metadata.PackageNotFoundError:
+        return canonical_hash({"distribution": "baostock", "status": "not_installed"})
+    record = distribution.read_text("RECORD")
+    if distribution.version != "0.9.3" or not record:
+        raise RuntimeError("baostock_distribution_record_unavailable_or_unpinned")
+    return canonical_hash(
+        {
+            "distribution": "baostock",
+            "version": distribution.version,
+            "record": record.splitlines(),
+        }
+    )
+
+
 CNINFO_QUERY_URL = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
 CNINFO_HEADERS = {
     "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -390,13 +411,24 @@ class ArchivedProbeReplayTransport:
 class OfficialHttpProbeTransport:
     """Single-connection, no-redirect HTTP evidence capture for official sites."""
 
-    def __init__(self, *, minimum_delay_seconds: float) -> None:
+    def __init__(
+        self,
+        *,
+        minimum_delay_seconds: float,
+        max_response_bytes: int = 64 * 1024 * 1024,
+    ) -> None:
         if minimum_delay_seconds < 0:
             raise ValueError("provider_probe_delay_invalid")
+        if not 0 < max_response_bytes <= 256 * 1024 * 1024:
+            raise ValueError("provider_probe_response_budget_invalid")
         self.minimum_delay_seconds = minimum_delay_seconds
+        self.max_response_bytes = max_response_bytes
         self._last_request_at: dict[str, float] = {}
         self._cninfo_groups: dict[str, dict[str, Any]] = {}
-        self._opener = urllib.request.build_opener(_NoRedirectHandler())
+        self._opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}),
+            _NoRedirectHandler(),
+        )
 
     def __call__(
         self,
@@ -420,14 +452,14 @@ class OfficialHttpProbeTransport:
             )
             status = int(upstream.status)
             response_headers = dict(upstream.headers.items())
-            body = upstream.read(64 * 1024 * 1024 + 1)
+            body = upstream.read(self.max_response_bytes + 1)
         except urllib.error.HTTPError as exc:
             status = int(exc.code)
             response_headers = dict(exc.headers.items()) if exc.headers else {}
-            body = exc.read(64 * 1024 * 1024 + 1)
+            body = exc.read(self.max_response_bytes + 1)
         finally:
             self._last_request_at[host] = time.monotonic()
-        if len(body) > 64 * 1024 * 1024:
+        if len(body) > self.max_response_bytes:
             raise ValueError("official_http_response_budget_exceeded")
 
         envelope = {
@@ -690,6 +722,7 @@ class BaostockProbeTransport:
         self._socketutil: Any | None = None
         self._upstream_send: Any | None = None
         self._wire_exchange_count = 0
+        self._socket_peer: list[Any] | None = None
         self._closed = False
 
     def __call__(
@@ -698,8 +731,6 @@ class BaostockProbeTransport:
         timeout_seconds: float,
     ) -> ProviderProbeObservation:
         exchanges_before = self._wire_exchange_count
-        self._ensure_session(timeout_seconds)
-        assert self._bs is not None
         self._captures = []
         self._capture_enabled = True
         parsed = urllib.parse.urlsplit(request.url)
@@ -709,6 +740,8 @@ class BaostockProbeTransport:
         }
         case = str(request.metadata.get("case") or "")
         try:
+            self._ensure_session(timeout_seconds)
+            assert self._bs is not None
             if case == "history":
                 result = self._bs.query_history_k_data_plus(
                     params["code"],
@@ -718,6 +751,23 @@ class BaostockProbeTransport:
                     frequency="d",
                     adjustflag="3",
                 )
+            elif case == "history_custom":
+                fields = str(params.get("fields") or "")
+                expected_fields = ",".join(
+                    str(value) for value in request.metadata.get("expected_fields") or ()
+                )
+                if not fields or fields != expected_fields:
+                    raise ValueError("baostock_custom_history_fields_invalid")
+                result = self._bs.query_history_k_data_plus(
+                    params["code"],
+                    fields,
+                    start_date=params["start"],
+                    end_date=params["end"],
+                    frequency="d",
+                    adjustflag="3",
+                )
+            elif case == "stock_basic":
+                result = self._bs.query_stock_basic(code=params["code"])
             elif case == "trade_calendar":
                 result = self._bs.query_trade_dates(
                     start_date=params["start"], end_date=params["end"]
@@ -805,10 +855,14 @@ class BaostockProbeTransport:
         )
 
     def close(self) -> None:
-        if self._closed or self._bs is None:
+        if self._closed:
             return
         self._capture_enabled = False
-        sock = getattr(self._context, "default_socket", None)
+        sock = (
+            getattr(self._context, "default_socket", None)
+            if self._context is not None
+            else None
+        )
         if sock is not None:
             try:
                 sock.close()
@@ -816,6 +870,7 @@ class BaostockProbeTransport:
                 pass
         if self._socketutil is not None and self._upstream_send is not None:
             self._socketutil.send_msg = self._upstream_send
+        self._bs = None
         self._closed = True
 
     def restore(
@@ -880,6 +935,8 @@ class BaostockProbeTransport:
             self._bs = None
             raise RuntimeError("baostock_socket_missing_after_login")
         sock.settimeout(timeout_seconds)
+        peer = sock.getpeername()
+        self._socket_peer = list(peer) if isinstance(peer, tuple) else [str(peer)]
 
     def _safe_send(self, message: str) -> str:
         assert self._context is not None and self._constants is not None
@@ -888,16 +945,47 @@ class BaostockProbeTransport:
             raise ConnectionError("baostock_socket_missing")
         request_bytes = (message + "\n").encode("utf-8")
         self._wire_exchange_count += 1
+        capture: dict[str, Any] | None = None
+        if self._capture_enabled:
+            peer = sock.getpeername()
+            observed_peer = list(peer) if isinstance(peer, tuple) else [str(peer)]
+            capture = {
+                "wire_request_base64": base64.b64encode(request_bytes).decode("ascii"),
+                "request_sha256": hashlib.sha256(request_bytes).hexdigest(),
+                "request_size_bytes": len(request_bytes),
+                "socket_peer": observed_peer,
+                "wire_response_base64": "",
+                "wire_response_sha256": hashlib.sha256(b"").hexdigest(),
+                "wire_size_bytes": 0,
+                "terminal_marker_present": False,
+            }
+            self._captures.append(capture)
         sock.sendall(request_bytes)
         received = bytearray()
         marker = b"<![CDATA[]]>\n"
-        while not received.endswith(marker):
-            chunk = sock.recv(8192)
-            if not chunk:
-                raise ConnectionError("baostock_socket_closed_before_terminal_marker")
-            received.extend(chunk)
-            if len(received) > 64 * 1024 * 1024:
-                raise ValueError("baostock_wire_response_budget_exceeded")
+        try:
+            while not received.endswith(marker):
+                chunk = sock.recv(8192)
+                if not chunk:
+                    raise ConnectionError(
+                        "baostock_socket_closed_before_terminal_marker"
+                    )
+                received.extend(chunk)
+                if len(received) > 64 * 1024 * 1024:
+                    raise ValueError("baostock_wire_response_budget_exceeded")
+        except BaseException:
+            if capture is not None:
+                partial = bytes(received)
+                capture.update(
+                    {
+                        "wire_response_base64": base64.b64encode(partial).decode(
+                            "ascii"
+                        ),
+                        "wire_response_sha256": hashlib.sha256(partial).hexdigest(),
+                        "wire_size_bytes": len(partial),
+                    }
+                )
+            raise
         wire = bytes(received)
         if len(wire) < self._constants.MESSAGE_HEADER_LENGTH:
             raise ValueError("baostock_wire_header_truncated")
@@ -919,10 +1007,9 @@ class BaostockProbeTransport:
             decoded = header + decoded_body
         else:
             decoded = wire.decode("utf-8")
-        if self._capture_enabled:
-            self._captures.append(
+        if capture is not None:
+            capture.update(
                 {
-                    "request_sha256": hashlib.sha256(request_bytes).hexdigest(),
                     "wire_response_base64": base64.b64encode(wire).decode("ascii"),
                     "wire_response_sha256": hashlib.sha256(wire).hexdigest(),
                     "wire_size_bytes": len(wire),
@@ -990,6 +1077,7 @@ class BaostockProbeTransport:
             "package_distribution_version": "0.9.3",
             "client_protocol_version": "00.9.30",
             "request_id": request.request_id,
+            "socket_peer": list(self._socket_peer or ()),
             "wire_exchanges": self._captures,
             "parsed": {
                 "fields": list(fields),
@@ -1043,6 +1131,38 @@ class BaostockProbeTransport:
                 )
             if request.metadata.get("expected_empty"):
                 checks["successful_empty_observed"] = not rows
+        elif case == "history_custom":
+            expected_fields = [
+                str(value) for value in request.metadata.get("expected_fields") or ()
+            ]
+            expected_provider_code = str(request.metadata.get("provider_code") or "")
+            checks["history_fields_exact"] = list(fields) == expected_fields
+            checks["unique_security_day"] = len(
+                {(row[0], row[1]) for row in rows if len(row) >= 2}
+            ) == len(rows)
+            checks["provider_code_matches_request"] = bool(
+                expected_provider_code
+            ) and all(
+                len(row) >= 2 and str(row[1]) == expected_provider_code
+                for row in rows
+            )
+        elif case == "stock_basic":
+            checks["stock_basic_fields_exact"] = list(fields) == [
+                "code",
+                "code_name",
+                "ipoDate",
+                "outDate",
+                "type",
+                "status",
+            ]
+            checks["stock_basic_identity_unique"] = (
+                len(rows) <= 1
+                and all(
+                    len(row) >= 1
+                    and row[0] == str(request.metadata.get("provider_code") or "")
+                    for row in rows
+                )
+            )
         elif case == "trade_calendar":
             checks["calendar_fields"] = list(fields) == [
                 "calendar_date",
@@ -1064,6 +1184,13 @@ class BaostockProbeTransport:
             checks["historical_revision_timestamp_absent"] = not any(
                 name.lower() in {"as_of", "revision_time", "publish_time"}
                 for name in fields
+            )
+            expected_provider_code = str(request.metadata.get("provider_code") or "")
+            checks["provider_code_matches_request"] = bool(
+                expected_provider_code
+            ) and all(
+                len(row) >= 1 and str(row[0]) == expected_provider_code
+                for row in rows
             )
         return checks
 
