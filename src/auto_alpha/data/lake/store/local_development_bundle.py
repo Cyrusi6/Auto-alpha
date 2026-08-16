@@ -9,6 +9,7 @@ Canonical Data Freeze.
 from __future__ import annotations
 
 import bisect
+import copy
 import hashlib
 import inspect
 import json
@@ -246,6 +247,83 @@ _RESEARCH_DATASET_NAMES = frozenset(SOURCE_INVENTORY_DATASETS)
 
 class LocalDevelopmentBundleError(RuntimeError):
     """Raised when local replay evidence or an immutable bundle is invalid."""
+
+
+class LocalDevelopmentBundleLoader:
+    """Read arrays only after the complete development bundle has validated.
+
+    The loader is intentionally not an ``AShareDataLoader`` compatibility
+    adapter.  It preserves the bundle's stock × feature × date layout and its
+    permanent development-only governance boundary; consumers must request
+    explicit artifact roles and perform any orientation change themselves.
+    """
+
+    __slots__ = (
+        "_artifacts",
+        "_manifest",
+        "_root",
+        "feature_names",
+        "stock_ids",
+        "trade_dates",
+    )
+
+    def __init__(
+        self,
+        bundle_manifest: str | Path,
+        *,
+        trusted_source_freeze_manifest: str | Path | None = None,
+    ) -> None:
+        manifest = validate_local_development_bundle(
+            bundle_manifest,
+            trusted_source_freeze_manifest=trusted_source_freeze_manifest,
+        )
+        root = Path(str(manifest["manifest_path"])).resolve().parent
+        artifacts = {
+            str(row["role"]): dict(row) for row in manifest["artifacts"]
+        }
+        self._manifest = dict(manifest)
+        self._root = root
+        self._artifacts = artifacts
+        self.stock_ids = tuple(_read_axis(root, artifacts["stock_axis"]))
+        self.trade_dates = tuple(_read_axis(root, artifacts["date_axis"]))
+        self.feature_names = tuple(_read_axis(root, artifacts["feature_axis"]))
+
+    @property
+    def manifest(self) -> dict[str, Any]:
+        """Return a defensive copy of the validated immutable identity."""
+
+        return copy.deepcopy(self._manifest)
+
+    @property
+    def root(self) -> Path:
+        return self._root
+
+    def load_array(
+        self,
+        role: str,
+        *,
+        dtype: np.dtype[Any] | type[np.generic],
+    ) -> np.ndarray:
+        """Map one declared NPY artifact by role with its frozen dtype/shape."""
+
+        row = self._artifacts.get(str(role))
+        if row is None or Path(str(row.get("relative_path") or "")).suffix != ".npy":
+            raise LocalDevelopmentBundleError(
+                f"local development array role invalid:{role}"
+            )
+        expected_dtype = np.dtype(dtype)
+        value = _load_array(self._root, row, expected_dtype)
+        return value
+
+    def artifact_row(self, role: str) -> dict[str, Any]:
+        """Return one defensive artifact-row copy for lineage binding."""
+
+        row = self._artifacts.get(str(role))
+        if row is None:
+            raise LocalDevelopmentBundleError(
+                f"local development artifact role invalid:{role}"
+            )
+        return copy.deepcopy(row)
 
 
 @dataclass(frozen=True)
@@ -3168,6 +3246,7 @@ def _valid_partition_date_bounds(
 
 __all__ = [
     "LocalDevelopmentBundleError",
+    "LocalDevelopmentBundleLoader",
     "LocalDevelopmentScope",
     "build_local_development_bundle",
     "validate_local_development_bundle",

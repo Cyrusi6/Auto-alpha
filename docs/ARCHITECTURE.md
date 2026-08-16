@@ -37,7 +37,7 @@ auto_alpha/
     └── observability/
 ```
 
-The tree contains 54 Python package directories and 439 Python source files. Hard ceilings are 55 and 450. Committed evidence remains capped at four current files.
+The tree contains 54 Python package directories and 440 Python source files. Hard ceilings are 55 and 450. Committed evidence remains capped at four current files.
 
 ## File Convention
 
@@ -73,6 +73,11 @@ data → research → validation → portfolio → execution
 
 Dependencies follow the research lifecycle. Platform services may support every domain but cannot redefine domain truth. Reverse dependencies require an explicit immutable contract.
 
+The fixed-factor development replay is a portfolio-owned diagnostic
+orchestrator. It consumes the data-owned validated local-bundle loader, the
+research-owned StackVM, and the portfolio-owned event ledger, but it creates no
+Research Campaign, Factor Record, candidate, or downstream lifecycle state.
+
 ## Nested Infrastructure
 
 Research, validation, portfolio, and execution remain flat below their visible subsystem boundary. Data and platform may use nested packages only for real adapter or infrastructure boundaries:
@@ -92,6 +97,8 @@ Research, validation, portfolio, and execution remain flat below their visible s
 ## Public Surface
 
 - Operators use `auto-alpha <domain> <command>`.
+- The first vertical diagnostic is exposed as
+  `auto-alpha portfolio fixed-replay {build,validate}`.
 - Python callers import canonical capability modules directly.
 - Internal module names are not operator contracts.
 - A new domain or visible subsystem requires an architecture decision.
@@ -106,12 +113,17 @@ Research, validation, portfolio, and execution remain flat below their visible s
 | Composite factors | `research/factors/composite.py` |
 | Security-date truth | `data/pit/truth.py` |
 | Offline local-data rehabilitation | `data/lake/store/local_development_bundle.py` |
+| Local development bundle loading | `data/lake/store/local_development_bundle.py` |
+| Fixed-factor development replay evidence | `portfolio/simulator/fixed_factor_replay.py` |
 | Fee workflow and calculator | `portfolio/simulator/fees.py` |
 | Production firewall sentinel | `validation/firewall/production_sentinel_sentinel.py` |
 | Immutable generation storage | `platform/artifacts/storage.py` |
 | Network transport authority | `platform/governance/network/gateway.py` |
 
 Historical Task054/055 artifacts are read-only inputs. Their old producers, synthetic workflows, compatibility modules, and task-number packages are not production capabilities.
+
+`fixed_factor_replay_evidence` is non-admissible development evidence. It is
+neither a Data Admission Verdict nor a promotable Research Evidence Envelope.
 
 ## Enforcement
 

@@ -2,6 +2,21 @@
 
 This file records only the current A-share architecture and recent governed milestones. Detailed historical implementation is available through Git history rather than duplicated task-by-task prose.
 
+## 2026-08-16 — Fixed-factor vertical development replay
+
+### Outcome
+
+- Added the validated `LocalDevelopmentBundleLoader` and completed the vertical chain from the immutable local bundle through one locked StackVM factor and the next-open `EventLedgerSimulator` into immutable replay evidence. The development matrix is not disguised as a Canonical Data Freeze or legacy strict matrix.
+- Locked `volume_ratio_cs_rank_v1 = CS_RANK(volume_ratio)`, the membership-known PIT proxy cross-section, close-to-next-open timing, daily long-only Top-20 equal-weight refresh, T+1 shares, board lots, modeled costs, a zero-cost comparison scenario, 20-day ADV with an explicit one-observation minimum, and stable security-code tie breaking. The operator has no formula/search/generator CLI input.
+- Materialized factor values and independent validity before any target read. The frozen target is used only for an in-sample development diagnostic; signal eligibility never reads target or target availability.
+- Preserved complete development evidence: factor and eligibility arrays, observed execution proxies, input lineage, a cross-checked legacy unit-assumption receipt, full orders/fills/rejections/settlements/NAV/event ledgers for both scenarios, cost/capacity summaries, and peak/trough/recovery plus the full underwater series.
+- Published with the prepared-directory immutable generation owner and a dedicated semantic validator. It locks exact factor/policy/governance contracts, validates read-only closure and governed 2012–2019 date bounds, recomputes summaries/drawdown, rejects self-consistently resealed blocker or policy forgeries, and can rematerialize the factor and both ledgers from a caller-supplied trusted bundle.
+- Proved on controlled data that close-`t` decisions fill only at the next open, non-members cannot enter the rank cross-section, repeated runs and sibling output roots have one content/truth identity, cache resume is validated, output symlinks and artifact tampering fail closed, and CLI errors remain structured blockers.
+- Published the real `469 × 1,945` replay as generation `fixed_factor_replay_75a0a210b1cda5bb92ad2994` (content `75a0a210b1cda5bb92ad29942e09110ba3ce639e39e044d32f438b4516052dcc`, artifact root `daf4ef4388dc8b48ed33b966c10fc4b16eb133a81ea072f557d9c193e04ba4e6`, simulation truth `c2e4bd79d5628bba20d3d304c328d4fbd56c697ef23b428c187c419d9969607a`). It retained 275,188 metric observations across 953 dates; rank IC mean was `-0.000505`. The modeled-cost scenario returned `-71.62%` with CNY 891,588 cumulative modeled costs and `74.42%` maximum drawdown, while the non-comparable zero-cost path returned `+33.70%`. This is a successful diagnostic with no promotion, not evidence of Alpha.
+- Cross-checked 783,670 amount/price/volume observations (median normalized unit ratio `0.999904`), recorded 3,968 unresolved adjustment-factor transitions, preserved the exact input bundle manifest hash, and completed a trusted repeated build with `cache_hit=true`, the same content/truth identity, and only one 105 MB generation.
+- Kept the result permanently non-admissible: `data_admission_eligible=false`, `alpha_search_authorized=false`, `validation_candidate_eligible=false`, `lifecycle_publication_allowed=false`, `holdout_accessed=false`, and `network_accessed=false`. No factor store, candidate pool, holdout, shadow, paper, or live state is touched.
+- Retained the upstream blockers for provider receipts, PIT constituent publication, ST/suspension authority, adjustment revision history, and corporate-action lineage. Modeled costs, capacity, observed price bands, stale marks, and the unbenchmarked raw-price ledger are engineering proxies rather than formal Research Backtest evidence.
+
 ## 2026-08-16 — Offline local-data rehabilitation
 
 ### Outcome

@@ -65,6 +65,10 @@ COMMANDS = {
     ("portfolio", "campaign"): CommandSpec("auto_alpha.portfolio.construction.campaigns", "Manage portfolio campaigns"),
     ("portfolio", "certify"): CommandSpec("auto_alpha.portfolio.construction.certification", "Certify an eligible portfolio"),
     ("portfolio", "backtest"): CommandSpec("auto_alpha.portfolio.simulator.backtest", "Run event-ledger backtests"),
+    ("portfolio", "fixed-replay"): CommandSpec(
+        "auto_alpha.portfolio.simulator.fixed_factor_replay",
+        "Run the locked development-only factor replay",
+    ),
     ("portfolio", "capacity"): CommandSpec("auto_alpha.portfolio.simulator.capacity", "Estimate modeled capacity"),
     ("portfolio", "risk"): CommandSpec("auto_alpha.portfolio.risk.controls", "Run portfolio risk controls"),
     ("execution", "broker"): CommandSpec("auto_alpha.execution.broker.adapter", "Run the broker adapter"),

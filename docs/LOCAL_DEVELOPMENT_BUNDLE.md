@@ -63,6 +63,68 @@ Repeated builds validate the immutable Source Freeze and replay the trusted sour
 
 Use one output root per locked scope and contract (for example `csi300_2012_2019_v1`). The mutable `current.json` is only a locator inside that root; it is not a cross-scope scheduler or evidence identity.
 
+## Fixed-factor development replay
+
+`LocalDevelopmentBundleLoader` is the only adapter from this bundle into the
+first vertical replay. It validates the complete immutable generation before it
+maps any role and preserves the stock × feature × date layout; it does not
+rename the development matrix into a strict or canonical research matrix.
+
+The first replay contract is deliberately not configurable:
+
+- `volume_ratio_cs_rank_v1 = CS_RANK(volume_ratio)`, evaluated by
+  `StackVM.execute_with_validity` over the membership-known PIT proxy domain;
+- factor values and independent validity are materialized before target values
+  are read; the target is used only for an explicitly in-sample diagnostic and
+  never for signal eligibility;
+- the decision is made at close `t`, execution occurs at the next observed
+  open, and a long-only equal-weight Top-20 target is refreshed each trading
+  day with stable security-code tie breaking;
+- baseline modeled-cost and zero-cost scenarios both use the event ledger and
+  retain orders, fills, rejections, settlements, NAV, events, and the complete
+  underwater series;
+- legacy volume is converted with `volume × 100 = shares` and amount with
+  `amount × 1000 = CNY`; the ratio
+  `amount_CNY / (close × volume_shares)` is cross-checked before the 20-day ADV
+  proxy is used.
+
+The execution masks remain retrospective observed-bar and price-band proxies.
+Historical ST and suspension authority has not been reconstructed, corporate
+actions are not applied without their causal lineage, the CSI300 benchmark is
+not frozen in this bundle, and fee/capacity assumptions are not governed
+evidence. Accordingly, every replay evidence generation inherits the bundle's
+blockers and fixes all of these fields to false:
+
+```text
+data_admission_eligible
+alpha_search_authorized
+validation_candidate_eligible
+lifecycle_publication_allowed
+holdout_accessed
+network_accessed
+```
+
+`terminal_status=diagnostic_completed` means only that the engineering chain
+`bundle → loader → fixed factor → next-open ledger → immutable evidence`
+completed. It is not OOS evidence, an Alpha conclusion, or a lifecycle event.
+
+```bash
+auto-alpha portfolio fixed-replay build \
+  --bundle-manifest <local-bundle-manifest> \
+  --trusted-source-freeze-manifest <source-generation>/canonical_freeze_manifest.json \
+  --output-root <fixed-replay-root>
+
+auto-alpha portfolio fixed-replay validate \
+  --manifest <generation>/fixed_factor_replay_evidence.json \
+  --trusted-bundle-manifest <local-bundle-manifest>
+```
+
+The dedicated validator checks immutable closure, exact formula/policy and
+governance semantics, recomputes diagnostics, cost/capacity summaries and
+drawdown evidence, and—with a trusted bundle—rematerializes the factor and both
+ledger scenarios. Integrity-only CLI validation is labelled separately from a
+trusted-bundle replay.
+
 ## Offline run on the existing lake
 
 The first real local replay was built from the existing legacy freeze at
@@ -83,6 +145,46 @@ snapshots (47 effective within the date span), 10 feature channels, 2,767,930
 valid feature slots, and 275,471 available observed targets. The 2012–2015 union axis has no complete PIT
 membership proof and remains entirely unknown; this is a diagnostic matrix, not an
 admitted research freeze.
+
+## Offline fixed-factor run on the existing bundle
+
+The locked replay completed against the real `469 × 1,945` bundle and was
+published at:
+
+```text
+/home/lijunsi/data/auto-alpha/ashare_lake/fixed_factor_replays/csi300_2012_2019_volume_ratio_cs_rank_v1
+```
+
+Its immutable identity is:
+
+- generation `fixed_factor_replay_75a0a210b1cda5bb92ad2994`;
+- content hash
+  `75a0a210b1cda5bb92ad29942e09110ba3ce639e39e044d32f438b4516052dcc`;
+- artifact root
+  `daf4ef4388dc8b48ed33b966c10fc4b16eb133a81ea072f557d9c193e04ba4e6`;
+- simulation truth hash
+  `c2e4bd79d5628bba20d3d304c328d4fbd56c697ef23b428c187c419d9969607a`.
+
+The factor diagnostic has 275,188 valid observations over 953 evaluable dates,
+rank IC mean `-0.000505`, ICIR `-0.00399`, and Top-minus-Bottom diagnostic
+spread `0.000568`. These are in-sample plumbing diagnostics, not OOS results.
+The modeled-cost ledger issued 28,442 orders, recorded 19,965 fills and 8,477
+rejections, filled 61.20% of requested shares, incurred CNY 891,588 in modeled
+cumulative costs, returned `-71.62%`, and reached a `74.42%` maximum drawdown
+from 2016-02-25 to 2019-12-06 without recovery by the end of the view. The
+zero-cost scenario returned `+33.70%`, but its orders and holdings can differ,
+so the scenario difference is not an isolated transaction-cost estimate.
+
+The unit receipt cross-checked 783,670 observations: the median normalized
+amount/price/volume ratio is `0.999904` (p01 `0.966794`, p99 `1.037658`). It
+also records 3,968 adjustment-factor transitions while keeping
+`corporate_action_lineage_proven=false`. A trusted repeated build returned
+`cache_hit=true` with the same content and truth hashes; there is exactly one
+published generation, about 105 MB. The input bundle manifest SHA256 remains
+`48dd4aba1c445593b3c171251c64623b6ea216a733bf88eebb59c02e50732e6b`.
+
+The poor modeled-cost outcome is a valid zero-promotion engineering result. It
+does not change any blocker or authorize autonomous search.
 
 ## Remaining governed blockers
 
