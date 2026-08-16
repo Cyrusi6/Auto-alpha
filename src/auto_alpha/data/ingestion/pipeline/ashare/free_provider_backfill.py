@@ -134,6 +134,8 @@ BackfillTransport = Callable[
 class RecoveringBaostockTransport:
     """Reconnect the pinned Baostock session between bounded retry attempts."""
 
+    RETRYABLE_SESSION_ERROR_CODES = frozenset({"baostock:10001001"})
+
     def __init__(self) -> None:
         self._transport = BaostockProbeTransport()
 
@@ -2179,7 +2181,11 @@ def _budget_exceeded_reason(
 
 def _retryable(error_code: str | None) -> bool:
     value = str(error_code or "")
-    return value == "ambiguous_transport" or value.startswith(RETRYABLE_ERROR_PREFIXES)
+    return (
+        value == "ambiguous_transport"
+        or value in RecoveringBaostockTransport.RETRYABLE_SESSION_ERROR_CODES
+        or value.startswith(RETRYABLE_ERROR_PREFIXES)
+    )
 
 
 def _manual_resume_required(terminal: Mapping[str, Any]) -> bool:

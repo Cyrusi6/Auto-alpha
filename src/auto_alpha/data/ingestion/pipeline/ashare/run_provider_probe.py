@@ -460,7 +460,44 @@ class OfficialHttpProbeTransport:
         finally:
             self._last_request_at[host] = time.monotonic()
         if len(body) > self.max_response_bytes:
-            raise ValueError("official_http_response_budget_exceeded")
+            sample = body[: min(len(body), 64 * 1024)]
+            envelope = {
+                "schema_version": "official_http_probe_over_budget_envelope_v1",
+                "url": request.url,
+                "method": request.method.upper(),
+                "status_code": status,
+                "response_headers": _safe_response_headers(response_headers),
+                "observed_prefix_size_bytes": len(body),
+                "observed_prefix_sha256": hashlib.sha256(body).hexdigest(),
+                "body_sample_base64": base64.b64encode(sample).decode("ascii"),
+                "body_sample_sha256": hashlib.sha256(sample).hexdigest(),
+                "configured_body_limit_bytes": self.max_response_bytes,
+                "elapsed_seconds": round(time.monotonic() - started, 6),
+                "redirect_followed": False,
+                "body_truncated": True,
+            }
+            raw = json.dumps(
+                envelope, sort_keys=True, separators=(",", ":")
+            ).encode()
+            return ProviderProbeObservation(
+                terminal_state="error",
+                raw_payload=raw,
+                row_count=None,
+                status_code=status,
+                error_code="official_http_response_budget_exceeded",
+                diagnostics={
+                    "configured_body_limit_bytes": self.max_response_bytes,
+                    "observed_prefix_size_bytes": len(body),
+                    "observed_prefix_sha256": hashlib.sha256(body).hexdigest(),
+                    "waf_html_observed": status == 403
+                    and sample.lstrip().startswith(b"<"),
+                },
+                checks={
+                    "response_within_byte_budget": False,
+                    "transport_exchange_archived": True,
+                },
+                transport_exchange_count=1,
+            )
 
         envelope = {
             "schema_version": "official_http_probe_envelope_v1",

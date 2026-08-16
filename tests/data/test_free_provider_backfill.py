@@ -5,11 +5,13 @@ from pathlib import Path
 
 import pytest
 
+from auto_alpha.data.ingestion.pipeline.ashare import free_provider_backfill
 from auto_alpha.data.ingestion.pipeline.ashare.free_provider_backfill import (
     BackfillResourceBudget,
     FreeProviderBackfillContract,
     PauseResumeAuthorization,
     ProviderBackfillPaused,
+    RecoveringBaostockTransport,
     _public_key_hash,
     _safe_output_root,
     build_baostock_state_plan,
@@ -37,6 +39,57 @@ class FakeTransport:
     ) -> ProviderProbeObservation:
         self.calls.append(request.request_id)
         return self.observations[request.request_id]
+
+
+def test_baostock_session_expiry_replaces_transport_before_bounded_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    instances: list[SessionExpiryTransport] = []
+
+    class SessionExpiryTransport:
+        def __init__(self) -> None:
+            self.instance_ordinal = len(instances)
+            self.closed = False
+            instances.append(self)
+
+        def __call__(
+            self, request: ProviderProbeRequest, _timeout_seconds: float
+        ) -> ProviderProbeObservation:
+            if self.instance_ordinal == 0:
+                return ProviderProbeObservation(
+                    terminal_state="error",
+                    raw_payload=b"expired-session",
+                    row_count=None,
+                    error_code="baostock:10001001",
+                    diagnostics={"provider_error_message": "session expired"},
+                    checks={"provider_success": False},
+                    transport_exchange_count=1,
+                )
+            return _observation(request.request_id)
+
+        def close(self) -> None:
+            self.closed = True
+
+        def restore(
+            self, _request: ProviderProbeRequest, _record: object
+        ) -> None:
+            return None
+
+    monkeypatch.setattr(
+        free_provider_backfill,
+        "BaostockProbeTransport",
+        SessionExpiryTransport,
+    )
+    request = _request("session-expiry")
+    transport = RecoveringBaostockTransport()
+
+    first = transport(request, 3.0)
+    second = transport(request, 3.0)
+
+    assert first.error_code == "baostock:10001001"
+    assert second.terminal_state == "positive"
+    assert len(instances) == 2
+    assert instances[0].closed is True
 
 
 def _request(request_id: str) -> ProviderProbeRequest:
@@ -160,6 +213,45 @@ def test_signed_backfill_publishes_valid_raw_closure_and_is_idempotent(
     assert published["capture_catalog_count"] == 2
     assert transport.calls == ["first", "second"]
     assert cached["cache_hit"] is True
+
+
+def test_capture_engine_retries_baostock_session_expiry_within_budget(
+    tmp_path: Path,
+) -> None:
+    signer = EphemeralReceiptSigner.generate()
+    request = _request("session-expiry")
+    observations = [
+        ProviderProbeObservation(
+            terminal_state="error",
+            raw_payload=b"expired-session",
+            row_count=None,
+            error_code="baostock:10001001",
+            diagnostics={"provider_error_message": "session expired"},
+            checks={"provider_success": False},
+            transport_exchange_count=1,
+        ),
+        _observation(request.request_id),
+    ]
+    calls: list[str] = []
+
+    def transport(
+        current: ProviderProbeRequest, _timeout_seconds: float
+    ) -> ProviderProbeObservation:
+        calls.append(current.request_id)
+        return observations.pop(0)
+
+    published = run_free_provider_backfill(
+        _contract(tmp_path / "capture", signer),
+        [request],
+        transport=transport,
+        signer=signer,
+        runtime_implementation_root=FIXTURE_IMPLEMENTATION_ROOT,
+    )
+
+    assert published["status"] == "succeeded"
+    assert published["terminal_attempt_count"] == 2
+    assert published["resource_usage"]["attempt_count"] == 2
+    assert calls == [request.request_id, request.request_id]
 
 
 def test_validator_rejects_raw_capture_tampering(tmp_path: Path) -> None:

@@ -190,6 +190,42 @@ HTTP transport 显式禁用环境代理；Baostock v2 保存匿名登录和查�
 request/response bytes、socket peer、SDK RECORD 根，并从 raw 重算 exchange 数及
 code/date/fields/year 绑定。
 
+### CSI 公告附件准入前补采
+
+附件计划只能从已验证 details capture 的签名 raw 独立重放生成。早期 details
+generation 的 terminal journal 与 raw payload 有签名，但其 v1 publication 没有
+最终签名，因此允许作为 value-only 来源，必须在下游固定记录：
+
+```text
+source_capture_schema=free_provider_backfill_capture_v1
+source_publication_signature_verified=false
+source_normalized_artifacts_trusted=false
+weak_source_ancestry=true
+```
+
+这类来源不能因为下游 publication 是 v2 就被升级为可信 PIT 血缘。系统另行执行
+v2 discovery → inventory → details 链，后续以 coverage-use 投影对账，而不是静默
+改写既有 generation。
+
+真实 1,098 条 details 的 OSS 范围离线重放得到 602 个审计对象：439 个 URL 同时
+满足安全 URL 和路径日期位于 `20110101–20191231`，可以进入有界网络计划；147 个
+缺少可验证路径日期、14 个为外站或拼接错误等拒绝引用、2 个明确指向 2020/2025，
+全部进入 signed blocked-reference audit，不发网络请求。重复 URL 只下载一次，但
+保留每条 announcement→attachment edge 及其独立 disposition；当前下载永远不证明
+历史 `known_at`。
+
+附件 transport 只允许 `https://oss-ch.csindex.com.cn`，并重算 envelope schema、
+GET、原 URL、禁止 redirect、Content-Length、MIME、文件 magic、body hash 和
+HTML/WAF。128 MiB body cap 是合同身份的一部分；超限响应保存安全响应头、读取前缀
+大小/哈希、64 KiB 样本哈希和真实 exchange count 后停止，不会丢成零交换异常。
+
+### 长连接过期
+
+全量 security-basic 首次运行在 `600035.SH` 收到 Baostock `10001001 用户未登录`。
+该失败回执及 pause 保持不可变。恢复器只把这一精确会话错误列为有界重登录条件，
+关闭旧 socket 后创建新 transport；其他 Baostock 业务错误仍 fail closed。修复改变
+实现身份，因此没有往旧 journal 偷接事件，而是启动新 contract/activity 重跑。
+
 ### 已完成的全市场结果
 
 | 证据 | generation | 结果 |

@@ -5,12 +5,19 @@ from __future__ import annotations
 import argparse
 import base64
 import calendar
+import hashlib
+import html as html_lib
+import io
 import inspect
 import json
 import math
 import os
+import re
+import urllib.parse
+import zipfile
 from collections import defaultdict
 from datetime import date
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -27,6 +34,7 @@ from .free_provider_backfill import (
     validate_free_provider_backfill,
 )
 from .provider_probe import ProviderProbeObservation, ProviderProbeRequest
+from . import run_provider_probe as run_provider_probe_module
 from .run_provider_probe import (
     CSINDEX_HEADERS,
     CSINDEX_LIST_URL,
@@ -52,6 +60,57 @@ CSINDEX_PAGE_SIZE = 1000
 CSINDEX_MAX_PAGES_PER_MONTH = 100
 CSINDEX_LIST_MONTH_START = "2011-01-01"
 CSINDEX_LIST_MONTH_END = "2019-12-31"
+CSINDEX_ATTACHMENT_HOSTS = (
+    "oss-ch.csindex.com.cn",
+    "www.csindex.com.cn",
+)
+CSINDEX_ATTACHMENT_EXTENSIONS = frozenset(
+    {
+        "csv",
+        "doc",
+        "docx",
+        "gif",
+        "jpeg",
+        "jpg",
+        "pdf",
+        "png",
+        "txt",
+        "xls",
+        "xlsx",
+        "zip",
+    }
+)
+CSINDEX_ATTACHMENT_TEMPORAL_BLOCKER = (
+    "current_attachment_retrieval_does_not_prove_historical_known_at_or_vintage"
+)
+CSINDEX_ATTACHMENT_BODY_MAX_BYTES = 128 * 1024 * 1024
+CSINDEX_ATTACHMENT_PATH_DATE_START = "20110101"
+CSINDEX_ATTACHMENT_PATH_DATE_END = "20191231"
+_INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
+_PATH_DATE_TOKEN = re.compile(r"(?<!\d)(\d{8})(?!\d)")
+_ATTACHMENT_REFERENCE_HINT = re.compile(
+    r"\.(?:csv|docx?|gif|jpe?g|pdf|png|txt|xlsx?|zip)(?:$|[?#])",
+    re.IGNORECASE,
+)
+
+
+class _AttachmentReferenceParser(HTMLParser):
+    """Collect only literal href/src values; URL policy is applied separately."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.references: list[tuple[str, str]] = []
+
+    def handle_starttag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        del tag
+        for name, value in attrs:
+            lowered = str(name).lower()
+            if lowered in {"href", "src"} and value is not None:
+                self.references.append((lowered, value))
+
+    handle_startendtag = handle_starttag
 
 
 class CSIndexBackfillTransport:
@@ -154,6 +213,98 @@ class CSIndexBackfillTransport:
             | {
                 "provider_success": provider_success,
                 "provider_code": payload.get("code") if isinstance(payload, Mapping) else None,
+            },
+            checks=checks,
+            transport_exchange_count=observation.transport_exchange_count,
+        )
+
+    def restore(
+        self, request: ProviderProbeRequest, record: Mapping[str, Any]
+    ) -> None:
+        self._transport.restore(request, record)
+
+
+class CSIndexAttachmentTransport:
+    """Capture CSI binaries while independently validating their wire evidence."""
+
+    def __init__(self, *, minimum_delay_seconds: float) -> None:
+        self._transport = OfficialHttpProbeTransport(
+            minimum_delay_seconds=minimum_delay_seconds,
+            max_response_bytes=CSINDEX_ATTACHMENT_BODY_MAX_BYTES,
+        )
+
+    def __call__(
+        self, request: ProviderProbeRequest, timeout_seconds: float
+    ) -> ProviderProbeObservation:
+        # The shared transport needs a binary case to preserve arbitrary bytes.  Its
+        # PDF checks are deliberately ignored; every attachment check below is
+        # independently derived from the archived HTTP envelope.
+        probe_request = ProviderProbeRequest(
+            **{
+                **request.__dict__,
+                "metadata": dict(request.metadata) | {"case": "cninfo_pdf"},
+            }
+        )
+        observation = self._transport(probe_request, timeout_seconds)
+        if observation.terminal_state == "error" or observation.status_code != 200:
+            return observation
+        try:
+            official = json.loads(observation.raw_payload)
+            body = base64.b64decode(
+                str(official.get("body_base64") or ""), validate=True
+            )
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            return ProviderProbeObservation(
+                terminal_state="error",
+                raw_payload=observation.raw_payload,
+                row_count=None,
+                status_code=observation.status_code,
+                error_code="csindex_attachment_http_envelope_invalid",
+                diagnostics=dict(observation.diagnostics)
+                | {"envelope_error_type": type(exc).__name__},
+                checks={"http_envelope_decoded": False},
+                transport_exchange_count=observation.transport_exchange_count,
+            )
+        response_headers = {
+            str(key).lower(): str(value)
+            for key, value in (official.get("response_headers") or {}).items()
+        }
+        extension = str(request.metadata.get("extension") or "").lower()
+        block_reason = _attachment_block_reason(body)
+        checks = {
+            "http_envelope_schema_exact": official.get("schema_version")
+            == "official_http_probe_envelope_v1",
+            "request_method_bound": official.get("method") == "GET",
+            "redirect_not_followed": official.get("redirect_followed") is False,
+            "http_status_exact": official.get("status_code") == 200,
+            "request_url_bound": str(official.get("url") or "") == request.url,
+            "nonempty_attachment": bool(body),
+            "content_length_matches": _attachment_content_length_matches(
+                response_headers.get("content-length"), len(body)
+            ),
+            "content_type_compatible": _attachment_content_type_compatible(
+                extension, response_headers.get("content-type")
+            ),
+            "attachment_magic_matches": _attachment_magic_valid(body, extension),
+            "not_html_or_waf": block_reason is None,
+            "body_sha256_matches": str(official.get("body_sha256") or "")
+            == hashlib.sha256(body).hexdigest(),
+        }
+        accepted = all(checks.values())
+        return ProviderProbeObservation(
+            terminal_state="positive" if accepted else "error",
+            raw_payload=observation.raw_payload,
+            row_count=1 if accepted else None,
+            status_code=observation.status_code,
+            error_code=None if accepted else "csindex_attachment_wire_evidence_invalid",
+            diagnostics={
+                "attachment_sha256": hashlib.sha256(body).hexdigest(),
+                "attachment_size_bytes": len(body),
+                "attachment_extension": extension,
+                "content_type": response_headers.get("content-type"),
+                "content_length": response_headers.get("content-length"),
+                "attachment_block_reason": block_reason,
+                "waf_html_observed": block_reason is not None,
             },
             checks=checks,
             transport_exchange_count=observation.transport_exchange_count,
@@ -270,6 +421,321 @@ def build_csindex_detail_plan(
         }
     )
     return rows, requests, input_root
+
+
+def build_csindex_attachment_plan(
+    details_capture: str | Path,
+    include_hosts: Sequence[str] | None = None,
+) -> tuple[list[dict[str, Any]], list[ProviderProbeRequest], str]:
+    """Derive a bounded attachment plan only from replayed, signed detail bytes."""
+
+    validated = validate_free_provider_backfill(details_capture)
+    if validated.get("status") != "succeeded":
+        raise ValueError("csindex_details_capture_blocked")
+    source_root = Path(str(validated["manifest_path"])).parent
+    source_contract = read_json(source_root / "activity_contract.json")
+    source_scope = dict(source_contract.get("scope") or {})
+    source_adapter = str(
+        (source_contract.get("adapter_identity") or {}).get("adapter") or ""
+    )
+    if (
+        source_contract.get("provider") != "csindex"
+        or not source_adapter.startswith("csindex_csindex-details_")
+        or source_scope.get("date_start") != "20120101"
+        or source_scope.get("date_end") != "20191231"
+        or source_scope.get("request_start") != "20110101"
+        or source_scope.get("request_end") != "20191231"
+    ):
+        raise ValueError("csindex_attachment_source_contract_invalid")
+    source_signed = validated.get("publication_signature_verified") is True
+    source_ancestry = {
+        "source_capture_schema": validated.get("schema_version"),
+        "source_generation_id": validated.get("generation_id"),
+        "source_content_hash": validated.get("content_hash"),
+        "source_contract_id": validated.get("contract_id"),
+        "source_contract_content_hash": canonical_hash(source_contract),
+        "source_provider": source_contract.get("provider"),
+        "source_adapter": source_adapter,
+        "source_scope": source_scope,
+        "source_publication_signature_verified": source_signed,
+        "source_normalized_artifacts_trusted": source_signed,
+        "weak_source_ancestry": not source_signed,
+    }
+    replayed, replay_root = replay_normalized_artifacts(
+        validated["manifest_path"],
+        normalizer=normalize_csindex_details,
+        required_roles=("csindex_announcement_details",),
+    )
+    details = [
+        json.loads(line)
+        for line in replayed["csindex_announcement_details"]
+        .decode("utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    hosts = _selected_attachment_hosts(include_hosts)
+    population = _attachment_population_from_details(details, include_hosts=hosts)
+    if not population:
+        raise ValueError("csindex_attachment_plan_empty")
+    requests = _attachment_requests(
+        population,
+        source_ancestry=source_ancestry,
+    )
+    input_root = canonical_hash(
+        {
+            "capture_content_hash": validated["content_hash"],
+            "normalized_replay_root": replay_root,
+            "selected_hosts": list(hosts),
+            "population_root": canonical_hash(population),
+            "source_ancestry": source_ancestry,
+            "implementation_root": _implementation_root(),
+        }
+    )
+    return population, requests, input_root
+
+
+def _attachment_population_from_details(
+    details: Sequence[Mapping[str, Any]],
+    *,
+    include_hosts: Sequence[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Extract, confine and deduplicate href/src attachment references."""
+
+    selected_hosts = set(_selected_attachment_hosts(include_hosts))
+    attachments: dict[str, dict[str, Any]] = {}
+    sources: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+    rejected: dict[str, dict[str, Any]] = {}
+    rejected_sources: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+    for detail in details:
+        announcement_id = str(detail.get("announcement_id") or "")
+        if not announcement_id:
+            raise ValueError("csindex_attachment_source_identity_missing")
+        parser = _AttachmentReferenceParser()
+        parser.feed(str(detail.get("content_html") or ""))
+        parser.close()
+        by_reference: dict[str, set[str]] = defaultdict(set)
+        for attribute, raw_reference in parser.references:
+            if not _looks_like_csindex_attachment_reference(raw_reference):
+                continue
+            literal_reference = html_lib.unescape(str(raw_reference)).strip()
+            try:
+                attachment_url = _canonical_csindex_attachment_url(
+                    literal_reference
+                )
+            except ValueError as exc:
+                rejection_reason = str(exc)
+                rejection_id = canonical_hash(
+                    {
+                        "raw_reference": literal_reference,
+                        "rejection_reason": rejection_reason,
+                    }
+                )
+                rejected.setdefault(
+                    rejection_id,
+                    {
+                        "attachment_url": None,
+                        "raw_reference": literal_reference,
+                        "host": None,
+                        "extension": None,
+                        "path_dates": [],
+                        "reference_disposition": "blocked_rejected_reference",
+                        "rejection_reason": rejection_reason,
+                        "temporal_blocker": CSINDEX_ATTACHMENT_TEMPORAL_BLOCKER,
+                    },
+                )
+                source = rejected_sources[rejection_id].setdefault(
+                    announcement_id,
+                    _attachment_source_edge(
+                        detail,
+                        announcement_id=announcement_id,
+                        edge_disposition="blocked_rejected_reference",
+                    ),
+                )
+                source["reference_attributes"] = sorted(
+                    set(source.get("reference_attributes") or ()) | {attribute}
+                )
+                continue
+            by_reference[attachment_url].add(attribute)
+        for attachment_url, attributes in sorted(by_reference.items()):
+            parsed = urllib.parse.urlsplit(attachment_url)
+            host = str(parsed.hostname or "").lower()
+            if host not in selected_hosts:
+                continue
+            extension = _attachment_extension(parsed.path)
+            path_dates = _attachment_path_dates(parsed.path)
+            if not path_dates:
+                reference_disposition = "blocked_attachment_path_date_unproven"
+            elif any(
+                value < CSINDEX_ATTACHMENT_PATH_DATE_START
+                or value > CSINDEX_ATTACHMENT_PATH_DATE_END
+                for value in path_dates
+            ):
+                reference_disposition = "blocked_out_of_scope_reference"
+            else:
+                reference_disposition = "capture_eligible"
+            attachments.setdefault(
+                attachment_url,
+                {
+                    "attachment_url": attachment_url,
+                    "host": host,
+                    "extension": extension,
+                    "path_dates": path_dates,
+                    "reference_disposition": reference_disposition,
+                    "temporal_blocker": CSINDEX_ATTACHMENT_TEMPORAL_BLOCKER,
+                },
+            )
+            publish_date = _strict_iso_date(detail.get("publish_date"))
+            publish_token = publish_date.strftime("%Y%m%d") if publish_date else None
+            source_in_scope = bool(
+                publish_token
+                and CSINDEX_ATTACHMENT_PATH_DATE_START
+                <= publish_token
+                <= CSINDEX_ATTACHMENT_PATH_DATE_END
+            )
+            if reference_disposition != "capture_eligible" or not source_in_scope:
+                edge_disposition = reference_disposition
+            elif any(value > str(publish_token) for value in path_dates):
+                edge_disposition = "value_only_migrated_reference"
+            else:
+                edge_disposition = "historical_edge_candidate"
+            source = _attachment_source_edge(
+                detail,
+                announcement_id=announcement_id,
+                edge_disposition=edge_disposition,
+            )
+            source["reference_attributes"] = sorted(attributes)
+            sources[attachment_url][announcement_id] = source
+    ordered = sorted(
+        attachments.values(),
+        key=lambda row: (
+            CSINDEX_ATTACHMENT_HOSTS.index(str(row["host"])),
+            str(row["attachment_url"]),
+        ),
+    )
+    accepted_rows = [
+        row
+        | {
+            "source_announcements": [
+                sources[str(row["attachment_url"])][key]
+                for key in sorted(sources[str(row["attachment_url"])])
+            ]
+        }
+        for row in ordered
+    ]
+    rejected_rows = [
+        row
+        | {
+            "rejection_id": rejection_id,
+            "source_announcements": [
+                rejected_sources[rejection_id][key]
+                for key in sorted(rejected_sources[rejection_id])
+            ],
+        }
+        for rejection_id, row in sorted(rejected.items())
+    ]
+    return accepted_rows + rejected_rows
+
+
+def _attachment_source_edge(
+    detail: Mapping[str, Any],
+    *,
+    announcement_id: str,
+    edge_disposition: str,
+) -> dict[str, Any]:
+    return {
+        "announcement_id": announcement_id,
+        "announcement_publish_date": detail.get("publish_date"),
+        "detail_source_request_id": detail.get("source_request_id"),
+        "detail_source_payload_sha256": detail.get("source_payload_sha256"),
+        "reference_attributes": [],
+        "edge_disposition": edge_disposition,
+        "historical_known_at_proven": False,
+    }
+
+
+def _attachment_requests(
+    population: Sequence[Mapping[str, Any]],
+    *,
+    source_ancestry: Mapping[str, Any],
+) -> list[ProviderProbeRequest]:
+    required_checks = (
+        "http_envelope_schema_exact",
+        "request_method_bound",
+        "redirect_not_followed",
+        "http_status_exact",
+        "request_url_bound",
+        "nonempty_attachment",
+        "content_length_matches",
+        "content_type_compatible",
+        "attachment_magic_matches",
+        "not_html_or_waf",
+        "body_sha256_matches",
+    )
+    capture_population = [
+        row
+        for row in population
+        if row.get("reference_disposition") == "capture_eligible"
+    ]
+    blocked_references = [
+        dict(row)
+        for row in population
+        if row.get("reference_disposition") != "capture_eligible"
+    ]
+    if not capture_population:
+        raise ValueError("csindex_attachment_capture_plan_empty")
+    ancestry = dict(source_ancestry)
+    if (
+        ancestry.get("source_provider") != "csindex"
+        or not isinstance(ancestry.get("weak_source_ancestry"), bool)
+        or ancestry.get("source_publication_signature_verified")
+        is not (not ancestry["weak_source_ancestry"])
+        or ancestry.get("source_normalized_artifacts_trusted")
+        is not (not ancestry["weak_source_ancestry"])
+    ):
+        raise ValueError("csindex_attachment_source_ancestry_invalid")
+    blocked_reference_root = canonical_hash(blocked_references)
+    requests = [
+        ProviderProbeRequest(
+            request_id=(
+                "csindex_attachment_"
+                + hashlib.sha256(str(row["attachment_url"]).encode()).hexdigest()[:24]
+            ),
+            provider="csindex",
+            endpoint="index_rebalance_announcement_attachment",
+            method="GET",
+            url=str(row["attachment_url"]),
+            headers={
+                "Referer": "https://www.csindex.com.cn/",
+                "User-Agent": USER_AGENT,
+            },
+            disposition="bounded_backfill",
+            evidence_semantics="official_http_binary_response_envelope",
+            expected_terminal_states=("positive",),
+            required_checks=required_checks,
+            metadata={
+                "case": "csindex_attachment",
+                "extension": row["extension"],
+                "attachment_host": row["host"],
+                "source_announcements": row["source_announcements"],
+                "path_dates": row["path_dates"],
+                "reference_disposition": row["reference_disposition"],
+                "blocked_reference_count": len(blocked_references),
+                "blocked_reference_root": blocked_reference_root,
+                "source_ancestry": ancestry,
+                "temporal_blocker": CSINDEX_ATTACHMENT_TEMPORAL_BLOCKER,
+                "historical_known_at_proven": False,
+            },
+        )
+        for row in capture_population
+    ]
+    requests[0] = ProviderProbeRequest(
+        **{
+            **requests[0].__dict__,
+            "metadata": dict(requests[0].metadata)
+            | {"blocked_references": blocked_references},
+        }
+    )
+    return requests
 
 
 def normalize_csindex_discovery(
@@ -407,6 +873,165 @@ def normalize_csindex_details(
         NormalizedArtifact("csi300_candidate_announcements", "normalized/csi300_candidate_announcements.jsonl", candidate_count),
         NormalizedArtifact("conflicts", "normalized/conflicts.jsonl", 0),
         NormalizedArtifact("normalized_manifest", "normalized/normalized_manifest.json", 1),
+    )
+
+
+def normalize_csindex_attachments(
+    run_root: Path,
+    requests: Sequence[ProviderProbeRequest],
+    terminal: Mapping[str, Mapping[str, Any]],
+) -> Sequence[NormalizedArtifact]:
+    """Write only a binary index; exact attachment bytes remain in signed raw."""
+
+    output = run_root / "normalized"
+    output.mkdir(exist_ok=True)
+    index_path = output / "attachment_index.jsonl"
+    blocked_path = output / "blocked_reference_index.jsonl"
+    if not requests:
+        raise ValueError("csindex_attachment_normalization_requests_empty")
+    source_ancestry = requests[0].metadata.get("source_ancestry")
+    if (
+        not isinstance(source_ancestry, Mapping)
+        or source_ancestry.get("source_provider") != "csindex"
+        or not isinstance(source_ancestry.get("weak_source_ancestry"), bool)
+        or source_ancestry.get("source_publication_signature_verified")
+        is not (not source_ancestry["weak_source_ancestry"])
+        or source_ancestry.get("source_normalized_artifacts_trusted")
+        is not (not source_ancestry["weak_source_ancestry"])
+    ):
+        raise ValueError("csindex_attachment_source_ancestry_invalid")
+    blocked_references = requests[0].metadata.get("blocked_references")
+    if not isinstance(blocked_references, list):
+        raise ValueError("csindex_attachment_blocked_reference_audit_missing")
+    blocked_reference_root = canonical_hash(blocked_references)
+    if any(
+        request.metadata.get("blocked_reference_count") != len(blocked_references)
+        or request.metadata.get("blocked_reference_root") != blocked_reference_root
+        or request.metadata.get("source_ancestry") != source_ancestry
+        or request.metadata.get("reference_disposition") != "capture_eligible"
+        or request.metadata.get("path_dates")
+        != _attachment_path_dates(urllib.parse.urlsplit(request.url).path)
+        or not request.metadata.get("path_dates")
+        or any(
+            value < CSINDEX_ATTACHMENT_PATH_DATE_START
+            or value > CSINDEX_ATTACHMENT_PATH_DATE_END
+            for value in request.metadata.get("path_dates") or ()
+        )
+        or (index > 0 and "blocked_references" in request.metadata)
+        for index, request in enumerate(requests)
+    ):
+        raise ValueError("csindex_attachment_reference_audit_invalid")
+    if any(
+        row.get("reference_disposition") == "capture_eligible"
+        for row in blocked_references
+        if isinstance(row, Mapping)
+    ) or any(not isinstance(row, Mapping) for row in blocked_references):
+        raise ValueError("csindex_attachment_blocked_reference_audit_invalid")
+    _atomic_jsonl(blocked_path, blocked_references)
+    count = 0
+    with index_path.open("wb") as handle:
+        for request in requests:
+            receipt = terminal[request.request_id]
+            wrapper = read_json(
+                run_root / str(receipt["raw_envelope_relative_path"])
+            )
+            official = json.loads(
+                base64.b64decode(wrapper["raw_payload_base64"], validate=True)
+            )
+            body = base64.b64decode(
+                str(official.get("body_base64") or ""), validate=True
+            )
+            response_headers = {
+                str(key).lower(): str(value)
+                for key, value in (official.get("response_headers") or {}).items()
+            }
+            extension = str(request.metadata.get("extension") or "").lower()
+            block_reason = _attachment_block_reason(body)
+            if (
+                official.get("schema_version")
+                != "official_http_probe_envelope_v1"
+                or official.get("method") != "GET"
+                or official.get("redirect_followed") is not False
+                or official.get("status_code") != 200
+                or str(official.get("url") or "") != request.url
+                or not body
+                or not _attachment_content_length_matches(
+                    response_headers.get("content-length"), len(body)
+                )
+                or not _attachment_content_type_compatible(
+                    extension, response_headers.get("content-type")
+                )
+                or not _attachment_magic_valid(body, extension)
+                or block_reason is not None
+                or str(official.get("body_sha256") or "")
+                != hashlib.sha256(body).hexdigest()
+            ):
+                raise ValueError(
+                    "csindex_attachment_normalization_wire_evidence_invalid:"
+                    f"{request.request_id}"
+                )
+            row = {
+                "attachment_url": request.url,
+                "attachment_host": request.metadata.get("attachment_host"),
+                "attachment_extension": extension,
+                "path_dates": request.metadata.get("path_dates"),
+                "reference_disposition": request.metadata.get(
+                    "reference_disposition"
+                ),
+                "attachment_sha256": hashlib.sha256(body).hexdigest(),
+                "attachment_size_bytes": len(body),
+                "source_announcements": request.metadata.get(
+                    "source_announcements"
+                ),
+                "source_request_id": request.request_id,
+                "source_payload_sha256": wrapper["raw_payload_sha256"],
+                "historical_known_at": None,
+                "historical_known_at_proven": False,
+                "temporal_blocker": CSINDEX_ATTACHMENT_TEMPORAL_BLOCKER,
+            }
+            _write_row(handle, row)
+            count += 1
+        handle.flush()
+        os.fsync(handle.fileno())
+    manifest_path = output / "normalized_manifest.json"
+    manifest = {
+        "schema_version": "csindex_attachment_normalization_v2",
+        "attachment_count": count,
+        "attachment_index_sha256": sha256_file(index_path),
+        "blocked_reference_count": len(blocked_references),
+        "blocked_reference_root": blocked_reference_root,
+        "blocked_reference_index_sha256": sha256_file(blocked_path),
+        "source_ancestry": dict(source_ancestry),
+        "raw_capture_contains_exact_attachment_bytes": True,
+        "binary_payloads_extracted_from_raw": False,
+        "historical_known_at_proven": False,
+        "pit_membership_authorized": False,
+        "blockers": [
+            CSINDEX_ATTACHMENT_TEMPORAL_BLOCKER,
+            "csi300_attachment_semantic_parser_not_run",
+        ]
+        + (
+            ["weak_source_acquisition_ancestry"]
+            if source_ancestry["weak_source_ancestry"]
+            else []
+        ),
+    }
+    manifest["content_hash"] = canonical_hash(manifest)
+    _atomic_json(manifest_path, manifest)
+    return (
+        NormalizedArtifact(
+            "csindex_attachment_index",
+            "normalized/attachment_index.jsonl",
+            count,
+        ),
+        NormalizedArtifact(
+            "csindex_blocked_reference_index",
+            "normalized/blocked_reference_index.jsonl",
+            len(blocked_references),
+        ),
+        NormalizedArtifact(
+            "normalized_manifest", "normalized/normalized_manifest.json", 1
+        ),
     )
 
 
@@ -673,16 +1298,29 @@ def _contract(
     timeout: float,
     retries: int,
     permission_context_id: str,
+    allowed_hosts: Sequence[str] = ("www.csindex.com.cn",),
 ) -> FreeProviderBackfillContract:
+    attachment_phase = phase == "csindex-attachments"
     identity = {
-        "adapter": f"csindex_{phase}_signed_http_capture_v1",
+        "adapter": (
+            "csindex_attachments_signed_binary_capture_v2"
+            if attachment_phase
+            else f"csindex_{phase}_signed_http_capture_v1"
+        ),
         "implementation_root": _implementation_root(),
         "http": "python_urllib_no_redirect_v1",
     }
+    if attachment_phase:
+        identity["attachment_contract"] = "csindex_attachment_capture_contract_v2"
+        identity["attachment_body_max_bytes"] = CSINDEX_ATTACHMENT_BODY_MAX_BYTES
     if input_capture_hash:
         identity["input_capture_content_hash"] = input_capture_hash
     return FreeProviderBackfillContract(
-        activity_name=f"free_domestic_csindex_{phase}_2011_2019_v1",
+        activity_name=(
+            "free_domestic_csindex_attachments_2011_2019_v2"
+            if attachment_phase
+            else f"free_domestic_csindex_{phase}_2011_2019_v1"
+        ),
         provider="csindex",
         output_root=output_root,
         permission_context_id=permission_context_id,
@@ -693,12 +1331,18 @@ def _contract(
         scope_end="20191231",
         request_start="20110101",
         request_end="20191231",
-        allowed_hosts=("www.csindex.com.cn",),
+        allowed_hosts=tuple(allowed_hosts),
         budget=BackfillResourceBudget(
             max_requests=request_count * (retries + 1),
             max_wire_exchanges=request_count * (retries + 1),
-            max_response_bytes=64 * 1024 * 1024,
-            max_total_response_bytes=8 * 1024 * 1024 * 1024,
+            max_response_bytes=(
+                176 * 1024 * 1024 if attachment_phase else 64 * 1024 * 1024
+            ),
+            max_total_response_bytes=(
+                16 * 1024 * 1024 * 1024
+                if attachment_phase
+                else 8 * 1024 * 1024 * 1024
+            ),
             timeout_seconds=timeout,
             minimum_delay_seconds=delay,
             max_retries=retries,
@@ -713,10 +1357,55 @@ def _implementation_root() -> str:
             "discovery_plan": inspect.getsource(build_csindex_discovery_plan),
             "inventory_plan": inspect.getsource(build_csindex_inventory_plan),
             "detail_plan": inspect.getsource(build_csindex_detail_plan),
+            "attachment_plan": inspect.getsource(build_csindex_attachment_plan),
+            "attachment_population": inspect.getsource(
+                _attachment_population_from_details
+            )
+            + inspect.getsource(_attachment_source_edge),
+            "attachment_reference_parser": inspect.getsource(
+                _AttachmentReferenceParser
+            ),
+            "attachment_requests": inspect.getsource(_attachment_requests),
+            "attachment_host_policy": inspect.getsource(
+                _selected_attachment_hosts
+            )
+            + inspect.getsource(_looks_like_csindex_attachment_reference),
+            "attachment_url_policy": inspect.getsource(
+                _canonical_csindex_attachment_url
+            )
+            + inspect.getsource(_canonical_attachment_path)
+            + inspect.getsource(_attachment_extension)
+            + inspect.getsource(_attachment_path_dates),
             "list_normalizer": inspect.getsource(_normalize_list_pages),
             "detail_normalizer": inspect.getsource(normalize_csindex_details),
+            "attachment_normalizer": inspect.getsource(
+                normalize_csindex_attachments
+            ),
             "transport": inspect.getsource(CSIndexBackfillTransport),
+            "attachment_transport": inspect.getsource(
+                CSIndexAttachmentTransport
+            ),
+            "attachment_wire_checks": inspect.getsource(
+                _attachment_content_length_matches
+            )
+            + inspect.getsource(
+                _attachment_content_type_compatible
+            )
+            + inspect.getsource(_attachment_magic_valid)
+            + inspect.getsource(_text_attachment_valid)
+            + inspect.getsource(_attachment_block_reason),
+            "attachment_policy_constants": {
+                "allowed_hosts": list(CSINDEX_ATTACHMENT_HOSTS),
+                "allowed_extensions": sorted(CSINDEX_ATTACHMENT_EXTENSIONS),
+                "path_date_start": CSINDEX_ATTACHMENT_PATH_DATE_START,
+                "path_date_end": CSINDEX_ATTACHMENT_PATH_DATE_END,
+                "temporal_blocker": CSINDEX_ATTACHMENT_TEMPORAL_BLOCKER,
+                "body_max_bytes": CSINDEX_ATTACHMENT_BODY_MAX_BYTES,
+            },
             "official_http_transport": inspect.getsource(OfficialHttpProbeTransport),
+            "official_http_transport_module_sha256": sha256_file(
+                Path(run_provider_probe_module.__file__)
+            ),
         }
     )
 
@@ -725,11 +1414,22 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run CSI official archive backfill.")
     parser.add_argument(
         "--phase",
-        choices=("csindex-discovery", "csindex-inventory", "csindex-details"),
+        choices=(
+            "csindex-discovery",
+            "csindex-inventory",
+            "csindex-details",
+            "csindex-attachments",
+        ),
         required=True,
     )
     parser.add_argument("--leaf-id", action="append")
     parser.add_argument("--input-capture")
+    parser.add_argument(
+        "--attachment-host",
+        action="append",
+        choices=CSINDEX_ATTACHMENT_HOSTS,
+        help="Restrict attachment capture to one approved host; may be repeated.",
+    )
     parser.add_argument("--permission-context-id", default=DEFAULT_PERMISSION_CONTEXT)
     parser.add_argument("--allow-network", action="store_true")
     parser.add_argument("--plan-only", action="store_true")
@@ -748,22 +1448,44 @@ def main(argv: list[str] | None = None) -> int:
         print(_render(payload, pretty=args.pretty))
         return 0
     input_hash: str | None = None
+    attachment_hosts: tuple[str, ...] = ("www.csindex.com.cn",)
+    transport_type: type[CSIndexBackfillTransport | CSIndexAttachmentTransport]
+    transport_type = CSIndexBackfillTransport
     if args.phase == "csindex-discovery":
+        if args.attachment_host:
+            raise SystemExit("--attachment-host is only valid for csindex-attachments")
         population, requests = build_csindex_discovery_plan(args.leaf_id)
         normalizer = normalize_csindex_discovery
         default_delay = 5.0
     elif args.phase == "csindex-inventory":
+        if args.attachment_host:
+            raise SystemExit("--attachment-host is only valid for csindex-attachments")
         if not args.input_capture:
             raise SystemExit("--input-capture is required for csindex-inventory")
         population, requests, input_hash = build_csindex_inventory_plan(args.input_capture)
         normalizer = normalize_csindex_inventory
         default_delay = 5.0
-    else:
+    elif args.phase == "csindex-details":
+        if args.attachment_host:
+            raise SystemExit("--attachment-host is only valid for csindex-attachments")
         if not args.input_capture:
             raise SystemExit("--input-capture is required for csindex-details")
         population, requests, input_hash = build_csindex_detail_plan(args.input_capture)
         normalizer = normalize_csindex_details
         default_delay = 7.5
+    else:
+        if args.leaf_id:
+            raise SystemExit("--leaf-id is not valid for csindex-attachments")
+        if not args.input_capture:
+            raise SystemExit("--input-capture is required for csindex-attachments")
+        attachment_hosts = _selected_attachment_hosts(args.attachment_host)
+        population, requests, input_hash = build_csindex_attachment_plan(
+            args.input_capture,
+            include_hosts=attachment_hosts,
+        )
+        normalizer = normalize_csindex_attachments
+        transport_type = CSIndexAttachmentTransport
+        default_delay = 2.0
     delay = args.minimum_delay_seconds if args.minimum_delay_seconds is not None else default_delay
     population_root = canonical_hash(
         {"population": population, "input_capture_content_hash": input_hash}
@@ -806,6 +1528,7 @@ def main(argv: list[str] | None = None) -> int:
         timeout=args.timeout_seconds,
         retries=args.max_retries,
         permission_context_id=args.permission_context_id,
+        allowed_hosts=attachment_hosts,
     )
     if args.plan_only:
         print(
@@ -822,13 +1545,265 @@ def main(argv: list[str] | None = None) -> int:
     result = run_free_provider_backfill(
         contract,
         requests,
-        transport=CSIndexBackfillTransport(minimum_delay_seconds=delay),
+        transport=transport_type(minimum_delay_seconds=delay),
         signer=signer,
         normalizer=normalizer,
         runtime_implementation_root=_implementation_root(),
     )
     print(_render(result, pretty=args.pretty))
     return 0 if result.get("status") == "succeeded" else 1
+
+
+def _selected_attachment_hosts(
+    include_hosts: Sequence[str] | None,
+) -> tuple[str, ...]:
+    selected = {
+        str(host).strip().lower().rstrip(".")
+        for host in (include_hosts or CSINDEX_ATTACHMENT_HOSTS)
+    }
+    if not selected or not selected <= set(CSINDEX_ATTACHMENT_HOSTS):
+        raise ValueError("csindex_attachment_host_filter_invalid")
+    return tuple(host for host in CSINDEX_ATTACHMENT_HOSTS if host in selected)
+
+
+def _looks_like_csindex_attachment_reference(value: Any) -> bool:
+    candidate = html_lib.unescape(str(value or "")).strip().lower()
+    return (
+        candidate.startswith("file/")
+        or any(host in candidate for host in CSINDEX_ATTACHMENT_HOSTS)
+        or _ATTACHMENT_REFERENCE_HINT.search(candidate) is not None
+    )
+
+
+def _canonical_csindex_attachment_url(value: Any) -> str:
+    """Return one confined attachment URL or reject the reference."""
+
+    if not isinstance(value, str):
+        raise ValueError("csindex_attachment_url_invalid")
+    candidate = html_lib.unescape(value).strip()
+    if (
+        not candidate
+        or any(ord(character) < 32 or ord(character) == 127 for character in candidate)
+        or "\\" in candidate
+    ):
+        raise ValueError("csindex_attachment_url_invalid")
+    if candidate.startswith("file/"):
+        parsed = urllib.parse.urlsplit(candidate)
+        if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
+            raise ValueError("csindex_attachment_relative_url_invalid")
+        path = _canonical_attachment_path(parsed.path, leading_slash=False)
+        if not path.startswith("file/"):
+            raise ValueError("csindex_attachment_relative_url_invalid")
+        _attachment_extension(path)
+        return f"https://www.csindex.com.cn/{path}"
+
+    parsed = urllib.parse.urlsplit(candidate)
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("csindex_attachment_absolute_url_invalid") from exc
+    host = str(parsed.hostname or "").lower().rstrip(".")
+    if (
+        parsed.scheme.lower() != "https"
+        or host != "oss-ch.csindex.com.cn"
+        or parsed.username is not None
+        or parsed.password is not None
+        or port is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.netloc.lower().rstrip(".") != host
+    ):
+        raise ValueError("csindex_attachment_absolute_url_invalid")
+    path = _canonical_attachment_path(parsed.path, leading_slash=True)
+    _attachment_extension(path)
+    return f"https://oss-ch.csindex.com.cn{path}"
+
+
+def _canonical_attachment_path(path: str, *, leading_slash: bool) -> str:
+    if leading_slash:
+        if not path.startswith("/") or path.startswith("//"):
+            raise ValueError("csindex_attachment_path_invalid")
+        raw = path[1:]
+    else:
+        if path.startswith("/"):
+            raise ValueError("csindex_attachment_path_invalid")
+        raw = path
+    if not raw or raw.endswith("/") or "//" in raw:
+        raise ValueError("csindex_attachment_path_invalid")
+    encoded: list[str] = []
+    for segment in raw.split("/"):
+        if not segment or _INVALID_PERCENT_ESCAPE.search(segment):
+            raise ValueError("csindex_attachment_path_invalid")
+        decoded = urllib.parse.unquote(segment, errors="strict")
+        decoded_twice = urllib.parse.unquote(decoded, errors="strict")
+        if (
+            decoded_twice != decoded
+            or decoded in {".", ".."}
+            or any(
+                character in decoded
+                for character in ("/", "\\", "?", "#")
+            )
+            or any(
+                ord(character) < 32 or ord(character) == 127
+                for character in decoded
+            )
+        ):
+            raise ValueError("csindex_attachment_path_invalid")
+        encoded.append(urllib.parse.quote(decoded, safe="-._~"))
+    canonical = "/".join(encoded)
+    return f"/{canonical}" if leading_slash else canonical
+
+
+def _attachment_extension(path: str) -> str:
+    decoded_name = urllib.parse.unquote(path.rsplit("/", 1)[-1]).lower()
+    if "." not in decoded_name:
+        raise ValueError("csindex_attachment_extension_unsupported")
+    extension = decoded_name.rsplit(".", 1)[-1]
+    if extension not in CSINDEX_ATTACHMENT_EXTENSIONS:
+        raise ValueError("csindex_attachment_extension_unsupported")
+    return extension
+
+
+def _attachment_path_dates(path: str) -> list[str]:
+    dates: list[str] = []
+    decoded_path = urllib.parse.unquote(path, errors="strict")
+    for token in _PATH_DATE_TOKEN.findall(decoded_path):
+        try:
+            parsed = date(
+                int(token[:4]),
+                int(token[4:6]),
+                int(token[6:]),
+            )
+        except ValueError:
+            continue
+        if parsed.strftime("%Y%m%d") == token:
+            dates.append(token)
+    return sorted(set(dates))
+
+
+def _attachment_content_length_matches(value: Any, actual_size: int) -> bool:
+    if not isinstance(value, str) or not value.strip().isdigit():
+        return False
+    return int(value.strip()) == actual_size
+
+
+def _attachment_content_type_compatible(extension: str, value: Any) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    content_type = value.split(";", 1)[0].strip().lower()
+    generic = {"application/octet-stream", "application/x-download"}
+    accepted = {
+        "xls": generic
+        | {"application/vnd.ms-excel", "application/msexcel", "application/xls"},
+        "xlsx": generic
+        | {
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/zip",
+        },
+        "pdf": generic | {"application/pdf"},
+        "txt": generic | {"text/plain"},
+        "csv": generic | {"text/csv", "text/plain", "application/vnd.ms-excel"},
+        "zip": generic | {"application/zip", "application/x-zip-compressed"},
+        "doc": generic | {"application/msword"},
+        "docx": generic
+        | {
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/zip",
+        },
+        "jpg": {"image/jpeg", "application/octet-stream"},
+        "jpeg": {"image/jpeg", "application/octet-stream"},
+        "png": {"image/png", "application/octet-stream"},
+        "gif": {"image/gif", "application/octet-stream"},
+    }
+    return content_type in accepted.get(extension, set())
+
+
+def _attachment_magic_valid(body: bytes, extension: str) -> bool:
+    if not body or _attachment_block_reason(body) is not None:
+        return False
+    if extension == "pdf":
+        return body.startswith(b"%PDF-") and b"%%EOF" in body[-65536:]
+    if extension in {"xls", "doc"}:
+        return body.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
+    if extension in {"xlsx", "docx", "zip"}:
+        if not body.startswith(b"PK"):
+            return False
+        try:
+            with zipfile.ZipFile(io.BytesIO(body)) as archive:
+                names = set(archive.namelist())
+        except (OSError, ValueError, zipfile.BadZipFile):
+            return False
+        if not names:
+            return False
+        if extension == "xlsx":
+            return "[Content_Types].xml" in names and any(
+                name.startswith("xl/") for name in names
+            )
+        if extension == "docx":
+            return "[Content_Types].xml" in names and any(
+                name.startswith("word/") for name in names
+            )
+        return True
+    if extension in {"txt", "csv"}:
+        return _text_attachment_valid(body)
+    if extension in {"jpg", "jpeg"}:
+        return body.startswith(b"\xff\xd8\xff")
+    if extension == "png":
+        return body.startswith(b"\x89PNG\r\n\x1a\n")
+    if extension == "gif":
+        return body.startswith((b"GIF87a", b"GIF89a"))
+    return False
+
+
+def _text_attachment_valid(body: bytes) -> bool:
+    for encoding in ("utf-8-sig", "gb18030"):
+        try:
+            text = body.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+        if "\x00" in text:
+            return False
+        visible = sum(
+            character.isprintable() or character in "\r\n\t" for character in text
+        )
+        return bool(text.strip()) and visible / max(1, len(text)) >= 0.95
+    return False
+
+
+def _attachment_block_reason(body: bytes) -> str | None:
+    prefix_bytes = body[:16384]
+    if prefix_bytes.startswith(b"\xef\xbb\xbf"):
+        prefix_bytes = prefix_bytes[3:]
+    prefix = prefix_bytes.lstrip().lower()
+    if prefix.startswith((b"<!doctype html", b"<html", b"<head", b"<body")):
+        return "html_response"
+    waf_tokens = (
+        b"access denied",
+        b"request blocked",
+        b"web application firewall",
+        b"captcha",
+    )
+    if any(token in prefix for token in waf_tokens):
+        return "waf_or_block_page"
+    for encoding in ("utf-8-sig", "gb18030"):
+        try:
+            text = prefix_bytes.decode(encoding).strip().lower()
+        except UnicodeDecodeError:
+            continue
+        if text.startswith(("<!doctype html", "<html", "<head", "<body")):
+            return "html_response"
+        if any(
+            token in text
+            for token in (
+                "访问被阻断",
+                "请求被拒绝",
+                "拒绝访问",
+                "安全验证",
+                "验证码",
+            )
+        ):
+            return "waf_or_block_page"
+    return None
 
 
 def _nonnegative_int(value: Any) -> int | None:

@@ -2,6 +2,20 @@
 
 This file records only the current A-share architecture and recent governed milestones. Detailed historical implementation is available through Git history rather than duplicated task-by-task prose.
 
+## 2026-08-16 — Signed free-provider backfill and attachment evidence
+
+### Outcome
+
+- Added a persistent-key, signed and resumable free-provider backfill for Baostock, CNINFO and the CSI official archive. Every attempt is fsync'd before transport, every terminal response retains exact raw bytes or bounded over-budget evidence, publication is immutable and content-addressed, and independent validation recomputes journal, request-plan, raw closure, resource use and signatures.
+- Separated physical capture from coverage use. Existing normalized lake values never acquire governed coverage merely because a new provider query resembles them; raw replay and later provider-neutral obligation projection remain distinct evidence steps. All data-admission, search, holdout, promotion, shadow, paper and live permissions remain false.
+- Completed signed Baostock daily-state capture and a raw-derived coverage projection over the research population. The verifier found three 2012 code-alias gaps and one post-delist provider row and correctly returned `blocked_gaps`; no value was renamed or lifecycle boundary relaxed to force exact cover.
+- Added bounded Baostock reconciliation plans for security lifecycle, turnover, adjustment factors, CSI300 daily snapshots, index bars and dividends. A real long-session expiry (`10001001`) exposed a missing reconnect classification; the failed activity remains immutable, while an exact-code bounded reconnect fix and two regression seams now drive a new contract/activity identity.
+- Added CSI attachment acquisition derived only by replaying signed detail raw. URL confinement rejects redirects, HTTP, external hosts, userinfo, ports, query/fragment, traversal, encoded separators and malformed concatenations; response validation binds envelope schema, method, URL, no-redirect state, headers, length, MIME, file magic, body hash and WAF detection.
+- Audited the real CSI detail set into 608 reference identities: 439 in-scope capture candidates, 153 references without a provable path date, 14 rejected malformed/external references and 2 explicit 2020/2025 references. Only the 439 candidates may touch the network; every blocked reference and source announcement edge is retained in signed plan/replay evidence.
+- Preserved provenance transparency for the early v1 CSI detail capture. Its terminal journal and raw bytes are signed and replayable, but its publication signature is not verified; attachment manifests therefore carry `weak_source_ancestry=true` and cannot upgrade the source to PIT or admission evidence. A separately signed v2 discovery → inventory → details chain is being acquired for reconciliation.
+- Bound the complete shared HTTP transport module and the 128 MiB attachment body cap into implementation identity. Oversized or malformed post-exchange responses now retain status, safe headers, observed-prefix/sample hashes and the true exchange count instead of being downgraded to a zero-exchange generic exception.
+- Kept current real acquisition asynchronous and bounded: provider hosts run single-flight with locked delays, host-wide signed circuit breakers stop on 403/429/WAF, and old lake/freeze/bundle locations remain write-protected. Completion of downloads alone does not authorize a Canonical Data Freeze or research.
+
 ## 2026-08-16 — Bounded free-provider capability probe
 
 ### Outcome

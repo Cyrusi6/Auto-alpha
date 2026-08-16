@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import json
 import urllib.request
+import zipfile
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -11,6 +13,7 @@ import pytest
 
 from auto_alpha.data.ingestion.pipeline.ashare import (
     free_provider_baostock_reconciliation as baostock_reconciliation,
+    free_provider_csindex_backfill as csindex_backfill,
 )
 from auto_alpha.data.ingestion.pipeline.ashare.free_provider_baostock_reconciliation import (
     _implementation_root as baostock_reconciliation_implementation_root,
@@ -22,12 +25,25 @@ from auto_alpha.data.ingestion.pipeline.ashare.free_provider_baostock_reconcilia
     normalize_turnover,
 )
 from auto_alpha.data.ingestion.pipeline.ashare.free_provider_backfill import (
+    replay_normalized_artifacts,
+    run_free_provider_backfill,
+    validate_free_provider_backfill,
     _validate_baostock_wire_envelope,
 )
 from auto_alpha.data.ingestion.pipeline.ashare.free_provider_csindex_backfill import (
+    CSIndexAttachmentTransport,
     CSIndexBackfillTransport,
+    _attachment_content_length_matches,
+    _attachment_content_type_compatible,
+    _attachment_magic_valid,
+    _attachment_population_from_details,
+    _attachment_requests,
+    _canonical_csindex_attachment_url,
+    _contract as csindex_contract,
+    _implementation_root as csindex_implementation_root,
     _strict_iso_date,
     build_csindex_discovery_plan,
+    normalize_csindex_attachments,
     normalize_csindex_discovery,
 )
 from auto_alpha.data.ingestion.pipeline.ashare.free_provider_http_backfill import (
@@ -41,13 +57,38 @@ from auto_alpha.data.ingestion.pipeline.ashare.free_provider_http_backfill impor
     build_cninfo_discovery_plan,
     normalize_cninfo_discovery,
 )
-from auto_alpha.data.ingestion.pipeline.ashare.provider_probe import ProviderProbeObservation
+from auto_alpha.data.ingestion.pipeline.ashare.provider_probe import (
+    ProviderProbeObservation,
+    ProviderProbeRequest,
+)
 from auto_alpha.data.ingestion.pipeline.ashare.run_provider_probe import (
     BAOSTOCK_FIELDS,
     BaostockProbeTransport,
     OfficialHttpProbeTransport,
 )
 from auto_alpha.platform.artifacts.storage import canonical_hash
+from auto_alpha.platform.governance.network.signing import EphemeralReceiptSigner
+
+
+def _attachment_source_ancestry(*, weak: bool = False) -> dict[str, object]:
+    return {
+        "source_capture_schema": "free_provider_backfill_capture_v2",
+        "source_generation_id": "fixture-details",
+        "source_content_hash": "a" * 64,
+        "source_contract_id": "b" * 64,
+        "source_contract_content_hash": "c" * 64,
+        "source_provider": "csindex",
+        "source_adapter": "csindex_csindex-details_signed_http_capture_v1",
+        "source_scope": {
+            "date_start": "20120101",
+            "date_end": "20191231",
+            "request_start": "20110101",
+            "request_end": "20191231",
+        },
+        "source_publication_signature_verified": not weak,
+        "source_normalized_artifacts_trusted": not weak,
+        "weak_source_ancestry": weak,
+    }
 
 
 def _official_wrapper(body: dict, request_id: str) -> tuple[dict, dict]:
@@ -184,6 +225,52 @@ def test_official_http_transport_disables_environment_proxy(
     ]
 
     assert proxy_handlers == []
+
+
+def test_official_http_over_budget_response_retains_exchange_evidence() -> None:
+    class Response:
+        status = 200
+        headers = {
+            "Content-Length": "9",
+            "Content-Type": "application/octet-stream",
+        }
+
+        def read(self, _size: int) -> bytes:
+            return b"123456789"
+
+    class Opener:
+        def open(self, _request: object, *, timeout: float) -> Response:
+            assert timeout == 3
+            return Response()
+
+    transport = OfficialHttpProbeTransport(
+        minimum_delay_seconds=0,
+        max_response_bytes=8,
+    )
+    transport._opener = Opener()
+    request = ProviderProbeRequest(
+        request_id="over-budget",
+        provider="csindex",
+        endpoint="attachment",
+        method="GET",
+        url="https://oss-ch.csindex.com.cn/20120102/a.xlsx",
+        disposition="bounded_backfill",
+        evidence_semantics="official_http_binary_response_envelope",
+        expected_terminal_states=("positive",),
+        required_checks=("response_within_byte_budget",),
+    )
+
+    observed = transport(request, 3)
+    envelope = json.loads(observed.raw_payload)
+
+    assert observed.terminal_state == "error"
+    assert observed.error_code == "official_http_response_budget_exceeded"
+    assert observed.transport_exchange_count == 1
+    assert envelope["body_truncated"] is True
+    assert envelope["observed_prefix_size_bytes"] == 9
+    assert envelope["observed_prefix_sha256"] == hashlib.sha256(
+        b"123456789"
+    ).hexdigest()
 
 
 def test_cninfo_discovery_normalizer_archives_announcement_identity(tmp_path: Path) -> None:
@@ -354,6 +441,537 @@ def test_csindex_publication_dates_require_exact_valid_iso_dates() -> None:
     assert _strict_iso_date("2012-02-30") is None
     assert _strict_iso_date("2012-2-09") is None
     assert _strict_iso_date("2012-02-09T00:00:00") is None
+
+
+def test_csindex_attachment_url_policy_confines_hosts_and_paths() -> None:
+    assert _canonical_csindex_attachment_url(
+        "https://oss-ch.csindex.com.cn/static/files/a%20b.XLSX"
+    ) == "https://oss-ch.csindex.com.cn/static/files/a%20b.XLSX"
+    assert _canonical_csindex_attachment_url("file/成分股.xls") == (
+        "https://www.csindex.com.cn/file/%E6%88%90%E5%88%86%E8%82%A1.xls"
+    )
+    invalid = (
+        "file/../secret.xls",
+        "file/%2e%2e/secret.xls",
+        "file/%252e%252e/secret.xls",
+        "file/a%2fb.xls",
+        "file/a.xls?download=1",
+        "file/a.xls#section",
+        "https://oss-ch.csindex.com.cn/a.xls?x=1",
+        "https://www.csindex.com.cn/file/a.xls",
+        "http://oss-ch.csindex.com.cn/a.xls",
+        "http://www.csindex.com.cnhttps://oss-ch.csindex.com.cn/a.xls",
+        "https://oss-ch.csindex.com.cn/a.exe",
+    )
+    for value in invalid:
+        with pytest.raises(ValueError, match="csindex_attachment"):
+            _canonical_csindex_attachment_url(value)
+
+
+def test_csindex_attachment_population_deduplicates_filters_and_prioritizes_oss() -> None:
+    oss_url = "https://oss-ch.csindex.com.cn/20120102/constituents.xlsx"
+    details = [
+        {
+            "announcement_id": "10",
+            "publish_date": "2012-01-02",
+            "source_request_id": "detail_10",
+            "source_payload_sha256": "a" * 64,
+            "content_html": (
+                f'<a href="{oss_url}">a</a><img src="{oss_url}">'
+                '<a href="file/20120102/local.xls">b</a>'
+                '<a href="https://example.com/other.xls">external</a>'
+                '<a href="http://www.csindex.com.cnhttps://oss-ch.csindex.com.cn/b.xls">bad</a>'
+            ),
+        },
+        {
+            "announcement_id": "11",
+            "publish_date": "2012-01-03",
+            "source_request_id": "detail_11",
+            "source_payload_sha256": "b" * 64,
+            "content_html": f'<img src="{oss_url}">',
+        },
+    ]
+
+    population = _attachment_population_from_details(details)
+    oss_only = _attachment_population_from_details(
+        details, include_hosts=("oss-ch.csindex.com.cn",)
+    )
+    accepted = [row for row in population if row["attachment_url"] is not None]
+    accepted_oss = [row for row in oss_only if row["attachment_url"] is not None]
+    rejected = [row for row in population if row["attachment_url"] is None]
+
+    assert [row["host"] for row in accepted] == [
+        "oss-ch.csindex.com.cn",
+        "www.csindex.com.cn",
+    ]
+    assert len(accepted_oss) == 1
+    assert accepted_oss[0]["attachment_url"] == oss_url
+    assert len(rejected) == 2
+    assert {row["reference_disposition"] for row in rejected} == {
+        "blocked_rejected_reference"
+    }
+    assert [
+        source["announcement_id"]
+        for source in accepted_oss[0]["source_announcements"]
+    ] == ["10", "11"]
+    assert accepted_oss[0]["source_announcements"][0]["reference_attributes"] == [
+        "href",
+        "src",
+    ]
+    assert accepted_oss[0]["temporal_blocker"].startswith(
+        "current_attachment_retrieval"
+    )
+
+
+def test_csindex_attachment_plan_blocks_unproven_or_out_of_scope_path_dates() -> None:
+    details = [
+        {
+            "announcement_id": "42",
+            "publish_date": "2019-12-09",
+            "source_request_id": "detail_42",
+            "source_payload_sha256": "a" * 64,
+            "content_html": (
+                '<a href="https://oss-ch.csindex.com.cn/20191201/a.xlsx">ok</a>'
+                '<a href="https://oss-ch.csindex.com.cn/20191220/b.xlsx">migrated</a>'
+                '<a href="https://oss-ch.csindex.com.cn/static/c.xlsx">unknown</a>'
+                '<a href="https://oss-ch.csindex.com.cn/20250513/d.xlsx">future</a>'
+            ),
+        }
+    ]
+
+    population = _attachment_population_from_details(details)
+    requests = _attachment_requests(
+        population, source_ancestry=_attachment_source_ancestry()
+    )
+    by_name = {
+        row["attachment_url"].rsplit("/", 1)[-1]: row for row in population
+    }
+
+    assert [request.url.rsplit("/", 1)[-1] for request in requests] == [
+        "a.xlsx",
+        "b.xlsx",
+    ]
+    assert by_name["a.xlsx"]["reference_disposition"] == "capture_eligible"
+    assert by_name["a.xlsx"]["source_announcements"][0]["edge_disposition"] == (
+        "historical_edge_candidate"
+    )
+    assert by_name["b.xlsx"]["source_announcements"][0]["edge_disposition"] == (
+        "value_only_migrated_reference"
+    )
+    assert by_name["c.xlsx"]["reference_disposition"] == (
+        "blocked_attachment_path_date_unproven"
+    )
+    assert by_name["d.xlsx"]["reference_disposition"] == (
+        "blocked_out_of_scope_reference"
+    )
+    assert requests[0].metadata["blocked_reference_count"] == 2
+    assert len(requests[0].metadata["blocked_references"]) == 2
+    assert "blocked_references" not in requests[1].metadata
+
+
+def test_csindex_attachment_magic_and_wire_metadata_are_extension_specific() -> None:
+    workbook = io.BytesIO()
+    with zipfile.ZipFile(workbook, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+    document = io.BytesIO()
+    with zipfile.ZipFile(document, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("word/document.xml", "<document/>")
+
+    assert _attachment_magic_valid(workbook.getvalue(), "xlsx") is True
+    assert _attachment_magic_valid(workbook.getvalue(), "docx") is False
+    assert _attachment_magic_valid(document.getvalue(), "docx") is True
+    assert _attachment_magic_valid(b"%PDF-1.7\nstartxref\n1\n%%EOF\n", "pdf") is True
+    assert _attachment_magic_valid(b"<html>Access Denied</html>", "txt") is False
+    assert _attachment_magic_valid(b"a,b\n1,2\n", "csv") is True
+    assert _attachment_magic_valid(b"\x89PNG\r\n\x1a\nrest", "png") is True
+    assert _attachment_content_length_matches("8", 8) is True
+    assert _attachment_content_length_matches(None, 8) is False
+    assert _attachment_content_type_compatible(
+        "xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ) is True
+    assert _attachment_content_type_compatible("xlsx", "text/html") is False
+
+
+def test_csindex_attachment_transport_and_normalizer_keep_binary_only_in_raw(
+    tmp_path: Path,
+) -> None:
+    workbook = io.BytesIO()
+    with zipfile.ZipFile(workbook, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+    body = workbook.getvalue()
+    population = [
+        {
+            "attachment_url": "https://oss-ch.csindex.com.cn/20120102/a.xlsx",
+            "host": "oss-ch.csindex.com.cn",
+            "extension": "xlsx",
+            "path_dates": ["20120102"],
+            "reference_disposition": "capture_eligible",
+            "source_announcements": [
+                {
+                    "announcement_id": "42",
+                    "announcement_publish_date": "2012-01-02",
+                    "historical_known_at_proven": False,
+                }
+            ],
+        },
+        {
+            "attachment_url": None,
+            "raw_reference": "https://example.com/rebalance.xls",
+            "host": None,
+            "extension": None,
+            "path_dates": [],
+            "reference_disposition": "blocked_rejected_reference",
+            "rejection_reason": "csindex_attachment_absolute_url_invalid",
+            "source_announcements": [
+                {
+                    "announcement_id": "43",
+                    "announcement_publish_date": "2012-01-03",
+                    "edge_disposition": "blocked_rejected_reference",
+                    "historical_known_at_proven": False,
+                }
+            ],
+        },
+        {
+            "attachment_url": (
+                "https://oss-ch.csindex.com.cn/20250513/future.xlsx"
+            ),
+            "host": "oss-ch.csindex.com.cn",
+            "extension": "xlsx",
+            "path_dates": ["20250513"],
+            "reference_disposition": "blocked_out_of_scope_reference",
+            "source_announcements": [
+                {
+                    "announcement_id": "44",
+                    "announcement_publish_date": "2012-01-04",
+                    "edge_disposition": "blocked_out_of_scope_reference",
+                    "historical_known_at_proven": False,
+                }
+            ],
+        },
+    ]
+    request = _attachment_requests(
+        population, source_ancestry=_attachment_source_ancestry()
+    )[0]
+    official_payload = {
+        "schema_version": "official_http_probe_envelope_v1",
+        "url": request.url,
+        "method": "GET",
+        "status_code": 200,
+        "response_headers": {
+            "Content-Length": str(len(body)),
+            "Content-Type": (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
+        },
+        "body_base64": base64.b64encode(body).decode(),
+        "body_sha256": hashlib.sha256(body).hexdigest(),
+        "redirect_followed": False,
+    }
+    official = json.dumps(official_payload, sort_keys=True).encode()
+    base_observation = ProviderProbeObservation(
+        terminal_state="positive",
+        raw_payload=official,
+        row_count=1,
+        status_code=200,
+        checks={"pdf_signature": False},
+        transport_exchange_count=1,
+    )
+    transport = CSIndexAttachmentTransport(minimum_delay_seconds=0)
+    transport._transport = lambda _request, _timeout: base_observation
+
+    observed = transport(request, 3)
+
+    assert observed.terminal_state == "positive"
+    assert observed.error_code is None
+    assert all(observed.checks.values())
+
+    redirected_payload = dict(official_payload) | {"redirect_followed": True}
+    redirected = ProviderProbeObservation(
+        terminal_state="positive",
+        raw_payload=json.dumps(redirected_payload, sort_keys=True).encode(),
+        row_count=1,
+        status_code=200,
+        transport_exchange_count=1,
+    )
+    transport._transport = lambda _request, _timeout: redirected
+    redirected_observation = transport(request, 3)
+    assert redirected_observation.terminal_state == "error"
+    assert redirected_observation.checks["redirect_not_followed"] is False
+
+    wrapper = {
+        "schema_version": "free_provider_backfill_raw_envelope_v1",
+        "request_id": request.request_id,
+        "raw_payload_base64": base64.b64encode(official).decode(),
+        "raw_payload_sha256": hashlib.sha256(official).hexdigest(),
+    }
+    relative = f"raw_envelopes/{request.request_id}.json"
+    wrapper_path = tmp_path / relative
+    wrapper_path.parent.mkdir()
+    wrapper_path.write_text(json.dumps(wrapper), encoding="utf-8")
+    normalize_csindex_attachments(
+        tmp_path,
+        [request],
+        {
+            request.request_id: {
+                "raw_envelope_relative_path": relative,
+                "terminal_state": "positive",
+            }
+        },
+    )
+    index_row = json.loads(
+        (tmp_path / "normalized/attachment_index.jsonl").read_text().strip()
+    )
+
+    assert index_row["attachment_sha256"] == hashlib.sha256(body).hexdigest()
+    assert index_row["source_announcements"][0]["announcement_id"] == "42"
+    assert index_row["historical_known_at"] is None
+    assert index_row["historical_known_at_proven"] is False
+    assert "body_base64" not in index_row
+
+
+def test_csindex_attachment_signed_capture_validates_and_replays(
+    tmp_path: Path,
+) -> None:
+    workbook = io.BytesIO()
+    with zipfile.ZipFile(workbook, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+    body = workbook.getvalue()
+    population = [
+        {
+            "attachment_url": (
+                "https://oss-ch.csindex.com.cn/20120102/a.xlsx"
+            ),
+            "host": "oss-ch.csindex.com.cn",
+            "extension": "xlsx",
+            "path_dates": ["20120102"],
+            "reference_disposition": "capture_eligible",
+            "temporal_blocker": "fixture",
+            "source_announcements": [
+                {
+                    "announcement_id": "42",
+                    "announcement_publish_date": "2012-01-02",
+                    "edge_disposition": "historical_edge_candidate",
+                    "historical_known_at_proven": False,
+                }
+            ],
+        },
+        {
+            "attachment_url": None,
+            "raw_reference": "https://example.com/rebalance.xls",
+            "host": None,
+            "extension": None,
+            "path_dates": [],
+            "reference_disposition": "blocked_rejected_reference",
+            "rejection_reason": "csindex_attachment_absolute_url_invalid",
+            "source_announcements": [
+                {
+                    "announcement_id": "43",
+                    "announcement_publish_date": "2012-01-03",
+                    "edge_disposition": "blocked_rejected_reference",
+                    "historical_known_at_proven": False,
+                }
+            ],
+        },
+        {
+            "attachment_url": (
+                "https://oss-ch.csindex.com.cn/20250513/future.xlsx"
+            ),
+            "host": "oss-ch.csindex.com.cn",
+            "extension": "xlsx",
+            "path_dates": ["20250513"],
+            "reference_disposition": "blocked_out_of_scope_reference",
+            "source_announcements": [
+                {
+                    "announcement_id": "44",
+                    "announcement_publish_date": "2012-01-04",
+                    "edge_disposition": "blocked_out_of_scope_reference",
+                    "historical_known_at_proven": False,
+                }
+            ],
+        },
+    ]
+    requests = _attachment_requests(
+        population, source_ancestry=_attachment_source_ancestry()
+    )
+    request = requests[0]
+    official_payload = {
+        "schema_version": "official_http_probe_envelope_v1",
+        "url": request.url,
+        "method": "GET",
+        "status_code": 200,
+        "response_headers": {
+            "Content-Length": str(len(body)),
+            "Content-Type": (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
+        },
+        "body_base64": base64.b64encode(body).decode(),
+        "body_sha256": hashlib.sha256(body).hexdigest(),
+        "redirect_followed": False,
+    }
+    base_observation = ProviderProbeObservation(
+        terminal_state="positive",
+        raw_payload=json.dumps(official_payload, sort_keys=True).encode(),
+        row_count=1,
+        status_code=200,
+        transport_exchange_count=1,
+    )
+    transport = CSIndexAttachmentTransport(minimum_delay_seconds=0)
+    transport._transport = lambda _request, _timeout: base_observation
+    signer = EphemeralReceiptSigner.generate()
+    contract = csindex_contract(
+        phase="csindex-attachments",
+        output_root=tmp_path / "capture",
+        signer=signer,
+        population_root=canonical_hash(population),
+        request_count=1,
+        input_capture_hash="a" * 64,
+        delay=0,
+        timeout=3,
+        retries=0,
+        permission_context_id="human-approved-fixture",
+        allowed_hosts=("oss-ch.csindex.com.cn",),
+    )
+
+    published = run_free_provider_backfill(
+        contract,
+        requests,
+        transport=transport,
+        signer=signer,
+        normalizer=normalize_csindex_attachments,
+        runtime_implementation_root=csindex_implementation_root(),
+    )
+    validated = validate_free_provider_backfill(published["manifest_path"])
+    replayed, replay_root = replay_normalized_artifacts(
+        validated["manifest_path"],
+        normalizer=normalize_csindex_attachments,
+        required_roles=(
+            "csindex_attachment_index",
+            "csindex_blocked_reference_index",
+        ),
+    )
+
+    assert validated["status"] == "succeeded"
+    assert validated["publication_signature_verified"] is True
+    assert json.loads(replayed["csindex_attachment_index"].decode())[
+        "attachment_sha256"
+    ] == hashlib.sha256(body).hexdigest()
+    blocked = [
+        json.loads(line)
+        for line in replayed["csindex_blocked_reference_index"]
+        .decode()
+        .splitlines()
+    ]
+    assert [row["reference_disposition"] for row in blocked] == [
+        "blocked_rejected_reference",
+        "blocked_out_of_scope_reference",
+    ]
+    assert blocked[0]["source_announcements"][0]["announcement_id"] == "43"
+    assert len(replay_root) == 64
+
+
+def test_csindex_attachment_identity_binds_shared_http_transport_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline = csindex_implementation_root()
+    original = csindex_backfill.sha256_file
+
+    def changed(path: Path) -> str:
+        if Path(path).resolve() == Path(
+            csindex_backfill.run_provider_probe_module.__file__
+        ).resolve():
+            return "0" * 64
+        return original(path)
+
+    monkeypatch.setattr(csindex_backfill, "sha256_file", changed)
+
+    assert csindex_implementation_root() != baseline
+
+
+def test_csindex_attachment_transport_marks_html_block_as_waf() -> None:
+    body = "\ufeff<html>访问被阻断</html>".encode()
+    population = [
+        {
+            "attachment_url": "https://oss-ch.csindex.com.cn/20120102/a.xlsx",
+            "host": "oss-ch.csindex.com.cn",
+            "extension": "xlsx",
+            "path_dates": ["20120102"],
+            "reference_disposition": "capture_eligible",
+            "source_announcements": [],
+        }
+    ]
+    request = _attachment_requests(
+        population, source_ancestry=_attachment_source_ancestry()
+    )[0]
+    official = json.dumps(
+        {
+            "schema_version": "official_http_probe_envelope_v1",
+            "url": request.url,
+            "method": "GET",
+            "status_code": 200,
+            "response_headers": {
+                "Content-Length": str(len(body)),
+                "Content-Type": "text/html",
+            },
+            "body_base64": base64.b64encode(body).decode(),
+            "body_sha256": hashlib.sha256(body).hexdigest(),
+            "redirect_followed": False,
+        }
+    ).encode()
+    base_observation = ProviderProbeObservation(
+        terminal_state="positive",
+        raw_payload=official,
+        row_count=1,
+        status_code=200,
+        transport_exchange_count=1,
+    )
+    transport = CSIndexAttachmentTransport(minimum_delay_seconds=0)
+    transport._transport = lambda _request, _timeout: base_observation
+
+    observed = transport(request, 3)
+
+    assert observed.terminal_state == "error"
+    assert observed.checks["not_html_or_waf"] is False
+    assert observed.diagnostics["waf_html_observed"] is True
+
+
+def test_csindex_attachment_invalid_envelope_preserves_exchange_evidence() -> None:
+    request = _attachment_requests(
+        [
+            {
+                "attachment_url": (
+                    "https://oss-ch.csindex.com.cn/20120102/a.xlsx"
+                ),
+                "host": "oss-ch.csindex.com.cn",
+                "extension": "xlsx",
+                "path_dates": ["20120102"],
+                "reference_disposition": "capture_eligible",
+                "source_announcements": [],
+            }
+        ],
+        source_ancestry=_attachment_source_ancestry(),
+    )[0]
+    inner = ProviderProbeObservation(
+        terminal_state="positive",
+        raw_payload=b"not-json",
+        row_count=1,
+        status_code=200,
+        transport_exchange_count=1,
+    )
+    transport = CSIndexAttachmentTransport(minimum_delay_seconds=0)
+    transport._transport = lambda _request, _timeout: inner
+
+    observed = transport(request, 3)
+
+    assert observed.terminal_state == "error"
+    assert observed.error_code == "csindex_attachment_http_envelope_invalid"
+    assert observed.raw_payload == b"not-json"
+    assert observed.transport_exchange_count == 1
 
 
 def test_cninfo_structured_empty_month_is_valid_negative_evidence(tmp_path: Path) -> None:
