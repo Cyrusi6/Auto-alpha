@@ -3214,6 +3214,12 @@ def _baostock_record_projections(
 ) -> tuple[list[list[str]], list[list[str]]]:
     """Decode authoritative records and the exact Baostock 0.9.3 projection."""
 
+    # Baostock represents some successful empty terminal pages as an empty
+    # record slot instead of the otherwise equivalent ``{"record":[]}`` JSON.
+    # Pagination replay still rejects an empty non-terminal page.
+    if record_payload == "":
+        return [], []
+
     try:
         wire_payload = json.loads(record_payload)
         package_payload = json.loads("".join(record_payload.split()))

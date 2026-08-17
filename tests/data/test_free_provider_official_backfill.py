@@ -419,6 +419,8 @@ def _cninfo_zero_or_one_body(
     request: ProviderProbeRequest,
     *,
     announcement_leaf_id: str | None = None,
+    announcement_time: int = 1294093800000,
+    adjunct_url: str = "finalpage/2011-01-04/58854747.PDF",
 ) -> dict[str, object]:
     if request.metadata.get("case") == "cninfo_org_map":
         return {"stockList": [{"code": "600000"}]}
@@ -432,8 +434,8 @@ def _cninfo_zero_or_one_body(
                     "secName": "浦发银行",
                     "orgId": "gssh0600000",
                     "announcementTitle": "更正公告",
-                    "announcementTime": 1294093800000,
-                    "adjunctUrl": "finalpage/2011-01-04/58854747.PDF",
+                    "announcementTime": announcement_time,
+                    "adjunctUrl": adjunct_url,
                     "adjunctSize": 1,
                     "announcementType": "x",
                     "columnId": "y",
@@ -460,6 +462,8 @@ def _publish_cninfo_capture(
     leaf_profile: str,
     input_capture_hash: str | None = None,
     announcement_leaf_id: str | None = None,
+    announcement_time: int = 1294093800000,
+    adjunct_url: str = "finalpage/2011-01-04/58854747.PDF",
     contract_provider: str = "cninfo",
     contract_adapter: str | None = None,
     contract_leaf_profile: str | None = None,
@@ -514,6 +518,8 @@ def _publish_cninfo_capture(
         body = _cninfo_zero_or_one_body(
             request,
             announcement_leaf_id=announcement_leaf_id,
+            announcement_time=announcement_time,
+            adjunct_url=adjunct_url,
         )
         provider_body = json.dumps(body, ensure_ascii=False, sort_keys=True).encode()
         raw = json.dumps(
@@ -1273,7 +1279,7 @@ def test_cninfo_supplemental_profile_locks_seven_monthly_category_families() -> 
         leaf_profile="supplemental"
     )
 
-    assert len(leaves) == 9 * 12 * 7
+    assert len(leaves) == (9 * 12 * 7) + 2
     assert len(requests) == len(leaves) + 1
     assert {row["kind"] for row in leaves} == {
         "corrections",
@@ -1291,8 +1297,144 @@ def test_cninfo_supplemental_profile_locks_seven_monthly_category_families() -> 
     )
     params = parse_qs(sample.body.decode())
     assert params["category"] == ["category_pg_szsh;"]
+    by_id = {row["leaf_id"]: row for row in leaves}
+    assert "secondary_offerings_201511" not in by_id
+    assert "secondary_offerings_201512" not in by_id
+    assert {
+        key: (by_id[key]["date_start"], by_id[key]["date_end"])
+        for key in (
+            "secondary_offerings_201511_d01_15",
+            "secondary_offerings_201511_d16_30",
+            "secondary_offerings_201512_d01_15",
+            "secondary_offerings_201512_d16_31",
+        )
+    } == {
+        "secondary_offerings_201511_d01_15": (
+            "2015-11-01",
+            "2015-11-15",
+        ),
+        "secondary_offerings_201511_d16_30": (
+            "2015-11-16",
+            "2015-11-30",
+        ),
+        "secondary_offerings_201512_d01_15": (
+            "2015-12-01",
+            "2015-12-15",
+        ),
+        "secondary_offerings_201512_d16_31": (
+            "2015-12-16",
+            "2015-12-31",
+        ),
+    }
     with pytest.raises(ValueError, match="leaf_filter_unknown"):
         build_cninfo_discovery_plan(["rights_issues_201202"])
+
+
+def test_cninfo_supplemental_static_date_split_rejects_a_gap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cninfo_backfill,
+        "CNINFO_STATIC_DATE_SPLITS",
+        {
+            "supplemental": {
+                "secondary_offerings_201511": (
+                    ("d01_15", "2015-11-01", "2015-11-15"),
+                    ("d17_30", "2015-11-17", "2015-11-30"),
+                )
+            }
+        },
+    )
+
+    with pytest.raises(ValueError, match="cninfo_static_date_split_invalid"):
+        build_cninfo_discovery_plan(leaf_profile="supplemental")
+
+
+def test_cninfo_split_leaf_announcement_date_uses_exact_interval() -> None:
+    cninfo_backfill._validate_inventory_announcement_dates(
+        [
+            {
+                "announcement_id": "1201790000",
+                "announcement_time": 1447430400000,
+                "matched_leaves": [
+                    "secondary_offerings_201511_d01_15"
+                ],
+            }
+        ]
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="cninfo_inventory_announcement_date_invalid:1201790000",
+    ):
+        cninfo_backfill._validate_inventory_announcement_dates(
+            [
+                {
+                    "announcement_id": "1201790000",
+                    "announcement_time": 1447430400000,
+                    "matched_leaves": [
+                        "secondary_offerings_201511_d16_30"
+                    ],
+                }
+            ]
+        )
+
+
+def test_cninfo_split_leaf_flows_from_discovery_to_document_plan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(capture_backfill.os, "fsync", lambda _fd: None)
+    monkeypatch.setattr(
+        capture_backfill,
+        "verify_signature",
+        lambda **_kwargs: None,
+    )
+    signer = _FastFixtureSigner()
+    leaf_id = "secondary_offerings_201511_d01_15"
+    announcement_time = 1447430400000
+    adjunct_url = "finalpage/2015-11-14/58854747.PDF"
+    _leaves, discovery_requests = build_cninfo_discovery_plan(
+        leaf_profile="supplemental"
+    )
+    discovery_manifest = _publish_cninfo_capture(
+        tmp_path / "discovery",
+        phase="cninfo-discovery",
+        requests=discovery_requests,
+        normalizer=normalize_cninfo_discovery,
+        leaf_profile="supplemental",
+        announcement_leaf_id=leaf_id,
+        announcement_time=announcement_time,
+        adjunct_url=adjunct_url,
+        signer=signer,
+    )
+    _population, inventory_requests, input_root = (
+        build_cninfo_inventory_plan(
+            [discovery_manifest],
+            leaf_profile="supplemental",
+        )
+    )
+    inventory_manifest = _publish_cninfo_capture(
+        tmp_path / "inventory",
+        phase="cninfo-inventory",
+        requests=inventory_requests,
+        normalizer=normalize_cninfo_inventory,
+        leaf_profile="supplemental",
+        input_capture_hash=input_root,
+        announcement_leaf_id=leaf_id,
+        announcement_time=announcement_time,
+        adjunct_url=adjunct_url,
+        signer=signer,
+    )
+
+    rows, document_requests, _document_root = build_cninfo_document_plan(
+        inventory_manifest,
+        include_years=[2015],
+    )
+
+    assert len(rows) == 1
+    assert len(document_requests) == 1
+    assert document_requests[0].metadata["adjunct_url"] == adjunct_url
 
 
 @pytest.mark.parametrize(
@@ -3455,6 +3597,10 @@ def test_cninfo_identity_binds_capture_replay_helpers_and_page_limits(
         scoped.setattr(cninfo_backfill, "CNINFO_MAX_PAGES_PER_LEAF", 101)
         assert cninfo_implementation_root() != baseline
 
+    with monkeypatch.context() as scoped:
+        scoped.setattr(cninfo_backfill, "CNINFO_STATIC_DATE_SPLITS", {})
+        assert cninfo_implementation_root() != baseline
+
 
 def test_csindex_attachment_transport_marks_html_block_as_waf() -> None:
     body = "\ufeff<html>访问被阻断</html>".encode()
@@ -4703,6 +4849,88 @@ def test_baostock_wire_is_authoritative_when_pinned_sdk_removes_whitespace(
     assert manifest["package_parser_loss_request_count"] == 1
     assert manifest["package_parser_loss_row_count"] == 2
     assert manifest["package_parser_loss_cell_count"] == 2
+
+
+def test_baostock_wire_accepts_exact_empty_terminal_record_slot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calendar = tmp_path / "calendar.jsonl"
+    _approve_security_snapshot_calendar(monkeypatch, calendar)
+    _population, requests = build_security_snapshot_plan(calendar)
+    request = requests[0]
+    query_date = str(request.metadata["snapshot_query_date"])
+    fields = ["code", "tradeStatus", "code_name"]
+    response = _baostock_uncompressed_response_frame(
+        [
+            "0",
+            "success",
+            "query_all_stock",
+            "anonymous",
+            "1",
+            "2000",
+            "",
+            f"{query_date[:4]}-{query_date[4:6]}-{query_date[6:]}",
+            ",".join(fields),
+        ],
+        message_type="36",
+    )
+    raw = _security_snapshot_raw_payload(
+        request,
+        rows=[],
+        response_override=response,
+    )
+
+    _validate_baostock_wire_envelope(
+        raw,
+        expected_exchange_count=1,
+        request=request.semantic(),
+        terminal_state="empty",
+    )
+    observed_fields, rows, diagnostics = (
+        capture_backfill._baostock_logical_rows_with_reconciliation(raw)
+    )
+
+    assert observed_fields == fields
+    assert rows == []
+    assert diagnostics["package_parser_loss_detected"] is False
+
+
+def test_baostock_wire_rejects_whitespace_terminal_record_slot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calendar = tmp_path / "calendar.jsonl"
+    _approve_security_snapshot_calendar(monkeypatch, calendar)
+    _population, requests = build_security_snapshot_plan(calendar)
+    request = requests[0]
+    query_date = str(request.metadata["snapshot_query_date"])
+    response = _baostock_uncompressed_response_frame(
+        [
+            "0",
+            "success",
+            "query_all_stock",
+            "anonymous",
+            "1",
+            "2000",
+            " ",
+            f"{query_date[:4]}-{query_date[4:6]}-{query_date[6:]}",
+            "code,tradeStatus,code_name",
+        ],
+        message_type="36",
+    )
+
+    with pytest.raises(ValueError, match="wire_records_invalid"):
+        _validate_baostock_wire_envelope(
+            _security_snapshot_raw_payload(
+                request,
+                rows=[],
+                response_override=response,
+            ),
+            expected_exchange_count=1,
+            request=request.semantic(),
+            terminal_state="empty",
+        )
 
 
 def test_baostock_wire_rejects_non_reproducible_parsed_payload(

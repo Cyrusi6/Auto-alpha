@@ -133,6 +133,22 @@ CNINFO_LEAF_PROFILES = {
     "base": CNINFO_LEAF_KINDS,
     "supplemental": CNINFO_SUPPLEMENTAL_LEAF_KINDS,
 }
+# CNINFO caps list traversal at 100 pages and silently maps page 101 back to
+# page 1.  These two observed month/category cells exceed that cap.  Replace
+# each whole-month leaf with an exact, non-overlapping half-month partition;
+# never increase the page limit or accept a truncated month.
+CNINFO_STATIC_DATE_SPLITS = {
+    "supplemental": {
+        "secondary_offerings_201511": (
+            ("d01_15", "2015-11-01", "2015-11-15"),
+            ("d16_30", "2015-11-16", "2015-11-30"),
+        ),
+        "secondary_offerings_201512": (
+            ("d01_15", "2015-12-01", "2015-12-15"),
+            ("d16_31", "2015-12-16", "2015-12-31"),
+        ),
+    },
+}
 CNINFO_TRANSIENT_LIST_ERROR_MAP = {
     "http_status:404": (
         "transport_exception:RuntimeError:cninfo_list_transient_http_404"
@@ -1777,16 +1793,58 @@ def _cninfo_month_leaves(leaf_profile: str = "base") -> list[dict[str, str]]:
             end = f"{year:04d}-{month:02d}-{last_day:02d}"
             for kind, category, column, plate in kinds:
                 leaf_id = f"{kind}_{year:04d}{month:02d}"
-                leaves.append(
-                    {
-                        "leaf_id": leaf_id,
-                        "kind": kind,
-                        "category": category,
-                        "column": column,
-                        "plate": plate,
-                        "date_start": start,
-                        "date_end": end,
+                base = {
+                    "leaf_id": leaf_id,
+                    "kind": kind,
+                    "category": category,
+                    "column": column,
+                    "plate": plate,
+                    "date_start": start,
+                    "date_end": end,
+                }
+                splits = CNINFO_STATIC_DATE_SPLITS.get(
+                    leaf_profile, {}
+                ).get(leaf_id)
+                if splits is None:
+                    leaves.append(base)
+                    continue
+                expected_start = start
+                suffixes: set[str] = set()
+                for suffix, date_start, date_end in splits:
+                    try:
+                        parsed_start = datetime.strptime(
+                            date_start, "%Y-%m-%d"
+                        )
+                        parsed_end = datetime.strptime(date_end, "%Y-%m-%d")
+                    except ValueError as exc:
+                        raise ValueError(
+                            "cninfo_static_date_split_invalid"
+                        ) from exc
+                    if (
+                        re.fullmatch(r"d[0-9]{2}_[0-9]{2}", suffix) is None
+                        or suffix in suffixes
+                        or date_start != expected_start
+                        or parsed_end < parsed_start
+                        or date_end > end
+                    ):
+                        raise ValueError("cninfo_static_date_split_invalid")
+                    suffixes.add(suffix)
+                    expected_start = (
+                        parsed_end + timedelta(days=1)
+                    ).strftime("%Y-%m-%d")
+                if expected_start != (
+                    datetime.strptime(end, "%Y-%m-%d")
+                    + timedelta(days=1)
+                ).strftime("%Y-%m-%d"):
+                    raise ValueError("cninfo_static_date_split_invalid")
+                leaves.extend(
+                    base
+                    | {
+                        "leaf_id": f"{leaf_id}_{suffix}",
+                        "date_start": date_start,
+                        "date_end": date_end,
                     }
+                    for suffix, date_start, date_end in splits
                 )
     return leaves
 
@@ -2040,18 +2098,34 @@ def _announcement_date(value: Any) -> str | None:
 def _validate_inventory_announcement_dates(
     rows: Sequence[Mapping[str, Any]],
 ) -> None:
+    leaf_intervals: dict[str, tuple[str, str]] = {}
+    for profile in sorted(CNINFO_LEAF_PROFILES):
+        for leaf in _cninfo_month_leaves(profile):
+            leaf_id = leaf["leaf_id"]
+            interval = (leaf["date_start"], leaf["date_end"])
+            prior = leaf_intervals.setdefault(leaf_id, interval)
+            if prior != interval:
+                raise ValueError("cninfo_leaf_interval_identity_conflict")
     for row in rows:
         announcement_id = str(row.get("announcement_id") or "")
         observed_date = _announcement_date(row.get("announcement_time"))
-        matched_months = {
-            str(value).rsplit("_", 1)[-1]
-            for value in row.get("matched_leaves") or ()
-            if re.fullmatch(r".*_\d{6}", str(value))
-        }
+        matched = row.get("matched_leaves")
         if (
             not announcement_id
             or observed_date is None
-            or observed_date[:7].replace("-", "") not in matched_months
+            or not isinstance(matched, list)
+            or not matched
+            or any(not isinstance(value, str) for value in matched)
+            or len(set(matched)) != len(matched)
+            or any(
+                value not in leaf_intervals
+                or not (
+                    leaf_intervals[value][0]
+                    <= observed_date
+                    <= leaf_intervals[value][1]
+                )
+                for value in matched
+            )
         ):
             raise ValueError(
                 f"cninfo_inventory_announcement_date_invalid:{announcement_id or 'missing'}"
@@ -2238,6 +2312,7 @@ def _implementation_root() -> str:
                 name: [list(row) for row in rows]
                 for name, rows in sorted(CNINFO_LEAF_PROFILES.items())
             },
+            "cninfo_static_date_splits": CNINFO_STATIC_DATE_SPLITS,
             "cninfo_document_body_max_bytes": CNINFO_DOCUMENT_BODY_MAX_BYTES,
             "cninfo_page_size": CNINFO_PAGE_SIZE,
             "cninfo_max_pages_per_leaf": CNINFO_MAX_PAGES_PER_LEAF,

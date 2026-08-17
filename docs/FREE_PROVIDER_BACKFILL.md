@@ -65,6 +65,13 @@ obligation；逐日合同会因此退化为数千万次网络调用。
 重建终态，不重新请求。journal、raw、catalog、normalized artifact 和 manifest
 任何一处被改写，独立 validator 都会阻断。
 
+这里的自动恢复只覆盖普通进程崩溃、主机重启或 torn tail：进程重新打开同一
+activity，按既有 journal 身份继续，不能创建第二条 root attempt 或改变合同。它不等于
+对治理性 pause 的恢复授权。当前 generic trusted pause authority 尚未实现；一旦因为
+WAF、HTTP 403/429、非重试错误或资源预算耗尽进入 pause，即使现实中已有人工批准，
+现有 seam 也没有可验证、可版本化的 authority artifact 来消费该批准，因此必须继续
+保持 blocked，不能沿同一 seam 恢复网络请求。
+
 v2 publication manifest 还由 capture key 签名，绑定 raw closure、journal、请求
 计划、normalizer 输出树和安全常量。历史 v1 capture 可保留原始回执，但其
 normalized 输出明确标为不可信；下游只能从签名 raw 重新运行当前锁定 parser。
@@ -104,6 +111,21 @@ protocol header、operation/参数、压缩 frame 和 `record`；SDK `parsed` �
 不等于标准 raw-frame CRC，因此这里只验证 declared compressed bytes、zlib 和 trailer
 结构，不伪造一个不存在的 CRC 语义。
 
+当前实现身份下的 reconciliation 不是单一“Baostock 已完成”开关，而是六个独立
+phase：`index-daily`、`security-basic`、`hs300-snapshots`、`adjustments`、
+`turnover` 和 `dividends`。它们正在按单连接、稳定计划和有界重试串行采集/排队；
+每个 phase 只有在不可变发布并通过当前 validator 的协议、wire、计划和 normalizer
+重放后才可写成 capture success。旧 v1 generation、单证券 canary、暂停 journal 与
+不同合同的 raw 仅可对账，不能拼成 current generation 或 exact cover。即使六段全部
+物理成功，adjustment/dividend 也仍只是公司行为与复权 vintage 的 reconciliation，
+不能自行取得 PIT 准入资格。
+
+Baostock 还存在一种精确的成功空终态：最后一页可能把 `record` 表示为空字符串 slot，
+而不是 JSON `{"record":[]}`。raw-wire replay 只在该页同时具备成功返回码和 terminal
+marker 时把它解释为零行；空的非终态页仍然阻断。该规则改变 capture engine/adapter
+实现身份，所以既有 journal 保持原样，current phase 必须创建新 activity 从完整计划
+重跑，不能把修复后的 terminal 接到旧 attempt 后面。
+
 ### 巨潮资讯
 
 清单按 `category × calendar month` 分叶，每页 30 条：
@@ -118,9 +140,12 @@ protocol header、operation/参数、压缩 frame 和 `record`；SDK `parsed` �
 精确覆盖所选 profile 的全部月份叶和唯一 org-map 请求，混入另一 profile、缺叶或
 多叶都会阻断。
 
-先抓每个叶的第一页并冻结 `totalAnnouncement`，再生成完整连续 page plan。任何月
-超过 100 页必须进一步拆分，不把前端 cap 视为完整。完整 inventory 重算稳定 total、
-连续页、末页 `hasMore=false`、叶内公告 ID 唯一和 ID 总数。
+先抓每个叶的第一页并冻结 `totalAnnouncement`，再生成完整连续 page plan。官网对
+超过 100 页的 list traversal 会把 page 101 回卷成 page 1，而不是返回可识别错误；
+因此不能把前端 cap 或重复的第 1 页当作完整。当前已对
+`secondary_offerings_201511` 和 `secondary_offerings_201512` 两个实测超限单元做静态、
+连续且无重叠的半月 split，完整 inventory 仍须重算稳定 total、连续页、末页
+`hasMore=false`、叶内公告 ID 唯一和 ID 总数。
 
 PDF 计划只能从通过分页验证的唯一公告 ID/URL inventory 生成。
 Discovery、inventory 和 documents 之间携带递归、内容寻址的 source ancestry；
@@ -136,6 +161,35 @@ GET、org-map、其他 provider 或任何 schema/parser 错误。
 该 legacy 代次即使 publication bytes 和签名完整，CNINFO 专用治理裁决仍固定返回
 `source_lineage_complete=false`、`quarantined=true`、
 `governed_evidence_eligible=false`；字节完整性不能替代来源血缘。
+
+current 强链要求 `base` 与 `supplemental` 各自完成
+discovery→inventory，再由专用 document closure seam 处理二者的并集：
+
+1. 对每份 inventory 递归定位实际 immutable discovery parents，重放其 signed raw，
+   重建 discovery→inventory request plan 后才生成逻辑 demand；
+2. 将“哪个 inventory 需要这份文档”与唯一 `(announcement_id, adjunct_url)` 物理身份
+   分开，跨 profile 重复文档只保留一份物理 disposition；
+3. 对可复用 document generation 重验父 manifest、publication/terminal signature、
+   raw envelope、HTTP body 和文档哈希，只记录引用，不复制原文；
+4. 为未覆盖的 residual 固定独立 request plan 并有界下载；
+5. finalization 再次重放全部父证据，要求每个物理文档恰有一个 `reused` 或
+   `downloaded` disposition，计算独立 closure root。
+
+2011 文档也必须沿 current strong inventory 重新抓取，才能参与 strong closure。
+早期 2011 legacy 文档允许作为审计复用输入，但其 disposition 会继承
+`weak_source_ancestry`、`legacy_2011_document_source_ancestry_incomplete` 和
+`cninfo_governed_evidence_ineligible`；它及任何 derived closure 都保持 quarantine，
+不能因为 residual 已补齐或下游重新签名而洗白。当前 base/supplemental 强链、2011
+重抓和真实 residual capture 均仍在采集中，尚未发布的动态 generation/数量不记为成功。
+旧 supplemental generation `free_provider_backfill_212e27653d183d18eee5eccc`
+和中间 activity `7f9d41ea...` 保持不可变审计记录，但不进入 current closure。最终重跑
+绑定 `implementation_root=35c27d2670d231ee07a6026a8e8d1d451b321f0837b047db26f3dcd87ae3c49e`
+与 758-leaf profile；同一次实现变化也要求 base discovery/inventory 重新采集，禁止用
+旧 base 与新 supplemental 拼接父代。
+
+document closure 接受的人工 resume 参数不是授权旁路。底层 generic capture seam 当前
+对任何这类参数固定返回 `trusted_resume_authority_not_implemented`；遇到治理性 pause
+必须保留原 activity、pause artifact 和 blocker，不能由调用方自行构造批准继续下载。
 
 针对已定位的两个代码变更与 `600680` 生命周期缺口，
 `free_provider_cninfo_security_lifecycle` 另外锁定 5 份官方 PDF 的精确 URL、
@@ -156,6 +210,10 @@ chain。validator 同时核对请求页与 provider `currentPage`，防止越界
 同时核对人工授权、批准 key、scope、profile、source binding 和原始 HTTP 封闭。
 两条旧命名 `201511302cons.xls` / `201605302cons.xls` 只能通过精确 repair profile
 采集；修复附件的存在性不能自动证明公布时间或 PIT 可见性。
+当前强 discovery→inventory→details→attachments 链及其 legacy-cons repair 仍在
+采集/排队；只有同一 current ancestry 的 details、附件和 repair 都分别发布并通过递归
+重放后，才能进入事件解析。任何中间详情数、下载数或旧弱 ancestry 附件都不能写成
+PIT CSI300 closure success。
 
 ## CLI
 
@@ -189,7 +247,9 @@ uv run --with baostock==0.9.3 python -m \
 即使上述网络任务全部完成，以下内容也不能凭下载数量自动宣布完成：
 
 - 一次物理 capture 到多个逐日 obligation 的独立 coverage-use verifier；
-- 可信人工 Profile/acquisition/capture-key 激活根；
+- 可信人工 Profile、Provider Acquisition Contract 和 capture-key 激活根；
+- 供应商来源证明与隔离采集运行时证明；本地 capture signature 不能自证
+  `provider_origin_attested=true` 或 `capture_runtime_isolation_verified=true`；
 - ST 子类型与公告状态机；
 - 停复牌盘中 timing 与冲突裁决；
 - CSI300 2011 年末权威种子、所有临时调整的事件解析和每日历史权重；
@@ -198,8 +258,9 @@ uv run --with baostock==0.9.3 python -m \
 - 免费三源无法直接补齐的 `daily_basic.volume_ratio/total_mv` 权威回执；
 - canonical matrix、target/validity、完整 lineage 和确定性 Source Freeze replay。
 
-任一项证据缺失时，正式研究搜索继续保持 blocked；development replay 不会因此被
-改写为正式生命周期证据。
+任一项证据缺失时，Data Admission 保持 `0/11 admitted`，正式研究搜索继续 blocked；
+development replay 不会因此被改写为正式生命周期证据，也不会开放新 holdout、shadow、
+paper 或 live。
 
 ## 2026-08-16 实际补采证据
 
@@ -234,9 +295,12 @@ Content-Type、magic/结构、公告日期或 ID 标记；`adjunctSize` 只采�
 异常范围，不能用严格相等误杀旧档案。文档按年份形成独立有界活动。
 
 403、429、WAF 或非重试错误的同合同恢复在首版完全禁用。触发后会先在与 output
-无关的 provider×host 治理根持久打开签名熔断器，再停止活动；更换 output、合同或
-删除活动目录都不能继续联网。未来只有接入独立可信的人类授权根后才能设计清除流程，
-普通 CLI 字符串不能充当批准。timeout、连接中断和 5xx 仍只能在原合同预算内重试。
+无关的 provider×host 治理根持久打开签名熔断器，再停止活动；资源预算耗尽也产生
+不可由当前 generic seam 恢复的 pause。更换 output、合同、删除活动目录、CLI 字符串
+或一份未被系统可信根验证的人工批准都不能继续联网。后续必须实现版本化 trusted
+resume authority，精确绑定原 activity/contract、pause 原因、允许的新预算或 breaker
+处置、批准主体和审计签名，才能设计恢复流程。timeout、连接中断和 5xx 只在尚未进入
+pause 且原合同仍有重试预算时自动恢复。
 
 生产 CLI 不再接受任意 output 或 capture-key 路径。capture/coverage 只能写批准的
 lake `staging/`，`data/`、canonical freeze、local bundle 和 lake 根均有写保护。
@@ -261,8 +325,8 @@ weak_source_ancestry=true
 v2 discovery → inventory → details 链，后续以 coverage-use 投影对账，而不是静默
 改写既有 generation。
 
-真实 1,098 条 details 的 OSS 范围离线重放得到 602 个审计对象：439 个 URL 同时
-满足安全 URL 和路径日期位于 `20110101–20191231`，可以进入有界网络计划；147 个
+当前强 details 的 OSS 范围离线重放得到 608 个审计对象：439 个 URL 同时
+满足安全 URL 和路径日期位于 `20110101–20191231`，可以进入有界网络计划；153 个
 缺少可验证路径日期、14 个为外站或拼接错误等拒绝引用、2 个明确指向 2020/2025，
 全部进入 signed blocked-reference audit，不发网络请求。重复 URL 只下载一次，但
 保留每条 announcement→attachment edge 及其独立 disposition；当前下载永远不证明
@@ -281,15 +345,44 @@ HTML/WAF。128 MiB body cap 是合同身份的一部分；超限响应保存安�
 manifest 仍明确携带 `weak_source_acquisition_ancestry`、
 `csi300_attachment_semantic_parser_not_run`，`pit_membership_authorized=false`。
 
+current 强链不复用这片弱附件，也不续接已经因为旧 OSS 对象 full-body timeout 而暂停的
+generic full-GET activity。独立 signed range seam 会从 current strong details 重建两份
+完整计划：full profile 先重放全部 608 个引用并只对 439 个 eligible 对象联网；
+legacy-cons profile 同样重放 608-reference parent population，只允许精确 2 个请求。
+普通完整 GET 优先；只有 body timeout、truncation 或 body-limit 才切换为 64 KiB ranges。
+range 响应必须拥有稳定 strong ETag、精确 `Content-Range`，且第一块后的每个请求都携带
+匹配的 `If-Range`，否则整份对象 fail closed。
+
+每次物理 GET/range exchange 都在独立 durable sidecar 中先写 signed start，再写 headers
+和 terminal；logical envelope、generic journal、sidecar 和最终 normalized index 必须对
+同一 exchange count/hash 闭合，torn tail 也保留为证据。合同固定最多 50,000 次 wire
+exchange、16 GiB 总响应和单对象 128 MiB。current full profile 已发布并独立验证为
+`free_provider_backfill_11c07e34fabb5c599bb2dcd1`：608 个 parent reference 中 439 个
+eligible request 全部 positive，0 error，36,989,662 response bytes、439 个 exchange；
+其 blocked-reference audit 精确保留 153 个无可证明路径日期、14 个拒绝引用和 2 个
+研究期外引用。
+
+独立 legacy-cons slice 已发布并独立验证为
+`free_provider_backfill_06fd455b09738b70a465a5b6`：从相同的 608-reference parent
+population 精确选择 2 个请求，2/2 positive、0 error、4,889,936 response bytes、2 个
+exchange，其余 606 个引用全部以 non-slice blocked disposition 留档。两份 generation
+都继续携带
+`current_attachment_retrieval_does_not_prove_historical_known_at_or_vintage` 和
+`csi300_attachment_semantic_parser_not_run`；物理采集完成不证明公告历史可见时点，
+也未解析调样语义，因此 `pit_membership_authorized=false` 不变。
+
 附件命名审计还发现一类官方旧格式 `YYYYMMDD<index-codes>2cons.xls[x]`。其中 146
 个 URL 的前八位是合法研究期日期，但旧通用 token 规则因日期后紧接数字而保守阻断，
 包括关键 `201511302cons.xls` 与 `201605302cons.xls`。它们将以单独内容寻址的
-legacy-cons slice 补抓，不能通过放宽通用数字解析规则混入第一片 generation。
+legacy-cons slice 采集；该 2-request slice 现已完成，但仍不能通过放宽通用数字解析规则
+混入 full generation，也不能跳过 historical known-at 与语义解析门禁。
 
 ### CNINFO supplemental 类别
 
 base profile 继续只表示既有 ST/退市、权益分派/限制措施、沪市停复牌、深市停复牌
-四族。新增 `supplemental` profile 独立锁定 7×108=756 个 category×month leaves：
+四族。`supplemental` profile 以 7×108 个 category×month cells 为起点；其中 2015-11
+和 2015-12 的增发单元各由两个半月叶替换，所以 current contract 最终锁定 758 个
+date-bounded leaves：
 
 - `category_bcgz_szsh;` 补充更正；
 - `category_pg_szsh;` 配股；
@@ -305,12 +398,29 @@ generation 和 publication-signature 状态；v1 上游只能 value-only。文�
 normalizer同时重算 envelope schema、GET、原 URL、no redirect、body SHA-256、长度、
 MIME、文件结构和 WAF，shared HTTP module hash 也进入实现身份。
 
+官网 page 101 回卷到 page 1 的行为已纳入 profile 几何和负向测试；不得通过提高客户端
+页码上限或接受重复页绕过。旧 `212e...` generation 与 `7f9d...` activity 不删除、不
+改写，但 current base/supplemental 都必须由 `35c27d...` implementation identity 完整
+重跑后才能成为 document closure 的父代。
+
 ### 长连接过期
 
 全量 security-basic 首次运行在 `600035.SH` 收到 Baostock `10001001 用户未登录`。
 该失败回执及 pause 保持不可变。恢复器只把这一精确会话错误列为有界重登录条件，
 关闭旧 socket 后创建新 transport；其他 Baostock 业务错误仍 fail closed。修复改变
 实现身份，因此没有往旧 journal 偷接事件，而是启动新 contract/activity 重跑。
+同样，成功空 terminal record slot 的精确 wire 语义修复也改变实现身份；当前活动须
+完整重跑，不能将旧 activity 的已抓部分与新 parser 结果拼接。
+
+### 本轮聚焦验证
+
+- CNINFO document closure：31 项通过；
+- CSI signed range seam：24 项通过，既有 CSI 回归 47 项通过；
+- Baostock wire/terminal seam：20 项通过，相关回归组 27 项和 2 项通过。
+
+这些数字证明当前实现的局部合同和负向路径，不单独构成采集完成或 Data Admission
+verdict。上述两个 CSI generation 的完成另由其不可变 publication 与独立 replay
+证明；CNINFO 和 Baostock 当前活动仍在采集中。
 
 ### 已完成的全市场结果
 
@@ -322,6 +432,14 @@ MIME、文件结构和 WAF，shared HTTP module hash 也进入实现身份。
 | Baostock CSI300 指数日线 v2 | `free_provider_backfill_51ab9f884b4e7361d0f7dd1d` | 1,945 个研究日，publication signature 与 wire closure 均通过 |
 | Baostock security-basic v2 canary | `free_provider_backfill_976b817861751227d290c782` | `600000.SH` 身份、协议请求和返回代码一致 |
 | Baostock turnover v2 canary | `free_provider_backfill_416ab1d145ba2cfa43fbd63e` | `600000.SH` 1,967 行，返回证券身份一致 |
+| CSI current full-range attachments | `free_provider_backfill_11c07e34fabb5c599bb2dcd1` | 608 parent refs；439/439 positive、0 error；36,989,662 bytes；439 exchanges；169 个分类 blocked refs；独立验证通过，PIT false |
+| CSI current legacy-cons exact slice | `free_provider_backfill_06fd455b09738b70a465a5b6` | 608 parent refs；2/2 positive、0 error；4,889,936 bytes；2 exchanges；606 non-slice blocked refs；独立验证通过，PIT false |
+
+以上是已发布的历史证据定位，不表示 current 全链已经完成。当前 Baostock 六个
+reconciliation phase、CNINFO `35c27d...` base/supplemental 强链与 2011 重抓、CNINFO
+document residual closure 仍标记为**采集中**。CSI current signed-range full/legacy
+物理 slice 已完成并通过独立验证；后续未完成项是附件语义解析、historical known-at/
+vintage 裁决、PIT 日状态和准入，而不是继续下载这 441 个对象。
 
 39 只退市证券原先表现为“多一天”，根因是内部把供应商 `delist_date` 错当成首个
 无效日；实际合同现统一为包含最后上市日。Admission、PIT、universe 和 matrix 的
@@ -333,3 +451,7 @@ MIME、文件结构和 WAF，shared HTTP module hash 也进入实现身份。
   生命周期，须由终止上市公告/交易所日历裁决。
 
 因此网络活动成功而研究产出仍可为零；当前数据准入没有被强行改成通过。
+此外，本地签名只能证明 capture evidence 的完整性；在人工批准 acquisition contract、
+provider-origin attestation、runtime-isolation receipt、11/11 coverage/PIT/consumer
+closure 和 canonical bundle 全部存在前，Alpha search、holdout、shadow、paper、live
+仍全部禁止。
