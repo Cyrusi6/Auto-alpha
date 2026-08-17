@@ -2713,25 +2713,45 @@ def _validate_csindex_list_request_closure(
 
 
 def _csindex_filter_topic_present(value: Any) -> bool:
-    if not isinstance(value, Mapping):
+    if (
+        not isinstance(value, Mapping)
+        or value.get("success") is not True
+        or str(value.get("code") or "") != "200"
+    ):
         return False
-    rows = value.get("data")
-    if not isinstance(rows, list):
+    data = value.get("data")
+    required_lists = {
+        "classlist",
+        "indexlist",
+        "related_topics",
+        "typelist",
+    }
+    if not isinstance(data, Mapping) or set(data) != required_lists:
         return False
-    return any(
-        isinstance(row, Mapping)
-        and "index_rebalance"
-        in {
-            str(item)
-            for item in (
-                row.get("key"),
-                row.get("value"),
-                row.get("name"),
-                row.get("code"),
+    rows_by_list: dict[str, list[Mapping[str, Any]]] = {}
+    for name in sorted(required_lists):
+        rows = data.get(name)
+        if (
+            not isinstance(rows, list)
+            or any(
+                not isinstance(row, Mapping)
+                or set(row) != {"filterKey", "filterName", "filterNameEn"}
+                or any(
+                    not isinstance(row.get(key), str) or not row.get(key)
+                    for key in ("filterKey", "filterName", "filterNameEn")
+                )
+                for row in rows
             )
-            if item is not None
-        }
-        for row in rows
+        ):
+            return False
+        rows_by_list[name] = list(rows)
+    topic_keys = [
+        str(row["filterKey"])
+        for row in rows_by_list["related_topics"]
+    ]
+    return (
+        len(topic_keys) == len(set(topic_keys))
+        and topic_keys.count("index_rebalance") == 1
     )
 
 

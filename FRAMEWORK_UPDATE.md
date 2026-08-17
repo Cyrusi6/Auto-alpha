@@ -340,6 +340,11 @@ This file records only the current A-share architecture and recent governed mile
   attachments ancestry recursively, replays each immutable upstream generation, and prevents a
   later signature from laundering a weak source. The two reviewed legacy `*cons.xls` references
   have an exact repair profile but remain non-PIT until publication/effective-time adjudication.
+- CSI filter replay now validates the official nested
+  `data.related_topics[*].filterKey` response schema, provider status, exact filter-list closure
+  and unique `index_rebalance` topic. The earlier flat-list test fixture was removed after a real
+  109-request activity exposed the mismatch; that activity retained signed raw receipts but was
+  not published under the incompatible parser identity.
 - Added an exact five-document CNINFO identity/lifecycle capture for the in-scope code changes and
   `600680` lifecycle evidence. Local operator signatures prove contract/key authorization and byte
   integrity only; they do not claim provider cryptographic origin or isolated capture runtime, so

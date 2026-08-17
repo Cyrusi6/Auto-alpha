@@ -586,7 +586,22 @@ def _publish_csindex_discovery_capture(
         _timeout: float,
     ) -> ProviderProbeObservation:
         if request.metadata.get("case") == "csindex_filter":
-            body = {"data": [{"key": "index_rebalance"}]}
+            body = {
+                "success": True,
+                "code": "200",
+                "data": {
+                    "classlist": [],
+                    "indexlist": [],
+                    "related_topics": [
+                        {
+                            "filterKey": "index_rebalance",
+                            "filterName": "指数调样",
+                            "filterNameEn": "Index Rebalance",
+                        }
+                    ],
+                    "typelist": [],
+                },
+            }
             terminal_state = "positive"
             row_count = 1
         else:
@@ -704,7 +719,20 @@ def _publish_csindex_json_capture(
         case = request.metadata.get("case")
         if case == "csindex_filter":
             body: dict[str, object] = {
-                "data": [{"key": "index_rebalance"}]
+                "success": True,
+                "code": "200",
+                "data": {
+                    "classlist": [],
+                    "indexlist": [],
+                    "related_topics": [
+                        {
+                            "filterKey": "index_rebalance",
+                            "filterName": "指数调样",
+                            "filterNameEn": "Index Rebalance",
+                        }
+                    ],
+                    "typelist": [],
+                },
             }
             terminal_state, row_count = "positive", 1
         elif case == "csindex_list":
@@ -1614,6 +1642,55 @@ def test_csindex_discovery_uses_all_rebalance_topics_by_month() -> None:
     assert "searchInput" not in body
 
 
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {"success": True, "code": "200", "data": [{"key": "index_rebalance"}]},
+        {
+            "success": True,
+            "code": "200",
+            "data": {
+                "classlist": [
+                    {
+                        "filterKey": "index_rebalance",
+                        "filterName": "指数调样",
+                        "filterNameEn": "Index Rebalance",
+                    }
+                ],
+                "indexlist": [],
+                "related_topics": [],
+                "typelist": [],
+            },
+        },
+        {
+            "success": True,
+            "code": "200",
+            "data": {
+                "classlist": [],
+                "indexlist": [],
+                "related_topics": [
+                    {
+                        "filterKey": "index_rebalance",
+                        "filterName": "指数调样",
+                        "filterNameEn": "Index Rebalance",
+                    },
+                    {
+                        "filterKey": "index_rebalance",
+                        "filterName": "重复",
+                        "filterNameEn": "Duplicate",
+                    },
+                ],
+                "typelist": [],
+            },
+        },
+    ),
+)
+def test_csindex_filter_topic_parser_rejects_flat_or_ambiguous_schema(
+    payload: dict[str, object],
+) -> None:
+    assert csindex_backfill._csindex_filter_topic_present(payload) is False
+
+
 def test_csindex_inventory_plan_binds_exact_full_discovery_ancestry(
     tmp_path: Path,
     approved_csindex_signer: EphemeralReceiptSigner,
@@ -1919,7 +1996,22 @@ def test_cninfo_page_replay_rejects_unbound_official_http_envelope(
 
 def test_csindex_discovery_normalizer_detects_canonical_list_identity(tmp_path: Path) -> None:
     _leaves, requests = build_csindex_discovery_plan(["index_rebalance_201201"])
-    filter_body = {"data": [{"key": "index_rebalance"}]}
+    filter_body = {
+        "success": True,
+        "code": "200",
+        "data": {
+            "classlist": [],
+            "indexlist": [],
+            "related_topics": [
+                {
+                    "filterKey": "index_rebalance",
+                    "filterName": "指数调样",
+                    "filterNameEn": "Index Rebalance",
+                }
+            ],
+            "typelist": [],
+        },
+    }
     list_body = {
         "data": [
             {
