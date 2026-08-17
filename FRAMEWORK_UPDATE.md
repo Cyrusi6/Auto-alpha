@@ -357,6 +357,11 @@ This file records only the current A-share architecture and recent governed mile
 - The completed ancestry-free 2011 CNINFO document generation contains 8,129 signed responses and
   is reproducible from raw bytes, but its missing source ancestry permanently quarantines it from
   governed evidence consumption.
+- The CNINFO archive adapter now scopes a transient HTTP-404 normalization to POST list requests
+  whose immutable discovery geometry already proves the page obligation. The original 404 remains
+  in the signed raw envelope, at most two contract retries are allowed, and document GET or other
+  provider 404 responses remain immediately blocking. The real page-24 activity that exposed this
+  case remains immutably paused and unpublished.
 - The current result remains `0/11` base-required datasets admitted. No Data Admission Profile,
   alpha search, holdout, paper, shadow or live capability was activated.
 

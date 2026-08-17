@@ -133,6 +133,55 @@ CNINFO_LEAF_PROFILES = {
     "base": CNINFO_LEAF_KINDS,
     "supplemental": CNINFO_SUPPLEMENTAL_LEAF_KINDS,
 }
+CNINFO_TRANSIENT_LIST_ERROR_MAP = {
+    "http_status:404": (
+        "transport_exception:RuntimeError:cninfo_list_transient_http_404"
+    ),
+}
+
+
+class CNINFOArchiveTransport:
+    """Scope reviewed transient status normalization to list requests."""
+
+    def __init__(self, *, minimum_delay_seconds: float) -> None:
+        self._transport = OfficialHttpProbeTransport(
+            minimum_delay_seconds=minimum_delay_seconds
+        )
+
+    def __call__(
+        self, request: ProviderProbeRequest, timeout_seconds: float
+    ) -> ProviderProbeObservation:
+        observation = self._transport(request, timeout_seconds)
+        original_error = str(observation.error_code or "")
+        normalized_error = CNINFO_TRANSIENT_LIST_ERROR_MAP.get(
+            original_error
+        )
+        if (
+            request.provider != "cninfo"
+            or request.metadata.get("case") != "cninfo_list"
+            or observation.terminal_state != "error"
+            or observation.status_code != 404
+            or normalized_error is None
+        ):
+            return observation
+        return ProviderProbeObservation(
+            terminal_state=observation.terminal_state,
+            raw_payload=observation.raw_payload,
+            row_count=observation.row_count,
+            status_code=observation.status_code,
+            error_code=normalized_error,
+            diagnostics={
+                **dict(observation.diagnostics),
+                "transient_error_normalization": {
+                    "adapter": type(self).__name__,
+                    "original_error_code": original_error,
+                    "normalized_error_code": normalized_error,
+                    "retry_scope": "cninfo_list_only",
+                },
+            },
+            checks=observation.checks,
+            transport_exchange_count=observation.transport_exchange_count,
+        )
 
 
 class CNINFODocumentTransport:
@@ -2168,6 +2217,8 @@ def _implementation_root() -> str:
             )
             + inspect.getsource(validate_cninfo_governance),
             "document_transport": inspect.getsource(CNINFODocumentTransport),
+            "archive_transport": inspect.getsource(CNINFOArchiveTransport),
+            "transient_list_error_map": CNINFO_TRANSIENT_LIST_ERROR_MAP,
             "document_url": inspect.getsource(_cninfo_document_url),
             "document_format": inspect.getsource(_document_format),
             "document_block_detection": inspect.getsource(_document_block_reason),
@@ -2512,7 +2563,7 @@ def main(argv: list[str] | None = None) -> int:
             minimum_delay_seconds=args.minimum_delay_seconds
         )
         if args.phase == "cninfo-documents"
-        else OfficialHttpProbeTransport(
+        else CNINFOArchiveTransport(
             minimum_delay_seconds=args.minimum_delay_seconds
         )
     )

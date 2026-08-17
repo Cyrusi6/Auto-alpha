@@ -2360,6 +2360,74 @@ def test_cninfo_document_transport_and_normalizer_bind_envelope_and_weak_ancestr
         )
 
 
+def test_cninfo_archive_adapter_retries_only_list_endpoint_transient_404(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NotFoundTransport:
+        def __init__(self, **_kwargs: object) -> None:
+            return None
+
+        def __call__(
+            self,
+            _request: ProviderProbeRequest,
+            _timeout_seconds: float,
+        ) -> ProviderProbeObservation:
+            return ProviderProbeObservation(
+                terminal_state="error",
+                raw_payload=b"official-http-404-fixture",
+                row_count=None,
+                status_code=404,
+                error_code="http_status:404",
+                diagnostics={},
+                checks={"http_success": False},
+                transport_exchange_count=1,
+            )
+
+    monkeypatch.setattr(
+        cninfo_backfill,
+        "OfficialHttpProbeTransport",
+        NotFoundTransport,
+    )
+    _population, requests = build_cninfo_discovery_plan(
+        ["corporate_actions_201404"]
+    )
+    list_request = next(
+        request
+        for request in requests
+        if request.metadata.get("case") == "cninfo_list"
+    )
+    transport = cninfo_backfill.CNINFOArchiveTransport(
+        minimum_delay_seconds=0
+    )
+
+    retryable = transport(list_request, 3.0)
+    document_request = ProviderProbeRequest(
+        **{
+            **list_request.__dict__,
+            "metadata": dict(list_request.metadata) | {"case": "cninfo_pdf"},
+        }
+    )
+    nonretryable = transport(document_request, 3.0)
+
+    assert retryable.error_code == (
+        "transport_exception:RuntimeError:cninfo_list_transient_http_404"
+    )
+    assert retryable.diagnostics["transient_error_normalization"] == {
+        "adapter": "CNINFOArchiveTransport",
+        "original_error_code": "http_status:404",
+        "normalized_error_code": (
+            "transport_exception:RuntimeError:"
+            "cninfo_list_transient_http_404"
+        ),
+        "retry_scope": "cninfo_list_only",
+    }
+    assert capture_backfill._retryable(
+        retryable.error_code,
+        provider="cninfo",
+    ) is True
+    assert nonretryable.error_code == "http_status:404"
+
+
 def test_cninfo_new_document_normalization_rejects_missing_source_ancestry(
     tmp_path: Path,
 ) -> None:

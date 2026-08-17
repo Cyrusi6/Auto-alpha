@@ -129,6 +129,10 @@ redirect 及 raw/body hash。上游 v1 或不可信 normalized 证据会永久�
 `weak_source_ancestry=true`，不能由下游 v2 签名洗白。旧的 ancestry-free inventory
 不能创建任何新文档计划；仅当前已在运行的 2011 固定 request-plan hash 可按显式
 legacy 规则完成和重放。
+对于已由 discovery 冻结总数和页数的 `cninfo_list` POST 请求，官网偶发的
+HTTP 404 可由 CNINFO archive adapter 标记为有界瞬时错误，最多消耗合同中已锁定的
+2 次重试。原始 404 状态和 body 仍进入每次签名回执；该规则不适用于文档
+GET、org-map、其他 provider 或任何 schema/parser 错误。
 该 legacy 代次即使 publication bytes 和签名完整，CNINFO 专用治理裁决仍固定返回
 `source_lineage_complete=false`、`quarantined=true`、
 `governed_evidence_eligible=false`；字节完整性不能替代来源血缘。
