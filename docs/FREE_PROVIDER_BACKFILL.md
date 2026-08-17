@@ -90,6 +90,10 @@ Baostock 的 `isST` 不能区分 ST/*ST/退市风险，`tradestatus` 不提供�
 明确保留这些 blocker。匿名 session 返回 `10001001` 时，只能由 Baostock 恢复
 adapter 转换为带供应商上下文的 bounded retry；采集引擎仍会再次核对
 `provider=baostock`，不会把原始或转换后的同名错误码当成其他供应商可重试错误。
+`ConnectionResetError` 等已审核的 socket 子类只在 Baostock reconciliation adapter
+内映射到现有 `ConnectionError` 家族，并先重建 session 再消耗锁定重试次数；
+具体异常码仍保留在签名证据里。该映射不扩展到 CNINFO/CSI HTTP 路径，
+也不允许将协议、schema 或 parser 错误自动重试。
 
 `security-snapshots` 同时锁定 1,945 个 open date 的内容根
 `2b277e1c...55abbc6` 和 seed + open dates 的 population root

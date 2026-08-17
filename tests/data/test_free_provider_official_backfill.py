@@ -3573,6 +3573,67 @@ def test_baostock_custom_history_checks_bind_rows_to_requested_code(
     assert wrong["provider_code_matches_request"] is False
 
 
+def test_baostock_reconciliation_adapter_scopes_connection_reset_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _population, requests = build_index_daily_plan()
+    instances: list[ResetTransport] = []
+
+    class ResetTransport:
+        def __init__(self) -> None:
+            self.closed = False
+            instances.append(self)
+
+        def __call__(
+            self,
+            _request: ProviderProbeRequest,
+            _timeout_seconds: float,
+        ) -> ProviderProbeObservation:
+            return ProviderProbeObservation(
+                terminal_state="error",
+                raw_payload=b"signed-wire-reset-fixture",
+                row_count=None,
+                error_code="baostock_transport:ConnectionResetError",
+                diagnostics={"wire_capture_count": 2},
+                checks={"transport_completed": False},
+                transport_exchange_count=2,
+            )
+
+        def close(self) -> None:
+            self.closed = True
+
+        def restore(
+            self,
+            _request: ProviderProbeRequest,
+            _record: object,
+        ) -> None:
+            return None
+
+    monkeypatch.setattr(
+        capture_backfill,
+        "BaostockProbeTransport",
+        ResetTransport,
+    )
+    transport = (
+        baostock_reconciliation.BoundedBaostockReconciliationTransport()
+    )
+    observation = transport(requests[0], 3.0)
+
+    assert observation.error_code == "baostock_transport:ConnectionError"
+    assert observation.diagnostics["transient_error_normalization"] == {
+        "adapter": "BoundedBaostockReconciliationTransport",
+        "original_error_code": "baostock_transport:ConnectionResetError",
+        "normalized_error_code": "baostock_transport:ConnectionError",
+        "transport_replaced": True,
+    }
+    assert capture_backfill._retryable(
+        observation.error_code,
+        provider="baostock",
+    ) is True
+    assert len(instances) == 2
+    assert instances[0].closed is True
+
+
 def test_baostock_wire_validator_binds_actual_protocol_request_bytes() -> None:
     _population, requests = build_index_daily_plan()
     request = requests[0]

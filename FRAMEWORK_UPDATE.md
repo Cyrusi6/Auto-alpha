@@ -329,6 +329,11 @@ This file records only the current A-share architecture and recent governed mile
   one-based page number, page size, response echo, consecutive-page geometry and terminal short
   page. `parsed.pages` is only a diagnostic assertion and must equal the page structure derived
   from archived wire bytes.
+- The governed Baostock reconciliation adapter now maps only an explicit set of transient socket
+  subclasses such as `ConnectionResetError` into the existing bounded `ConnectionError` retry
+  family and replaces the session before retry. Concrete error evidence is retained; the mapping
+  is not shared with HTTP providers, and protocol/parser errors remain non-retryable. The first
+  real reset activity remains immutably paused rather than being rewritten.
 - Compressed Baostock responses require a complete bounded zlib stream with no trailing bytes.
   The provider's numeric compressed-frame trailer is retained as opaque evidence because the
   official client does not verify it and captured frames do not support a reproducible CRC claim.

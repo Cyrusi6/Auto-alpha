@@ -32,7 +32,7 @@ from .free_provider_backfill import (
     run_free_provider_backfill,
     validate_free_provider_backfill,
 )
-from .provider_probe import ProviderProbeRequest
+from .provider_probe import ProviderProbeObservation, ProviderProbeRequest
 from .run_provider_probe import (
     BAOSTOCK_FIELDS,
     BaostockProbeTransport,
@@ -88,6 +88,52 @@ BAOSTOCK_PAGINATION_CONTRACT = {
     "terminal_page_requires_less_than_page_size": True,
     "exact_multiple_requires_empty_terminal_page": True,
 }
+BAOSTOCK_TRANSIENT_TRANSPORT_ERROR_MAP = {
+    "baostock_transport:BrokenPipeError": "baostock_transport:ConnectionError",
+    "baostock_transport:ConnectionAbortedError": (
+        "baostock_transport:ConnectionError"
+    ),
+    "baostock_transport:ConnectionRefusedError": (
+        "baostock_transport:ConnectionError"
+    ),
+    "baostock_transport:ConnectionResetError": (
+        "baostock_transport:ConnectionError"
+    ),
+}
+
+
+class BoundedBaostockReconciliationTransport(RecoveringBaostockTransport):
+    """Normalize only reviewed transient socket subclasses before retry."""
+
+    def __call__(
+        self, request: ProviderProbeRequest, timeout_seconds: float
+    ) -> ProviderProbeObservation:
+        observation = super().__call__(request, timeout_seconds)
+        original_error = str(observation.error_code or "")
+        normalized_error = BAOSTOCK_TRANSIENT_TRANSPORT_ERROR_MAP.get(
+            original_error
+        )
+        if normalized_error is None:
+            return observation
+        self._replace()
+        return ProviderProbeObservation(
+            terminal_state=observation.terminal_state,
+            raw_payload=observation.raw_payload,
+            row_count=observation.row_count,
+            status_code=observation.status_code,
+            error_code=normalized_error,
+            diagnostics={
+                **dict(observation.diagnostics),
+                "transient_error_normalization": {
+                    "adapter": type(self).__name__,
+                    "original_error_code": original_error,
+                    "normalized_error_code": normalized_error,
+                    "transport_replaced": True,
+                },
+            },
+            checks=observation.checks,
+            transport_exchange_count=observation.transport_exchange_count,
+        )
 
 _BAOSTOCK_PHASE_BASELINES: dict[str, dict[str, Any]] = {
     "adjustments": {
@@ -1579,6 +1625,9 @@ def _implementation_root() -> str:
                     BAOSTOCK_COMPRESSED_TRAILER_SEMANTICS
                 ),
                 "pagination_contract": BAOSTOCK_PAGINATION_CONTRACT,
+                "transient_transport_error_map": (
+                    BAOSTOCK_TRANSIENT_TRANSPORT_ERROR_MAP
+                ),
                 "phase_baselines": _BAOSTOCK_PHASE_BASELINES,
             },
             "adjustment_plan": inspect.getsource(build_adjustment_plan),
@@ -1621,6 +1670,9 @@ def _implementation_root() -> str:
             "turnover_normalizer": inspect.getsource(normalize_turnover),
             "provider_transport": inspect.getsource(BaostockProbeTransport),
             "recovering_transport": inspect.getsource(RecoveringBaostockTransport),
+            "bounded_reconciliation_transport": inspect.getsource(
+                BoundedBaostockReconciliationTransport
+            ),
             "wire_decoder": inspect.getsource(_baostock_logical_rows),
             "wire_protocol_root": baostock_wire_protocol_root(),
             "provider_code_converter": inspect.getsource(_from_baostock_code),
@@ -1873,7 +1925,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0
-    transport = RecoveringBaostockTransport()
+    transport = BoundedBaostockReconciliationTransport()
     try:
         result = run_free_provider_backfill(
             contract,
