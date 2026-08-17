@@ -129,6 +129,13 @@ legacy 规则完成和重放。
 `source_lineage_complete=false`、`quarantined=true`、
 `governed_evidence_eligible=false`；字节完整性不能替代来源血缘。
 
+针对已定位的两个代码变更与 `600680` 生命周期缺口，
+`free_provider_cninfo_security_lifecycle` 另外锁定 5 份官方 PDF 的精确 URL、
+公告 ID、主体代码和请求计划。该路径会验证 HTTP envelope、跳转、原始响应、
+本地 capture key 和独立重放，但不把本地签名写成 provider 签名。在隔离采集运行时或
+供应商来源证明建立前，`provider_origin_attested=false`、
+`capture_runtime_isolation_verified=false` 和 `data_admission_eligible=false` 保持不变。
+
 ### 中证指数官网
 
 列表按 `index_rebalance × calendar month` 获取 2011–2019 全部调样公告，不只用
@@ -137,6 +144,10 @@ chain。validator 同时核对请求页与 provider `currentPage`，防止越界
 
 详情计划从完整唯一公告 inventory 生成。详情出现 HTTP 403/WAF 时必须停止该 host，
 不能把 HTML 阻断页或未抓页面当作完整公告链。
+每一段下游治理验证都会递归打开并重放实际的上游 immutable generation，
+同时核对人工授权、批准 key、scope、profile、source binding 和原始 HTTP 封闭。
+两条旧命名 `201511302cons.xls` / `201605302cons.xls` 只能通过精确 repair profile
+采集；修复附件的存在性不能自动证明公布时间或 PIT 可见性。
 
 ## CLI
 

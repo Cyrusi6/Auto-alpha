@@ -323,6 +323,33 @@ This file records only the current A-share architecture and recent governed mile
 - These changes collect and preserve missing evidence only. Data Admission, alpha search, holdout,
   paper, shadow and live capabilities remain false.
 
+## 2026-08 — Free-provider protocol and official-document closure
+
+- Baostock raw replay now binds the exact request/response message family, anonymous user,
+  one-based page number, page size, response echo, consecutive-page geometry and terminal short
+  page. `parsed.pages` is only a diagnostic assertion and must equal the page structure derived
+  from archived wire bytes.
+- Compressed Baostock responses require a complete bounded zlib stream with no trailing bytes.
+  The provider's numeric compressed-frame trailer is retained as opaque evidence because the
+  official client does not verify it and captured frames do not support a reproducible CRC claim.
+- A single seven-phase Baostock reconciliation validator now locks the approved capture key,
+  human authorization policy, full population/request plan, scope, output, retry/resource budget,
+  adapter/source identity and every normalized artifact. Validation independently replays each
+  phase from signed raw bytes; subsets and phase-confused CLI validation fail closed.
+- CSI official-archive governance now verifies the complete discovery → inventory → details →
+  attachments ancestry recursively, replays each immutable upstream generation, and prevents a
+  later signature from laundering a weak source. The two reviewed legacy `*cons.xls` references
+  have an exact repair profile but remain non-PIT until publication/effective-time adjudication.
+- Added an exact five-document CNINFO identity/lifecycle capture for the in-scope code changes and
+  `600680` lifecycle evidence. Local operator signatures prove contract/key authorization and byte
+  integrity only; they do not claim provider cryptographic origin or isolated capture runtime, so
+  the artifacts remain Data Admission ineligible until that separate trust boundary is supplied.
+- The completed ancestry-free 2011 CNINFO document generation contains 8,129 signed responses and
+  is reproducible from raw bytes, but its missing source ancestry permanently quarantines it from
+  governed evidence consumption.
+- The current result remains `0/11` base-required datasets admitted. No Data Admission Profile,
+  alpha search, holdout, paper, shadow or live capability was activated.
+
 ## Architecture rules
 
 1. Delete obsolete behavior instead of hiding it behind compatibility adapters.

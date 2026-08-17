@@ -45,6 +45,19 @@ class FakeTransport:
         return self.observations[request.request_id]
 
 
+def test_generic_baostock_implementation_identity_binds_strict_wire_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline = free_provider_backfill._baostock_implementation_root()
+    monkeypatch.setattr(
+        free_provider_backfill,
+        "baostock_wire_protocol_root",
+        lambda: "e" * 64,
+    )
+
+    assert free_provider_backfill._baostock_implementation_root() != baseline
+
+
 def test_baostock_session_expiry_replaces_transport_before_bounded_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -331,7 +344,7 @@ def _baostock_login_only_transport_error_observation(
         request_head_body
         + f"\x01{zlib.crc32(request_head_body)}\n".encode()
     )
-    response_body = "0\x01success\x01login\x01anonymous\x01fixture"
+    response_body = "0\x01success\x01login\x01anonymous\x0120260817042420182"
     response_header = f"00.9.00\x0101\x01{len(response_body):010d}".encode()
     response_head_body = response_header + response_body.encode()
     wire_response = (
@@ -379,6 +392,32 @@ def _baostock_login_only_transport_error_observation(
         checks={"transport_completed": False},
         transport_exchange_count=1,
     )
+
+
+def test_baostock_login_response_user_must_bind_business_session() -> None:
+    request = _baostock_request("forged-login-user")
+    observation = _baostock_login_only_transport_error_observation(request)
+    envelope = json.loads(observation.raw_payload)
+    exchange = envelope["wire_exchanges"][0]
+    response_body = "0\x01success\x01login\x01forged-user\x0120260817042420182"
+    response_header = f"00.9.00\x0101\x01{len(response_body):010d}".encode()
+    response_head_body = response_header + response_body.encode()
+    wire_response = (
+        response_head_body
+        + f"\x01{zlib.crc32(response_head_body)}".encode()
+        + b"<![CDATA[]]>\n"
+    )
+    exchange["wire_response_base64"] = base64.b64encode(wire_response).decode()
+    exchange["wire_response_sha256"] = hashlib.sha256(wire_response).hexdigest()
+    exchange["wire_size_bytes"] = len(wire_response)
+
+    with pytest.raises(ValueError, match="login_session_invalid"):
+        free_provider_backfill._validate_baostock_wire_envelope(
+            json.dumps(envelope, sort_keys=True).encode(),
+            expected_exchange_count=1,
+            request=request.semantic(),
+            terminal_state="error",
+        )
 
 
 def _forbidden_observation() -> ProviderProbeObservation:

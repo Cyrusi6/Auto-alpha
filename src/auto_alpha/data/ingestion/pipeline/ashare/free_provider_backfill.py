@@ -162,6 +162,48 @@ _BAOSTOCK_RESPONSE_REQUEST_INDEX_PAIRS = {
     "query_stock_basic": ((7, 4), (8, 5)),
     "query_trade_dates": ((7, 4), (8, 5)),
 }
+_BAOSTOCK_PROTOCOL_BY_OPERATION = {
+    "query_dividend_data": {"request_type": "13", "response_type": "14"},
+    "query_adjust_factor": {"request_type": "15", "response_type": "16"},
+    "query_trade_dates": {"request_type": "33", "response_type": "34"},
+    "query_all_stock": {"request_type": "35", "response_type": "36"},
+    "query_stock_basic": {"request_type": "45", "response_type": "46"},
+    "query_hs300_stocks": {"request_type": "61", "response_type": "62"},
+    "query_history_k_data_plus": {
+        "request_type": "95",
+        "response_type": "96",
+    },
+}
+_BAOSTOCK_REQUEST_TOKEN_CONTRACTS = {
+    "query_dividend_data": {"arity": 7, "literals": {1: "anonymous", 6: "report"}},
+    "query_adjust_factor": {"arity": 7, "literals": {1: "anonymous"}},
+    "query_trade_dates": {"arity": 6, "literals": {1: "anonymous"}},
+    "query_all_stock": {"arity": 5, "literals": {1: "anonymous"}},
+    "query_stock_basic": {"arity": 6, "literals": {1: "anonymous", 5: ""}},
+    "query_hs300_stocks": {"arity": 5, "literals": {1: "anonymous"}},
+    "query_history_k_data_plus": {
+        "arity": 10,
+        "literals": {1: "anonymous", 8: "d", 9: "3"},
+    },
+}
+_BAOSTOCK_RESPONSE_TOKEN_ARITY = {
+    "query_dividend_data": 11,
+    "query_adjust_factor": 11,
+    "query_trade_dates": 10,
+    "query_all_stock": 9,
+    "query_stock_basic": 10,
+    "query_hs300_stocks": 9,
+    "query_history_k_data_plus": 13,
+}
+_BAOSTOCK_LOGIN_PROTOCOL = {"request_type": "00", "response_type": "01"}
+_BAOSTOCK_LOGIN_REQUEST_TOKEN_CONTRACT = {
+    "arity": 4,
+    "literals": {1: "anonymous", 2: "123456", 3: "0"},
+}
+_BAOSTOCK_PROVIDER_ERROR_RESPONSE_TYPE = "04"
+_BAOSTOCK_PINNED_PAGE_SIZE = 2000
+_BAOSTOCK_MAX_PAGES_PER_REQUEST = 4
+_BAOSTOCK_MAX_DECOMPRESSED_RESPONSE_BYTES = 64 * 1024 * 1024
 _BAOSTOCK_HEADER_LENGTH = 21
 _BAOSTOCK_COMPRESSED_RESPONSE_TYPES = frozenset({"96", "99", "9B", "9D"})
 _BAOSTOCK_RESPONSE_TRAILER = re.compile(
@@ -2638,6 +2680,8 @@ def _validate_baostock_wire_envelope(
         envelope,
         fields,
         rows,
+        package_rows,
+        wire_pages,
         business_requests,
         wire_provider_results,
         partial_response_observed,
@@ -2685,7 +2729,19 @@ def _validate_baostock_wire_envelope(
     if business_requests and not request_bound:
         raise ValueError("free_provider_backfill_baostock_request_binding_invalid")
 
-    _reconcile_baostock_parsed_payload(envelope, fields=fields, rows=rows)
+    _validate_baostock_page_chain(
+        business_requests=business_requests,
+        wire_pages=wire_pages,
+        require_terminal=terminal_state in {"positive", "empty"},
+    )
+
+    _reconcile_baostock_parsed_payload(
+        envelope,
+        fields=fields,
+        rows=rows,
+        package_rows=package_rows,
+        expected_pages=wire_pages,
+    )
     provider_error = envelope.get("provider_error")
     if wire_provider_results and (
         not isinstance(provider_error, Mapping)
@@ -2709,19 +2765,97 @@ def _validate_baostock_wire_envelope(
         raise ValueError("free_provider_backfill_baostock_logical_binding_invalid")
 
 
+def _validate_baostock_page_chain(
+    *,
+    business_requests: Sequence[Sequence[str]],
+    wire_pages: Sequence[Mapping[str, int]],
+    require_terminal: bool,
+) -> None:
+    """Validate the exact pagination state machine implemented by 0.9.3."""
+
+    if len(business_requests) > _BAOSTOCK_MAX_PAGES_PER_REQUEST:
+        raise ValueError(
+            "free_provider_backfill_baostock_pagination_terminal_invalid"
+        )
+    for ordinal, tokens in enumerate(business_requests, start=1):
+        try:
+            page = int(tokens[2])
+            page_size = int(tokens[3])
+        except (IndexError, ValueError) as exc:
+            raise ValueError(
+                "free_provider_backfill_baostock_page_binding_invalid"
+            ) from exc
+        if (
+            page != ordinal
+            or str(page) != tokens[2]
+            or page_size != _BAOSTOCK_PINNED_PAGE_SIZE
+            or str(page_size) != tokens[3]
+        ):
+            raise ValueError(
+                "free_provider_backfill_baostock_page_binding_invalid"
+            )
+    if len(wire_pages) > len(business_requests):
+        raise ValueError(
+            "free_provider_backfill_baostock_page_binding_invalid"
+        )
+    for ordinal, page in enumerate(wire_pages, start=1):
+        if (
+            page.get("page") != ordinal
+            or page.get("provider_page_size") != _BAOSTOCK_PINNED_PAGE_SIZE
+        ):
+            raise ValueError(
+                "free_provider_backfill_baostock_page_binding_invalid"
+            )
+        if ordinal < len(business_requests) and page.get("row_count") != (
+            _BAOSTOCK_PINNED_PAGE_SIZE
+        ):
+            raise ValueError(
+                "free_provider_backfill_baostock_pagination_terminal_invalid"
+            )
+    if require_terminal:
+        if (
+            not wire_pages
+            or len(wire_pages) != len(business_requests)
+            or wire_pages[-1].get("row_count", _BAOSTOCK_PINNED_PAGE_SIZE)
+            >= _BAOSTOCK_PINNED_PAGE_SIZE
+        ):
+            raise ValueError(
+                "free_provider_backfill_baostock_pagination_terminal_invalid"
+            )
+
+
 def _baostock_logical_rows(raw_payload: bytes) -> tuple[list[str], list[list[str]]]:
+    fields, rows, _diagnostics = _baostock_logical_rows_with_reconciliation(
+        raw_payload
+    )
+    return fields, rows
+
+
+def _baostock_logical_rows_with_reconciliation(
+    raw_payload: bytes,
+) -> tuple[list[str], list[list[str]], dict[str, Any]]:
+    """Return authoritative wire rows plus pinned-SDK reconciliation diagnostics."""
+
     (
         _envelope,
         fields,
         rows,
+        package_rows,
+        wire_pages,
         _business_requests,
         _wire_provider_results,
         _partial_response_observed,
     ) = (
         _decode_baostock_wire_envelope(raw_payload)
     )
-    _reconcile_baostock_parsed_payload(_envelope, fields=fields, rows=rows)
-    return fields, rows
+    diagnostics = _reconcile_baostock_parsed_payload(
+        _envelope,
+        fields=fields,
+        rows=rows,
+        package_rows=package_rows,
+        expected_pages=wire_pages,
+    )
+    return fields, rows, diagnostics
 
 
 def _reconcile_baostock_parsed_payload(
@@ -2729,7 +2863,18 @@ def _reconcile_baostock_parsed_payload(
     *,
     fields: Sequence[str],
     rows: Sequence[Sequence[str]],
-) -> None:
+    package_rows: Sequence[Sequence[str]],
+    expected_pages: Sequence[Mapping[str, int]],
+) -> dict[str, Any]:
+    """Reconcile SDK output without allowing it to rewrite raw wire values.
+
+    Baostock 0.9.3 ``ResultData.setData`` applies ``split()`` followed by
+    ``join()`` to the complete JSON record payload before decoding it.  That
+    removes literal whitespace inside string values such as an index name.
+    The raw response record is authoritative; the package projection is only
+    accepted when it is reproduced exactly from the archived wire bytes.
+    """
+
     parsed_payload = envelope.get("parsed")
     if not isinstance(parsed_payload, Mapping) or not {
         "canonical_logical_payload_sha256",
@@ -2745,19 +2890,22 @@ def _reconcile_baostock_parsed_payload(
     if (
         not isinstance(parsed_fields, list)
         or [str(value) for value in parsed_fields] != list(fields)
-        or parsed_payload.get("row_count") != len(rows)
+        or len(package_rows) != len(rows)
+        or parsed_payload.get("row_count") != len(package_rows)
         or parsed_payload.get("canonical_logical_payload_sha256")
-        != canonical_hash({"fields": list(fields), "rows": list(rows)})
+        != canonical_hash(
+            {"fields": list(fields), "rows": list(package_rows)}
+        )
         or (
             parsed_items is not None
             and (
                 not isinstance(parsed_items, list)
                 or [[str(value) for value in row] for row in parsed_items]
-                != list(rows)
+                != list(package_rows)
             )
         )
-        or parsed_payload.get("first_rows") != list(rows[:3])
-        or parsed_payload.get("last_rows") != list(rows[-3:])
+        or parsed_payload.get("first_rows") != list(package_rows[:3])
+        or parsed_payload.get("last_rows") != list(package_rows[-3:])
     ):
         raise ValueError("free_provider_backfill_baostock_logical_binding_invalid")
     pages = parsed_payload.get("pages")
@@ -2765,14 +2913,88 @@ def _reconcile_baostock_parsed_payload(
         not isinstance(pages, list)
         or any(
             not isinstance(page, Mapping)
+            or type(page.get("page")) is not int
             or not isinstance(page.get("row_count"), int)
             or isinstance(page.get("row_count"), bool)
+            or type(page.get("provider_page_size")) is not int
+            or set(page) != {"page", "row_count", "provider_page_size"}
             or int(page["row_count"]) < 0
             for page in pages
         )
-        or sum(int(page["row_count"]) for page in pages) != len(rows)
+        or sum(int(page["row_count"]) for page in pages) != len(package_rows)
+        or pages != list(expected_pages)
     ):
-        raise ValueError("free_provider_backfill_baostock_logical_binding_invalid")
+        raise ValueError("free_provider_backfill_baostock_page_binding_invalid")
+    loss_row_count = 0
+    loss_cell_count = 0
+    for wire_row, package_row in zip(rows, package_rows, strict=True):
+        if len(wire_row) != len(package_row):
+            raise ValueError(
+                "free_provider_backfill_baostock_logical_binding_invalid"
+            )
+        row_loss = sum(
+            str(wire_value) != str(package_value)
+            for wire_value, package_value in zip(
+                wire_row, package_row, strict=True
+            )
+        )
+        if row_loss:
+            loss_row_count += 1
+            loss_cell_count += row_loss
+    return {
+        "authoritative_value_source": "raw_wire_response_record",
+        "package_parser_usage": "reconciliation_only",
+        "package_parser_semantics": "baostock_0_9_3_setData_split_join",
+        "package_parser_loss_detected": loss_cell_count > 0,
+        "package_parser_loss_row_count": loss_row_count,
+        "package_parser_loss_cell_count": loss_cell_count,
+    }
+
+
+def _validate_baostock_request_contract(
+    tokens: Sequence[str], *, request_frame: Mapping[str, Any]
+) -> str:
+    if not tokens:
+        raise ValueError("baostock_backfill_wire_request_contract_invalid")
+    operation = str(tokens[0])
+    if operation == "login":
+        protocol = _BAOSTOCK_LOGIN_PROTOCOL
+        contract = _BAOSTOCK_LOGIN_REQUEST_TOKEN_CONTRACT
+    else:
+        protocol = _BAOSTOCK_PROTOCOL_BY_OPERATION.get(operation)
+        contract = _BAOSTOCK_REQUEST_TOKEN_CONTRACTS.get(operation)
+    if (
+        protocol is None
+        or contract is None
+        or request_frame.get("message_type") != protocol["request_type"]
+    ):
+        raise ValueError("baostock_backfill_wire_message_type_invalid")
+    literals = contract["literals"]
+    if len(tokens) != contract["arity"] or any(
+        tokens[index] != expected for index, expected in literals.items()
+    ):
+        if len(tokens) > 1 and tokens[1] != "anonymous":
+            raise ValueError(
+                "free_provider_backfill_baostock_user_binding_invalid"
+            )
+        raise ValueError("baostock_backfill_wire_request_contract_invalid")
+    if operation == "login":
+        return operation
+    try:
+        request_page = int(tokens[2])
+        request_page_size = int(tokens[3])
+    except ValueError as exc:
+        raise ValueError("baostock_backfill_wire_page_invalid") from exc
+    if (
+        str(request_page) != tokens[2]
+        or str(request_page_size) != tokens[3]
+        or request_page < 1
+        or request_page_size != _BAOSTOCK_PINNED_PAGE_SIZE
+    ):
+        raise ValueError(
+            "free_provider_backfill_baostock_page_binding_invalid"
+        )
+    return operation
 
 
 def _decode_baostock_wire_envelope(
@@ -2783,6 +3005,8 @@ def _decode_baostock_wire_envelope(
     Mapping[str, Any],
     list[str],
     list[list[str]],
+    list[list[str]],
+    list[dict[str, int]],
     list[list[str]],
     list[tuple[str, str]],
     bool,
@@ -2795,10 +3019,16 @@ def _decode_baostock_wire_envelope(
         raise ValueError("baostock_backfill_wire_capture_invalid")
     fields: list[str] | None = None
     rows: list[list[str]] = []
+    package_rows: list[list[str]] = []
+    wire_pages: list[dict[str, int]] = []
     business_requests: list[list[str]] = []
     wire_provider_results: list[tuple[str, str]] = []
     partial_response_observed = allow_partial_response and not exchanges
-    for exchange in exchanges:
+    login_seen = False
+    login_succeeded = False
+    login_user: str | None = None
+    provider_terminal_seen = False
+    for exchange_index, exchange in enumerate(exchanges):
         if not isinstance(exchange, Mapping):
             raise ValueError("baostock_backfill_wire_capture_invalid")
         request_bytes = _baostock_exchange_bytes(
@@ -2816,7 +3046,28 @@ def _decode_baostock_wire_envelope(
         peer = exchange.get("socket_peer")
         if not isinstance(peer, list) or len(peer) < 2:
             raise ValueError("baostock_backfill_wire_capture_invalid")
-        request_tokens = _parse_baostock_request_frame(request_bytes)
+        request_tokens, request_frame = _parse_baostock_request_frame(
+            request_bytes
+        )
+        operation = _validate_baostock_request_contract(
+            request_tokens, request_frame=request_frame
+        )
+        is_login = operation == "login"
+        if provider_terminal_seen:
+            raise ValueError("baostock_backfill_wire_exchange_after_error")
+        if is_login:
+            if login_seen or business_requests:
+                raise ValueError("baostock_backfill_wire_login_order_invalid")
+            login_seen = True
+            login_user = request_tokens[1]
+        else:
+            if login_seen and not login_succeeded:
+                raise ValueError("baostock_backfill_wire_login_session_invalid")
+            if login_user is not None and request_tokens[1] != login_user:
+                raise ValueError(
+                    "free_provider_backfill_baostock_user_binding_invalid"
+                )
+            business_requests.append(request_tokens)
         marker_value = exchange.get("terminal_marker_present")
         if not isinstance(marker_value, bool):
             raise ValueError("baostock_backfill_wire_response_partial_invalid")
@@ -2827,24 +3078,84 @@ def _decode_baostock_wire_envelope(
                 or response_bytes.endswith(b"<![CDATA[]]>\n")
             ):
                 raise ValueError("baostock_backfill_wire_response_partial_invalid")
+            if exchange_index != len(exchanges) - 1:
+                raise ValueError(
+                    "baostock_backfill_wire_partial_response_not_final"
+                )
             partial_response_observed = True
-            if request_tokens[0] != "login":
-                business_requests.append(request_tokens)
             continue
-        response_tokens = _parse_baostock_response_frame(response_bytes)
-        operation = request_tokens[0]
-        if operation == "login":
-            if len(response_tokens) < 3 or response_tokens[2] != "login":
-                raise ValueError("baostock_backfill_wire_operation_mismatch")
+        response_tokens, response_frame = _parse_baostock_response_frame(
+            response_bytes
+        )
+        if is_login:
+            if response_frame["message_type"] == (
+                _BAOSTOCK_PROVIDER_ERROR_RESPONSE_TYPE
+            ):
+                if len(response_tokens) != 2 or response_tokens[0] == "0":
+                    raise ValueError(
+                        "baostock_backfill_wire_response_contract_invalid"
+                    )
+                provider_terminal_seen = True
+                wire_provider_results.append(
+                    (response_tokens[0], response_tokens[1])
+                )
+                continue
+            if (
+                response_frame["message_type"]
+                != _BAOSTOCK_LOGIN_PROTOCOL["response_type"]
+                or len(response_tokens) != 5
+                or response_tokens[0] != "0"
+                or response_tokens[2] != "login"
+                or response_tokens[3] != login_user
+                or not re.fullmatch(r"[0-9]{17}", response_tokens[4])
+            ):
+                raise ValueError("baostock_backfill_wire_login_session_invalid")
+            login_succeeded = True
             continue
-        business_requests.append(request_tokens)
+        protocol = _BAOSTOCK_PROTOCOL_BY_OPERATION.get(operation)
+        if protocol is None:
+            raise ValueError("baostock_backfill_wire_message_type_invalid")
         if len(response_tokens) < 2:
             raise ValueError("baostock_backfill_wire_response_invalid")
         wire_provider_results.append((response_tokens[0], response_tokens[1]))
-        if response_tokens[0] != "0":
+        response_type = str(response_frame["message_type"])
+        if response_type == _BAOSTOCK_PROVIDER_ERROR_RESPONSE_TYPE:
+            if response_tokens[0] == "0":
+                raise ValueError(
+                    "baostock_backfill_wire_message_type_invalid"
+                )
+            if len(response_tokens) != 2:
+                raise ValueError(
+                    "baostock_backfill_wire_response_contract_invalid"
+                )
+            provider_terminal_seen = True
             continue
-        if len(response_tokens) <= 6 or response_tokens[2] != operation:
+        if response_type != protocol["response_type"]:
+            raise ValueError("baostock_backfill_wire_message_type_invalid")
+        if response_tokens[0] != "0":
+            if len(response_tokens) != 2:
+                raise ValueError(
+                    "baostock_backfill_wire_response_contract_invalid"
+                )
+            provider_terminal_seen = True
+            continue
+        if (
+            len(response_tokens)
+            != _BAOSTOCK_RESPONSE_TOKEN_ARITY[operation]
+            or response_tokens[2] != operation
+        ):
             raise ValueError("baostock_backfill_wire_operation_mismatch")
+        if response_tokens[3] != request_tokens[1]:
+            raise ValueError(
+                "free_provider_backfill_baostock_user_binding_invalid"
+            )
+        if (
+            response_tokens[4] != request_tokens[2]
+            or response_tokens[5] != request_tokens[3]
+        ):
+            raise ValueError(
+                "free_provider_backfill_baostock_page_binding_invalid"
+            )
         response_request_pairs = _BAOSTOCK_RESPONSE_REQUEST_INDEX_PAIRS.get(
             operation
         )
@@ -2867,30 +3178,68 @@ def _decode_baostock_wire_envelope(
             fields = response_fields
         elif fields != response_fields:
             raise ValueError("baostock_backfill_wire_fields_drift")
-        try:
-            records_payload = json.loads(response_tokens[6])
-        except (TypeError, ValueError, json.JSONDecodeError) as exc:
-            raise ValueError("baostock_backfill_wire_records_invalid") from exc
-        records = (
-            records_payload.get("record")
-            if isinstance(records_payload, Mapping)
-            else None
+        wire_records, package_records = _baostock_record_projections(
+            response_tokens[6]
         )
-        if not isinstance(records, list):
-            raise ValueError("baostock_backfill_wire_records_invalid")
-        for row in records:
-            if not isinstance(row, list):
-                raise ValueError("baostock_backfill_wire_records_invalid")
-            rows.append([str(value) for value in row])
+        try:
+            response_page = int(response_tokens[4])
+            response_page_size = int(response_tokens[5])
+        except (IndexError, ValueError) as exc:
+            raise ValueError("baostock_backfill_wire_page_invalid") from exc
+        wire_pages.append(
+            {
+                "page": response_page,
+                "row_count": len(package_records),
+                "provider_page_size": response_page_size,
+            }
+        )
+        rows.extend(wire_records)
+        package_rows.extend(package_records)
     if allow_partial_response and not wire_provider_results:
         partial_response_observed = True
     return (
         envelope,
         fields or [],
         rows,
+        package_rows,
+        wire_pages,
         business_requests,
         wire_provider_results,
         partial_response_observed,
+    )
+
+
+def _baostock_record_projections(
+    record_payload: str,
+) -> tuple[list[list[str]], list[list[str]]]:
+    """Decode authoritative records and the exact Baostock 0.9.3 projection."""
+
+    try:
+        wire_payload = json.loads(record_payload)
+        package_payload = json.loads("".join(record_payload.split()))
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("baostock_backfill_wire_records_invalid") from exc
+    wire_records = (
+        wire_payload.get("record")
+        if isinstance(wire_payload, Mapping)
+        else None
+    )
+    package_records = (
+        package_payload.get("record")
+        if isinstance(package_payload, Mapping)
+        else None
+    )
+    if (
+        not isinstance(wire_records, list)
+        or not isinstance(package_records, list)
+        or len(wire_records) != len(package_records)
+        or any(not isinstance(row, list) for row in wire_records)
+        or any(not isinstance(row, list) for row in package_records)
+    ):
+        raise ValueError("baostock_backfill_wire_records_invalid")
+    return (
+        [[str(value) for value in row] for row in wire_records],
+        [[str(value) for value in row] for row in package_records],
     )
 
 
@@ -2915,7 +3264,9 @@ def _baostock_exchange_bytes(
     return payload
 
 
-def _parse_baostock_request_frame(wire: bytes) -> list[str]:
+def _parse_baostock_request_frame(
+    wire: bytes,
+) -> tuple[list[str], dict[str, Any]]:
     if len(wire) <= _BAOSTOCK_HEADER_LENGTH:
         raise ValueError("baostock_backfill_wire_request_truncated")
     header = wire[:_BAOSTOCK_HEADER_LENGTH]
@@ -2947,10 +3298,16 @@ def _parse_baostock_request_frame(wire: bytes) -> list[str]:
     tokens = body.split("\x01")
     if not tokens or not tokens[0]:
         raise ValueError("baostock_backfill_wire_request_body_invalid")
-    return tokens
+    return tokens, {
+        "message_type": parts[1],
+        "provider_trailer_integrity_verified": True,
+        "provider_trailer_integrity_semantics": "crc32_header_plus_utf8_body",
+    }
 
 
-def _parse_baostock_response_frame(wire: bytes) -> list[str]:
+def _parse_baostock_response_frame(
+    wire: bytes,
+) -> tuple[list[str], dict[str, Any]]:
     if len(wire) <= _BAOSTOCK_HEADER_LENGTH:
         raise ValueError("baostock_backfill_wire_response_truncated")
     header = wire[:_BAOSTOCK_HEADER_LENGTH]
@@ -2970,11 +3327,33 @@ def _parse_baostock_response_frame(wire: bytes) -> list[str]:
     if trailer is None or trailer.start() <= _BAOSTOCK_HEADER_LENGTH:
         raise ValueError("baostock_backfill_wire_response_trailer_invalid")
     body_bytes = wire[_BAOSTOCK_HEADER_LENGTH : trailer.start()]
+    compressed = parts[1] in _BAOSTOCK_COMPRESSED_RESPONSE_TYPES
     try:
-        if parts[1] in _BAOSTOCK_COMPRESSED_RESPONSE_TYPES:
+        if compressed:
             if len(body_bytes) != int(parts[2]):
                 raise ValueError("baostock_backfill_wire_response_length_invalid")
-            body = zlib.decompress(body_bytes).decode("utf-8")
+            decompressor = zlib.decompressobj()
+            decoded = decompressor.decompress(
+                body_bytes, _BAOSTOCK_MAX_DECOMPRESSED_RESPONSE_BYTES + 1
+            )
+            if (
+                len(decoded) > _BAOSTOCK_MAX_DECOMPRESSED_RESPONSE_BYTES
+                or decompressor.unconsumed_tail
+            ):
+                raise ValueError(
+                    "baostock_backfill_wire_response_decompressed_budget_invalid"
+                )
+            decoded += decompressor.flush()
+            if (
+                len(decoded) > _BAOSTOCK_MAX_DECOMPRESSED_RESPONSE_BYTES
+                or not decompressor.eof
+                or decompressor.unused_data
+                or decompressor.unconsumed_tail
+            ):
+                raise ValueError(
+                    "baostock_backfill_wire_response_compression_invalid"
+                )
+            body = decoded.decode("utf-8")
         else:
             body = body_bytes.decode("utf-8")
             if (
@@ -2988,7 +3367,20 @@ def _parse_baostock_response_frame(wire: bytes) -> list[str]:
     tokens = body.split("\x01")
     if not tokens or not tokens[0]:
         raise ValueError("baostock_backfill_wire_response_body_invalid")
-    return tokens
+    return tokens, {
+        "message_type": parts[1],
+        "compressed": compressed,
+        "provider_trailer_decimal_preserved": trailer.group("crc").decode(
+            "ascii"
+        ),
+        "provider_trailer_integrity_verified": not compressed,
+        "provider_trailer_integrity_semantics": (
+            "unverified_opaque_decimal_for_compressed_response"
+            if compressed
+            else "crc32_header_plus_utf8_body"
+        ),
+        "zlib_stream_checksum_verified": compressed,
+    }
 
 
 def baostock_wire_protocol_root() -> str:
@@ -3002,6 +3394,21 @@ def baostock_wire_protocol_root() -> str:
             "response_request_index_pairs": (
                 _BAOSTOCK_RESPONSE_REQUEST_INDEX_PAIRS
             ),
+            "protocol_by_operation": _BAOSTOCK_PROTOCOL_BY_OPERATION,
+            "request_token_contracts": _BAOSTOCK_REQUEST_TOKEN_CONTRACTS,
+            "response_token_arity": _BAOSTOCK_RESPONSE_TOKEN_ARITY,
+            "login_protocol": _BAOSTOCK_LOGIN_PROTOCOL,
+            "login_request_token_contract": (
+                _BAOSTOCK_LOGIN_REQUEST_TOKEN_CONTRACT
+            ),
+            "provider_error_response_type": (
+                _BAOSTOCK_PROVIDER_ERROR_RESPONSE_TYPE
+            ),
+            "pinned_page_size": _BAOSTOCK_PINNED_PAGE_SIZE,
+            "max_pages_per_request": _BAOSTOCK_MAX_PAGES_PER_REQUEST,
+            "max_decompressed_response_bytes": (
+                _BAOSTOCK_MAX_DECOMPRESSED_RESPONSE_BYTES
+            ),
             "header_length": _BAOSTOCK_HEADER_LENGTH,
             "compressed_response_types": sorted(
                 _BAOSTOCK_COMPRESSED_RESPONSE_TYPES
@@ -3011,8 +3418,15 @@ def baostock_wire_protocol_root() -> str:
             ),
             "validator": inspect.getsource(_validate_baostock_wire_envelope),
             "logical_rows": inspect.getsource(_baostock_logical_rows),
+            "logical_rows_with_reconciliation": inspect.getsource(
+                _baostock_logical_rows_with_reconciliation
+            ),
             "parsed_reconciliation": inspect.getsource(
                 _reconcile_baostock_parsed_payload
+            ),
+            "page_chain": inspect.getsource(_validate_baostock_page_chain),
+            "request_contract": inspect.getsource(
+                _validate_baostock_request_contract
             ),
             "envelope_decoder": inspect.getsource(
                 _decode_baostock_wire_envelope
@@ -3020,6 +3434,9 @@ def baostock_wire_protocol_root() -> str:
             "exchange_decoder": inspect.getsource(_baostock_exchange_bytes),
             "request_frame": inspect.getsource(_parse_baostock_request_frame),
             "response_frame": inspect.getsource(_parse_baostock_response_frame),
+            "record_projections": inspect.getsource(
+                _baostock_record_projections
+            ),
         }
     )
 
@@ -3090,6 +3507,7 @@ def _baostock_implementation_root() -> str:
             "state_plan": inspect.getsource(build_baostock_state_plan),
             "state_normalizer": inspect.getsource(normalize_baostock_state_capture),
             "wire_decoder": inspect.getsource(_baostock_logical_rows),
+            "strict_wire_protocol_root": baostock_wire_protocol_root(),
             "baostock_distribution_record_root": baostock_distribution_record_root(),
         }
     )

@@ -24,11 +24,14 @@ from typing import Any, Mapping, Sequence
 from auto_alpha.platform.artifacts.storage import canonical_hash, read_json, sha256_file
 from auto_alpha.platform.governance.network.signing import PersistentReceiptSigner
 
+from . import free_provider_backfill as free_provider_backfill_module
 from .free_provider_backfill import (
     BackfillResourceBudget,
     FreeProviderBackfillContract,
+    MANIFEST_NAME,
     NormalizedArtifact,
     _public_key_hash,
+    _request_from_semantic,
     replay_normalized_artifacts,
     run_free_provider_backfill,
     validate_free_provider_backfill,
@@ -84,8 +87,98 @@ CSINDEX_ATTACHMENT_TEMPORAL_BLOCKER = (
     "current_attachment_retrieval_does_not_prove_historical_known_at_or_vintage"
 )
 CSINDEX_ATTACHMENT_BODY_MAX_BYTES = 128 * 1024 * 1024
+CSINDEX_JSON_BODY_MAX_BYTES = 64 * 1024 * 1024
 CSINDEX_ATTACHMENT_PATH_DATE_START = "20110101"
 CSINDEX_ATTACHMENT_PATH_DATE_END = "20191231"
+CSINDEX_SCOPE = {
+    "date_start": "20120101",
+    "date_end": "20191231",
+    "request_start": "20110101",
+    "request_end": "20191231",
+}
+CSINDEX_SOURCE_ANCESTRY_SCHEMA = "csindex_source_ancestry_v1"
+CSINDEX_SOURCE_BINDING_SCHEMA = "csindex_source_binding_v1"
+CSINDEX_FULL_PROFILE = "csindex_rebalance_archive_2011_2019_full_v2"
+CSINDEX_DISCOVERY_SLICE_PROFILE = "csindex_rebalance_archive_leaf_slice_v2"
+CSINDEX_ATTACHMENT_FULL_PROFILE = "csindex_attachment_archive_full_v3"
+CSINDEX_ATTACHMENT_HOST_SLICE_PROFILE = "csindex_attachment_host_slice_v3"
+CSINDEX_LEGACY_CONS_REPAIR_PROFILE = "csindex_legacy_cons_exact_repair_v1"
+CSINDEX_PHASE_ADAPTERS = {
+    "csindex-discovery": "csindex_csindex-discovery_signed_http_capture_v2",
+    "csindex-inventory": "csindex_csindex-inventory_signed_http_capture_v2",
+    "csindex-details": "csindex_csindex-details_signed_http_capture_v2",
+    "csindex-attachments": "csindex_attachments_signed_binary_capture_v3",
+    "csindex-legacy-cons-repair": (
+        "csindex_legacy_cons_exact_repair_signed_binary_capture_v1"
+    ),
+}
+CSINDEX_SOURCE_PROFILE_ID = "dap_d785714ef1b912a20c0f19ca"
+CSINDEX_APPROVED_CAPTURE_KEY_SHA256 = (
+    "0afef940a253b9ef0f3702af5eb099c4ed48209975bc4f1991a471e4c50f446f"
+)
+CSINDEX_HTTP_IDENTITY = "python_urllib_no_redirect_v1"
+CSINDEX_PHASE_RUNTIME_POLICY = {
+    "csindex-discovery": {
+        "activity_name": "free_domestic_csindex_csindex-discovery_2011_2019_v2",
+        "minimum_delay_seconds": 5.0,
+        "timeout_seconds": 30.0,
+        "max_retries": 2,
+        "max_response_bytes": 64 * 1024 * 1024,
+        "max_total_response_bytes": 8 * 1024 * 1024 * 1024,
+    },
+    "csindex-inventory": {
+        "activity_name": "free_domestic_csindex_csindex-inventory_2011_2019_v2",
+        "minimum_delay_seconds": 5.0,
+        "timeout_seconds": 30.0,
+        "max_retries": 2,
+        "max_response_bytes": 64 * 1024 * 1024,
+        "max_total_response_bytes": 8 * 1024 * 1024 * 1024,
+    },
+    "csindex-details": {
+        "activity_name": "free_domestic_csindex_csindex-details_2011_2019_v2",
+        "minimum_delay_seconds": 7.5,
+        "timeout_seconds": 30.0,
+        "max_retries": 2,
+        "max_response_bytes": 64 * 1024 * 1024,
+        "max_total_response_bytes": 8 * 1024 * 1024 * 1024,
+    },
+    "csindex-attachments": {
+        "activity_name": "free_domestic_csindex_attachments_2011_2019_v3",
+        "minimum_delay_seconds": 2.0,
+        "timeout_seconds": 30.0,
+        "max_retries": 2,
+        "max_response_bytes": 176 * 1024 * 1024,
+        "max_total_response_bytes": 16 * 1024 * 1024 * 1024,
+    },
+    "csindex-legacy-cons-repair": {
+        "activity_name": "free_domestic_csindex_legacy_cons_exact_repair_v1",
+        "minimum_delay_seconds": 2.0,
+        "timeout_seconds": 30.0,
+        "max_retries": 2,
+        "max_response_bytes": 176 * 1024 * 1024,
+        "max_total_response_bytes": 16 * 1024 * 1024 * 1024,
+    },
+}
+CSINDEX_LEGACY_CONS_REPAIR_ROWS = (
+    {
+        "attachment_url": (
+            "https://oss-ch.csindex.com.cn/static/html/csindex/public/"
+            "sseportal/upload/files/upload/201511302cons.xls"
+        ),
+        "announcement_ids": ("4271", "4272"),
+        "announcement_publish_date": "2015-11-30",
+        "csi300_announcement_id": "4272",
+    },
+    {
+        "attachment_url": (
+            "https://oss-ch.csindex.com.cn/static/html/csindex/public/"
+            "sseportal/upload/files/upload/201605302cons.xls"
+        ),
+        "announcement_ids": ("3855", "4423"),
+        "announcement_publish_date": "2016-05-30",
+        "csi300_announcement_id": "3855",
+    },
+)
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 _PATH_DATE_TOKEN = re.compile(r"(?<!\d)(\d{8})(?!\d)")
 _ATTACHMENT_REFERENCE_HINT = re.compile(
@@ -113,6 +206,536 @@ class _AttachmentReferenceParser(HTMLParser):
     handle_startendtag = handle_starttag
 
 
+def _decode_csindex_official_payload(
+    raw_payload: bytes,
+    *,
+    request: ProviderProbeRequest,
+    status_code: Any,
+    max_body_bytes: int,
+) -> tuple[dict[str, Any], bytes]:
+    """Decode one official HTTP envelope and bind it to the sealed request."""
+
+    try:
+        official = json.loads(raw_payload)
+        if not isinstance(official, dict):
+            raise ValueError("official_envelope_object_required")
+        body = base64.b64decode(
+            str(official.get("body_base64") or ""), validate=True
+        )
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("csindex_official_http_envelope_invalid:decode") from exc
+    official_status = official.get("status_code")
+    if (
+        official.get("schema_version") != "official_http_probe_envelope_v1"
+        or official.get("method") != request.method.upper()
+        or official.get("url") != request.url
+        or isinstance(official_status, bool)
+        or official_status != 200
+        or isinstance(status_code, bool)
+        or status_code != official_status
+        or official.get("redirect_followed") is not False
+        or official.get("body_sha256") != hashlib.sha256(body).hexdigest()
+        or len(body) > max_body_bytes
+    ):
+        raise ValueError(
+            f"csindex_official_http_envelope_invalid:{request.request_id}"
+        )
+    return official, body
+
+
+def _decode_csindex_official_http_envelope(
+    wrapper: Mapping[str, Any],
+    *,
+    request: ProviderProbeRequest,
+    terminal: Mapping[str, Any],
+    max_body_bytes: int = CSINDEX_JSON_BODY_MAX_BYTES,
+) -> tuple[dict[str, Any], bytes]:
+    """Verify the immutable outer wrapper before decoding its HTTP envelope."""
+
+    try:
+        raw_payload = base64.b64decode(
+            str(wrapper.get("raw_payload_base64") or ""), validate=True
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("csindex_official_http_envelope_invalid:decode") from exc
+    if (
+        wrapper.get("schema_version") != "free_provider_backfill_raw_envelope_v1"
+        or wrapper.get("request_id") != request.request_id
+        or wrapper.get("raw_payload_sha256")
+        != hashlib.sha256(raw_payload).hexdigest()
+        or wrapper.get("raw_payload_size_bytes") != len(raw_payload)
+    ):
+        raise ValueError(
+            f"csindex_official_http_envelope_invalid:{request.request_id}"
+        )
+    return _decode_csindex_official_payload(
+        raw_payload,
+        request=request,
+        status_code=terminal.get("status_code"),
+        max_body_bytes=max_body_bytes,
+    )
+
+
+def _csindex_direct_source(
+    validated: Mapping[str, Any],
+    *,
+    expected_phase: str,
+    expected_profiles: Sequence[str],
+) -> dict[str, Any]:
+    root = Path(str(validated.get("manifest_path") or "")).parent
+    contract = read_json(root / "activity_contract.json")
+    plan = read_json(root / "request_plan.json")
+    adapter_identity = contract.get("adapter_identity") or {}
+    phase_adapter = CSINDEX_PHASE_ADAPTERS.get(expected_phase)
+    capture_profile = str(adapter_identity.get("capture_profile") or "")
+    implementation_root = str(adapter_identity.get("implementation_root") or "")
+    request_count = len(plan.get("requests") or ())
+    _validate_csindex_authorized_contract(
+        contract,
+        phase=expected_phase,
+        capture_profile=capture_profile,
+        request_count=request_count,
+    )
+    if (
+        phase_adapter is None
+        or contract.get("provider") != "csindex"
+        or adapter_identity.get("adapter") != phase_adapter
+        or contract.get("scope") != CSINDEX_SCOPE
+        or capture_profile not in set(expected_profiles)
+        or re.fullmatch(r"[0-9a-f]{64}", implementation_root) is None
+    ):
+        raise ValueError(f"csindex_{expected_phase}_source_contract_invalid")
+    signed = validated.get("publication_signature_verified") is True
+    trusted = validated.get("normalized_artifacts_trusted") is True
+    direct = {
+        "source_capture_schema": validated.get("schema_version"),
+        "source_generation_id": validated.get("generation_id"),
+        "source_content_hash": validated.get("content_hash"),
+        "source_contract_id": validated.get("contract_id"),
+        "source_contract_content_hash": canonical_hash(contract),
+        "source_provider": "csindex",
+        "source_phase": expected_phase,
+        "source_adapter": phase_adapter,
+        "source_capture_profile": capture_profile,
+        "source_scope": dict(contract.get("scope") or {}),
+        "source_implementation_root": implementation_root,
+        "source_activity_id": validated.get("activity_id"),
+        "source_request_plan_hash": validated.get("request_plan_hash"),
+        "source_request_count": request_count,
+        "source_population_root": contract.get("population_root"),
+        "source_permission_context_id": contract.get("permission_context_id"),
+        "source_activity_name": contract.get("activity_name"),
+        "source_allowed_hosts": contract.get("allowed_hosts"),
+        "source_budget": contract.get("budget"),
+        "source_profile_id": contract.get("source_profile_id"),
+        "source_http_identity": adapter_identity.get("http"),
+        "source_capture_public_key_sha256": contract.get(
+            "capture_public_key_sha256"
+        ),
+        "source_publication_signature_verified": signed,
+        "source_normalized_artifacts_trusted": trusted,
+        "weak_source_ancestry": not (signed and trusted),
+    }
+    _validate_csindex_direct_source(direct)
+    return direct
+
+
+def _validate_csindex_direct_source(value: Mapping[str, Any]) -> None:
+    phase = str(value.get("source_phase") or "")
+    signed = value.get("source_publication_signature_verified")
+    trusted = value.get("source_normalized_artifacts_trusted")
+    source_content_hash = str(value.get("source_content_hash") or "")
+    source_contract_id = str(value.get("source_contract_id") or "")
+    phase_profiles = {
+        "csindex-discovery": CSINDEX_FULL_PROFILE,
+        "csindex-inventory": CSINDEX_FULL_PROFILE,
+        "csindex-details": CSINDEX_FULL_PROFILE,
+    }
+    if (
+        set(value)
+        != {
+            "source_capture_schema",
+            "source_generation_id",
+            "source_content_hash",
+            "source_contract_id",
+            "source_contract_content_hash",
+            "source_provider",
+            "source_phase",
+            "source_adapter",
+            "source_capture_profile",
+            "source_scope",
+            "source_implementation_root",
+            "source_activity_id",
+            "source_request_plan_hash",
+            "source_request_count",
+            "source_population_root",
+            "source_permission_context_id",
+            "source_activity_name",
+            "source_allowed_hosts",
+            "source_budget",
+            "source_profile_id",
+            "source_http_identity",
+            "source_capture_public_key_sha256",
+            "source_publication_signature_verified",
+            "source_normalized_artifacts_trusted",
+            "weak_source_ancestry",
+        }
+        or value.get("source_capture_schema")
+        not in {
+            "free_provider_backfill_capture_v1",
+            "free_provider_backfill_capture_v2",
+        }
+        or value.get("source_provider") != "csindex"
+        or phase not in phase_profiles
+        or value.get("source_adapter") != CSINDEX_PHASE_ADAPTERS[phase]
+        or value.get("source_capture_profile") != phase_profiles[phase]
+        or value.get("source_scope") != CSINDEX_SCOPE
+        or re.fullmatch(r"[0-9a-f]{64}", source_content_hash) is None
+        or value.get("source_generation_id")
+        != f"free_provider_backfill_{source_content_hash[:24]}"
+        or re.fullmatch(r"[0-9a-f]{64}", source_contract_id) is None
+        or value.get("source_contract_content_hash")
+        != source_contract_id
+        or re.fullmatch(
+            r"[0-9a-f]{64}", str(value.get("source_implementation_root") or "")
+        )
+        is None
+        or any(
+            re.fullmatch(r"[0-9a-f]{64}", str(value.get(key) or "")) is None
+            for key in (
+                "source_activity_id",
+                "source_request_plan_hash",
+                "source_population_root",
+            )
+        )
+        or not isinstance(value.get("source_request_count"), int)
+        or isinstance(value.get("source_request_count"), bool)
+        or int(value.get("source_request_count") or 0) <= 0
+        or value.get("source_permission_context_id") != DEFAULT_PERMISSION_CONTEXT
+        or value.get("source_activity_name")
+        != CSINDEX_PHASE_RUNTIME_POLICY[phase]["activity_name"]
+        or value.get("source_allowed_hosts") != ["www.csindex.com.cn"]
+        or value.get("source_profile_id") != CSINDEX_SOURCE_PROFILE_ID
+        or value.get("source_http_identity") != CSINDEX_HTTP_IDENTITY
+        or value.get("source_capture_public_key_sha256")
+        != CSINDEX_APPROVED_CAPTURE_KEY_SHA256
+        or value.get("source_budget")
+        != {
+            "max_requests": int(value.get("source_request_count"))
+            * (int(CSINDEX_PHASE_RUNTIME_POLICY[phase]["max_retries"]) + 1),
+            "max_wire_exchanges": int(value.get("source_request_count"))
+            * (int(CSINDEX_PHASE_RUNTIME_POLICY[phase]["max_retries"]) + 1),
+            "max_response_bytes": CSINDEX_PHASE_RUNTIME_POLICY[phase][
+                "max_response_bytes"
+            ],
+            "max_total_response_bytes": CSINDEX_PHASE_RUNTIME_POLICY[phase][
+                "max_total_response_bytes"
+            ],
+            "timeout_seconds": CSINDEX_PHASE_RUNTIME_POLICY[phase][
+                "timeout_seconds"
+            ],
+            "minimum_delay_seconds": CSINDEX_PHASE_RUNTIME_POLICY[phase][
+                "minimum_delay_seconds"
+            ],
+            "max_retries": CSINDEX_PHASE_RUNTIME_POLICY[phase]["max_retries"],
+        }
+        or not isinstance(signed, bool)
+        or not isinstance(trusted, bool)
+        or value.get("weak_source_ancestry") is not (not (signed and trusted))
+    ):
+        raise ValueError("csindex_source_ancestry_invalid")
+
+
+def _csindex_source_ancestry(
+    *,
+    source_stage: str,
+    direct_sources: Sequence[Mapping[str, Any]],
+    upstream_ancestry: Sequence[Mapping[str, Any]] = (),
+) -> dict[str, Any]:
+    direct = sorted(
+        (dict(row) for row in direct_sources),
+        key=lambda row: (
+            str(row.get("source_generation_id") or ""),
+            str(row.get("source_content_hash") or ""),
+        ),
+    )
+    upstream = sorted(
+        (dict(row) for row in upstream_ancestry),
+        key=lambda row: str(row.get("ancestry_root") or ""),
+    )
+    semantic = {
+        "schema_version": CSINDEX_SOURCE_ANCESTRY_SCHEMA,
+        "source_stage": source_stage,
+        "direct_sources": direct,
+        "upstream_ancestry": upstream,
+        "weak_source_ancestry": any(
+            row.get("weak_source_ancestry") is True for row in (*direct, *upstream)
+        ),
+    }
+    ancestry = semantic | {"ancestry_root": canonical_hash(semantic)}
+    return _validate_csindex_source_ancestry(
+        ancestry, expected_stage=source_stage
+    )
+
+
+def _validate_csindex_source_ancestry(
+    value: Any,
+    *,
+    expected_stage: str | None = None,
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError("csindex_source_ancestry_invalid")
+    direct = value.get("direct_sources")
+    upstream = value.get("upstream_ancestry")
+    semantic = {key: item for key, item in value.items() if key != "ancestry_root"}
+    if (
+        set(value)
+        != {
+            "schema_version",
+            "source_stage",
+            "direct_sources",
+            "upstream_ancestry",
+            "weak_source_ancestry",
+            "ancestry_root",
+        }
+        or value.get("schema_version") != CSINDEX_SOURCE_ANCESTRY_SCHEMA
+        or not isinstance(value.get("source_stage"), str)
+        or (expected_stage is not None and value.get("source_stage") != expected_stage)
+        or not isinstance(direct, list)
+        or not direct
+        or not isinstance(upstream, list)
+        or value.get("ancestry_root") != canonical_hash(semantic)
+    ):
+        raise ValueError("csindex_source_ancestry_invalid")
+    for row in direct:
+        if not isinstance(row, Mapping):
+            raise ValueError("csindex_source_ancestry_invalid")
+        _validate_csindex_direct_source(row)
+    if list(direct) != sorted(
+        direct,
+        key=lambda row: (
+            str(row.get("source_generation_id") or ""),
+            str(row.get("source_content_hash") or ""),
+        ),
+    ):
+        raise ValueError("csindex_source_ancestry_invalid")
+    for row in upstream:
+        _validate_csindex_source_ancestry(row)
+    if list(upstream) != sorted(
+        upstream, key=lambda row: str(row.get("ancestry_root") or "")
+    ):
+        raise ValueError("csindex_source_ancestry_invalid")
+    derived_weak = any(
+        row.get("weak_source_ancestry") is True for row in [*direct, *upstream]
+    )
+    if value.get("weak_source_ancestry") is not derived_weak:
+        raise ValueError("csindex_source_ancestry_invalid")
+    geometry = {
+        "discovery_capture": ("csindex-discovery", None),
+        "inventory_capture": ("csindex-inventory", "discovery_capture"),
+        "details_capture": ("csindex-details", "inventory_capture"),
+    }
+    expected_geometry = geometry.get(str(value.get("source_stage") or ""))
+    if (
+        expected_geometry is None
+        or len(direct) != 1
+        or direct[0].get("source_phase") != expected_geometry[0]
+        or (
+            expected_geometry[1] is None
+            and upstream != []
+        )
+        or (
+            expected_geometry[1] is not None
+            and (
+                len(upstream) != 1
+                or upstream[0].get("source_stage") != expected_geometry[1]
+            )
+        )
+    ):
+        raise ValueError("csindex_source_ancestry_phase_geometry_invalid")
+    return dict(value)
+
+
+def _csindex_upstream_content_hashes(
+    source_ancestry: Mapping[str, Any],
+) -> list[str]:
+    hashes: set[str] = set()
+
+    def visit(value: Mapping[str, Any]) -> None:
+        for row in value.get("direct_sources") or ():
+            content_hash = str(row.get("source_content_hash") or "")
+            if re.fullmatch(r"[0-9a-f]{64}", content_hash) is None:
+                raise ValueError("csindex_source_ancestry_invalid")
+            hashes.add(content_hash)
+        for row in value.get("upstream_ancestry") or ():
+            if not isinstance(row, Mapping):
+                raise ValueError("csindex_source_ancestry_invalid")
+            visit(row)
+
+    visit(source_ancestry)
+    return sorted(hashes)
+
+
+def _csindex_source_binding(
+    *,
+    phase: str,
+    capture_profile: str,
+    input_capture_content_hash: str,
+    source_ancestry: Mapping[str, Any],
+    derivation: Mapping[str, Any],
+) -> dict[str, Any]:
+    expected_stage = {
+        "csindex-inventory": "discovery_capture",
+        "csindex-details": "inventory_capture",
+        "csindex-attachments": "details_capture",
+        "csindex-legacy-cons-repair": "details_capture",
+    }.get(phase)
+    if expected_stage is None:
+        raise ValueError("csindex_source_binding_phase_invalid")
+    ancestry = _validate_csindex_source_ancestry(
+        source_ancestry, expected_stage=expected_stage
+    )
+    upstream_hashes = _csindex_upstream_content_hashes(ancestry)
+    semantic = {
+        "schema_version": CSINDEX_SOURCE_BINDING_SCHEMA,
+        "phase": phase,
+        "capture_profile": capture_profile,
+        "input_capture_content_hash": input_capture_content_hash,
+        "source_ancestry_root": ancestry["ancestry_root"],
+        "upstream_content_hashes": upstream_hashes,
+        "upstream_content_hashes_root": canonical_hash(upstream_hashes),
+        "derivation": dict(derivation),
+    }
+    binding = semantic | {"content_hash": canonical_hash(semantic)}
+    return _validate_csindex_source_binding(
+        binding,
+        phase=phase,
+        source_ancestry=ancestry,
+    )
+
+
+def _validate_csindex_source_binding(
+    value: Any,
+    *,
+    phase: str,
+    source_ancestry: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError("csindex_source_binding_invalid")
+    expected_stage = {
+        "csindex-inventory": "discovery_capture",
+        "csindex-details": "inventory_capture",
+        "csindex-attachments": "details_capture",
+        "csindex-legacy-cons-repair": "details_capture",
+    }.get(phase)
+    expected_profiles = {
+        "csindex-inventory": {CSINDEX_FULL_PROFILE},
+        "csindex-details": {CSINDEX_FULL_PROFILE},
+        "csindex-attachments": {
+            CSINDEX_ATTACHMENT_FULL_PROFILE,
+            CSINDEX_ATTACHMENT_HOST_SLICE_PROFILE,
+        },
+        "csindex-legacy-cons-repair": {CSINDEX_LEGACY_CONS_REPAIR_PROFILE},
+    }.get(phase)
+    if expected_stage is None or expected_profiles is None:
+        raise ValueError("csindex_source_binding_phase_invalid")
+    ancestry = _validate_csindex_source_ancestry(
+        source_ancestry, expected_stage=expected_stage
+    )
+    upstream_hashes = _csindex_upstream_content_hashes(ancestry)
+    semantic = {key: item for key, item in value.items() if key != "content_hash"}
+    if (
+        set(value)
+        != {
+            "schema_version",
+            "phase",
+            "capture_profile",
+            "input_capture_content_hash",
+            "source_ancestry_root",
+            "upstream_content_hashes",
+            "upstream_content_hashes_root",
+            "derivation",
+            "content_hash",
+        }
+        or value.get("schema_version") != CSINDEX_SOURCE_BINDING_SCHEMA
+        or value.get("phase") != phase
+        or value.get("capture_profile") not in expected_profiles
+        or re.fullmatch(
+            r"[0-9a-f]{64}", str(value.get("input_capture_content_hash") or "")
+        )
+        is None
+        or value.get("source_ancestry_root") != ancestry["ancestry_root"]
+        or value.get("upstream_content_hashes") != upstream_hashes
+        or value.get("upstream_content_hashes_root")
+        != canonical_hash(upstream_hashes)
+        or not isinstance(value.get("derivation"), Mapping)
+        or value.get("content_hash") != canonical_hash(semantic)
+    ):
+        raise ValueError("csindex_source_binding_invalid")
+    return dict(value)
+
+
+def _with_csindex_source_evidence(
+    request: ProviderProbeRequest,
+    source_ancestry: Mapping[str, Any],
+    source_binding: Mapping[str, Any],
+) -> ProviderProbeRequest:
+    return ProviderProbeRequest(
+        **{
+            **request.__dict__,
+            "metadata": dict(request.metadata)
+            | {
+                "source_ancestry": dict(source_ancestry),
+                "source_binding": dict(source_binding),
+            },
+        }
+    )
+
+
+def _csindex_request_source_evidence(
+    requests: Sequence[ProviderProbeRequest],
+    *,
+    phase: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    ancestry_rows = [request.metadata.get("source_ancestry") for request in requests]
+    binding_rows = [request.metadata.get("source_binding") for request in requests]
+    if (
+        not ancestry_rows
+        or ancestry_rows[0] is None
+        or any(row != ancestry_rows[0] for row in ancestry_rows)
+        or not binding_rows
+        or binding_rows[0] is None
+        or any(row != binding_rows[0] for row in binding_rows)
+    ):
+        raise ValueError("csindex_source_evidence_missing_or_mixed")
+    ancestry = _validate_csindex_source_ancestry(ancestry_rows[0])
+    binding = _validate_csindex_source_binding(
+        binding_rows[0], phase=phase, source_ancestry=ancestry
+    )
+    return ancestry, binding
+
+
+def _validate_csindex_binding_derivation(
+    source_ancestry: Mapping[str, Any],
+    source_binding: Mapping[str, Any],
+    *,
+    phase: str,
+    expected_derivation: Mapping[str, Any],
+) -> None:
+    binding = _validate_csindex_source_binding(
+        source_binding,
+        phase=phase,
+        source_ancestry=source_ancestry,
+    )
+    derivation = dict(binding.get("derivation") or {})
+    if (
+        derivation != dict(expected_derivation)
+        or binding.get("input_capture_content_hash")
+        != canonical_hash({**derivation, "source_ancestry": dict(source_ancestry)})
+    ):
+        raise ValueError("csindex_source_binding_derivation_invalid")
+
+
 class CSIndexBackfillTransport:
     """Bind HTTP success to CSI's application status and leaf date geometry."""
 
@@ -127,10 +750,27 @@ class CSIndexBackfillTransport:
         observation = self._transport(request, timeout_seconds)
         if observation.status_code != 200 or observation.terminal_state == "error":
             return observation
-        official = json.loads(observation.raw_payload)
-        payload = json.loads(
-            base64.b64decode(str(official.get("body_base64") or ""), validate=True)
-        )
+        try:
+            _official, body = _decode_csindex_official_payload(
+                observation.raw_payload,
+                request=request,
+                status_code=observation.status_code,
+                max_body_bytes=CSINDEX_JSON_BODY_MAX_BYTES,
+            )
+            payload = json.loads(body)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            return ProviderProbeObservation(
+                terminal_state="error",
+                raw_payload=observation.raw_payload,
+                row_count=None,
+                status_code=observation.status_code,
+                error_code="csindex_official_http_envelope_invalid",
+                diagnostics=dict(observation.diagnostics)
+                | {"envelope_error_type": type(exc).__name__},
+                checks=dict(observation.checks)
+                | {"official_http_envelope_valid": False},
+                transport_exchange_count=observation.transport_exchange_count,
+            )
         provider_success = (
             isinstance(payload, Mapping)
             and payload.get("success") is True
@@ -249,9 +889,11 @@ class CSIndexAttachmentTransport:
         if observation.terminal_state == "error" or observation.status_code != 200:
             return observation
         try:
-            official = json.loads(observation.raw_payload)
-            body = base64.b64decode(
-                str(official.get("body_base64") or ""), validate=True
+            official, body = _decode_csindex_official_payload(
+                observation.raw_payload,
+                request=request,
+                status_code=observation.status_code,
+                max_body_bytes=CSINDEX_ATTACHMENT_BODY_MAX_BYTES,
             )
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             return ProviderProbeObservation(
@@ -316,6 +958,74 @@ class CSIndexAttachmentTransport:
         self._transport.restore(request, record)
 
 
+def _replay_validated_csindex_source(
+    capture: str | Path,
+    *,
+    expected_phase: str,
+    expected_profiles: Sequence[str],
+    normalizer: Any,
+    required_roles: Sequence[str],
+    require_complete_profile: bool,
+) -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, bytes],
+    str,
+    dict[str, Any],
+]:
+    validated = validate_csindex_governance(capture)
+    if validated.get("status") != "succeeded":
+        raise ValueError(f"csindex_{expected_phase}_capture_blocked")
+    direct = _csindex_direct_source(
+        validated,
+        expected_phase=expected_phase,
+        expected_profiles=expected_profiles,
+    )
+    replayed, replay_root = replay_normalized_artifacts(
+        validated["manifest_path"],
+        normalizer=normalizer,
+        required_roles=tuple(required_roles) + ("normalized_manifest",),
+    )
+    try:
+        normalized_manifest = json.loads(replayed["normalized_manifest"])
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("csindex_source_normalized_manifest_invalid") from exc
+    capture_profile = direct["source_capture_profile"]
+    if (
+        normalized_manifest.get("capture_profile") != capture_profile
+        or not isinstance(normalized_manifest.get("profile_complete"), bool)
+        or (
+            require_complete_profile
+            and normalized_manifest.get("profile_complete") is not True
+        )
+    ):
+        raise ValueError("csindex_source_profile_closure_invalid")
+    if expected_phase in {"csindex-inventory", "csindex-details"}:
+        ancestry = _validate_csindex_source_ancestry(
+            normalized_manifest.get("source_ancestry")
+        )
+        binding = _validate_csindex_source_binding(
+            normalized_manifest.get("source_binding"),
+            phase=expected_phase,
+            source_ancestry=ancestry,
+        )
+        root = Path(str(validated["manifest_path"])).parent
+        contract = read_json(root / "activity_contract.json")
+        adapter = contract.get("adapter_identity") or {}
+        if (
+            adapter.get("source_binding_root") != binding["content_hash"]
+            or adapter.get("source_ancestry_root") != binding["source_ancestry_root"]
+            or adapter.get("source_upstream_content_hashes_root")
+            != binding["upstream_content_hashes_root"]
+            or adapter.get("input_capture_content_hash")
+            != binding["input_capture_content_hash"]
+            or normalized_manifest.get("weak_source_ancestry")
+            is not ancestry["weak_source_ancestry"]
+        ):
+            raise ValueError("csindex_source_contract_binding_invalid")
+    return validated, direct, replayed, replay_root, normalized_manifest
+
+
 def build_csindex_discovery_plan(
     include_leaf_ids: Sequence[str] | None = None,
 ) -> tuple[list[dict[str, str]], list[ProviderProbeRequest]]:
@@ -327,21 +1037,59 @@ def build_csindex_discovery_plan(
     ]
     if selected - {leaf["leaf_id"] for leaf in leaves}:
         raise ValueError("csindex_discovery_leaf_filter_unknown")
-    requests = [_filter_request()]
-    requests.extend(_list_request(leaf, page=1) for leaf in leaves)
+    capture_profile = (
+        CSINDEX_DISCOVERY_SLICE_PROFILE if selected else CSINDEX_FULL_PROFILE
+    )
+    profile_complete = not selected
+    requests = [
+        _with_csindex_capture_profile(
+            _filter_request(),
+            capture_profile=capture_profile,
+            profile_complete=profile_complete,
+        )
+    ]
+    requests.extend(
+        _with_csindex_capture_profile(
+            _list_request(leaf, page=1),
+            capture_profile=capture_profile,
+            profile_complete=profile_complete,
+        )
+        for leaf in leaves
+    )
     return leaves, requests
 
 
 def build_csindex_inventory_plan(
     discovery_capture: str | Path,
 ) -> tuple[list[dict[str, Any]], list[ProviderProbeRequest], str]:
-    validated = validate_free_provider_backfill(discovery_capture)
-    if validated.get("status") != "succeeded":
-        raise ValueError("csindex_discovery_capture_blocked")
+    validated, direct, _replayed, replay_root, normalized_manifest = (
+        _replay_validated_csindex_source(
+            discovery_capture,
+            expected_phase="csindex-discovery",
+            expected_profiles=(CSINDEX_FULL_PROFILE,),
+            normalizer=normalize_csindex_discovery,
+            required_roles=(
+                "csindex_announcement_inventory",
+                "csindex_page_coverage",
+            ),
+            require_complete_profile=True,
+        )
+    )
+    if (
+        normalized_manifest.get("leaf_count") != len(_month_leaves())
+        or normalized_manifest.get("filter_topics_captured") is not True
+    ):
+        raise ValueError("csindex_discovery_full_profile_invalid")
     pages = _captured_list_pages(validated["manifest_path"])
     leaves = _month_leaves()
     resolved: list[dict[str, Any]] = []
-    requests = [_filter_request()]
+    base_requests = [
+        _with_csindex_capture_profile(
+            _filter_request(),
+            capture_profile=CSINDEX_FULL_PROFILE,
+            profile_complete=True,
+        )
+    ]
     for leaf in leaves:
         page_one = pages.get(_request_id(leaf, 1))
         if page_one is None:
@@ -357,30 +1105,112 @@ def build_csindex_inventory_plan(
             "page_count": page_count,
         }
         resolved.append(resolved_leaf)
-        requests.extend(
-            _list_request(resolved_leaf, page=page)
+        base_requests.extend(
+            _with_csindex_capture_profile(
+                _list_request(resolved_leaf, page=page),
+                capture_profile=CSINDEX_FULL_PROFILE,
+                profile_complete=True,
+            )
             for page in range(1, page_count + 1)
         )
-    return resolved, requests, str(validated["content_hash"])
+    ancestry = _csindex_source_ancestry(
+        source_stage="discovery_capture",
+        direct_sources=(direct,),
+    )
+    derivation = {
+        "capture_content_hash": validated["content_hash"],
+        "normalized_replay_root": replay_root,
+        "resolved_population_root": canonical_hash(resolved),
+        "request_semantics_root": canonical_hash(
+            [request.semantic() for request in base_requests]
+        ),
+        "implementation_root": _implementation_root(),
+    }
+    input_root = canonical_hash({**derivation, "source_ancestry": ancestry})
+    binding = _csindex_source_binding(
+        phase="csindex-inventory",
+        capture_profile=CSINDEX_FULL_PROFILE,
+        input_capture_content_hash=input_root,
+        source_ancestry=ancestry,
+        derivation=derivation,
+    )
+    requests = [
+        _with_csindex_source_evidence(request, ancestry, binding)
+        for request in base_requests
+    ]
+    return resolved, requests, input_root
 
 
 def build_csindex_detail_plan(
     inventory_capture: str | Path,
 ) -> tuple[list[dict[str, Any]], list[ProviderProbeRequest], str]:
-    validated = validate_free_provider_backfill(inventory_capture)
-    if validated.get("status") != "succeeded":
-        raise ValueError("csindex_inventory_capture_blocked")
-    replayed, replay_root = replay_normalized_artifacts(
-        validated["manifest_path"],
-        normalizer=normalize_csindex_inventory,
-        required_roles=("csindex_announcement_inventory",),
+    validated, direct, replayed, replay_root, normalized_manifest = (
+        _replay_validated_csindex_source(
+            inventory_capture,
+            expected_phase="csindex-inventory",
+            expected_profiles=(CSINDEX_FULL_PROFILE,),
+            normalizer=normalize_csindex_inventory,
+            required_roles=(
+                "csindex_announcement_inventory",
+                "csindex_page_coverage",
+            ),
+            require_complete_profile=True,
+        )
     )
+    if (
+        normalized_manifest.get("leaf_count") != len(_month_leaves())
+        or normalized_manifest.get("all_page_chains_valid") is not True
+        or normalized_manifest.get("conflict_count") != 0
+    ):
+        raise ValueError("csindex_inventory_full_profile_invalid")
     rows = [
         json.loads(line)
         for line in replayed["csindex_announcement_inventory"].decode("utf-8").splitlines()
         if line.strip()
     ]
+    base_requests = [
+        _csindex_detail_request(row)
+        for row in rows
+    ]
+    upstream = _validate_csindex_source_ancestry(
+        normalized_manifest.get("source_ancestry"),
+        expected_stage="discovery_capture",
+    )
+    ancestry = _csindex_source_ancestry(
+        source_stage="inventory_capture",
+        direct_sources=(direct,),
+        upstream_ancestry=(upstream,),
+    )
+    population_root = canonical_hash(rows)
+    request_root = canonical_hash(
+        [request.semantic() for request in base_requests]
+    )
+    derivation = {
+        "capture_content_hash": validated["content_hash"],
+        "normalized_replay_root": replay_root,
+        "resolved_population_root": population_root,
+        "request_semantics_root": request_root,
+        "implementation_root": _implementation_root(),
+    }
+    input_root = canonical_hash(
+        {**derivation, "source_ancestry": ancestry}
+    )
+    binding = _csindex_source_binding(
+        phase="csindex-details",
+        capture_profile=CSINDEX_FULL_PROFILE,
+        input_capture_content_hash=input_root,
+        source_ancestry=ancestry,
+        derivation=derivation,
+    )
     requests = [
+        _with_csindex_source_evidence(request, ancestry, binding)
+        for request in base_requests
+    ]
+    return rows, requests, input_root
+
+
+def _csindex_detail_request(row: Mapping[str, Any]) -> ProviderProbeRequest:
+    return _with_csindex_capture_profile(
         ProviderProbeRequest(
             request_id=f"csindex_detail_{row['announcement_id']}",
             provider="csindex",
@@ -390,7 +1220,10 @@ def build_csindex_detail_plan(
                 "https://www.csindex.com.cn/csindex-home/announcement/"
                 f"queryAnnouncementById?id={row['announcement_id']}"
             ),
-            headers={"Referer": "https://www.csindex.com.cn/", "User-Agent": USER_AGENT},
+            headers={
+                "Referer": "https://www.csindex.com.cn/",
+                "User-Agent": USER_AGENT,
+            },
             disposition="provider_cannot_prove",
             evidence_semantics="official_http_response_envelope",
             expected_terminal_states=("positive",),
@@ -409,18 +1242,12 @@ def build_csindex_detail_plan(
                 "list_file_url": row.get("file_url"),
                 "list_file_name": row.get("file_name"),
                 "tokens": [],
+                "source_inventory_row": dict(row),
             },
-        )
-        for row in rows
-    ]
-    input_root = canonical_hash(
-        {
-            "capture_content_hash": validated["content_hash"],
-            "normalized_replay_root": replay_root,
-            "implementation_root": _implementation_root(),
-        }
+        ),
+        capture_profile=CSINDEX_FULL_PROFILE,
+        profile_complete=True,
     )
-    return rows, requests, input_root
 
 
 def build_csindex_attachment_plan(
@@ -429,42 +1256,15 @@ def build_csindex_attachment_plan(
 ) -> tuple[list[dict[str, Any]], list[ProviderProbeRequest], str]:
     """Derive a bounded attachment plan only from replayed, signed detail bytes."""
 
-    validated = validate_free_provider_backfill(details_capture)
-    if validated.get("status") != "succeeded":
-        raise ValueError("csindex_details_capture_blocked")
-    source_root = Path(str(validated["manifest_path"])).parent
-    source_contract = read_json(source_root / "activity_contract.json")
-    source_scope = dict(source_contract.get("scope") or {})
-    source_adapter = str(
-        (source_contract.get("adapter_identity") or {}).get("adapter") or ""
-    )
-    if (
-        source_contract.get("provider") != "csindex"
-        or not source_adapter.startswith("csindex_csindex-details_")
-        or source_scope.get("date_start") != "20120101"
-        or source_scope.get("date_end") != "20191231"
-        or source_scope.get("request_start") != "20110101"
-        or source_scope.get("request_end") != "20191231"
-    ):
-        raise ValueError("csindex_attachment_source_contract_invalid")
-    source_signed = validated.get("publication_signature_verified") is True
-    source_ancestry = {
-        "source_capture_schema": validated.get("schema_version"),
-        "source_generation_id": validated.get("generation_id"),
-        "source_content_hash": validated.get("content_hash"),
-        "source_contract_id": validated.get("contract_id"),
-        "source_contract_content_hash": canonical_hash(source_contract),
-        "source_provider": source_contract.get("provider"),
-        "source_adapter": source_adapter,
-        "source_scope": source_scope,
-        "source_publication_signature_verified": source_signed,
-        "source_normalized_artifacts_trusted": source_signed,
-        "weak_source_ancestry": not source_signed,
-    }
-    replayed, replay_root = replay_normalized_artifacts(
-        validated["manifest_path"],
-        normalizer=normalize_csindex_details,
-        required_roles=("csindex_announcement_details",),
+    validated, direct, replayed, replay_root, normalized_manifest = (
+        _replay_validated_csindex_source(
+            details_capture,
+            expected_phase="csindex-details",
+            expected_profiles=(CSINDEX_FULL_PROFILE,),
+            normalizer=normalize_csindex_details,
+            required_roles=("csindex_announcement_details",),
+            require_complete_profile=True,
+        )
     )
     details = [
         json.loads(line)
@@ -474,23 +1274,121 @@ def build_csindex_attachment_plan(
         if line.strip()
     ]
     hosts = _selected_attachment_hosts(include_hosts)
-    population = _attachment_population_from_details(details, include_hosts=hosts)
+    full_population = _attachment_population_from_details(details)
+    population = _attachment_population_for_hosts(full_population, hosts=hosts)
     if not population:
         raise ValueError("csindex_attachment_plan_empty")
+    upstream = _validate_csindex_source_ancestry(
+        normalized_manifest.get("source_ancestry"),
+        expected_stage="inventory_capture",
+    )
+    ancestry = _csindex_source_ancestry(
+        source_stage="details_capture",
+        direct_sources=(direct,),
+        upstream_ancestry=(upstream,),
+    )
+    capture_profile = (
+        CSINDEX_ATTACHMENT_FULL_PROFILE
+        if set(hosts) == set(CSINDEX_ATTACHMENT_HOSTS)
+        else CSINDEX_ATTACHMENT_HOST_SLICE_PROFILE
+    )
+    capture_population = [
+        row for row in population if row.get("reference_disposition") == "capture_eligible"
+    ]
+    derivation = {
+        "capture_content_hash": validated["content_hash"],
+        "normalized_replay_root": replay_root,
+        "full_population_root": canonical_hash(full_population),
+        "selected_population_root": canonical_hash(population),
+        "request_semantics_root": canonical_hash(
+            [_attachment_request_identity(row) for row in capture_population]
+        ),
+        "selected_hosts": list(hosts),
+        "implementation_root": _implementation_root(),
+    }
+    input_root = canonical_hash({**derivation, "source_ancestry": ancestry})
+    binding = _csindex_source_binding(
+        phase="csindex-attachments",
+        capture_profile=capture_profile,
+        input_capture_content_hash=input_root,
+        source_ancestry=ancestry,
+        derivation=derivation,
+    )
     requests = _attachment_requests(
         population,
-        source_ancestry=source_ancestry,
+        source_ancestry=ancestry,
+        source_binding=binding,
+        capture_profile=capture_profile,
     )
-    input_root = canonical_hash(
-        {
-            "capture_content_hash": validated["content_hash"],
-            "normalized_replay_root": replay_root,
-            "selected_hosts": list(hosts),
-            "population_root": canonical_hash(population),
-            "source_ancestry": source_ancestry,
-            "implementation_root": _implementation_root(),
-        }
+    return population, requests, input_root
+
+
+def build_csindex_legacy_cons_repair_plan(
+    details_capture: str | Path,
+) -> tuple[list[dict[str, Any]], list[ProviderProbeRequest], str]:
+    """Build the exact two-request legacy constituent attachment repair."""
+
+    validated, direct, replayed, replay_root, normalized_manifest = (
+        _replay_validated_csindex_source(
+            details_capture,
+            expected_phase="csindex-details",
+            expected_profiles=(CSINDEX_FULL_PROFILE,),
+            normalizer=normalize_csindex_details,
+            required_roles=("csindex_announcement_details",),
+            require_complete_profile=True,
+        )
     )
+    details = [
+        json.loads(line)
+        for line in replayed["csindex_announcement_details"]
+        .decode("utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    population = _legacy_cons_repair_population(details)
+    upstream = _validate_csindex_source_ancestry(
+        normalized_manifest.get("source_ancestry"),
+        expected_stage="inventory_capture",
+    )
+    ancestry = _csindex_source_ancestry(
+        source_stage="details_capture",
+        direct_sources=(direct,),
+        upstream_ancestry=(upstream,),
+    )
+    if ancestry["weak_source_ancestry"]:
+        raise ValueError("csindex_legacy_cons_repair_weak_source_blocked")
+    capture_population = [
+        row
+        for row in population
+        if row.get("reference_disposition") == "capture_eligible"
+    ]
+    derivation = {
+        "capture_content_hash": validated["content_hash"],
+        "normalized_replay_root": replay_root,
+        "request_semantics_root": canonical_hash(
+            [_attachment_request_identity(row) for row in capture_population]
+        ),
+        "selected_hosts": ["oss-ch.csindex.com.cn"],
+        "implementation_root": _implementation_root(),
+        "repair_population_root": canonical_hash(population),
+        "repair_profile_root": canonical_hash(CSINDEX_LEGACY_CONS_REPAIR_ROWS),
+    }
+    input_root = canonical_hash({**derivation, "source_ancestry": ancestry})
+    binding = _csindex_source_binding(
+        phase="csindex-legacy-cons-repair",
+        capture_profile=CSINDEX_LEGACY_CONS_REPAIR_PROFILE,
+        input_capture_content_hash=input_root,
+        source_ancestry=ancestry,
+        derivation=derivation,
+    )
+    requests = _attachment_requests(
+        population,
+        source_ancestry=ancestry,
+        source_binding=binding,
+        capture_profile=CSINDEX_LEGACY_CONS_REPAIR_PROFILE,
+    )
+    if len(requests) != 2:
+        raise ValueError("csindex_legacy_cons_repair_request_count_invalid")
     return population, requests, input_root
 
 
@@ -647,9 +1545,192 @@ def _attachment_source_edge(
         "announcement_publish_date": detail.get("publish_date"),
         "detail_source_request_id": detail.get("source_request_id"),
         "detail_source_payload_sha256": detail.get("source_payload_sha256"),
+        "contains_csi300": detail.get("contains_csi300") is True,
         "reference_attributes": [],
         "edge_disposition": edge_disposition,
         "historical_known_at_proven": False,
+    }
+
+
+def _attachment_population_for_hosts(
+    population: Sequence[Mapping[str, Any]],
+    *,
+    hosts: Sequence[str],
+) -> list[dict[str, Any]]:
+    selected = set(hosts)
+    rows: list[dict[str, Any]] = []
+    for value in population:
+        row = dict(value)
+        if (
+            row.get("reference_disposition") == "capture_eligible"
+            and row.get("host") not in selected
+        ):
+            row["reference_disposition"] = "blocked_capture_profile_host_omission"
+            row["capture_profile_omission"] = True
+        rows.append(row)
+    return rows
+
+
+def _legacy_cons_repair_population(
+    details: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Promote only two reviewed legacy `*cons.xls` edges into capture requests."""
+
+    population = _attachment_population_from_details(details)
+    expected = {
+        str(row["attachment_url"]): row for row in CSINDEX_LEGACY_CONS_REPAIR_ROWS
+    }
+    observed: set[str] = set()
+    repaired: list[dict[str, Any]] = []
+    for value in population:
+        row = dict(value)
+        url = str(row.get("attachment_url") or "")
+        spec = expected.get(url)
+        if spec is None:
+            row["pre_repair_reference_disposition"] = row.get(
+                "reference_disposition"
+            )
+            row["reference_disposition"] = (
+                "blocked_outside_legacy_cons_exact_repair_profile"
+            )
+            repaired.append(row)
+            continue
+        sources = row.get("source_announcements")
+        source_ids = (
+            sorted(str(source.get("announcement_id") or "") for source in sources)
+            if isinstance(sources, list)
+            and all(isinstance(source, Mapping) for source in sources)
+            else []
+        )
+        source_dates = {
+            str(source.get("announcement_publish_date") or "")
+            for source in (sources if isinstance(sources, list) else ())
+            if isinstance(source, Mapping)
+        }
+        csi300_ids = {
+            str(source.get("announcement_id") or "")
+            for source in (sources if isinstance(sources, list) else ())
+            if isinstance(source, Mapping)
+            and source.get("contains_csi300") is True
+        }
+        publish_date = str(spec["announcement_publish_date"])
+        if (
+            row.get("host") != "oss-ch.csindex.com.cn"
+            or row.get("extension") != "xls"
+            or row.get("path_dates") != []
+            or row.get("reference_disposition")
+            != "blocked_attachment_path_date_unproven"
+            or source_ids != sorted(str(value) for value in spec["announcement_ids"])
+            or source_dates != {publish_date}
+            or csi300_ids != {str(spec["csi300_announcement_id"])}
+        ):
+            raise ValueError(f"csindex_legacy_cons_repair_source_invalid:{url}")
+        observed.add(url)
+        row |= {
+            "pre_repair_reference_disposition": row["reference_disposition"],
+            "reference_disposition": "capture_eligible",
+            "path_dates": [publish_date.replace("-", "")],
+            "legacy_cons_repair_profile": CSINDEX_LEGACY_CONS_REPAIR_PROFILE,
+            "reviewed_source_announcement_ids": list(spec["announcement_ids"]),
+            "reviewed_csi300_announcement_id": spec[
+                "csi300_announcement_id"
+            ],
+            "historical_known_at_proven": False,
+            "pit_membership_authorized": False,
+        }
+        repaired.append(row)
+    if observed != set(expected):
+        raise ValueError("csindex_legacy_cons_repair_exact_population_missing")
+    _validate_legacy_cons_repair_population(repaired)
+    return repaired
+
+
+def _validate_legacy_cons_repair_population(
+    population: Sequence[Mapping[str, Any]],
+) -> None:
+    expected = {
+        str(row["attachment_url"]): row for row in CSINDEX_LEGACY_CONS_REPAIR_ROWS
+    }
+    eligible = [
+        row
+        for row in population
+        if row.get("reference_disposition") == "capture_eligible"
+    ]
+    if len(eligible) != 2 or {str(row.get("attachment_url") or "") for row in eligible} != set(expected):
+        raise ValueError("csindex_legacy_cons_repair_exact_population_invalid")
+    for row in eligible:
+        url = str(row["attachment_url"])
+        spec = expected[url]
+        sources = row.get("source_announcements")
+        source_ids = (
+            sorted(str(source.get("announcement_id") or "") for source in sources)
+            if isinstance(sources, list)
+            and all(isinstance(source, Mapping) for source in sources)
+            else []
+        )
+        source_dates = {
+            str(source.get("announcement_publish_date") or "")
+            for source in (sources if isinstance(sources, list) else ())
+            if isinstance(source, Mapping)
+        }
+        csi300_ids = {
+            str(source.get("announcement_id") or "")
+            for source in (sources if isinstance(sources, list) else ())
+            if isinstance(source, Mapping)
+            and source.get("contains_csi300") is True
+        }
+        if (
+            row.get("host") != "oss-ch.csindex.com.cn"
+            or row.get("extension") != "xls"
+            or row.get("path_dates")
+            != [str(spec["announcement_publish_date"]).replace("-", "")]
+            or row.get("legacy_cons_repair_profile")
+            != CSINDEX_LEGACY_CONS_REPAIR_PROFILE
+            or row.get("reviewed_source_announcement_ids")
+            != list(spec["announcement_ids"])
+            or row.get("reviewed_csi300_announcement_id")
+            != spec["csi300_announcement_id"]
+            or source_ids
+            != sorted(str(value) for value in spec["announcement_ids"])
+            or source_dates != {str(spec["announcement_publish_date"])}
+            or csi300_ids != {str(spec["csi300_announcement_id"])}
+            or row.get("historical_known_at_proven") is not False
+            or row.get("pit_membership_authorized") is not False
+        ):
+            raise ValueError("csindex_legacy_cons_repair_exact_population_invalid")
+
+
+def _legacy_cons_repair_path_dates(url: str) -> list[str]:
+    for row in CSINDEX_LEGACY_CONS_REPAIR_ROWS:
+        if row["attachment_url"] == url:
+            return [str(row["announcement_publish_date"]).replace("-", "")]
+    raise ValueError("csindex_legacy_cons_repair_url_invalid")
+
+
+def _restore_full_attachment_population(
+    population: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for value in population:
+        row = dict(value)
+        if row.pop("capture_profile_omission", False) is True:
+            if row.get("reference_disposition") != (
+                "blocked_capture_profile_host_omission"
+            ):
+                raise ValueError("csindex_attachment_host_slice_invalid")
+            row["reference_disposition"] = "capture_eligible"
+        rows.append(row)
+    return rows
+
+
+def _attachment_request_identity(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "attachment_url": row.get("attachment_url"),
+        "host": row.get("host"),
+        "extension": row.get("extension"),
+        "path_dates": row.get("path_dates"),
+        "reference_disposition": row.get("reference_disposition"),
+        "source_announcements": row.get("source_announcements"),
     }
 
 
@@ -657,6 +1738,8 @@ def _attachment_requests(
     population: Sequence[Mapping[str, Any]],
     *,
     source_ancestry: Mapping[str, Any],
+    source_binding: Mapping[str, Any],
+    capture_profile: str,
 ) -> list[ProviderProbeRequest]:
     required_checks = (
         "http_envelope_schema_exact",
@@ -683,16 +1766,22 @@ def _attachment_requests(
     ]
     if not capture_population:
         raise ValueError("csindex_attachment_capture_plan_empty")
-    ancestry = dict(source_ancestry)
-    if (
-        ancestry.get("source_provider") != "csindex"
-        or not isinstance(ancestry.get("weak_source_ancestry"), bool)
-        or ancestry.get("source_publication_signature_verified")
-        is not (not ancestry["weak_source_ancestry"])
-        or ancestry.get("source_normalized_artifacts_trusted")
-        is not (not ancestry["weak_source_ancestry"])
-    ):
-        raise ValueError("csindex_attachment_source_ancestry_invalid")
+    ancestry = _validate_csindex_source_ancestry(
+        source_ancestry, expected_stage="details_capture"
+    )
+    if capture_profile == CSINDEX_LEGACY_CONS_REPAIR_PROFILE:
+        if ancestry["weak_source_ancestry"]:
+            raise ValueError("csindex_legacy_cons_repair_weak_source_blocked")
+        _validate_legacy_cons_repair_population(population)
+    binding = _validate_csindex_source_binding(
+        source_binding,
+        phase=(
+            "csindex-legacy-cons-repair"
+            if capture_profile == CSINDEX_LEGACY_CONS_REPAIR_PROFILE
+            else "csindex-attachments"
+        ),
+        source_ancestry=ancestry,
+    )
     blocked_reference_root = canonical_hash(blocked_references)
     requests = [
         ProviderProbeRequest(
@@ -721,7 +1810,16 @@ def _attachment_requests(
                 "reference_disposition": row["reference_disposition"],
                 "blocked_reference_count": len(blocked_references),
                 "blocked_reference_root": blocked_reference_root,
+                "population_count": len(population),
+                "population_root": canonical_hash(population),
                 "source_ancestry": ancestry,
+                "source_binding": binding,
+                "capture_profile": capture_profile,
+                "profile_complete": capture_profile
+                in {
+                    CSINDEX_ATTACHMENT_FULL_PROFILE,
+                    CSINDEX_LEGACY_CONS_REPAIR_PROFILE,
+                },
                 "temporal_blocker": CSINDEX_ATTACHMENT_TEMPORAL_BLOCKER,
                 "historical_known_at_proven": False,
             },
@@ -732,7 +1830,10 @@ def _attachment_requests(
         **{
             **requests[0].__dict__,
             "metadata": dict(requests[0].metadata)
-            | {"blocked_references": blocked_references},
+            | {
+                "blocked_references": blocked_references,
+                "attachment_population": [dict(row) for row in population],
+            },
         }
     )
     return requests
@@ -769,6 +1870,67 @@ def normalize_csindex_details(
     requests: Sequence[ProviderProbeRequest],
     terminal: Mapping[str, Mapping[str, Any]],
 ) -> Sequence[NormalizedArtifact]:
+    if not requests:
+        raise ValueError("csindex_detail_requests_empty")
+    if any(
+        request.metadata.get("capture_profile") != CSINDEX_FULL_PROFILE
+        or request.metadata.get("profile_complete") is not True
+        for request in requests
+    ):
+        raise ValueError("csindex_detail_profile_incomplete")
+    source_ancestry, source_binding = _csindex_request_source_evidence(
+        requests, phase="csindex-details"
+    )
+    _validate_csindex_source_ancestry(
+        source_ancestry, expected_stage="inventory_capture"
+    )
+    source_rows = [request.metadata.get("source_inventory_row") for request in requests]
+    if (
+        any(not isinstance(row, Mapping) for row in source_rows)
+        or len(
+            {
+                str(row.get("announcement_id") or "")
+                for row in source_rows
+                if isinstance(row, Mapping)
+            }
+        )
+        != len(source_rows)
+    ):
+        raise ValueError("csindex_detail_population_invalid")
+    resolved_rows = [dict(row) for row in source_rows if isinstance(row, Mapping)]
+    base_requests = [_csindex_detail_request(row) for row in resolved_rows]
+    expected_requests = [
+        _with_csindex_source_evidence(request, source_ancestry, source_binding)
+        for request in base_requests
+    ]
+    if [request.semantic() for request in requests] != [
+        request.semantic() for request in expected_requests
+    ]:
+        raise ValueError("csindex_detail_request_closure_invalid")
+    derivation = dict(source_binding.get("derivation") or {})
+    expected_derivation = {
+        "capture_content_hash": source_ancestry["direct_sources"][0][
+            "source_content_hash"
+        ],
+        "normalized_replay_root": derivation.get("normalized_replay_root"),
+        "resolved_population_root": canonical_hash(resolved_rows),
+        "request_semantics_root": canonical_hash(
+            [request.semantic() for request in base_requests]
+        ),
+        "implementation_root": derivation.get("implementation_root"),
+    }
+    if any(
+        re.fullmatch(r"[0-9a-f]{64}", str(expected_derivation[key] or ""))
+        is None
+        for key in ("normalized_replay_root", "implementation_root")
+    ):
+        raise ValueError("csindex_source_binding_derivation_invalid")
+    _validate_csindex_binding_derivation(
+        source_ancestry,
+        source_binding,
+        phase="csindex-details",
+        expected_derivation=expected_derivation,
+    )
     output = run_root / "normalized"
     output.mkdir(exist_ok=True)
     details_path = output / "announcement_details.jsonl"
@@ -781,8 +1943,21 @@ def normalize_csindex_details(
         for request in requests:
             receipt = terminal[request.request_id]
             wrapper = read_json(run_root / str(receipt["raw_envelope_relative_path"]))
-            official = json.loads(base64.b64decode(wrapper["raw_payload_base64"], validate=True))
-            provider = json.loads(base64.b64decode(official["body_base64"], validate=True))
+            _official, body = _decode_csindex_official_http_envelope(
+                wrapper,
+                request=request,
+                terminal=receipt,
+            )
+            provider = json.loads(body)
+            if (
+                not isinstance(provider, Mapping)
+                or provider.get("success") is not True
+                or str(provider.get("code") or "") != "200"
+            ):
+                raise ValueError(
+                    "csindex_detail_provider_status_invalid:"
+                    f"{request.request_id}"
+                )
             detail = provider.get("data") if isinstance(provider, Mapping) else None
             if not isinstance(detail, Mapping):
                 conflicts.append(
@@ -852,7 +2027,10 @@ def normalize_csindex_details(
         raise ValueError(f"csindex_detail_normalization_invalid:{conflicts[0]['reason']}")
     manifest_path = output / "normalized_manifest.json"
     manifest = {
-        "schema_version": "csindex_detail_normalization_v1",
+        "schema_version": "csindex_detail_normalization_v2",
+        "capture_profile": CSINDEX_FULL_PROFILE,
+        "profile_complete": True,
+        "resolved_population_root": canonical_hash(resolved_rows),
         "detail_count": detail_count,
         "csi300_candidate_count": candidate_count,
         "conflict_count": len(conflicts),
@@ -865,7 +2043,12 @@ def normalize_csindex_details(
             "csi300_seed_membership_not_proven",
             "historical_daily_weight_unavailable",
         ],
+        "source_ancestry": source_ancestry,
+        "source_binding": source_binding,
+        "weak_source_ancestry": source_ancestry["weak_source_ancestry"],
     }
+    if source_ancestry["weak_source_ancestry"]:
+        manifest["blockers"].append("weak_source_acquisition_ancestry")
     manifest["content_hash"] = canonical_hash(manifest)
     _atomic_json(manifest_path, manifest)
     return (
@@ -889,35 +2072,69 @@ def normalize_csindex_attachments(
     blocked_path = output / "blocked_reference_index.jsonl"
     if not requests:
         raise ValueError("csindex_attachment_normalization_requests_empty")
-    source_ancestry = requests[0].metadata.get("source_ancestry")
-    if (
-        not isinstance(source_ancestry, Mapping)
-        or source_ancestry.get("source_provider") != "csindex"
-        or not isinstance(source_ancestry.get("weak_source_ancestry"), bool)
-        or source_ancestry.get("source_publication_signature_verified")
-        is not (not source_ancestry["weak_source_ancestry"])
-        or source_ancestry.get("source_normalized_artifacts_trusted")
-        is not (not source_ancestry["weak_source_ancestry"])
-    ):
-        raise ValueError("csindex_attachment_source_ancestry_invalid")
+    capture_profiles = {request.metadata.get("capture_profile") for request in requests}
+    if len(capture_profiles) != 1:
+        raise ValueError("csindex_attachment_capture_profile_mixed")
+    capture_profile = str(next(iter(capture_profiles)))
+    phase = (
+        "csindex-legacy-cons-repair"
+        if capture_profile == CSINDEX_LEGACY_CONS_REPAIR_PROFILE
+        else "csindex-attachments"
+    )
+    if capture_profile not in {
+        CSINDEX_ATTACHMENT_FULL_PROFILE,
+        CSINDEX_ATTACHMENT_HOST_SLICE_PROFILE,
+        CSINDEX_LEGACY_CONS_REPAIR_PROFILE,
+    }:
+        raise ValueError("csindex_attachment_capture_profile_invalid")
+    source_ancestry, source_binding = _csindex_request_source_evidence(
+        requests, phase=phase
+    )
+    _validate_csindex_source_ancestry(
+        source_ancestry, expected_stage="details_capture"
+    )
+    population = requests[0].metadata.get("attachment_population")
     blocked_references = requests[0].metadata.get("blocked_references")
-    if not isinstance(blocked_references, list):
-        raise ValueError("csindex_attachment_blocked_reference_audit_missing")
+    if not isinstance(population, list) or not isinstance(blocked_references, list):
+        raise ValueError("csindex_attachment_population_audit_missing")
+    expected_requests = _attachment_requests(
+        population,
+        source_ancestry=source_ancestry,
+        source_binding=source_binding,
+        capture_profile=capture_profile,
+    )
+    if [request.semantic() for request in requests] != [
+        request.semantic() for request in expected_requests
+    ]:
+        raise ValueError("csindex_attachment_request_closure_invalid")
     blocked_reference_root = canonical_hash(blocked_references)
     if any(
         request.metadata.get("blocked_reference_count") != len(blocked_references)
         or request.metadata.get("blocked_reference_root") != blocked_reference_root
+        or request.metadata.get("population_count") != len(population)
+        or request.metadata.get("population_root") != canonical_hash(population)
         or request.metadata.get("source_ancestry") != source_ancestry
+        or request.metadata.get("source_binding") != source_binding
         or request.metadata.get("reference_disposition") != "capture_eligible"
         or request.metadata.get("path_dates")
-        != _attachment_path_dates(urllib.parse.urlsplit(request.url).path)
+        != (
+            _legacy_cons_repair_path_dates(request.url)
+            if phase == "csindex-legacy-cons-repair"
+            else _attachment_path_dates(urllib.parse.urlsplit(request.url).path)
+        )
         or not request.metadata.get("path_dates")
         or any(
             value < CSINDEX_ATTACHMENT_PATH_DATE_START
             or value > CSINDEX_ATTACHMENT_PATH_DATE_END
             for value in request.metadata.get("path_dates") or ()
         )
-        or (index > 0 and "blocked_references" in request.metadata)
+        or (
+            index > 0
+            and any(
+                key in request.metadata
+                for key in ("blocked_references", "attachment_population")
+            )
+        )
         for index, request in enumerate(requests)
     ):
         raise ValueError("csindex_attachment_reference_audit_invalid")
@@ -927,6 +2144,75 @@ def normalize_csindex_attachments(
         if isinstance(row, Mapping)
     ) or any(not isinstance(row, Mapping) for row in blocked_references):
         raise ValueError("csindex_attachment_blocked_reference_audit_invalid")
+    derivation = dict(source_binding.get("derivation") or {})
+    full_population = _restore_full_attachment_population(population)
+    capture_population = [
+        row
+        for row in population
+        if isinstance(row, Mapping)
+        and row.get("reference_disposition") == "capture_eligible"
+    ]
+    common_derivation = {
+        "capture_content_hash": source_ancestry["direct_sources"][0][
+            "source_content_hash"
+        ],
+        "normalized_replay_root": derivation.get("normalized_replay_root"),
+        "request_semantics_root": canonical_hash(
+            [_attachment_request_identity(row) for row in capture_population]
+        ),
+        "selected_hosts": derivation.get("selected_hosts"),
+        "implementation_root": derivation.get("implementation_root"),
+    }
+    expected_derivation = (
+        common_derivation
+        | {
+            "repair_population_root": canonical_hash(population),
+            "repair_profile_root": canonical_hash(
+                CSINDEX_LEGACY_CONS_REPAIR_ROWS
+            ),
+        }
+        if phase == "csindex-legacy-cons-repair"
+        else common_derivation
+        | {
+            "full_population_root": canonical_hash(full_population),
+            "selected_population_root": canonical_hash(population),
+        }
+    )
+    if (
+        any(
+            re.fullmatch(r"[0-9a-f]{64}", str(expected_derivation[key] or ""))
+            is None
+            for key in ("normalized_replay_root", "implementation_root")
+        )
+        or not isinstance(expected_derivation["selected_hosts"], list)
+        or not set(expected_derivation["selected_hosts"])
+        <= set(CSINDEX_ATTACHMENT_HOSTS)
+        or (
+            capture_profile == CSINDEX_ATTACHMENT_FULL_PROFILE
+            and expected_derivation["selected_hosts"]
+            != list(CSINDEX_ATTACHMENT_HOSTS)
+        )
+        or (
+            capture_profile == CSINDEX_ATTACHMENT_HOST_SLICE_PROFILE
+            and (
+                not expected_derivation["selected_hosts"]
+                or set(expected_derivation["selected_hosts"])
+                >= set(CSINDEX_ATTACHMENT_HOSTS)
+            )
+        )
+        or (
+            capture_profile == CSINDEX_LEGACY_CONS_REPAIR_PROFILE
+            and expected_derivation["selected_hosts"]
+            != ["oss-ch.csindex.com.cn"]
+        )
+    ):
+        raise ValueError("csindex_source_binding_derivation_invalid")
+    _validate_csindex_binding_derivation(
+        source_ancestry,
+        source_binding,
+        phase=phase,
+        expected_derivation=expected_derivation,
+    )
     _atomic_jsonl(blocked_path, blocked_references)
     count = 0
     with index_path.open("wb") as handle:
@@ -935,11 +2221,11 @@ def normalize_csindex_attachments(
             wrapper = read_json(
                 run_root / str(receipt["raw_envelope_relative_path"])
             )
-            official = json.loads(
-                base64.b64decode(wrapper["raw_payload_base64"], validate=True)
-            )
-            body = base64.b64decode(
-                str(official.get("body_base64") or ""), validate=True
+            official, body = _decode_csindex_official_http_envelope(
+                wrapper,
+                request=request,
+                terminal=receipt,
+                max_body_bytes=CSINDEX_ATTACHMENT_BODY_MAX_BYTES,
             )
             response_headers = {
                 str(key).lower(): str(value)
@@ -995,13 +2281,22 @@ def normalize_csindex_attachments(
         os.fsync(handle.fileno())
     manifest_path = output / "normalized_manifest.json"
     manifest = {
-        "schema_version": "csindex_attachment_normalization_v2",
+        "schema_version": (
+            "csindex_legacy_cons_repair_normalization_v1"
+            if phase == "csindex-legacy-cons-repair"
+            else "csindex_attachment_normalization_v3"
+        ),
+        "capture_profile": capture_profile,
+        "profile_complete": capture_profile
+        in {CSINDEX_ATTACHMENT_FULL_PROFILE, CSINDEX_LEGACY_CONS_REPAIR_PROFILE},
         "attachment_count": count,
         "attachment_index_sha256": sha256_file(index_path),
         "blocked_reference_count": len(blocked_references),
         "blocked_reference_root": blocked_reference_root,
         "blocked_reference_index_sha256": sha256_file(blocked_path),
         "source_ancestry": dict(source_ancestry),
+        "source_binding": dict(source_binding),
+        "weak_source_ancestry": source_ancestry["weak_source_ancestry"],
         "raw_capture_contains_exact_attachment_bytes": True,
         "binary_payloads_extracted_from_raw": False,
         "historical_known_at_proven": False,
@@ -1035,6 +2330,25 @@ def normalize_csindex_attachments(
     )
 
 
+def normalize_csindex_legacy_cons_repair(
+    run_root: Path,
+    requests: Sequence[ProviderProbeRequest],
+    terminal: Mapping[str, Mapping[str, Any]],
+) -> Sequence[NormalizedArtifact]:
+    if len(requests) != 2:
+        raise ValueError("csindex_legacy_cons_repair_request_count_invalid")
+    population = requests[0].metadata.get("attachment_population")
+    if not isinstance(population, list):
+        raise ValueError("csindex_legacy_cons_repair_population_missing")
+    _validate_legacy_cons_repair_population(population)
+    ancestry, _binding = _csindex_request_source_evidence(
+        requests, phase="csindex-legacy-cons-repair"
+    )
+    if ancestry["weak_source_ancestry"]:
+        raise ValueError("csindex_legacy_cons_repair_weak_source_blocked")
+    return normalize_csindex_attachments(run_root, requests, terminal)
+
+
 def _normalize_list_pages(
     run_root: Path,
     requests: Sequence[ProviderProbeRequest],
@@ -1044,18 +2358,64 @@ def _normalize_list_pages(
 ) -> Sequence[NormalizedArtifact]:
     output = run_root / "normalized"
     output.mkdir(exist_ok=True)
+    profiles = {request.metadata.get("capture_profile") for request in requests}
+    completeness = {request.metadata.get("profile_complete") for request in requests}
+    expected_profile = CSINDEX_FULL_PROFILE
+    if (
+        len(profiles) != 1
+        or len(completeness) != 1
+        or next(iter(profiles), None)
+        not in {CSINDEX_FULL_PROFILE, CSINDEX_DISCOVERY_SLICE_PROFILE}
+        or next(iter(completeness), None) not in {True, False}
+    ):
+        raise ValueError("csindex_capture_profile_mixed_or_missing")
+    capture_profile = str(next(iter(profiles)))
+    declared_complete = next(iter(completeness)) is True
+    source_ancestry: dict[str, Any] | None = None
+    source_binding: dict[str, Any] | None = None
+    if require_full_page_chains:
+        if capture_profile != expected_profile or not declared_complete:
+            raise ValueError("csindex_inventory_profile_incomplete")
+        source_ancestry, source_binding = _csindex_request_source_evidence(
+            requests, phase="csindex-inventory"
+        )
+        _validate_csindex_source_ancestry(
+            source_ancestry, expected_stage="discovery_capture"
+        )
+    elif any(
+        request.metadata.get(key) is not None
+        for request in requests
+        for key in ("source_ancestry", "source_binding")
+    ):
+        raise ValueError("csindex_discovery_source_evidence_unexpected")
     pages_by_leaf: dict[str, list[tuple[ProviderProbeRequest, dict[str, Any], str]]] = defaultdict(list)
     filter_captured = False
     for request in requests:
-        wrapper = read_json(run_root / str(terminal[request.request_id]["raw_envelope_relative_path"]))
-        official = json.loads(base64.b64decode(wrapper["raw_payload_base64"], validate=True))
-        body = json.loads(base64.b64decode(official["body_base64"], validate=True))
+        receipt = terminal[request.request_id]
+        wrapper = read_json(run_root / str(receipt["raw_envelope_relative_path"]))
+        _official, body_bytes = _decode_csindex_official_http_envelope(
+            wrapper,
+            request=request,
+            terminal=receipt,
+        )
+        body = json.loads(body_bytes)
         if request.metadata.get("case") == "csindex_filter":
-            filter_captured = True
+            filter_captured = _csindex_filter_topic_present(body)
             continue
         pages_by_leaf[str(request.metadata["leaf_id"])].append(
             (request, body, wrapper["raw_payload_sha256"])
         )
+    resolved_population, base_requests, profile_complete = (
+        _validate_csindex_list_request_closure(
+            requests=requests,
+            pages_by_leaf=pages_by_leaf,
+            filter_captured=filter_captured,
+            require_full_page_chains=require_full_page_chains,
+            capture_profile=capture_profile,
+            source_ancestry=source_ancestry,
+            source_binding=source_binding,
+        )
+    )
     inventory: dict[str, dict[str, Any]] = {}
     coverage: list[dict[str, Any]] = []
     conflicts: list[dict[str, Any]] = []
@@ -1169,7 +2529,13 @@ def _normalize_list_pages(
     _atomic_jsonl(conflicts_path, conflicts)
     manifest_path = output / "normalized_manifest.json"
     manifest = {
-        "schema_version": "csindex_announcement_inventory_normalization_v1",
+        "schema_version": (
+            "csindex_announcement_inventory_normalization_v2"
+            if require_full_page_chains
+            else "csindex_announcement_discovery_normalization_v2"
+        ),
+        "capture_profile": capture_profile,
+        "profile_complete": profile_complete,
         "require_full_page_chains": require_full_page_chains,
         "filter_topics_captured": filter_captured,
         "leaf_count": len(pages_by_leaf),
@@ -1179,6 +2545,38 @@ def _normalize_list_pages(
         "inventory_sha256": sha256_file(inventory_path),
         "coverage_sha256": sha256_file(coverage_path),
     }
+    if source_ancestry is not None and source_binding is not None:
+        derivation = dict(source_binding.get("derivation") or {})
+        expected_derivation = {
+            "capture_content_hash": (
+                source_ancestry["direct_sources"][0]["source_content_hash"]
+            ),
+            "normalized_replay_root": derivation.get("normalized_replay_root"),
+            "resolved_population_root": canonical_hash(resolved_population),
+            "request_semantics_root": canonical_hash(
+                [request.semantic() for request in base_requests]
+            ),
+            "implementation_root": derivation.get("implementation_root"),
+        }
+        if any(
+            re.fullmatch(r"[0-9a-f]{64}", str(expected_derivation[key] or ""))
+            is None
+            for key in ("normalized_replay_root", "implementation_root")
+        ):
+            raise ValueError("csindex_source_binding_derivation_invalid")
+        _validate_csindex_binding_derivation(
+            source_ancestry,
+            source_binding,
+            phase="csindex-inventory",
+            expected_derivation=expected_derivation,
+        )
+        manifest["source_ancestry"] = source_ancestry
+        manifest["source_binding"] = source_binding
+        manifest["weak_source_ancestry"] = source_ancestry[
+            "weak_source_ancestry"
+        ]
+        if source_ancestry["weak_source_ancestry"]:
+            manifest["blockers"] = ["weak_source_acquisition_ancestry"]
     manifest["content_hash"] = canonical_hash(manifest)
     _atomic_json(manifest_path, manifest)
     return (
@@ -1186,6 +2584,154 @@ def _normalize_list_pages(
         NormalizedArtifact("csindex_page_coverage", "normalized/page_coverage.jsonl", len(coverage)),
         NormalizedArtifact("conflicts", "normalized/conflicts.jsonl", len(conflicts)),
         NormalizedArtifact("normalized_manifest", "normalized/normalized_manifest.json", 1),
+    )
+
+
+def _validate_csindex_list_request_closure(
+    *,
+    requests: Sequence[ProviderProbeRequest],
+    pages_by_leaf: Mapping[
+        str,
+        Sequence[tuple[ProviderProbeRequest, Mapping[str, Any], str]],
+    ],
+    filter_captured: bool,
+    require_full_page_chains: bool,
+    capture_profile: str,
+    source_ancestry: Mapping[str, Any] | None,
+    source_binding: Mapping[str, Any] | None,
+) -> tuple[list[dict[str, Any]], list[ProviderProbeRequest], bool]:
+    all_leaves = _month_leaves()
+    by_leaf = {leaf["leaf_id"]: leaf for leaf in all_leaves}
+    actual_leaf_ids = set(pages_by_leaf)
+    filter_requests = [
+        request
+        for request in requests
+        if request.metadata.get("case") == "csindex_filter"
+    ]
+    if (
+        not filter_captured
+        or len(filter_requests) != 1
+        or not actual_leaf_ids
+        or not actual_leaf_ids <= set(by_leaf)
+        or len({request.request_id for request in requests}) != len(requests)
+        or (
+            capture_profile == CSINDEX_FULL_PROFILE
+            and actual_leaf_ids != set(by_leaf)
+        )
+    ):
+        raise ValueError("csindex_list_request_population_closure_invalid")
+    base_requests = [
+        _with_csindex_capture_profile(
+            _filter_request(),
+            capture_profile=capture_profile,
+            profile_complete=capture_profile == CSINDEX_FULL_PROFILE,
+        )
+    ]
+    resolved: list[dict[str, Any]] = []
+    for leaf in all_leaves:
+        leaf_id = leaf["leaf_id"]
+        if leaf_id not in actual_leaf_ids:
+            continue
+        captured = list(pages_by_leaf[leaf_id])
+        for request, body, _source_hash in captured:
+            rows = body.get("data") if isinstance(body, Mapping) else None
+            page_size = _nonnegative_int(
+                body.get("pageSize") if isinstance(body, Mapping) else None
+            )
+            total_value = _nonnegative_int(
+                body.get("total") if isinstance(body, Mapping) else None
+            )
+            if (
+                not isinstance(rows, list)
+                or body.get("success") is not True
+                or str(body.get("code") or "") != "200"
+                or _nonnegative_int(body.get("currentPage"))
+                != int(request.metadata.get("page") or -1)
+                or not (
+                    page_size == CSINDEX_PAGE_SIZE
+                    or (total_value == 0 and rows == [] and page_size == 0)
+                )
+                or any(
+                    not isinstance(row, Mapping)
+                    or (publish_date := _strict_iso_date(row.get("publishDate")))
+                    is None
+                    or (date_start := _strict_iso_date(
+                        request.metadata.get("date_start")
+                    ))
+                    is None
+                    or (date_end := _strict_iso_date(
+                        request.metadata.get("date_end")
+                    ))
+                    is None
+                    or not (date_start <= publish_date <= date_end)
+                    for row in rows
+                )
+            ):
+                raise ValueError(
+                    f"csindex_list_response_semantics_invalid:{request.request_id}"
+                )
+        totals = {
+            _nonnegative_int(body.get("total")) for _request, body, _hash in captured
+        }
+        if len(totals) != 1 or None in totals:
+            raise ValueError(f"csindex_list_total_invalid:{leaf_id}")
+        total = int(next(iter(totals)))
+        page_count = max(1, math.ceil(total / CSINDEX_PAGE_SIZE))
+        if page_count > CSINDEX_MAX_PAGES_PER_MONTH:
+            raise ValueError(f"csindex_list_page_budget_invalid:{leaf_id}")
+        expected_pages = (
+            range(1, page_count + 1) if require_full_page_chains else (1,)
+        )
+        resolved_leaf = dict(leaf) | {
+            "reported_total": total,
+            "page_count": page_count,
+        }
+        resolved.append(resolved_leaf)
+        base_requests.extend(
+            _with_csindex_capture_profile(
+                _list_request(resolved_leaf, page=page),
+                capture_profile=capture_profile,
+                profile_complete=capture_profile == CSINDEX_FULL_PROFILE,
+            )
+            for page in expected_pages
+        )
+    expected_requests = base_requests
+    if source_ancestry is not None and source_binding is not None:
+        expected_requests = [
+            _with_csindex_source_evidence(
+                request, source_ancestry, source_binding
+            )
+            for request in base_requests
+        ]
+    actual_by_id = {request.request_id: request.semantic() for request in requests}
+    expected_by_id = {
+        request.request_id: request.semantic() for request in expected_requests
+    }
+    if actual_by_id != expected_by_id:
+        raise ValueError("csindex_list_request_semantics_invalid")
+    return resolved, base_requests, capture_profile == CSINDEX_FULL_PROFILE
+
+
+def _csindex_filter_topic_present(value: Any) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    rows = value.get("data")
+    if not isinstance(rows, list):
+        return False
+    return any(
+        isinstance(row, Mapping)
+        and "index_rebalance"
+        in {
+            str(item)
+            for item in (
+                row.get("key"),
+                row.get("value"),
+                row.get("name"),
+                row.get("code"),
+            )
+            if item is not None
+        }
+        for row in rows
     )
 
 
@@ -1266,6 +2812,24 @@ def _request_id(leaf: Mapping[str, Any], page: int) -> str:
     return f"csindex_{leaf['leaf_id']}_page_{page:03d}"
 
 
+def _with_csindex_capture_profile(
+    request: ProviderProbeRequest,
+    *,
+    capture_profile: str,
+    profile_complete: bool,
+) -> ProviderProbeRequest:
+    return ProviderProbeRequest(
+        **{
+            **request.__dict__,
+            "metadata": dict(request.metadata)
+            | {
+                "capture_profile": capture_profile,
+                "profile_complete": profile_complete,
+            },
+        }
+    )
+
+
 def _captured_list_pages(manifest_path: str | Path) -> dict[str, dict[str, Any]]:
     root = Path(manifest_path).parent
     plan = read_json(root / "request_plan.json")
@@ -1281,9 +2845,136 @@ def _captured_list_pages(manifest_path: str | Path) -> dict[str, dict[str, Any]]
         request = requests.get(request_id)
         if not request or (request.get("metadata") or {}).get("case") != "csindex_list":
             continue
-        official = json.loads(base64.b64decode(wrapper["raw_payload_base64"], validate=True))
-        pages[request_id] = json.loads(base64.b64decode(official["body_base64"], validate=True))
+        _official, body = _decode_csindex_official_http_envelope(
+            wrapper,
+            request=_request_from_semantic(request),
+            terminal=terminal,
+        )
+        pages[request_id] = json.loads(body)
     return pages
+
+
+def _validate_csindex_authorized_contract(
+    contract: Mapping[str, Any],
+    *,
+    phase: str,
+    capture_profile: str,
+    request_count: int,
+) -> None:
+    policy = CSINDEX_PHASE_RUNTIME_POLICY.get(phase)
+    adapter = contract.get("adapter_identity") or {}
+    attachment_phase = phase in {
+        "csindex-attachments",
+        "csindex-legacy-cons-repair",
+    }
+    expected_hosts = (
+        ["oss-ch.csindex.com.cn"]
+        if phase == "csindex-legacy-cons-repair"
+        else (
+            list(CSINDEX_ATTACHMENT_HOSTS)
+            if capture_profile == CSINDEX_ATTACHMENT_FULL_PROFILE
+            else list(contract.get("allowed_hosts") or ())
+            if capture_profile == CSINDEX_ATTACHMENT_HOST_SLICE_PROFILE
+            else ["www.csindex.com.cn"]
+        )
+    )
+    retries = int((policy or {}).get("max_retries") or -1)
+    expected_budget = {
+        "max_requests": request_count * (retries + 1),
+        "max_wire_exchanges": request_count * (retries + 1),
+        "max_response_bytes": (policy or {}).get("max_response_bytes"),
+        "max_total_response_bytes": (policy or {}).get(
+            "max_total_response_bytes"
+        ),
+        "timeout_seconds": (policy or {}).get("timeout_seconds"),
+        "minimum_delay_seconds": (policy or {}).get(
+            "minimum_delay_seconds"
+        ),
+        "max_retries": retries,
+    }
+    expected_identity_keys = {
+        "adapter",
+        "implementation_root",
+        "http",
+        "capture_profile",
+        "profile_complete",
+    }
+    if attachment_phase:
+        expected_identity_keys |= {
+            "attachment_contract",
+            "attachment_body_max_bytes",
+        }
+    if phase != "csindex-discovery":
+        expected_identity_keys |= {
+            "input_capture_content_hash",
+            "source_binding_root",
+            "source_ancestry_root",
+            "source_upstream_content_hashes_root",
+        }
+    if (
+        policy is None
+        or contract.get("schema_version") != "free_provider_backfill_contract_v2"
+        or contract.get("provider") != "csindex"
+        or contract.get("permission_context_id") != DEFAULT_PERMISSION_CONTEXT
+        or contract.get("capture_public_key_sha256")
+        != CSINDEX_APPROVED_CAPTURE_KEY_SHA256
+        or contract.get("activity_name") != policy["activity_name"]
+        or contract.get("scope") != CSINDEX_SCOPE
+        or contract.get("allowed_hosts") != expected_hosts
+        or contract.get("budget") != expected_budget
+        or contract.get("source_profile_id") != CSINDEX_SOURCE_PROFILE_ID
+        or contract.get("mode") != "signed_raw_provider_capture"
+        or contract.get("capture_before_normalization") is not True
+        or contract.get("old_lake_mutated") is not False
+        or re.fullmatch(
+            r"[0-9a-f]{64}", str(contract.get("population_root") or "")
+        )
+        is None
+        or set(adapter) != expected_identity_keys
+        or adapter.get("adapter") != CSINDEX_PHASE_ADAPTERS[phase]
+        or adapter.get("http") != CSINDEX_HTTP_IDENTITY
+        or adapter.get("capture_profile") != capture_profile
+        or adapter.get("profile_complete")
+        != str(
+            capture_profile
+            in {
+                CSINDEX_FULL_PROFILE,
+                CSINDEX_ATTACHMENT_FULL_PROFILE,
+                CSINDEX_LEGACY_CONS_REPAIR_PROFILE,
+            }
+        ).lower()
+        or re.fullmatch(
+            r"[0-9a-f]{64}", str(adapter.get("implementation_root") or "")
+        )
+        is None
+        or (
+            phase != "csindex-discovery"
+            and any(
+                re.fullmatch(r"[0-9a-f]{64}", str(adapter.get(key) or ""))
+                is None
+                for key in (
+                    "input_capture_content_hash",
+                    "source_binding_root",
+                    "source_ancestry_root",
+                    "source_upstream_content_hashes_root",
+                )
+            )
+        )
+        or (
+            attachment_phase
+            and (
+                adapter.get("attachment_body_max_bytes")
+                != CSINDEX_ATTACHMENT_BODY_MAX_BYTES
+                or adapter.get("attachment_contract")
+                != (
+                    "csindex_legacy_cons_exact_repair_contract_v1"
+                    if phase == "csindex-legacy-cons-repair"
+                    else "csindex_attachment_capture_contract_v3"
+                )
+            )
+        )
+    ):
+        raise ValueError("csindex_authorized_contract_closure_invalid")
 
 
 def _contract(
@@ -1299,28 +2990,118 @@ def _contract(
     retries: int,
     permission_context_id: str,
     allowed_hosts: Sequence[str] = ("www.csindex.com.cn",),
+    capture_profile: str | None = None,
+    source_binding: Mapping[str, Any] | None = None,
 ) -> FreeProviderBackfillContract:
-    attachment_phase = phase == "csindex-attachments"
+    attachment_phase = phase in {
+        "csindex-attachments",
+        "csindex-legacy-cons-repair",
+    }
+    resolved_profile = capture_profile or (
+        CSINDEX_LEGACY_CONS_REPAIR_PROFILE
+        if phase == "csindex-legacy-cons-repair"
+        else (
+            CSINDEX_ATTACHMENT_FULL_PROFILE
+            if phase == "csindex-attachments"
+            else CSINDEX_FULL_PROFILE
+        )
+    )
+    expected_adapter = CSINDEX_PHASE_ADAPTERS.get(phase)
+    if expected_adapter is None:
+        raise ValueError("csindex_contract_phase_invalid")
+    allowed_profile_by_phase = {
+        "csindex-discovery": {
+            CSINDEX_FULL_PROFILE,
+            CSINDEX_DISCOVERY_SLICE_PROFILE,
+        },
+        "csindex-inventory": {CSINDEX_FULL_PROFILE},
+        "csindex-details": {CSINDEX_FULL_PROFILE},
+        "csindex-attachments": {
+            CSINDEX_ATTACHMENT_FULL_PROFILE,
+            CSINDEX_ATTACHMENT_HOST_SLICE_PROFILE,
+        },
+        "csindex-legacy-cons-repair": {CSINDEX_LEGACY_CONS_REPAIR_PROFILE},
+    }
+    host_set = set(allowed_hosts)
+    if (
+        resolved_profile not in allowed_profile_by_phase[phase]
+        or (
+            resolved_profile == CSINDEX_ATTACHMENT_FULL_PROFILE
+            and host_set != set(CSINDEX_ATTACHMENT_HOSTS)
+        )
+        or (
+            resolved_profile == CSINDEX_ATTACHMENT_HOST_SLICE_PROFILE
+            and (not host_set or not host_set < set(CSINDEX_ATTACHMENT_HOSTS))
+        )
+        or (
+            resolved_profile == CSINDEX_LEGACY_CONS_REPAIR_PROFILE
+            and host_set != {"oss-ch.csindex.com.cn"}
+        )
+        or (
+            phase in {"csindex-discovery", "csindex-inventory", "csindex-details"}
+            and host_set != {"www.csindex.com.cn"}
+        )
+        or (phase == "csindex-legacy-cons-repair" and request_count != 2)
+    ):
+        raise ValueError("csindex_contract_profile_or_host_scope_invalid")
     identity = {
-        "adapter": (
-            "csindex_attachments_signed_binary_capture_v2"
-            if attachment_phase
-            else f"csindex_{phase}_signed_http_capture_v1"
-        ),
+        "adapter": expected_adapter,
         "implementation_root": _implementation_root(),
-        "http": "python_urllib_no_redirect_v1",
+        "http": CSINDEX_HTTP_IDENTITY,
+        "capture_profile": resolved_profile,
+        "profile_complete": str(
+            resolved_profile
+            in {
+                CSINDEX_FULL_PROFILE,
+                CSINDEX_ATTACHMENT_FULL_PROFILE,
+                CSINDEX_LEGACY_CONS_REPAIR_PROFILE,
+            }
+        ).lower(),
     }
     if attachment_phase:
-        identity["attachment_contract"] = "csindex_attachment_capture_contract_v2"
+        identity["attachment_contract"] = (
+            "csindex_legacy_cons_exact_repair_contract_v1"
+            if phase == "csindex-legacy-cons-repair"
+            else "csindex_attachment_capture_contract_v3"
+        )
         identity["attachment_body_max_bytes"] = CSINDEX_ATTACHMENT_BODY_MAX_BYTES
     if input_capture_hash:
         identity["input_capture_content_hash"] = input_capture_hash
-    return FreeProviderBackfillContract(
-        activity_name=(
-            "free_domestic_csindex_attachments_2011_2019_v2"
-            if attachment_phase
-            else f"free_domestic_csindex_{phase}_2011_2019_v1"
-        ),
+    if phase != "csindex-discovery":
+        if source_binding is None:
+            raise ValueError("csindex_contract_source_binding_missing")
+        ancestry_root = str(source_binding.get("source_ancestry_root") or "")
+        binding_root = str(source_binding.get("content_hash") or "")
+        upstream_root = str(source_binding.get("upstream_content_hashes_root") or "")
+        if (
+            source_binding.get("phase") != phase
+            or source_binding.get("capture_profile") != resolved_profile
+            or source_binding.get("input_capture_content_hash")
+            != input_capture_hash
+            or any(
+                re.fullmatch(r"[0-9a-f]{64}", value) is None
+                for value in (ancestry_root, binding_root, upstream_root)
+            )
+            or (
+                attachment_phase
+                and (source_binding.get("derivation") or {}).get(
+                    "selected_hosts"
+                )
+                != [
+                    host
+                    for host in CSINDEX_ATTACHMENT_HOSTS
+                    if host in host_set
+                ]
+            )
+        ):
+            raise ValueError("csindex_contract_source_binding_invalid")
+        identity |= {
+            "source_binding_root": binding_root,
+            "source_ancestry_root": ancestry_root,
+            "source_upstream_content_hashes_root": upstream_root,
+        }
+    contract = FreeProviderBackfillContract(
+        activity_name=str(CSINDEX_PHASE_RUNTIME_POLICY[phase]["activity_name"]),
         provider="csindex",
         output_root=output_root,
         permission_context_id=permission_context_id,
@@ -1349,15 +3130,286 @@ def _contract(
         ),
         adapter_identity=identity,
     )
+    _validate_csindex_authorized_contract(
+        contract.semantic(),
+        phase=phase,
+        capture_profile=resolved_profile,
+        request_count=request_count,
+    )
+    return contract
+
+
+def _csindex_phase_from_contract(
+    contract: Mapping[str, Any],
+    *,
+    request_count: int,
+) -> tuple[str, str]:
+    adapter = str((contract.get("adapter_identity") or {}).get("adapter") or "")
+    phases = [
+        phase
+        for phase, expected_adapter in CSINDEX_PHASE_ADAPTERS.items()
+        if adapter == expected_adapter
+    ]
+    if len(phases) != 1:
+        raise ValueError("csindex_governance_phase_invalid")
+    phase = phases[0]
+    capture_profile = str(
+        (contract.get("adapter_identity") or {}).get("capture_profile") or ""
+    )
+    _validate_csindex_authorized_contract(
+        contract,
+        phase=phase,
+        capture_profile=capture_profile,
+        request_count=request_count,
+    )
+    return phase, capture_profile
+
+
+def _csindex_generation_manifest(
+    provider_root: Path,
+    *,
+    phase: str,
+    generation_id: str,
+) -> Path:
+    phase_root = provider_root / phase.replace("csindex-", "").replace("-", "_")
+    candidate = phase_root / "generations" / generation_id / MANIFEST_NAME
+    if (
+        not candidate.is_file()
+        or candidate.is_symlink()
+        or candidate.parent.is_symlink()
+        or candidate.resolve() != candidate.absolute()
+    ):
+        raise ValueError("csindex_upstream_generation_missing_or_unconfined")
+    return candidate
+
+
+def validate_csindex_governance(
+    path: str | Path,
+    *,
+    _provider_root: Path | None = None,
+    _visited: frozenset[tuple[str, str]] = frozenset(),
+) -> dict[str, Any]:
+    """Replay and recursively authenticate one CSI generation and all ancestors."""
+
+    validated = validate_free_provider_backfill(path)
+    root = Path(str(validated["manifest_path"])).parent
+    contract = read_json(root / "activity_contract.json")
+    plan = read_json(root / "request_plan.json")
+    requests = [_request_from_semantic(row) for row in plan.get("requests") or ()]
+    phase, capture_profile = _csindex_phase_from_contract(
+        contract, request_count=len(requests)
+    )
+    output_root = root.parent.parent
+    provider_root = (_provider_root or output_root.parent).resolve()
+    expected_output = (
+        provider_root / phase.replace("csindex-", "").replace("-", "_")
+    ).resolve()
+    if output_root.resolve() != expected_output:
+        raise ValueError("csindex_governance_output_geometry_invalid")
+    visit = (phase, str(validated.get("generation_id") or ""))
+    if visit in _visited:
+        raise ValueError("csindex_upstream_generation_cycle")
+    visited = _visited | {visit}
+    normalizers = {
+        "csindex-discovery": normalize_csindex_discovery,
+        "csindex-inventory": normalize_csindex_inventory,
+        "csindex-details": normalize_csindex_details,
+        "csindex-attachments": normalize_csindex_attachments,
+        "csindex-legacy-cons-repair": normalize_csindex_legacy_cons_repair,
+    }
+    roles = {
+        "csindex-discovery": (
+            "csindex_announcement_inventory",
+            "csindex_page_coverage",
+        ),
+        "csindex-inventory": (
+            "csindex_announcement_inventory",
+            "csindex_page_coverage",
+        ),
+        "csindex-details": ("csindex_announcement_details",),
+        "csindex-attachments": ("csindex_attachment_index",),
+        "csindex-legacy-cons-repair": ("csindex_attachment_index",),
+    }
+    replayed, replay_root = replay_normalized_artifacts(
+        validated["manifest_path"],
+        normalizer=normalizers[phase],
+        required_roles=roles[phase] + ("normalized_manifest",),
+    )
+    normalized_manifest = json.loads(replayed["normalized_manifest"])
+    if (
+        not isinstance(normalized_manifest, Mapping)
+        or normalized_manifest.get("capture_profile") != capture_profile
+        or not isinstance(normalized_manifest.get("profile_complete"), bool)
+    ):
+        raise ValueError("csindex_governance_normalized_profile_invalid")
+    signature_integrity = validated.get("publication_signature_verified") is True
+    approved_key = (
+        signature_integrity
+        and contract.get("capture_public_key_sha256")
+        == CSINDEX_APPROVED_CAPTURE_KEY_SHA256
+    )
+    source_ancestry: dict[str, Any] | None = None
+    source_binding: dict[str, Any] | None = None
+    upstream_result: dict[str, Any] | None = None
+    if phase != "csindex-discovery":
+        source_ancestry, source_binding = _csindex_request_source_evidence(
+            requests, phase=phase
+        )
+        if (
+            normalized_manifest.get("source_ancestry") != source_ancestry
+            or normalized_manifest.get("source_binding") != source_binding
+        ):
+            raise ValueError("csindex_governance_normalized_source_binding_invalid")
+        direct_sources = list(source_ancestry.get("direct_sources") or ())
+        if len(direct_sources) != 1:
+            raise ValueError("csindex_governance_direct_source_closure_invalid")
+        declared_direct = direct_sources[0]
+        source_phase = str(declared_direct.get("source_phase") or "")
+        source_manifest = _csindex_generation_manifest(
+            provider_root,
+            phase=source_phase,
+            generation_id=str(declared_direct.get("source_generation_id") or ""),
+        )
+        upstream_result = validate_csindex_governance(
+            source_manifest,
+            _provider_root=provider_root,
+            _visited=visited,
+        )
+        if upstream_result.get("csindex_phase") != source_phase:
+            raise ValueError("csindex_governance_upstream_phase_invalid")
+        expected_ancestry = upstream_result.get("csindex_downstream_ancestry")
+        if not isinstance(expected_ancestry, Mapping):
+            raise ValueError("csindex_governance_upstream_ineligible")
+        if source_ancestry != expected_ancestry:
+            raise ValueError("csindex_governance_real_ancestry_mismatch")
+        recomputed_binding = _csindex_source_binding(
+            phase=phase,
+            capture_profile=capture_profile,
+            input_capture_content_hash=str(
+                source_binding["input_capture_content_hash"]
+            ),
+            source_ancestry=expected_ancestry,
+            derivation=dict(source_binding["derivation"]),
+        )
+        adapter = contract.get("adapter_identity") or {}
+        if (
+            source_binding != recomputed_binding
+            or adapter.get("input_capture_content_hash")
+            != recomputed_binding["input_capture_content_hash"]
+            or adapter.get("source_binding_root")
+            != recomputed_binding["content_hash"]
+            or adapter.get("source_ancestry_root")
+            != recomputed_binding["source_ancestry_root"]
+            or adapter.get("source_upstream_content_hashes_root")
+            != recomputed_binding["upstream_content_hashes_root"]
+        ):
+            raise ValueError("csindex_governance_real_binding_mismatch")
+    profile_complete = normalized_manifest.get("profile_complete") is True
+    upstream_eligible = (
+        upstream_result is None
+        or upstream_result.get("csindex_downstream_eligible") is True
+    )
+    weak_source = bool(
+        source_ancestry is not None
+        and source_ancestry.get("weak_source_ancestry") is True
+    )
+    downstream_eligible = bool(
+        approved_key and profile_complete and upstream_eligible and not weak_source
+    )
+    blockers: list[str] = []
+    if not approved_key:
+        blockers.append("capture_key_not_approved")
+    if not profile_complete:
+        blockers.append("capture_profile_incomplete")
+    if not upstream_eligible or weak_source:
+        blockers.append("upstream_lineage_ineligible")
+    result = validated | {
+        "signature_integrity_verified": signature_integrity,
+        "approved_capture_key_verified": approved_key,
+        "normalized_artifacts_integrity_verified": validated.get(
+            "normalized_artifacts_trusted"
+        )
+        is True,
+        "normalized_artifacts_trusted": downstream_eligible,
+        "csindex_phase": phase,
+        "csindex_downstream_eligible": downstream_eligible,
+        "pit_membership_authorized": False,
+        "historical_known_at_proven": False,
+        "csindex_governance_qualification": {
+            "schema_version": "csindex_governance_qualification_v1",
+            "signature_integrity_verified": signature_integrity,
+            "approved_capture_key_verified": approved_key,
+            "downstream_eligible": downstream_eligible,
+            "hardened_replay_root": replay_root,
+            "pit_membership_authorized": False,
+            "historical_known_at_proven": False,
+            "blockers": blockers,
+        },
+    }
+    downstream_ancestry: dict[str, Any] | None = None
+    if downstream_eligible and phase in {
+        "csindex-discovery",
+        "csindex-inventory",
+        "csindex-details",
+    }:
+        direct = _csindex_direct_source(
+            result,
+            expected_phase=phase,
+            expected_profiles=(CSINDEX_FULL_PROFILE,),
+        )
+        stage = {
+            "csindex-discovery": "discovery_capture",
+            "csindex-inventory": "inventory_capture",
+            "csindex-details": "details_capture",
+        }[phase]
+        downstream_ancestry = _csindex_source_ancestry(
+            source_stage=stage,
+            direct_sources=(direct,),
+            upstream_ancestry=(source_ancestry,) if source_ancestry else (),
+        )
+    result["csindex_downstream_ancestry"] = downstream_ancestry
+    return result
 
 
 def _implementation_root() -> str:
     return canonical_hash(
         {
+            "official_http_decoder": inspect.getsource(
+                _decode_csindex_official_payload
+            )
+            + inspect.getsource(_decode_csindex_official_http_envelope),
+            "source_capture_replay": inspect.getsource(
+                _replay_validated_csindex_source
+            ),
+            "governance_validation": inspect.getsource(
+                _validate_csindex_authorized_contract
+            )
+            + inspect.getsource(_csindex_phase_from_contract)
+            + inspect.getsource(_csindex_generation_manifest)
+            + inspect.getsource(validate_csindex_governance),
+            "source_ancestry": inspect.getsource(_csindex_direct_source)
+            + inspect.getsource(_validate_csindex_direct_source)
+            + inspect.getsource(_csindex_source_ancestry)
+            + inspect.getsource(_validate_csindex_source_ancestry)
+            + inspect.getsource(_csindex_upstream_content_hashes),
+            "source_binding": inspect.getsource(_csindex_source_binding)
+            + inspect.getsource(_validate_csindex_source_binding)
+            + inspect.getsource(_with_csindex_source_evidence)
+            + inspect.getsource(_csindex_request_source_evidence)
+            + inspect.getsource(_validate_csindex_binding_derivation),
             "discovery_plan": inspect.getsource(build_csindex_discovery_plan),
             "inventory_plan": inspect.getsource(build_csindex_inventory_plan),
             "detail_plan": inspect.getsource(build_csindex_detail_plan),
+            "detail_request": inspect.getsource(_csindex_detail_request),
             "attachment_plan": inspect.getsource(build_csindex_attachment_plan),
+            "legacy_cons_repair_plan": inspect.getsource(
+                build_csindex_legacy_cons_repair_plan
+            ),
+            "legacy_cons_repair_population": inspect.getsource(
+                _legacy_cons_repair_population
+            )
+            + inspect.getsource(_validate_legacy_cons_repair_population)
+            + inspect.getsource(_legacy_cons_repair_path_dates),
             "attachment_population": inspect.getsource(
                 _attachment_population_from_details
             )
@@ -1366,6 +3418,11 @@ def _implementation_root() -> str:
                 _AttachmentReferenceParser
             ),
             "attachment_requests": inspect.getsource(_attachment_requests),
+            "attachment_population_profiles": inspect.getsource(
+                _attachment_population_for_hosts
+            )
+            + inspect.getsource(_restore_full_attachment_population)
+            + inspect.getsource(_attachment_request_identity),
             "attachment_host_policy": inspect.getsource(
                 _selected_attachment_hosts
             )
@@ -1377,10 +3434,15 @@ def _implementation_root() -> str:
             + inspect.getsource(_attachment_extension)
             + inspect.getsource(_attachment_path_dates),
             "list_normalizer": inspect.getsource(_normalize_list_pages),
+            "list_request_closure": inspect.getsource(
+                _validate_csindex_list_request_closure
+            )
+            + inspect.getsource(_csindex_filter_topic_present),
             "detail_normalizer": inspect.getsource(normalize_csindex_details),
             "attachment_normalizer": inspect.getsource(
                 normalize_csindex_attachments
-            ),
+            )
+            + inspect.getsource(normalize_csindex_legacy_cons_repair),
             "transport": inspect.getsource(CSIndexBackfillTransport),
             "attachment_transport": inspect.getsource(
                 CSIndexAttachmentTransport
@@ -1402,9 +3464,46 @@ def _implementation_root() -> str:
                 "temporal_blocker": CSINDEX_ATTACHMENT_TEMPORAL_BLOCKER,
                 "body_max_bytes": CSINDEX_ATTACHMENT_BODY_MAX_BYTES,
             },
+            "list_request_helpers": inspect.getsource(_captured_list_pages)
+            + inspect.getsource(_month_leaves)
+            + inspect.getsource(_list_request)
+            + inspect.getsource(_filter_request)
+            + inspect.getsource(_request_id)
+            + inspect.getsource(_with_csindex_capture_profile)
+            + inspect.getsource(_strict_iso_date)
+            + inspect.getsource(_nonnegative_int),
+            "phase_profile_constants": {
+                "scope": CSINDEX_SCOPE,
+                "source_ancestry_schema": CSINDEX_SOURCE_ANCESTRY_SCHEMA,
+                "source_binding_schema": CSINDEX_SOURCE_BINDING_SCHEMA,
+                "full_profile": CSINDEX_FULL_PROFILE,
+                "discovery_slice_profile": CSINDEX_DISCOVERY_SLICE_PROFILE,
+                "attachment_full_profile": CSINDEX_ATTACHMENT_FULL_PROFILE,
+                "attachment_host_slice_profile": (
+                    CSINDEX_ATTACHMENT_HOST_SLICE_PROFILE
+                ),
+                "legacy_cons_repair_profile": (
+                    CSINDEX_LEGACY_CONS_REPAIR_PROFILE
+                ),
+                "phase_adapters": CSINDEX_PHASE_ADAPTERS,
+                "source_profile_id": CSINDEX_SOURCE_PROFILE_ID,
+                "approved_capture_key_sha256": (
+                    CSINDEX_APPROVED_CAPTURE_KEY_SHA256
+                ),
+                "http_identity": CSINDEX_HTTP_IDENTITY,
+                "phase_runtime_policy": CSINDEX_PHASE_RUNTIME_POLICY,
+                "legacy_cons_repair_rows": CSINDEX_LEGACY_CONS_REPAIR_ROWS,
+                "page_size": CSINDEX_PAGE_SIZE,
+                "max_pages_per_month": CSINDEX_MAX_PAGES_PER_MONTH,
+                "json_body_max_bytes": CSINDEX_JSON_BODY_MAX_BYTES,
+            },
+            "contract": inspect.getsource(_contract),
             "official_http_transport": inspect.getsource(OfficialHttpProbeTransport),
             "official_http_transport_module_sha256": sha256_file(
                 Path(run_provider_probe_module.__file__)
+            ),
+            "shared_capture_engine_module_sha256": sha256_file(
+                Path(free_provider_backfill_module.__file__)
             ),
         }
     )
@@ -1419,6 +3518,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "csindex-inventory",
             "csindex-details",
             "csindex-attachments",
+            "csindex-legacy-cons-repair",
         ),
         required=True,
     )
@@ -1444,7 +3544,11 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     if args.validate:
-        payload = validate_free_provider_backfill(args.validate)
+        try:
+            payload = validate_csindex_governance(args.validate)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print(json.dumps({"status": "blocked", "reason": str(exc)}, sort_keys=True))
+            return 1
         print(_render(payload, pretty=args.pretty))
         return 0
     input_hash: str | None = None
@@ -1473,7 +3577,7 @@ def main(argv: list[str] | None = None) -> int:
         population, requests, input_hash = build_csindex_detail_plan(args.input_capture)
         normalizer = normalize_csindex_details
         default_delay = 7.5
-    else:
+    elif args.phase == "csindex-attachments":
         if args.leaf_id:
             raise SystemExit("--leaf-id is not valid for csindex-attachments")
         if not args.input_capture:
@@ -1485,6 +3589,23 @@ def main(argv: list[str] | None = None) -> int:
         )
         normalizer = normalize_csindex_attachments
         transport_type = CSIndexAttachmentTransport
+        default_delay = 2.0
+    else:
+        if args.leaf_id or args.attachment_host:
+            raise SystemExit(
+                "--leaf-id/--attachment-host are not valid for "
+                "csindex-legacy-cons-repair"
+            )
+        if not args.input_capture:
+            raise SystemExit(
+                "--input-capture is required for csindex-legacy-cons-repair"
+            )
+        population, requests, input_hash = build_csindex_legacy_cons_repair_plan(
+            args.input_capture
+        )
+        normalizer = normalize_csindex_legacy_cons_repair
+        transport_type = CSIndexAttachmentTransport
+        attachment_hosts = ("oss-ch.csindex.com.cn",)
         default_delay = 2.0
     delay = args.minimum_delay_seconds if args.minimum_delay_seconds is not None else default_delay
     population_root = canonical_hash(
@@ -1517,6 +3638,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     signer = PersistentReceiptSigner.load(DEFAULT_CAPTURE_KEY)
     output = SCOPE_ROOT / "csindex" / args.phase.replace("csindex-", "").replace("-", "_")
+    capture_profile = str(requests[0].metadata.get("capture_profile") or "")
+    source_binding = requests[0].metadata.get("source_binding")
     contract = _contract(
         phase=args.phase,
         output_root=output,
@@ -1529,6 +3652,10 @@ def main(argv: list[str] | None = None) -> int:
         retries=args.max_retries,
         permission_context_id=args.permission_context_id,
         allowed_hosts=attachment_hosts,
+        capture_profile=capture_profile,
+        source_binding=(
+            source_binding if isinstance(source_binding, Mapping) else None
+        ),
     )
     if args.plan_only:
         print(

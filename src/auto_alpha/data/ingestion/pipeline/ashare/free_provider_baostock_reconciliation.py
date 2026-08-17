@@ -23,10 +23,12 @@ from .free_provider_backfill import (
     NormalizedArtifact,
     RecoveringBaostockTransport,
     _baostock_logical_rows,
+    _baostock_logical_rows_with_reconciliation,
     _from_baostock_code,
     _public_key_hash,
     baostock_wire_protocol_root,
     build_baostock_state_plan,
+    replay_normalized_artifacts,
     run_free_provider_backfill,
     validate_free_provider_backfill,
 )
@@ -59,6 +61,94 @@ SECURITY_SNAPSHOT_APPROVED_POPULATION_ROOT = (
 )
 SECURITY_SNAPSHOT_OPEN_DATE_COUNT = 1_945
 SECURITY_SNAPSHOT_REQUEST_COUNT = 1_946
+SECURITY_SNAPSHOT_APPROVED_REQUEST_PLAN_HASH = (
+    "a63998510e1652b0f9ba345bf9c3f738ef26fc15f6c35770646105dbfc1cf783"
+)
+BAOSTOCK_APPROVED_CAPTURE_KEY_SHA256 = (
+    "0afef940a253b9ef0f3702af5eb099c4ed48209975bc4f1991a471e4c50f446f"
+)
+BAOSTOCK_SOURCE_PROFILE_ID = "dap_d785714ef1b912a20c0f19ca"
+BAOSTOCK_AUTHORIZATION_POLICY = (
+    "human_authorized_free_domestic_baostock_reconciliation_v1"
+)
+BAOSTOCK_SECURITIES_SOURCE_SHA256 = (
+    "4d2cac55283a4382169ea96decad333995cf51be081b6896be2142626a512f42"
+)
+BAOSTOCK_CALENDAR_SOURCE_SHA256 = (
+    "2cf3c5996addc76f02d9ee80cef55db391a9753b62b696b4596d9efa63435b9d"
+)
+BAOSTOCK_COMPRESSED_TRAILER_SEMANTICS = (
+    "opaque_decimal_preserved_integrity_unverified_zlib_stream_checksum_verified"
+)
+BAOSTOCK_PAGINATION_CONTRACT = {
+    "first_page": 1,
+    "page_size": 2000,
+    "max_pages_per_request": 4,
+    "continuation_requires_full_page": True,
+    "terminal_page_requires_less_than_page_size": True,
+    "exact_multiple_requires_empty_terminal_page": True,
+}
+
+_BAOSTOCK_PHASE_BASELINES: dict[str, dict[str, Any]] = {
+    "adjustments": {
+        "population_count": 3798,
+        "population_root": "6e5ccc539a4e361c798d0c16e6616d07dedd56a4e81ba5c9f99d0b073e2d12fb",
+        "request_count": 3798,
+        "request_plan_hash": "1906ec659098c4ad1322a1d33ade56dd6147925d3de1df0dc788fec48c97e933",
+    },
+    "hs300-snapshots": {
+        "population_count": 1946,
+        "population_root": "f171e5952f9998abdbd202b0e7fa0876b34c8b29cd34989b8da00cce453b47f2",
+        "request_count": 1946,
+        "request_plan_hash": "f448161d8538bccdaad47ada56487d8278b2a594f9f053b877be75b5618c26bc",
+    },
+    "dividends": {
+        "population_count": 3798,
+        "population_root": "6e5ccc539a4e361c798d0c16e6616d07dedd56a4e81ba5c9f99d0b073e2d12fb",
+        "request_count": 34182,
+        "request_plan_hash": "54384b5ce6c7d91195d1d41bb519161702c2e271a2c667f50f6b629e8b43ca00",
+    },
+    "security-basic": {
+        "population_count": 3798,
+        "population_root": "6e5ccc539a4e361c798d0c16e6616d07dedd56a4e81ba5c9f99d0b073e2d12fb",
+        "request_count": 3798,
+        "request_plan_hash": "14eae9c872cd8e6a2ed0145904e2d9d636dd5deccb5d2d0e41c0e48e50955e1a",
+    },
+    "security-snapshots": {
+        "population_count": SECURITY_SNAPSHOT_REQUEST_COUNT,
+        "population_root": SECURITY_SNAPSHOT_APPROVED_POPULATION_ROOT,
+        "request_count": SECURITY_SNAPSHOT_REQUEST_COUNT,
+        "request_plan_hash": SECURITY_SNAPSHOT_APPROVED_REQUEST_PLAN_HASH,
+    },
+    "index-daily": {
+        "population_count": 1,
+        "population_root": "0a3be75bd4c5ee78a4fb77a414f8e922f94b0973360cdd390f02692808ae980f",
+        "request_count": 1,
+        "request_plan_hash": "b53ce4c3f70b4e17eb99912c12e2c3d1872e329849267d953d4e679d3e861421",
+    },
+    "turnover": {
+        "population_count": 3798,
+        "population_root": "6e5ccc539a4e361c798d0c16e6616d07dedd56a4e81ba5c9f99d0b073e2d12fb",
+        "request_count": 3798,
+        "request_plan_hash": "11e2e1de0c2925a26aa8e38b76d774054bbf561534a49e9d109185e142e6c2c2",
+    },
+}
+
+
+def _approved_source_file_hash(
+    path: str | Path, *, expected_sha256: str, role: str
+) -> str:
+    try:
+        observed = sha256_file(Path(path))
+    except OSError as exc:
+        raise ValueError(
+            f"baostock_reconciliation_source_file_unavailable:{role}"
+        ) from exc
+    if observed != expected_sha256:
+        raise ValueError(
+            f"baostock_reconciliation_source_file_sha256_mismatch:{role}"
+        )
+    return observed
 
 
 def build_security_basic_plan(
@@ -66,6 +156,11 @@ def build_security_basic_plan(
     *,
     include_codes: Sequence[str] | None = None,
 ) -> tuple[list[dict[str, Any]], list[ProviderProbeRequest]]:
+    _approved_source_file_hash(
+        securities_path,
+        expected_sha256=BAOSTOCK_SECURITIES_SOURCE_SHA256,
+        role="securities",
+    )
     population, _state_requests = build_baostock_state_plan(
         securities_path, include_codes=include_codes
     )
@@ -106,6 +201,12 @@ def build_security_snapshot_plan(
     calendar_path: str | Path = CALENDAR_PATH,
 ) -> tuple[list[str], list[ProviderProbeRequest]]:
     """Freeze one full-provider security snapshot for every governed open day."""
+
+    _approved_source_file_hash(
+        calendar_path,
+        expected_sha256=BAOSTOCK_CALENDAR_SOURCE_SHA256,
+        role="calendar",
+    )
 
     open_dates = [
         str(row.get("trade_date") or "")
@@ -214,6 +315,11 @@ def build_turnover_plan(
     *,
     include_codes: Sequence[str] | None = None,
 ) -> tuple[list[dict[str, Any]], list[ProviderProbeRequest]]:
+    _approved_source_file_hash(
+        securities_path,
+        expected_sha256=BAOSTOCK_SECURITIES_SOURCE_SHA256,
+        role="securities",
+    )
     population, _state_requests = build_baostock_state_plan(
         securities_path, include_codes=include_codes
     )
@@ -257,6 +363,11 @@ def build_turnover_plan(
 def build_adjustment_plan(
     securities_path: str | Path = SECURITIES_PATH,
 ) -> tuple[list[dict[str, Any]], list[ProviderProbeRequest]]:
+    _approved_source_file_hash(
+        securities_path,
+        expected_sha256=BAOSTOCK_SECURITIES_SOURCE_SHA256,
+        role="securities",
+    )
     population, _state_requests = build_baostock_state_plan(securities_path)
     requests = [
         ProviderProbeRequest(
@@ -294,6 +405,11 @@ def build_adjustment_plan(
 def build_hs300_snapshot_plan(
     calendar_path: str | Path = CALENDAR_PATH,
 ) -> tuple[list[str], list[ProviderProbeRequest]]:
+    _approved_source_file_hash(
+        calendar_path,
+        expected_sha256=BAOSTOCK_CALENDAR_SOURCE_SHA256,
+        role="calendar",
+    )
     open_dates = {
         str(row.get("trade_date") or "")
         for row in _read_jsonl(Path(calendar_path))
@@ -335,6 +451,11 @@ def build_hs300_snapshot_plan(
 def build_dividend_plan(
     securities_path: str | Path = SECURITIES_PATH,
 ) -> tuple[list[dict[str, Any]], list[ProviderProbeRequest]]:
+    _approved_source_file_hash(
+        securities_path,
+        expected_sha256=BAOSTOCK_SECURITIES_SOURCE_SHA256,
+        role="securities",
+    )
     population, _state_requests = build_baostock_state_plan(securities_path)
     requests: list[ProviderProbeRequest] = []
     for row in population:
@@ -390,6 +511,9 @@ def normalize_security_snapshots(
     conflicts: list[dict[str, Any]] = []
     record_count = 0
     coverage_count = 0
+    package_parser_loss_request_count = 0
+    package_parser_loss_row_count = 0
+    package_parser_loss_cell_count = 0
     observed_query_dates: set[str] = set()
     if set(terminal) != {request.request_id for request in requests}:
         raise ValueError("baostock_security_snapshot_terminal_closure_invalid")
@@ -443,7 +567,9 @@ def normalize_security_snapshots(
                 )
                 continue
             try:
-                fields, items = _baostock_logical_rows(raw_payload)
+                fields, items, parser_diagnostics = (
+                    _baostock_logical_rows_with_reconciliation(raw_payload)
+                )
             except (TypeError, ValueError, json.JSONDecodeError) as exc:
                 conflicts.append(
                     {
@@ -462,6 +588,19 @@ def normalize_security_snapshots(
                     }
                 )
                 continue
+            parser_loss_detected = bool(
+                parser_diagnostics["package_parser_loss_detected"]
+            )
+            parser_loss_rows = int(
+                parser_diagnostics["package_parser_loss_row_count"]
+            )
+            parser_loss_cells = int(
+                parser_diagnostics["package_parser_loss_cell_count"]
+            )
+            if parser_loss_detected:
+                package_parser_loss_request_count += 1
+                package_parser_loss_row_count += parser_loss_rows
+                package_parser_loss_cell_count += parser_loss_cells
             source_request_semantic_hash = canonical_hash(request.semantic())
             normalized_rows: list[dict[str, Any]] = []
             provider_codes: set[str] = set()
@@ -528,6 +667,9 @@ def normalize_security_snapshots(
                     "source_request_id": request.request_id,
                     "source_request_semantic_hash": source_request_semantic_hash,
                     "source_payload_sha256": source_payload_sha256,
+                    "package_parser_loss_detected": parser_loss_detected,
+                    "package_parser_loss_row_count": parser_loss_rows,
+                    "package_parser_loss_cell_count": parser_loss_cells,
                 },
             )
             coverage_count += 1
@@ -553,6 +695,14 @@ def normalize_security_snapshots(
         "provider_code_name_pit_proven": False,
         "alias_adjudicated": False,
         "raw_market_data_rewritten": False,
+        "authoritative_value_source": "raw_wire_response_record",
+        "package_parser_usage": "reconciliation_only",
+        "package_parser_semantics": "baostock_0_9_3_setData_split_join",
+        "package_parser_loss_request_count": (
+            package_parser_loss_request_count
+        ),
+        "package_parser_loss_row_count": package_parser_loss_row_count,
+        "package_parser_loss_cell_count": package_parser_loss_cell_count,
         "blockers": [
             "provider_code_name_is_not_pit_evidence",
             "historical_provider_code_aliases_not_adjudicated",
@@ -954,6 +1104,28 @@ def _normalize_tabular(
     )
 
 
+def _adapter_identity(
+    phase: str,
+    *,
+    implementation_root: str | None = None,
+    wire_protocol_root: str | None = None,
+) -> dict[str, str]:
+    return {
+        "adapter": f"baostock_{phase}_reconciliation_capture_v2",
+        "authorization_policy": BAOSTOCK_AUTHORIZATION_POLICY,
+        "baostock_distribution": "0.9.3",
+        "baostock_client": "00.9.30",
+        "calendar_source_sha256": BAOSTOCK_CALENDAR_SOURCE_SHA256,
+        "compressed_trailer_semantics": BAOSTOCK_COMPRESSED_TRAILER_SEMANTICS,
+        "implementation_root": implementation_root or _implementation_root(),
+        "pagination_contract_root": canonical_hash(
+            BAOSTOCK_PAGINATION_CONTRACT
+        ),
+        "securities_source_sha256": BAOSTOCK_SECURITIES_SOURCE_SHA256,
+        "wire_protocol_root": wire_protocol_root or baostock_wire_protocol_root(),
+    }
+
+
 def _contract(
     *,
     phase: str,
@@ -965,7 +1137,13 @@ def _contract(
     timeout: float,
     retries: int,
     permission_context_id: str,
+    securities_path: str | Path = SECURITIES_PATH,
+    calendar_path: str | Path = CALENDAR_PATH,
 ) -> FreeProviderBackfillContract:
+    _approved_source_file_hashes(
+        securities_path=securities_path,
+        calendar_path=calendar_path,
+    )
     if phase == "security-snapshots" and (
         request_count != SECURITY_SNAPSHOT_REQUEST_COUNT
         or population_root != SECURITY_SNAPSHOT_APPROVED_POPULATION_ROOT
@@ -997,26 +1175,412 @@ def _contract(
         allowed_hosts=("public-api.baostock.com",),
         budget=BackfillResourceBudget(
             max_requests=request_count * (retries + 1),
-            max_wire_exchanges=request_count * (retries + 2),
+            max_wire_exchanges=request_count * 2 * (retries + 1),
             max_response_bytes=64 * 1024 * 1024,
             max_total_response_bytes=16 * 1024 * 1024 * 1024,
             timeout_seconds=timeout,
             minimum_delay_seconds=delay,
             max_retries=retries,
         ),
-        adapter_identity={
-            "adapter": f"baostock_{phase}_reconciliation_capture_v1",
-            "baostock_distribution": "0.9.3",
-            "baostock_client": "00.9.30",
-            "implementation_root": _implementation_root(),
-        },
+        adapter_identity=_adapter_identity(phase),
+        source_profile_id=BAOSTOCK_SOURCE_PROFILE_ID,
     )
 
 
+def _phase_definition(phase: str) -> dict[str, Any]:
+    definitions: dict[str, dict[str, Any]] = {
+        "adjustments": {
+            "normalizer": normalize_adjustments,
+            "roles": (
+                "adjustment_factor_reconciliation",
+                "coverage",
+                "conflicts",
+                "normalized_manifest",
+            ),
+            "blockers": (
+                "historical_adjustment_revision_timestamp_unavailable",
+                "company_action_causal_chain_unproven",
+            ),
+        },
+        "hs300-snapshots": {
+            "normalizer": normalize_hs300_snapshots,
+            "roles": (
+                "hs300_snapshot_reconciliation",
+                "conflicts",
+                "normalized_manifest",
+            ),
+            "blockers": (
+                "snapshot_update_date_is_not_publication_time",
+                "historical_weight_unavailable",
+            ),
+        },
+        "dividends": {
+            "normalizer": normalize_dividends,
+            "roles": (
+                "dividend_reconciliation",
+                "coverage",
+                "conflicts",
+                "normalized_manifest",
+            ),
+            "blockers": ("dividend_event_version_history_unavailable",),
+        },
+        "security-basic": {
+            "normalizer": normalize_security_basic,
+            "roles": (
+                "security_basic_reconciliation",
+                "coverage",
+                "conflicts",
+                "normalized_manifest",
+            ),
+            "blockers": (
+                "historical_name_change_timeline_unavailable",
+                "query_returns_current_aggregate_not_pit_versions",
+            ),
+        },
+        "security-snapshots": {
+            "normalizer": normalize_security_snapshots,
+            "roles": (
+                "security_snapshot_reconciliation",
+                "security_snapshot_coverage",
+                "conflicts",
+                "normalized_manifest",
+            ),
+            "blockers": (
+                "provider_code_name_is_not_pit_evidence",
+                "historical_provider_code_aliases_not_adjudicated",
+                "st_and_suspension_authoritative_absence_proof_unavailable",
+            ),
+        },
+        "index-daily": {
+            "normalizer": normalize_index_daily,
+            "roles": (
+                "index_daily_bars_reconciliation",
+                "coverage",
+                "conflicts",
+                "normalized_manifest",
+            ),
+            "blockers": ("formal_index_bar_coverage_use_not_bound",),
+        },
+        "turnover": {
+            "normalizer": normalize_turnover,
+            "roles": (
+                "daily_turnover_reconciliation",
+                "coverage",
+                "conflicts",
+                "normalized_manifest",
+            ),
+            "blockers": (
+                "volume_ratio_unavailable",
+                "historical_total_market_value_unavailable",
+                "formal_daily_basic_coverage_use_not_bound",
+            ),
+        },
+    }
+    try:
+        definition = dict(definitions[phase])
+        baseline = dict(_BAOSTOCK_PHASE_BASELINES[phase])
+    except KeyError as exc:
+        raise ValueError("baostock_reconciliation_phase_invalid") from exc
+    if phase == "security-snapshots":
+        baseline.update(
+            {
+                "population_count": SECURITY_SNAPSHOT_REQUEST_COUNT,
+                "population_root": SECURITY_SNAPSHOT_APPROVED_POPULATION_ROOT,
+                "request_count": SECURITY_SNAPSHOT_REQUEST_COUNT,
+                "request_plan_hash": (
+                    SECURITY_SNAPSHOT_APPROVED_REQUEST_PLAN_HASH
+                ),
+            }
+        )
+    definition.update(baseline)
+    definition["request_start"] = (
+        "20110101"
+        if phase
+        in {
+            "dividends",
+            "hs300-snapshots",
+            "security-snapshots",
+            "turnover",
+        }
+        else "20120101"
+    )
+    return definition
+
+
+def validate_baostock_reconciliation_capture(
+    path: str | Path,
+    *,
+    expected_phase: str,
+    require_current_replay_compatible: bool = True,
+) -> dict[str, Any]:
+    """Validate one authorized phase and replay every normalized byte."""
+
+    definition = _phase_definition(expected_phase)
+    capture = validate_free_provider_backfill(path)
+    if capture.get("publication_signature_verified") is not True:
+        raise ValueError(
+            "baostock_reconciliation_publication_signature_required"
+        )
+    if (
+        capture.get("status") != "succeeded"
+        or capture.get("raw_capture_replay_eligible") is not True
+    ):
+        raise ValueError("baostock_reconciliation_capture_incomplete")
+    root = Path(str(capture["manifest_path"])).parent
+    contract = read_json(root / "activity_contract.json")
+    plan = read_json(root / "request_plan.json")
+    expected_activity_name = (
+        f"free_domestic_baostock_{expected_phase}_2012_2019_v1"
+    )
+    if contract.get("activity_name") != expected_activity_name:
+        raise ValueError("baostock_reconciliation_phase_mismatch")
+    if (
+        contract.get("capture_public_key_sha256")
+        != BAOSTOCK_APPROVED_CAPTURE_KEY_SHA256
+    ):
+        raise ValueError("baostock_reconciliation_capture_key_unauthorized")
+    adapter = contract.get("adapter_identity")
+    if not isinstance(adapter, Mapping):
+        raise ValueError("baostock_reconciliation_adapter_identity_invalid")
+    current_root = _implementation_root()
+    current_replay_compatible = (
+        adapter.get("implementation_root") == current_root
+        and adapter.get("wire_protocol_root") == baostock_wire_protocol_root()
+    )
+    expected_contract_keys = {
+        "schema_version",
+        "activity_name",
+        "provider",
+        "output_namespace_id",
+        "permission_context_id",
+        "population_root",
+        "capture_public_key_sha256",
+        "capture_public_key_pem_b64",
+        "scope",
+        "allowed_hosts",
+        "budget",
+        "adapter_identity",
+        "source_profile_id",
+        "mode",
+        "capture_before_normalization",
+        "old_lake_mutated",
+        "safety",
+    }
+    request_count = int(definition["request_count"])
+    expected_budget = {
+        "max_requests": request_count * 3,
+        "max_wire_exchanges": request_count * 6,
+        "max_response_bytes": 64 * 1024 * 1024,
+        "max_total_response_bytes": 16 * 1024 * 1024 * 1024,
+        "timeout_seconds": 30.0,
+        "minimum_delay_seconds": 1.0,
+        "max_retries": 2,
+    }
+    expected_scope = {
+        "date_start": "20120101",
+        "date_end": "20191231",
+        "request_start": definition["request_start"],
+        "request_end": "20191231",
+    }
+    expected_output_namespace = canonical_hash(
+        str((SCOPE_ROOT / expected_phase.replace("-", "_")).resolve())
+    )
+    observed_implementation_root = str(adapter.get("implementation_root") or "")
+    observed_wire_protocol_root = str(adapter.get("wire_protocol_root") or "")
+    if not re.fullmatch(r"[0-9a-f]{64}", observed_implementation_root) or not (
+        re.fullmatch(r"[0-9a-f]{64}", observed_wire_protocol_root)
+    ):
+        raise ValueError("baostock_reconciliation_adapter_identity_invalid")
+    expected_adapter = _adapter_identity(
+        expected_phase,
+        implementation_root=observed_implementation_root,
+        wire_protocol_root=observed_wire_protocol_root,
+    )
+    safety = contract.get("safety")
+    if (
+        set(contract) != expected_contract_keys
+        or contract.get("schema_version")
+        != "free_provider_backfill_contract_v2"
+        or contract.get("provider") != "baostock"
+        or contract.get("output_namespace_id") != expected_output_namespace
+        or contract.get("permission_context_id") != PERMISSION_CONTEXT
+        or contract.get("population_root") != definition["population_root"]
+        or contract.get("scope") != expected_scope
+        or contract.get("allowed_hosts") != ["public-api.baostock.com"]
+        or contract.get("budget") != expected_budget
+        or dict(adapter) != expected_adapter
+        or contract.get("source_profile_id") != BAOSTOCK_SOURCE_PROFILE_ID
+        or contract.get("mode") != "signed_raw_provider_capture"
+        or contract.get("capture_before_normalization") is not True
+        or contract.get("old_lake_mutated") is not False
+        or not isinstance(safety, Mapping)
+        or not safety
+        or any(value is not False for value in safety.values())
+    ):
+        raise ValueError("baostock_reconciliation_contract_closure_invalid")
+    requests = plan.get("requests")
+    if (
+        set(plan) != {"schema_version", "request_plan_hash", "requests"}
+        or plan.get("schema_version")
+        != "free_provider_backfill_request_plan_v1"
+        or not isinstance(requests, list)
+        or len(requests) != request_count
+        or plan.get("request_plan_hash") != definition["request_plan_hash"]
+        or canonical_hash(requests) != definition["request_plan_hash"]
+        or capture.get("request_plan_hash") != definition["request_plan_hash"]
+        or capture.get("request_count") != request_count
+        or any(
+            row.get("provider") != "baostock"
+            or urllib.parse.urlsplit(str(row.get("url") or "")).hostname
+            != "public-api.baostock.com"
+            for row in requests
+        )
+    ):
+        raise ValueError("baostock_reconciliation_request_plan_closure_invalid")
+
+    required_roles = tuple(definition["roles"])
+    artifacts = capture.get("normalized_artifacts")
+    if not isinstance(artifacts, list):
+        raise ValueError("baostock_reconciliation_artifact_closure_invalid")
+    artifact_by_role = {
+        str(artifact.get("role") or ""): artifact for artifact in artifacts
+    }
+    if (
+        len(artifact_by_role) != len(artifacts)
+        or set(artifact_by_role) != set(required_roles)
+        or any(
+            set(artifact)
+            != {
+                "role",
+                "relative_path",
+                "record_count",
+                "sha256",
+                "size_bytes",
+            }
+            for artifact in artifacts
+        )
+    ):
+        raise ValueError("baostock_reconciliation_artifact_closure_invalid")
+    if any(
+        artifact_by_role[role].get("record_count")
+        != (
+            1
+            if role == "normalized_manifest"
+            else len(
+                (
+                    root
+                    / str(artifact_by_role[role]["relative_path"])
+                ).read_bytes().splitlines()
+            )
+        )
+        for role in required_roles
+    ):
+        raise ValueError("baostock_reconciliation_artifact_closure_invalid")
+    base_result = {
+        "schema_version": "baostock_reconciliation_validation_v1",
+        "phase": expected_phase,
+        "content_hash": capture["content_hash"],
+        "signed_integrity_verified": True,
+        "publication_signature_verified": True,
+        "approved_capture_key_verified": True,
+        "operator_capture_contract_authorized": current_replay_compatible,
+        "provider_origin_attested": False,
+        "capture_runtime_isolation_verified": False,
+        "provider_trailer_integrity_for_compressed_responses": "unverified",
+        "zlib_stream_checksum_verified_for_compressed_responses": True,
+        "current_replay_compatible": current_replay_compatible,
+        "data_admission_eligible": False,
+        "downstream_ineligible": True,
+    }
+    if not current_replay_compatible:
+        if require_current_replay_compatible:
+            raise ValueError(
+                "baostock_reconciliation_current_replay_incompatible"
+            )
+        return base_result | {
+            "phase_contract_verified": True,
+            "historical_contract_closure_verified": True,
+            "normalized_replay_identical": False,
+            "population_count": definition["population_count"],
+            "population_root": definition["population_root"],
+            "request_count": request_count,
+            "request_plan_hash": definition["request_plan_hash"],
+            "qualification": "quarantined_historical_integrity_only",
+            "blockers": [
+                "current_replay_implementation_identity_mismatch",
+                "operator_capture_contract_not_currently_authorized",
+                "provider_origin_not_attested",
+                "capture_runtime_isolation_not_attested",
+            ],
+        }
+    replayed, replay_root = replay_normalized_artifacts(
+        capture["manifest_path"],
+        normalizer=definition["normalizer"],
+        required_roles=required_roles,
+    )
+    if any(
+        replayed[role]
+        != (root / str(artifact_by_role[role]["relative_path"])).read_bytes()
+        for role in required_roles
+    ):
+        raise ValueError("baostock_reconciliation_replay_mismatch")
+    return base_result | {
+        "phase_contract_verified": True,
+        "normalized_replay_identical": True,
+        "normalized_replay_root": replay_root,
+        "population_count": definition["population_count"],
+        "population_root": definition["population_root"],
+        "request_count": request_count,
+        "request_plan_hash": definition["request_plan_hash"],
+        "qualification": "quarantined_reconciliation_only",
+        "blockers": [
+            "provider_origin_not_attested",
+            "capture_runtime_isolation_not_attested",
+            *definition["blockers"],
+        ],
+    }
+
+
 def _implementation_root() -> str:
+    shared_capture_source = inspect.getsourcefile(run_free_provider_backfill)
+    provider_probe_source = inspect.getsourcefile(BaostockProbeTransport)
+    if not shared_capture_source or not provider_probe_source:
+        raise ValueError("baostock_reconciliation_source_identity_unavailable")
     return canonical_hash(
         {
+            "reconciliation_module_sha256": sha256_file(Path(__file__)),
+            "shared_capture_module_sha256": sha256_file(
+                Path(shared_capture_source)
+            ),
+            "provider_probe_module_sha256": sha256_file(
+                Path(provider_probe_source)
+            ),
+            "adapter_identity": inspect.getsource(_adapter_identity),
             "contract_builder": inspect.getsource(_contract),
+            "phase_definition": inspect.getsource(_phase_definition),
+            "specialized_validator": inspect.getsource(
+                validate_baostock_reconciliation_capture
+            ),
+            "approved_source_file_hashes": inspect.getsource(
+                _approved_source_file_hashes
+            ),
+            "governance_policy": {
+                "approved_capture_key_sha256": (
+                    BAOSTOCK_APPROVED_CAPTURE_KEY_SHA256
+                ),
+                "source_profile_id": BAOSTOCK_SOURCE_PROFILE_ID,
+                "permission_context": PERMISSION_CONTEXT,
+                "authorization_policy": BAOSTOCK_AUTHORIZATION_POLICY,
+                "securities_source_sha256": (
+                    BAOSTOCK_SECURITIES_SOURCE_SHA256
+                ),
+                "calendar_source_sha256": BAOSTOCK_CALENDAR_SOURCE_SHA256,
+                "compressed_trailer_semantics": (
+                    BAOSTOCK_COMPRESSED_TRAILER_SEMANTICS
+                ),
+                "pagination_contract": BAOSTOCK_PAGINATION_CONTRACT,
+                "phase_baselines": _BAOSTOCK_PHASE_BASELINES,
+            },
             "adjustment_plan": inspect.getsource(build_adjustment_plan),
             "security_basic_plan": inspect.getsource(build_security_basic_plan),
             "security_snapshot_plan": inspect.getsource(
@@ -1098,12 +1662,104 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _approved_source_file_hashes(
+    *, securities_path: str | Path, calendar_path: str | Path
+) -> dict[str, str]:
+    return {
+        "securities": _approved_source_file_hash(
+            securities_path,
+            expected_sha256=BAOSTOCK_SECURITIES_SOURCE_SHA256,
+            role="securities",
+        ),
+        "calendar": _approved_source_file_hash(
+            calendar_path,
+            expected_sha256=BAOSTOCK_CALENDAR_SOURCE_SHA256,
+            role="calendar",
+        ),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     if args.validate:
-        payload = validate_free_provider_backfill(args.validate)
+        try:
+            payload = validate_baostock_reconciliation_capture(
+                args.validate, expected_phase=args.phase
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print(
+                _render(
+                    {
+                        "schema_version": (
+                            "baostock_reconciliation_validation_error_v1"
+                        ),
+                        "phase": args.phase,
+                        "status": "blocked",
+                        "reason": str(exc),
+                        "data_admission_eligible": False,
+                        "downstream_ineligible": True,
+                    },
+                    pretty=args.pretty,
+                )
+            )
+            return 2
         print(_render(payload, pretty=args.pretty))
         return 0
+    if args.security_code:
+        print(
+            _render(
+                {
+                    "schema_version": "baostock_reconciliation_policy_block_v1",
+                    "phase": args.phase,
+                    "status": "blocked",
+                    "reason": "governed_phase_subset_forbidden",
+                    "data_admission_eligible": False,
+                    "downstream_ineligible": True,
+                },
+                pretty=args.pretty,
+            )
+        )
+        return 2
+    if (
+        args.permission_context_id != PERMISSION_CONTEXT
+        or args.minimum_delay_seconds != 1.0
+        or args.timeout_seconds != 30.0
+        or args.max_retries != 2
+    ):
+        print(
+            _render(
+                {
+                    "schema_version": "baostock_reconciliation_policy_block_v1",
+                    "phase": args.phase,
+                    "status": "blocked",
+                    "reason": "governed_phase_runtime_policy_drift",
+                    "data_admission_eligible": False,
+                    "downstream_ineligible": True,
+                },
+                pretty=args.pretty,
+            )
+        )
+        return 2
+    try:
+        _approved_source_file_hashes(
+            securities_path=args.securities_path,
+            calendar_path=args.calendar_path,
+        )
+    except ValueError as exc:
+        print(
+            _render(
+                {
+                    "schema_version": "baostock_reconciliation_policy_block_v1",
+                    "phase": args.phase,
+                    "status": "blocked",
+                    "reason": str(exc),
+                    "data_admission_eligible": False,
+                    "downstream_ineligible": True,
+                },
+                pretty=args.pretty,
+            )
+        )
+        return 2
     if args.phase == "adjustments":
         population, requests = build_adjustment_plan(args.securities_path)
         normalizer = normalize_adjustments
@@ -1139,6 +1795,26 @@ def main(argv: list[str] | None = None) -> int:
         "request_plan_hash": canonical_hash([request.semantic() for request in requests]),
         "network_called": False,
     }
+    definition = _phase_definition(args.phase)
+    if (
+        preview["population_count"] != definition["population_count"]
+        or preview["population_root"] != definition["population_root"]
+        or preview["request_count"] != definition["request_count"]
+        or preview["request_plan_hash"] != definition["request_plan_hash"]
+    ):
+        print(
+            _render(
+                preview
+                | {
+                    "status": "blocked",
+                    "reason": "baostock_reconciliation_plan_policy_mismatch",
+                    "data_admission_eligible": False,
+                    "downstream_ineligible": True,
+                },
+                pretty=args.pretty,
+            )
+        )
+        return 2
     if args.plan_only and not CAPTURE_KEY.is_file():
         print(_render(preview | {"capture_key_status": "not_initialized"}, pretty=args.pretty))
         return 0
@@ -1155,6 +1831,22 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     signer = PersistentReceiptSigner.load(CAPTURE_KEY)
+    if _public_key_hash(signer.public_key_pem) != (
+        BAOSTOCK_APPROVED_CAPTURE_KEY_SHA256
+    ):
+        print(
+            _render(
+                preview
+                | {
+                    "status": "blocked",
+                    "reason": "baostock_reconciliation_capture_key_unauthorized",
+                    "data_admission_eligible": False,
+                    "downstream_ineligible": True,
+                },
+                pretty=args.pretty,
+            )
+        )
+        return 2
     output = SCOPE_ROOT / args.phase.replace("-", "_")
     contract = _contract(
         phase=args.phase,
@@ -1166,6 +1858,8 @@ def main(argv: list[str] | None = None) -> int:
         timeout=args.timeout_seconds,
         retries=args.max_retries,
         permission_context_id=args.permission_context_id,
+        securities_path=args.securities_path,
+        calendar_path=args.calendar_path,
     )
     if args.plan_only:
         print(
@@ -1191,6 +1885,11 @@ def main(argv: list[str] | None = None) -> int:
         )
     finally:
         transport.close()
+    if result.get("status") == "succeeded":
+        validation = validate_baostock_reconciliation_capture(
+            result["manifest_path"], expected_phase=args.phase
+        )
+        result = result | {"specialized_validation": validation}
     print(_render(result, pretty=args.pretty))
     return 0 if result.get("status") == "succeeded" else 1
 
