@@ -98,6 +98,7 @@ raw 日状态数与 coverage-use 数不同，是因为前者统计 provider 返�
 | 当前重跑链 | 状态 | 完成条件与约束 |
 | --- | --- | --- |
 | Baostock `hs300-snapshots` v2 | **已暂停、未发布**：runtime contract `d6e8a7a9...`、activity `a8e90319...`；1,621 positive 日期；`2018-08-30` 六次连接失败；1,627 attempts、1,628 exchanges、41,458,942 bytes；pause `f46b57ae...` | 5/15/30/60/120 秒冷却全部执行，第六次后没有第七次；旧 v1 `464eed...` 与 v2 均不可拼接或冒充完成。后续登录已恢复，但 v3/扩大预算须重新人工批准 |
+| Baostock `hs300-snapshots` v3 | **已批准、待启动**：完整 1,946 日期；contract `d093449d...`、预计 activity `0b56f72e...`；最多 13,622 requests / 27,244 exchanges | 独立 `hs300_snapshots_v3/`；不复用 v1/v2；初始 + 6 retries，冷却 5/15/30/60/120/300 秒；只授权数据补采，发布后仍是 PIT reconciliation 而非 Admission |
 | CNINFO strong base chain | **采集中/须按 current identity 重跑**：`base discovery → inventory → documents` | closure 会递归找到实际 discovery parents 并从 signed raw 重建 discovery→inventory 计划；不能用实现变化前的 base 与新 supplemental 拼接。2011 也须沿 strong inventory 重抓 |
 | CNINFO strong supplemental chain | **已中断、可按相同 activity 恢复**：inventory 为 8,139/9,662 terminal，8,050 positive、89 empty、0 error；尚无 publication | 官网 page 101 会回卷 page 1；2015-11/12 `secondary_offerings` 各拆成两个无缝半月叶。旧 `212e...` generation 与 `7f9d...` 中间 activity 保留不用；不能把 8,139 个中间回执写成完成 |
 | CNINFO document closure | **closure seam 已实现，真实 residual capture 尚未形成终态证据** | base/supplemental 逻辑 demand 与唯一物理文档分离；递归重放 discovery/inventory/document 父证据，只下载 residual；每个文档恰有一个 disposition。人工 resume 参数在 trusted authority 未实现时固定 fail closed；旧 2011 derived disposition 仍 weak/quarantined |
@@ -140,6 +141,7 @@ activity/contract、pause 原因、新预算或 breaker 处置、批准主体和
 | CSI signed range capture | 新 seam 24 项通过；既有 CSI 回归 47 项通过 | full/range、strong ETag/If-Range、durable exchange sidecar、恢复、篡改和预算负向路径 |
 | Baostock wire terminal | 20 项通过；相关回归组 27 项和 2 项通过 | 精确成功空 terminal slot、non-terminal 拒绝、raw/package reconciliation 和新 activity 身份 |
 | Baostock `hs300-snapshots` v2 | 专项 9 项通过；official-backfill 全文件 144 项通过 | 1,946-date full replay、6 attempts/request、11,676 request cap、父 pause 精确绑定、跨崩溃冷却恢复和 exact historical allowlist |
+| Baostock `hs300-snapshots` v3 | v2/v3/allowlist 专项 11 项通过 | v2 pause 强绑定、独立 v3 namespace、7 attempts/request、13,622 request cap、六档冷却和无第八次请求 |
 
 这些是代码合同验证，不是对正在采集活动的完成声明。
 

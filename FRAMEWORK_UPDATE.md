@@ -2,6 +2,15 @@
 
 This file records only the current A-share architecture and recent governed milestones. Detailed historical implementation is available through Git history rather than duplicated task-by-task prose.
 
+## 2026-08-20 — Bounded Baostock CSI300 snapshot replay v3
+
+### Outcome
+
+- Bound the explicit 2026-08-20 approval to a separate `hs300-snapshots` v3 policy: complete 1,946-date replay, no v1/v2 raw or journal reuse, one initial attempt plus at most six retries, cooldowns `5/15/30/60/120/300` seconds, 13,622 request and 27,244 wire-exchange ceilings, and data-acquisition-only authority.
+- Required exact replay of the v2 pause ancestry before contract creation or validation: contract `d6e8a7a9...`, activity `a8e90319...`, plan `f448161d...`, all 1,627 signed terminal attempts/raw hashes and pause `f46b57ae...`. Missing or changed evidence blocks before network.
+- Assigned the independent `hs300_snapshots_v3/` namespace and runtime plan identity: contract `d093449d...`, projected activity `0b56f72e...`, first request `20111230`, last request `20191231`. Partial activity reuse remains forbidden and every downstream permission remains false.
+- Added v3 budget/cooldown/no-eighth-attempt regression coverage; the focused v2/v3/allowlist group passes 11/11.
+
 ## 2026-08-20 — Bounded Baostock CSI300 snapshot replay v2
 
 ### Outcome

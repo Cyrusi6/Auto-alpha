@@ -105,6 +105,43 @@ BAOSTOCK_HS300_RETRY_V2_CONNECTION_COOLDOWNS = (
     60.0,
     120.0,
 )
+BAOSTOCK_HS300_RETRY_V3_POLICY_ID = (
+    "baostock_hs300_snapshots_connection_retry_v3"
+)
+BAOSTOCK_HS300_RETRY_V3_PERMISSION_CONTEXT = (
+    "human_authorization_20260820_baostock_hs300_retry_v3"
+)
+BAOSTOCK_HS300_RETRY_V3_AUTHORIZATION_POLICY = (
+    "human_authorized_baostock_hs300_full_replay_retry_v3"
+)
+BAOSTOCK_HS300_RETRY_V3_APPROVED_PAUSE_CONTENT_HASH = (
+    "f46b57aec2c34d19b790342b397266fcd8aed60746df80f47ca387ed18ff9673"
+)
+BAOSTOCK_HS300_RETRY_V3_PAUSED_ACTIVITY_ID = (
+    "a8e9031907b3308bd788d47b2f82b5cf79a079f8ed3b07a565bb947a7a8d6c88"
+)
+BAOSTOCK_HS300_RETRY_V3_PAUSED_CONTRACT_ID = (
+    "d6e8a7a9a4ab994cfedfdd27decf949469bc4025e45f5f8948d8ad3f00a981ad"
+)
+BAOSTOCK_HS300_RETRY_V3_PAUSED_REQUEST_PLAN_HASH = (
+    "f448161d8538bccdaad47ada56487d8278b2a594f9f053b877be75b5618c26bc"
+)
+BAOSTOCK_HS300_RETRY_V3_PAUSED_REQUEST_COUNT = 1_946
+BAOSTOCK_HS300_RETRY_V3_PAUSED_REQUEST_ID = "baostock_hs300_20180830"
+BAOSTOCK_HS300_RETRY_V3_CONNECTION_COOLDOWNS = (
+    5.0,
+    15.0,
+    30.0,
+    60.0,
+    120.0,
+    300.0,
+)
+BAOSTOCK_HS300_RETRY_POLICY_IDS = frozenset(
+    {
+        BAOSTOCK_HS300_RETRY_V2_POLICY_ID,
+        BAOSTOCK_HS300_RETRY_V3_POLICY_ID,
+    }
+)
 BAOSTOCK_HISTORICAL_REPLAY_ALLOWLIST = frozenset(
     {
         (
@@ -244,22 +281,33 @@ def _acquisition_policy(
             max_retries=2,
             connection_failure_cooldowns=(),
         )
-    if (
-        policy_id != BAOSTOCK_HS300_RETRY_V2_POLICY_ID
-        or phase != "hs300-snapshots"
-    ):
+    if phase != "hs300-snapshots":
         raise ValueError("baostock_acquisition_policy_phase_invalid")
-    return _BaostockAcquisitionPolicy(
-        policy_id=policy_id,
-        activity_version="v2",
-        permission_context_id=BAOSTOCK_HS300_RETRY_V2_PERMISSION_CONTEXT,
-        authorization_policy=BAOSTOCK_HS300_RETRY_V2_AUTHORIZATION_POLICY,
-        output_name="hs300_snapshots_v2",
-        max_retries=5,
-        connection_failure_cooldowns=(
-            BAOSTOCK_HS300_RETRY_V2_CONNECTION_COOLDOWNS
-        ),
-    )
+    if policy_id == BAOSTOCK_HS300_RETRY_V2_POLICY_ID:
+        return _BaostockAcquisitionPolicy(
+            policy_id=policy_id,
+            activity_version="v2",
+            permission_context_id=BAOSTOCK_HS300_RETRY_V2_PERMISSION_CONTEXT,
+            authorization_policy=BAOSTOCK_HS300_RETRY_V2_AUTHORIZATION_POLICY,
+            output_name="hs300_snapshots_v2",
+            max_retries=5,
+            connection_failure_cooldowns=(
+                BAOSTOCK_HS300_RETRY_V2_CONNECTION_COOLDOWNS
+            ),
+        )
+    if policy_id == BAOSTOCK_HS300_RETRY_V3_POLICY_ID:
+        return _BaostockAcquisitionPolicy(
+            policy_id=policy_id,
+            activity_version="v3",
+            permission_context_id=BAOSTOCK_HS300_RETRY_V3_PERMISSION_CONTEXT,
+            authorization_policy=BAOSTOCK_HS300_RETRY_V3_AUTHORIZATION_POLICY,
+            output_name="hs300_snapshots_v3",
+            max_retries=6,
+            connection_failure_cooldowns=(
+                BAOSTOCK_HS300_RETRY_V3_CONNECTION_COOLDOWNS
+            ),
+        )
+    raise ValueError("baostock_acquisition_policy_phase_invalid")
 
 
 def _verify_hs300_retry_v2_pause_evidence() -> str:
@@ -441,6 +489,196 @@ def _verify_hs300_retry_v2_pause_evidence() -> str:
     ):
         raise ValueError("baostock_hs300_retry_v2_pause_evidence_invalid")
     return observed_hash
+
+
+def _verify_hs300_retry_v3_pause_evidence() -> str:
+    activity_root = (
+        SCOPE_ROOT
+        / ".hs300_snapshots_v2.activities"
+        / BAOSTOCK_HS300_RETRY_V3_PAUSED_ACTIVITY_ID
+    )
+    contract_path = activity_root / "activity_contract.json"
+    plan_path = activity_root / "request_plan.json"
+    journal_path = activity_root / "capture_journal.jsonl"
+    pause_path = activity_root / "pauses" / (
+        "pause_"
+        f"{BAOSTOCK_HS300_RETRY_V3_APPROVED_PAUSE_CONTENT_HASH[:24]}.json"
+    )
+    required_paths = (
+        activity_root,
+        contract_path,
+        plan_path,
+        journal_path,
+        pause_path,
+    )
+    if (
+        not activity_root.is_dir()
+        or any(path.is_symlink() for path in required_paths)
+        or any(not path.is_file() for path in required_paths[1:])
+    ):
+        raise ValueError("baostock_hs300_retry_v3_pause_evidence_missing")
+    contract = read_json(contract_path)
+    plan = read_json(plan_path)
+    requests = plan.get("requests")
+    contract_id = canonical_hash(contract)
+    request_plan_hash = (
+        canonical_hash(requests) if isinstance(requests, list) else ""
+    )
+    expected_activity_id = canonical_hash(
+        {
+            "contract_id": contract_id,
+            "request_plan_hash": request_plan_hash,
+        }
+    )
+    if (
+        contract_id != BAOSTOCK_HS300_RETRY_V3_PAUSED_CONTRACT_ID
+        or set(plan) != {"schema_version", "request_plan_hash", "requests"}
+        or plan.get("schema_version")
+        != "free_provider_backfill_request_plan_v1"
+        or request_plan_hash
+        != BAOSTOCK_HS300_RETRY_V3_PAUSED_REQUEST_PLAN_HASH
+        or plan.get("request_plan_hash") != request_plan_hash
+        or len(requests or ())
+        != BAOSTOCK_HS300_RETRY_V3_PAUSED_REQUEST_COUNT
+        or expected_activity_id != BAOSTOCK_HS300_RETRY_V3_PAUSED_ACTIVITY_ID
+        or activity_root.name != expected_activity_id
+        or contract.get("activity_name")
+        != "free_domestic_baostock_hs300-snapshots_2012_2019_v2"
+        or contract.get("provider") != "baostock"
+        or contract.get("permission_context_id")
+        != BAOSTOCK_HS300_RETRY_V2_PERMISSION_CONTEXT
+        or contract.get("population_root")
+        != SECURITY_SNAPSHOT_APPROVED_POPULATION_ROOT
+        or contract.get("capture_public_key_sha256")
+        != BAOSTOCK_APPROVED_CAPTURE_KEY_SHA256
+        or contract.get("source_profile_id") != BAOSTOCK_SOURCE_PROFILE_ID
+        or contract.get("budget")
+        != {
+            "max_requests": (
+                BAOSTOCK_HS300_RETRY_V3_PAUSED_REQUEST_COUNT * 6
+            ),
+            "max_response_bytes": 64 * 1024 * 1024,
+            "max_retries": 5,
+            "max_total_response_bytes": 16 * 1024 * 1024 * 1024,
+            "max_wire_exchanges": (
+                BAOSTOCK_HS300_RETRY_V3_PAUSED_REQUEST_COUNT * 12
+            ),
+            "minimum_delay_seconds": 1.0,
+            "timeout_seconds": 30.0,
+        }
+    ):
+        raise ValueError("baostock_hs300_retry_v3_pause_parent_invalid")
+    try:
+        public_key = base64.b64decode(
+            str(contract.get("capture_public_key_pem_b64") or ""),
+            validate=True,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "baostock_hs300_retry_v3_pause_parent_invalid"
+        ) from exc
+    events = _read_and_validate_journal(
+        journal_path,
+        expected_activity_id=expected_activity_id,
+        expected_contract_id=contract_id,
+        public_key=public_key,
+        request_rows=requests,
+        request_plan_hash=request_plan_hash,
+        max_retries=5,
+    )
+    terminal_events = [
+        event
+        for event in events
+        if event.get("event_type") == "capture_attempt_terminal"
+    ]
+    raw_paths: set[Path] = set()
+    response_bytes = 0
+    activity_resolved = activity_root.resolve()
+    for event in terminal_events:
+        raw_path = (
+            activity_root / str(event.get("raw_envelope_relative_path") or "")
+        ).resolve()
+        try:
+            raw_path.relative_to(activity_resolved)
+        except ValueError as exc:
+            raise ValueError(
+                "baostock_hs300_retry_v3_pause_parent_invalid"
+            ) from exc
+        if (
+            raw_path in raw_paths
+            or not raw_path.is_file()
+            or raw_path.is_symlink()
+            or sha256_file(raw_path) != event.get("raw_envelope_sha256")
+        ):
+            raise ValueError("baostock_hs300_retry_v3_pause_parent_invalid")
+        raw_paths.add(raw_path)
+        response_bytes += raw_path.stat().st_size
+    derived_usage = {
+        "attempt_count": len(terminal_events),
+        "response_bytes": response_bytes,
+        "wire_exchange_count": sum(
+            int(event.get("transport_exchange_count") or 0)
+            for event in terminal_events
+        ),
+    }
+    payload = read_json(pause_path)
+    observed_hash = str(payload.get("content_hash") or "")
+    semantic = {
+        key: value for key, value in payload.items() if key != "content_hash"
+    }
+    last_terminal = terminal_events[-1] if terminal_events else {}
+    if (
+        not events
+        or events[-1] != last_terminal
+        or payload.get("usage") != derived_usage
+        or payload.get("request_id") != last_terminal.get("request_id")
+        or payload.get("attempt_id") != last_terminal.get("attempt_id")
+        or payload.get("terminal_state")
+        != last_terminal.get("terminal_state")
+        or payload.get("error_code") != last_terminal.get("error_code")
+        or payload.get("status_code") != last_terminal.get("status_code")
+    ):
+        raise ValueError("baostock_hs300_retry_v3_pause_parent_invalid")
+    if (
+        set(payload)
+        != {
+            "schema_version",
+            "reason",
+            "request_id",
+            "attempt_id",
+            "terminal_state",
+            "error_code",
+            "status_code",
+            "usage",
+            "paused_at",
+            "automatic_resume_authorized",
+            "content_hash",
+        }
+        or payload.get("schema_version") != "free_provider_backfill_pause_v1"
+        or payload.get("reason")
+        != "provider_terminal_error_or_circuit_breaker"
+        or payload.get("request_id")
+        != BAOSTOCK_HS300_RETRY_V3_PAUSED_REQUEST_ID
+        or payload.get("attempt_id")
+        != f"{BAOSTOCK_HS300_RETRY_V3_PAUSED_REQUEST_ID}:5"
+        or payload.get("terminal_state") != "error"
+        or payload.get("error_code") != "baostock_transport:OSError"
+        or payload.get("status_code") is not None
+        or payload.get("automatic_resume_authorized") is not False
+        or canonical_hash(semantic) != observed_hash
+        or observed_hash
+        != BAOSTOCK_HS300_RETRY_V3_APPROVED_PAUSE_CONTENT_HASH
+    ):
+        raise ValueError("baostock_hs300_retry_v3_pause_evidence_invalid")
+    return observed_hash
+
+
+def _verify_hs300_retry_pause_evidence(policy_id: str) -> str:
+    if policy_id == BAOSTOCK_HS300_RETRY_V2_POLICY_ID:
+        return _verify_hs300_retry_v2_pause_evidence()
+    if policy_id == BAOSTOCK_HS300_RETRY_V3_POLICY_ID:
+        return _verify_hs300_retry_v3_pause_evidence()
+    raise ValueError("baostock_hs300_retry_pause_policy_invalid")
 
 
 class BoundedBaostockReconciliationTransport(RecoveringBaostockTransport):
@@ -1618,7 +1856,25 @@ def _adapter_identity(
         "securities_source_sha256": BAOSTOCK_SECURITIES_SOURCE_SHA256,
         "wire_protocol_root": wire_protocol_root or baostock_wire_protocol_root(),
     }
-    if policy.policy_id == BAOSTOCK_HS300_RETRY_V2_POLICY_ID:
+    if policy.policy_id in BAOSTOCK_HS300_RETRY_POLICY_IDS:
+        if policy.policy_id == BAOSTOCK_HS300_RETRY_V2_POLICY_ID:
+            approved_pause_hash = (
+                BAOSTOCK_HS300_RETRY_V2_APPROVED_PAUSE_CONTENT_HASH
+            )
+            approved_activity_id = BAOSTOCK_HS300_RETRY_V2_PAUSED_ACTIVITY_ID
+            approved_contract_id = BAOSTOCK_HS300_RETRY_V2_PAUSED_CONTRACT_ID
+            approved_plan_hash = (
+                BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_PLAN_HASH
+            )
+        else:
+            approved_pause_hash = (
+                BAOSTOCK_HS300_RETRY_V3_APPROVED_PAUSE_CONTENT_HASH
+            )
+            approved_activity_id = BAOSTOCK_HS300_RETRY_V3_PAUSED_ACTIVITY_ID
+            approved_contract_id = BAOSTOCK_HS300_RETRY_V3_PAUSED_CONTRACT_ID
+            approved_plan_hash = (
+                BAOSTOCK_HS300_RETRY_V3_PAUSED_REQUEST_PLAN_HASH
+            )
         cooldowns = ",".join(
             str(int(value))
             for value in policy.connection_failure_cooldowns
@@ -1626,18 +1882,10 @@ def _adapter_identity(
         identity.update(
             {
                 "acquisition_policy_id": policy.policy_id,
-                "approved_pause_content_hash": (
-                    BAOSTOCK_HS300_RETRY_V2_APPROVED_PAUSE_CONTENT_HASH
-                ),
-                "approved_paused_activity_id": (
-                    BAOSTOCK_HS300_RETRY_V2_PAUSED_ACTIVITY_ID
-                ),
-                "approved_paused_contract_id": (
-                    BAOSTOCK_HS300_RETRY_V2_PAUSED_CONTRACT_ID
-                ),
-                "approved_paused_request_plan_hash": (
-                    BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_PLAN_HASH
-                ),
+                "approved_pause_content_hash": approved_pause_hash,
+                "approved_paused_activity_id": approved_activity_id,
+                "approved_paused_contract_id": approved_contract_id,
+                "approved_paused_request_plan_hash": approved_plan_hash,
                 "authorization_basis": (
                     "signed_pause_parent_contract_plan_journal_raw_v1"
                 ),
@@ -1694,11 +1942,16 @@ def _contract(
         or population_root != SECURITY_SNAPSHOT_APPROVED_POPULATION_ROOT
     ):
         raise ValueError("baostock_security_snapshot_contract_closure_invalid")
-    if policy.policy_id == BAOSTOCK_HS300_RETRY_V2_POLICY_ID:
+    if policy.policy_id in BAOSTOCK_HS300_RETRY_POLICY_IDS:
         baseline = _BAOSTOCK_PHASE_BASELINES["hs300-snapshots"]
+        approved_pause_hash = (
+            BAOSTOCK_HS300_RETRY_V2_APPROVED_PAUSE_CONTENT_HASH
+            if policy.policy_id == BAOSTOCK_HS300_RETRY_V2_POLICY_ID
+            else BAOSTOCK_HS300_RETRY_V3_APPROVED_PAUSE_CONTENT_HASH
+        )
         if (
-            _verify_hs300_retry_v2_pause_evidence()
-            != BAOSTOCK_HS300_RETRY_V2_APPROVED_PAUSE_CONTENT_HASH
+            _verify_hs300_retry_pause_evidence(policy.policy_id)
+            != approved_pause_hash
             or request_count != int(baseline["request_count"])
             or population_root != baseline["population_root"]
             or request_plan_hash != baseline["request_plan_hash"]
@@ -1710,7 +1963,8 @@ def _contract(
             or permission_context_id != policy.permission_context_id
         ):
             raise ValueError(
-                "baostock_hs300_retry_v2_contract_closure_invalid"
+                f"baostock_hs300_retry_{policy.activity_version}_"
+                "contract_closure_invalid"
             )
     request_start = (
         "20110101"
@@ -1884,6 +2138,7 @@ def _capture_acquisition_policy(
     for policy_id in (
         BAOSTOCK_V1_ACQUISITION_POLICY_ID,
         BAOSTOCK_HS300_RETRY_V2_POLICY_ID,
+        BAOSTOCK_HS300_RETRY_V3_POLICY_ID,
     ):
         try:
             policy = _acquisition_policy(phase, policy_id)
@@ -1924,8 +2179,8 @@ def validate_baostock_reconciliation_capture(
         phase=expected_phase,
         activity_name=contract.get("activity_name"),
     )
-    if policy.policy_id == BAOSTOCK_HS300_RETRY_V2_POLICY_ID:
-        _verify_hs300_retry_v2_pause_evidence()
+    if policy.policy_id in BAOSTOCK_HS300_RETRY_POLICY_IDS:
+        _verify_hs300_retry_pause_evidence(policy.policy_id)
     if (
         contract.get("capture_public_key_sha256")
         != BAOSTOCK_APPROVED_CAPTURE_KEY_SHA256
@@ -2235,6 +2490,40 @@ def _implementation_root() -> str:
                     "full_plan_replay_required": True,
                     "partial_activity_reuse": "forbidden",
                 },
+                "hs300_retry_v3": {
+                    "policy_id": BAOSTOCK_HS300_RETRY_V3_POLICY_ID,
+                    "permission_context": (
+                        BAOSTOCK_HS300_RETRY_V3_PERMISSION_CONTEXT
+                    ),
+                    "authorization_policy": (
+                        BAOSTOCK_HS300_RETRY_V3_AUTHORIZATION_POLICY
+                    ),
+                    "approved_pause_content_hash": (
+                        BAOSTOCK_HS300_RETRY_V3_APPROVED_PAUSE_CONTENT_HASH
+                    ),
+                    "approved_paused_activity_id": (
+                        BAOSTOCK_HS300_RETRY_V3_PAUSED_ACTIVITY_ID
+                    ),
+                    "approved_paused_contract_id": (
+                        BAOSTOCK_HS300_RETRY_V3_PAUSED_CONTRACT_ID
+                    ),
+                    "approved_paused_request_plan_hash": (
+                        BAOSTOCK_HS300_RETRY_V3_PAUSED_REQUEST_PLAN_HASH
+                    ),
+                    "approved_paused_request_count": (
+                        BAOSTOCK_HS300_RETRY_V3_PAUSED_REQUEST_COUNT
+                    ),
+                    "approved_paused_request_id": (
+                        BAOSTOCK_HS300_RETRY_V3_PAUSED_REQUEST_ID
+                    ),
+                    "connection_failure_cooldowns": (
+                        BAOSTOCK_HS300_RETRY_V3_CONNECTION_COOLDOWNS
+                    ),
+                    "max_retries": 6,
+                    "max_requests": 13_622,
+                    "full_plan_replay_required": True,
+                    "partial_activity_reuse": "forbidden",
+                },
                 "historical_replay_allowlist": sorted(
                     BAOSTOCK_HISTORICAL_REPLAY_ALLOWLIST
                 ),
@@ -2245,6 +2534,12 @@ def _implementation_root() -> str:
             ),
             "hs300_retry_v2_pause_verifier": inspect.getsource(
                 _verify_hs300_retry_v2_pause_evidence
+            ),
+            "hs300_retry_v3_pause_verifier": inspect.getsource(
+                _verify_hs300_retry_v3_pause_evidence
+            ),
+            "hs300_retry_pause_dispatch": inspect.getsource(
+                _verify_hs300_retry_pause_evidence
             ),
             "adjustment_plan": inspect.getsource(build_adjustment_plan),
             "security_basic_plan": inspect.getsource(build_security_basic_plan),
@@ -2392,7 +2687,7 @@ def main(argv: list[str] | None = None) -> int:
         acquisition_policy = _acquisition_policy(
             args.phase,
             (
-                BAOSTOCK_HS300_RETRY_V2_POLICY_ID
+                BAOSTOCK_HS300_RETRY_V3_POLICY_ID
                 if args.phase == "hs300-snapshots"
                 else BAOSTOCK_V1_ACQUISITION_POLICY_ID
             ),
@@ -2414,9 +2709,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 2
-    if acquisition_policy.policy_id == BAOSTOCK_HS300_RETRY_V2_POLICY_ID:
+    if acquisition_policy.policy_id in BAOSTOCK_HS300_RETRY_POLICY_IDS:
         try:
-            _verify_hs300_retry_v2_pause_evidence()
+            _verify_hs300_retry_pause_evidence(
+                acquisition_policy.policy_id
+            )
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             print(
                 _render(
@@ -2516,8 +2813,7 @@ def main(argv: list[str] | None = None) -> int:
             acquisition_policy.connection_failure_cooldowns
         ),
         "full_plan_replay_required": (
-            acquisition_policy.policy_id
-            == BAOSTOCK_HS300_RETRY_V2_POLICY_ID
+            acquisition_policy.policy_id in BAOSTOCK_HS300_RETRY_POLICY_IDS
         ),
         "partial_activity_reuse": "forbidden",
         "network_called": False,
@@ -2625,8 +2921,7 @@ def main(argv: list[str] | None = None) -> int:
             request_rows=tuple(request.semantic() for request in requests),
             max_retries=acquisition_policy.max_retries,
         )
-        if acquisition_policy.policy_id
-        == BAOSTOCK_HS300_RETRY_V2_POLICY_ID
+        if acquisition_policy.policy_id in BAOSTOCK_HS300_RETRY_POLICY_IDS
         else None
     )
     transport = BoundedBaostockReconciliationTransport(

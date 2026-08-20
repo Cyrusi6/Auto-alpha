@@ -133,6 +133,13 @@ phase：`index-daily`、`security-basic`、`hs300-snapshots`、`adjustments`、
 暂停后的独立匿名登录成功，说明供应商连接已恢复，但原合同预算已经耗尽；任何 v3
 完整重跑或增加重试都必须取得新的人工批准。
 
+2026-08-20 已单独批准 v3：仍从完整 1,946 日期计划的 `20111230` 开始，不复用 v1/v2；
+每个请求最多为初始请求加六次重试，总上限 13,622，wire exchange 上限 27,244，
+冷却固定为 5、15、30、60、120、300 秒。v3 写入独立
+`hs300_snapshots_v3/`，并在联网前逐字节验证 v2 pause `f46b57ae...` 的父合同、计划、
+签名 journal 和 raw usage。锁定 runtime plan 的 contract 为 `d093449d...`，预计 activity
+为 `0b56f72e...`；它仍只授权数据补采。
+
 Baostock 还存在一种精确的成功空终态：最后一页可能把 `record` 表示为空字符串 slot，
 而不是 JSON `{"record":[]}`。raw-wire replay 只在该页同时具备成功返回码和 terminal
 marker 时把它解释为零行；空的非终态页仍然阻断。该规则改变 capture engine/adapter

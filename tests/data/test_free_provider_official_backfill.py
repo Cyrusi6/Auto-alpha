@@ -4046,6 +4046,84 @@ def test_baostock_hs300_retry_v2_contract_is_full_plan_and_phase_scoped(
         )
 
 
+def test_baostock_hs300_retry_v3_contract_binds_new_full_replay_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    signer = EphemeralReceiptSigner.generate()
+    monkeypatch.setattr(
+        baostock_reconciliation,
+        "_approved_source_file_hashes",
+        lambda **_kwargs: {"securities": "a" * 64, "calendar": "b" * 64},
+    )
+    monkeypatch.setattr(
+        baostock_reconciliation,
+        "_verify_hs300_retry_v3_pause_evidence",
+        lambda: (
+            baostock_reconciliation.BAOSTOCK_HS300_RETRY_V3_APPROVED_PAUSE_CONTENT_HASH
+        ),
+    )
+    monkeypatch.setattr(baostock_reconciliation, "SCOPE_ROOT", tmp_path)
+    baseline = baostock_reconciliation._BAOSTOCK_PHASE_BASELINES[
+        "hs300-snapshots"
+    ]
+
+    contract = baostock_reconciliation._contract(
+        phase="hs300-snapshots",
+        output_root=tmp_path / "hs300_snapshots_v3",
+        signer=signer,
+        population_root=str(baseline["population_root"]),
+        request_count=int(baseline["request_count"]),
+        delay=1.0,
+        timeout=30.0,
+        retries=6,
+        permission_context_id=(
+            baostock_reconciliation.BAOSTOCK_HS300_RETRY_V3_PERMISSION_CONTEXT
+        ),
+        acquisition_policy_id=(
+            baostock_reconciliation.BAOSTOCK_HS300_RETRY_V3_POLICY_ID
+        ),
+        request_plan_hash=str(baseline["request_plan_hash"]),
+    )
+
+    assert contract.activity_name.endswith("_v3")
+    assert contract.budget.max_retries == 6
+    assert contract.budget.max_requests == 13_622
+    assert contract.budget.max_wire_exchanges == 27_244
+    assert contract.adapter_identity["partial_activity_reuse"] == "forbidden"
+    assert contract.adapter_identity["max_attempts_per_request"] == "7"
+    assert contract.adapter_identity["approved_pause_content_hash"] == (
+        baostock_reconciliation.BAOSTOCK_HS300_RETRY_V3_APPROVED_PAUSE_CONTENT_HASH
+    )
+    assert contract.adapter_identity["approved_paused_activity_id"] == (
+        baostock_reconciliation.BAOSTOCK_HS300_RETRY_V3_PAUSED_ACTIVITY_ID
+    )
+    assert contract.adapter_identity["connection_failure_cooldowns_seconds"] == (
+        "5,15,30,60,120,300"
+    )
+    with pytest.raises(
+        ValueError,
+        match="baostock_hs300_retry_v3_contract_closure_invalid",
+    ):
+        baostock_reconciliation._contract(
+            phase="hs300-snapshots",
+            output_root=tmp_path / "hs300_snapshots_v2",
+            signer=signer,
+            population_root=str(baseline["population_root"]),
+            request_count=int(baseline["request_count"]),
+            delay=1.0,
+            timeout=30.0,
+            retries=6,
+            permission_context_id=(
+                baostock_reconciliation.BAOSTOCK_HS300_RETRY_V3_PERMISSION_CONTEXT
+            ),
+            acquisition_policy_id=(
+                baostock_reconciliation.BAOSTOCK_HS300_RETRY_V3_POLICY_ID
+            ),
+            request_plan_hash=str(baseline["request_plan_hash"]),
+        )
+
+
 def test_baostock_hs300_retry_v2_sixth_failure_has_no_seventh_cooldown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4096,6 +4174,60 @@ def test_baostock_hs300_retry_v2_sixth_failure_has_no_seventh_cooldown(
         for row in observations[:5]
     )
     assert "connection_failure_cooldown" not in observations[5].diagnostics
+
+
+def test_baostock_hs300_retry_v3_seventh_failure_has_no_eighth_cooldown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _population, requests = build_index_daily_plan()
+    sleeps: list[float] = []
+
+    class FailingTransport:
+        def __call__(
+            self,
+            _request: ProviderProbeRequest,
+            _timeout_seconds: float,
+        ) -> ProviderProbeObservation:
+            return ProviderProbeObservation(
+                terminal_state="error",
+                raw_payload=b"connection-error",
+                row_count=None,
+                error_code="baostock_transport:OSError",
+                checks={"transport_completed": False},
+                transport_exchange_count=1,
+            )
+
+        def close(self) -> None:
+            return None
+
+        def restore(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(
+        capture_backfill,
+        "BaostockProbeTransport",
+        FailingTransport,
+    )
+    transport = baostock_reconciliation.BoundedBaostockReconciliationTransport(
+        connection_failure_cooldowns=(
+            5.0,
+            15.0,
+            30.0,
+            60.0,
+            120.0,
+            300.0,
+        ),
+        sleeper=sleeps.append,
+    )
+
+    observations = [transport(requests[0], 3.0) for _ in range(7)]
+
+    assert sleeps == [5.0, 15.0, 30.0, 60.0, 120.0, 300.0]
+    assert all(
+        "connection_failure_cooldown" in row.diagnostics
+        for row in observations[:6]
+    )
+    assert "connection_failure_cooldown" not in observations[6].diagnostics
 
 
 def test_baostock_non_connection_error_does_not_trigger_v2_cooldown(
