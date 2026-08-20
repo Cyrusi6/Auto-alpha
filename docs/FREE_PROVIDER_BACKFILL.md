@@ -273,6 +273,32 @@ uv run --with baostock==0.9.3 python -m \
 巨潮和中证采用发现 → 完整清单 → 文档/详情三段式计划。后一段必须通过
 `--input-capture` 绑定上一段的不可变 content hash。
 
+CNINFO base 与 supplemental inventory 都发布并验证后，先离线封存两条逻辑 demand
+的并集；默认年份固定为 2011–2019：
+
+```bash
+auto-alpha data free-cninfo-document-closure \
+  --inventory /absolute/base/inventory/free_provider_backfill_manifest.json \
+  --inventory /absolute/supplemental/inventory/free_provider_backfill_manifest.json \
+  --plan-only --pretty
+```
+
+只有核对 `physical_document_count`、`missing_physical_document_count` 和预算后才能显式
+执行网络补采：
+
+```bash
+auto-alpha data free-cninfo-document-closure \
+  --inventory /absolute/base/inventory/free_provider_backfill_manifest.json \
+  --inventory /absolute/supplemental/inventory/free_provider_backfill_manifest.json \
+  --allow-network --pretty
+```
+
+命令最多接受 130,000 份 residual 文档，固定 256 GiB 总响应预算、单请求最多两次重试，
+并把物理 capture 写入独立 `document_closure_missing/` namespace。旧 2011 文档若作为
+`--reusable-document` 传入，其 weak ancestry 会原样传播；构建强闭包时不得用它减少
+下载量。命令的成功只证明 inventory→document exact disposition closure，不授权数据
+准入、搜索、留出集或交易。
+
 ## 仍然 fail closed 的部分
 
 即使上述网络任务全部完成，以下内容也不能凭下载数量自动宣布完成：

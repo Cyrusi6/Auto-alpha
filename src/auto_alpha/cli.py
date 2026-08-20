@@ -30,6 +30,10 @@ COMMANDS = {
         "auto_alpha.data.ingestion.pipeline.ashare.free_provider_http_backfill",
         "Capture CNINFO announcement inventories and documents",
     ),
+    ("data", "free-cninfo-document-closure"): CommandSpec(
+        "auto_alpha.data.ingestion.pipeline.ashare.free_provider_cninfo_document_closure",
+        "Close signed CNINFO inventory demand over exact document bytes",
+    ),
     ("data", "free-csindex-backfill"): CommandSpec(
         "auto_alpha.data.ingestion.pipeline.ashare.free_provider_csindex_backfill",
         "Capture CSI rebalance announcement inventories and details",

@@ -1149,6 +1149,82 @@ def test_prepare_document_closure_requires_inventory_manifests(
         prepare_document_closure((), (), (2011,))
 
 
+def test_document_closure_cli_plan_only_never_calls_network(
+    strong_inventory_manifests: tuple[str, str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = document_closure_module.main(
+        [
+            "--inventory",
+            strong_inventory_manifests[0],
+            "--inventory",
+            strong_inventory_manifests[1],
+            "--year",
+            "2011",
+            "--plan-only",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert result == 0
+    assert payload["network_called"] is False
+    assert payload["inventory_parent_count"] == 2
+    assert payload["physical_document_count"] == 1
+    assert payload["missing_physical_document_count"] == 1
+    assert all(value is False for value in payload["safety"].values())
+
+
+def test_document_closure_cli_blocks_network_without_authority(
+    strong_inventory_manifests: tuple[str, str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = document_closure_module.main(
+        [
+            "--inventory",
+            strong_inventory_manifests[0],
+            "--inventory",
+            strong_inventory_manifests[1],
+            "--year",
+            "2011",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert result == 2
+    assert payload["network_called"] is False
+    assert payload["status"] == "blocked"
+    assert payload["reason"] == (
+        "free_provider_backfill_network_authority_missing"
+    )
+
+
+def test_document_closure_cli_blocks_oversized_plan_before_network(
+    strong_inventory_manifests: tuple[str, str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = document_closure_module.main(
+        [
+            "--inventory",
+            strong_inventory_manifests[0],
+            "--inventory",
+            strong_inventory_manifests[1],
+            "--year",
+            "2011",
+            "--allow-network",
+            "--max-documents",
+            "0",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert result == 2
+    assert payload["network_called"] is False
+    assert payload["status"] == "blocked"
+    assert payload["reason"] == (
+        "cninfo_document_closure_max_documents_exceeded"
+    )
+
+
 def test_prepare_document_closure_unions_demands_and_plans_only_missing_docs(
     strong_inventory_manifests: tuple[str, str],
 ) -> None:

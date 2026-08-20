@@ -13,6 +13,7 @@ locator alias.
 
 from __future__ import annotations
 
+import argparse
 import base64
 from collections import defaultdict
 from dataclasses import dataclass
@@ -30,6 +31,9 @@ from auto_alpha.platform.artifacts.storage import (
     canonical_hash,
     read_json,
     sha256_file,
+)
+from auto_alpha.platform.governance.network.signing import (
+    PersistentReceiptSigner,
 )
 
 from . import free_provider_http_backfill as http_module
@@ -2549,3 +2553,200 @@ def _canonical_json_bytes(value: Mapping[str, Any]) -> bytes:
         sort_keys=True,
         separators=(",", ":"),
     ).encode()
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Close CNINFO document demand from signed inventories."
+    )
+    parser.add_argument(
+        "--inventory",
+        action="append",
+        required=True,
+        help="Signed inventory manifest; provide exactly base and supplemental.",
+    )
+    parser.add_argument(
+        "--reusable-document",
+        action="append",
+        default=[],
+        help="Optional signed document manifest eligible for exact replay.",
+    )
+    parser.add_argument("--year", action="append", type=int)
+    parser.add_argument("--allow-network", action="store_true")
+    parser.add_argument("--plan-only", action="store_true")
+    parser.add_argument("--minimum-delay-seconds", type=float, default=2.0)
+    parser.add_argument("--timeout-seconds", type=float, default=30.0)
+    parser.add_argument("--max-retries", type=int, default=2)
+    parser.add_argument("--max-documents", type=int, default=130_000)
+    parser.add_argument("--pretty", action="store_true")
+    return parser
+
+
+def _closure_summary(
+    plan: SealedDocumentClosurePlan,
+    *,
+    network_called: bool,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "cninfo_document_closure_plan_preview_v1",
+        "sealed_plan_root": plan.plan_root,
+        "years": list(plan.years),
+        "inventory_parent_count": len(plan.inventory_parents),
+        "demand_count": plan.demand_count,
+        "physical_document_count": plan.physical_document_count,
+        "reused_physical_document_count": (
+            plan.reused_physical_document_count
+        ),
+        "missing_physical_document_count": (
+            plan.missing_physical_document_count
+        ),
+        "weak_source_ancestry": plan.weak_source_ancestry,
+        "blockers": list(plan.blockers),
+        "downstream_eligible": plan.downstream_eligible,
+        "max_total_response_bytes": _MISSING_MAX_TOTAL_RESPONSE_BYTES,
+        "network_called": network_called,
+        "safety": {
+            "profile_activation_authorized": False,
+            "data_admission_eligible": False,
+            "alpha_search_authorized": False,
+            "holdout_activation_authorized": False,
+            "shadow_trading_authorized": False,
+            "paper_trading_authorized": False,
+            "live_trading_authorized": False,
+        },
+    }
+
+
+def _evidence_summary(evidence: DocumentClosureEvidence) -> dict[str, Any]:
+    return {
+        "schema_version": evidence.schema_version,
+        "sealed_plan_root": evidence.sealed_plan_root,
+        "closure_root": evidence.closure_root,
+        "demand_count": evidence.demand_count,
+        "physical_document_count": evidence.physical_document_count,
+        "reused_physical_document_count": (
+            evidence.reused_physical_document_count
+        ),
+        "downloaded_physical_document_count": (
+            evidence.downloaded_physical_document_count
+        ),
+        "weak_source_ancestry": evidence.weak_source_ancestry,
+        "blockers": list(evidence.blockers),
+        "complete": evidence.complete,
+        "downstream_eligible": evidence.downstream_eligible,
+    }
+
+
+def _render(payload: Mapping[str, Any], *, pretty: bool) -> str:
+    return json.dumps(
+        dict(payload),
+        ensure_ascii=False,
+        indent=2 if pretty else None,
+        sort_keys=True,
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _build_parser().parse_args(argv)
+    years = tuple(args.year or range(2011, 2020))
+    try:
+        plan = prepare_document_closure(
+            args.inventory,
+            args.reusable_document,
+            years,
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(
+            _render(
+                {"status": "blocked", "reason": str(exc)},
+                pretty=args.pretty,
+            )
+        )
+        return 2
+    preview = _closure_summary(plan, network_called=False)
+    if args.plan_only:
+        print(_render(preview, pretty=args.pretty))
+        return 0
+    if not args.allow_network:
+        print(
+            _render(
+                preview
+                | {
+                    "status": "blocked",
+                    "reason": (
+                        "free_provider_backfill_network_authority_missing"
+                    ),
+                },
+                pretty=args.pretty,
+            )
+        )
+        return 2
+    if (
+        type(args.max_documents) is not int
+        or args.max_documents < 0
+        or plan.missing_physical_document_count > args.max_documents
+    ):
+        print(
+            _render(
+                preview
+                | {
+                    "status": "blocked",
+                    "reason": (
+                        "cninfo_document_closure_max_documents_exceeded"
+                    ),
+                },
+                pretty=args.pretty,
+            )
+        )
+        return 2
+    try:
+        capture: dict[str, Any] | None = None
+        if plan.missing:
+            signer = PersistentReceiptSigner.load(
+                http_module.DEFAULT_CAPTURE_KEY
+            )
+            capture = capture_missing_documents(
+                plan,
+                output_root=(
+                    http_module.SCOPE_ROOT
+                    / "cninfo"
+                    / "document_closure_missing"
+                ),
+                signer=signer,
+                transport=http_module.CNINFODocumentTransport(
+                    minimum_delay_seconds=args.minimum_delay_seconds
+                ),
+                permission_context_id=http_module.DEFAULT_PERMISSION_CONTEXT,
+                minimum_delay_seconds=args.minimum_delay_seconds,
+                timeout_seconds=args.timeout_seconds,
+                max_retries=args.max_retries,
+            )
+        evidence = finalize_document_closure(
+            plan,
+            None if capture is None else str(capture["manifest_path"]),
+        )
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
+        print(
+            _render(
+                preview | {"status": "blocked", "reason": str(exc)},
+                pretty=args.pretty,
+            )
+        )
+        return 2
+    result = {
+        **_closure_summary(
+            plan,
+            network_called=bool(
+                capture and capture.get("cache_hit") is not True
+            ),
+        ),
+        "status": "succeeded",
+        "capture": capture,
+        "evidence": _evidence_summary(evidence),
+    }
+    print(_render(result, pretty=args.pretty))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
