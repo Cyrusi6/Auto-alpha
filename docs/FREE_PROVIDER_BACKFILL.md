@@ -141,6 +141,10 @@ phase：`index-daily`、`security-basic`、`hs300-snapshots`、`adjustments`、
 锁定 runtime plan 的 contract 为 `632e961c...`，预计 activity 为 `0ad187d7...`；它仍
 只授权数据补采。
 
+v3 已于 2026-08-20 20:39:53（Asia/Shanghai）启动；最初 28 个日期均为 positive、
+0 error。启动样本约 2.15 秒/日期，稳定路径预计 21:50 左右完成网络采集，最终
+normalization、不可变发布和独立 replay 预计 21:55–22:05；连接冷却会顺延该窗口。
+
 Baostock 还存在一种精确的成功空终态：最后一页可能把 `record` 表示为空字符串 slot，
 而不是 JSON `{"record":[]}`。raw-wire replay 只在该页同时具备成功返回码和 terminal
 marker 时把它解释为零行；空的非终态页仍然阻断。该规则改变 capture engine/adapter

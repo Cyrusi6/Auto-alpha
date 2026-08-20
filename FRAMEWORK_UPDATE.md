@@ -10,6 +10,7 @@ This file records only the current A-share architecture and recent governed mile
 - Required exact replay of the v2 pause ancestry before contract creation or validation: contract `d6e8a7a9...`, activity `a8e90319...`, plan `f448161d...`, all 1,627 signed terminal attempts/raw hashes and pause `f46b57ae...`. Missing or changed evidence blocks before network.
 - Assigned the independent `hs300_snapshots_v3/` namespace and final runtime plan identity: contract `632e961c...`, projected activity `0ad187d7...`, first request `20111230`, last request `20191231`. Partial activity reuse remains forbidden and every downstream permission remains false.
 - Extended the shared bounded-capture retry ceiling from five to exactly six so the approved v3 contract can execute; seven remains invalid. Added v3 budget/cooldown/no-eighth-attempt regression coverage: the focused v2/v3/allowlist group passes 11/11 and the two owning test files pass 167/167.
+- Started runtime activity `0ad187d7...` at 2026-08-20 20:39:53 Asia/Shanghai. The first observed 28/1,946 dates were positive with no retry at about 2.15 seconds/date; stable-path collection is projected near 21:50 and final normalization/publication/replay near 21:55–22:05. Monitoring was intentionally handed back to the operator after this startup estimate.
 
 ## 2026-08-20 — Bounded Baostock CSI300 snapshot replay v2
 
