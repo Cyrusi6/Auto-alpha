@@ -145,6 +145,12 @@ v3 已于 2026-08-20 20:39:53（Asia/Shanghai）启动；最初 28 个日期均�
 0 error。启动样本约 2.15 秒/日期，稳定路径预计 21:50 左右完成网络采集，最终
 normalization、不可变发布和独立 replay 预计 21:55–22:05；连接冷却会顺延该窗口。
 
+最终 generation `free_provider_backfill_dcd7ba6e1337f498683a6650` 已完成并通过独立
+当前身份 replay：1,946/1,946 请求 positive、0 final error、1,947 attempts、1,949
+wire exchanges、49,770,410 response bytes；normalized 输出 583,800 行、0 conflict，
+重放根为 `58ae0278...`。该完成仅关闭 Baostock 历史成分快照物理补采，仍缺公告
+publication time、历史权重、provider-origin 和 runtime-isolation 证据。
+
 Baostock 还存在一种精确的成功空终态：最后一页可能把 `record` 表示为空字符串 slot，
 而不是 JSON `{"record":[]}`。raw-wire replay 只在该页同时具备成功返回码和 terminal
 marker 时把它解释为零行；空的非终态页仍然阻断。该规则改变 capture engine/adapter
