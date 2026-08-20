@@ -56,7 +56,7 @@
 
 ## 3. 可更新的采集快照
 
-以下是 **2026-08-17 的持续采集快照**。generation、活动进度和 `current.json`
+以下是 **2026-08-20 的持续采集快照**。generation、活动进度和 `current.json`
 指针会随新的不可变发布而变化；它们是审计定位信息，不是稳定的产品常量，也不构成
 准入声明。为避免把中间 journal 数量误写成成功，本节不把尚未发布并通过独立验证的
 动态 generation 或请求数列为完成结果。长期判断应以独立 verdict 引用的精确
@@ -97,9 +97,9 @@ raw 日状态数与 coverage-use 数不同，是因为前者统计 provider 返�
 
 | 当前重跑链 | 状态 | 完成条件与约束 |
 | --- | --- | --- |
-| Baostock current reconciliation | **采集中/按供应商单航班排队**：`index-daily`、`security-basic`、`hs300-snapshots`、`adjustments`、`turnover`、`dividends` | wire replay 已精确允许成功的空 terminal `record` slot，但仍拒绝空 non-terminal page；修复改变实现身份，因此每个 phase 都从新 activity 的完整计划重跑。旧 v1、canary、失败片段或不同合同 raw 不得拼接 |
+| Baostock `hs300-snapshots` v2 | **合同已验证、physical capture 未启动**：plan-only 为 1,946 日期、最多 11,676 次请求，新 activity `eb771fad...` | 旧 v1 `464eed...` 保持暂停且不可拼接；v2 使用独立 `hs300_snapshots_v2/`，父 pause/合同/计划/签名 journal/raw usage 任一缺失即在联网前阻断；仅授权数据补采 |
 | CNINFO strong base chain | **采集中/须按 current identity 重跑**：`base discovery → inventory → documents` | closure 会递归找到实际 discovery parents 并从 signed raw 重建 discovery→inventory 计划；不能用实现变化前的 base 与新 supplemental 拼接。2011 也须沿 strong inventory 重抓 |
-| CNINFO strong supplemental chain | **采集中**：758-leaf `supplemental discovery → inventory → documents` | 官网 page 101 会回卷 page 1；2015-11/12 `secondary_offerings` 各拆成两个无缝半月叶。旧 `212e...` generation 与 `7f9d...` 中间 activity 保留不用；current 完整重跑绑定 `implementation_root=35c27d...` |
+| CNINFO strong supplemental chain | **已中断、可按相同 activity 恢复**：inventory 为 8,139/9,662 terminal，8,050 positive、89 empty、0 error；尚无 publication | 官网 page 101 会回卷 page 1；2015-11/12 `secondary_offerings` 各拆成两个无缝半月叶。旧 `212e...` generation 与 `7f9d...` 中间 activity 保留不用；不能把 8,139 个中间回执写成完成 |
 | CNINFO document closure | **closure seam 已实现，真实 residual capture 尚未形成终态证据** | base/supplemental 逻辑 demand 与唯一物理文档分离；递归重放 discovery/inventory/document 父证据，只下载 residual；每个文档恰有一个 disposition。人工 resume 参数在 trusted authority 未实现时固定 fail closed；旧 2011 derived disposition 仍 weak/quarantined |
 
 进度改变时只更新本节和最终 verdict 引用，不应改写以前 generation 的内容。历史失败、
@@ -139,6 +139,7 @@ activity/contract、pause 原因、新预算或 breaker 处置、批准主体和
 | CNINFO official backfill / document closure | official-backfill 31 项通过；current-root closure 关键子集 5 项通过 | 递归父代、demand/physical identity、复用/下载 disposition、弱血缘传播和 pause fail-closed；closure 全量仍由最终全仓测试覆盖 |
 | CSI signed range capture | 新 seam 24 项通过；既有 CSI 回归 47 项通过 | full/range、strong ETag/If-Range、durable exchange sidecar、恢复、篡改和预算负向路径 |
 | Baostock wire terminal | 20 项通过；相关回归组 27 项和 2 项通过 | 精确成功空 terminal slot、non-terminal 拒绝、raw/package reconciliation 和新 activity 身份 |
+| Baostock `hs300-snapshots` v2 | 专项 9 项通过；official-backfill 全文件 144 项通过 | 1,946-date full replay、6 attempts/request、11,676 request cap、父 pause 精确绑定、跨崩溃冷却恢复和 exact historical allowlist |
 
 这些是代码合同验证，不是对正在采集活动的完成声明。
 

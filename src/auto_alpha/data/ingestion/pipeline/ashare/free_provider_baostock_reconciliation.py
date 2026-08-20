@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import argparse
 import base64
+from dataclasses import dataclass
 import hashlib
 import inspect
 import json
 import os
 import re
+import time
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from auto_alpha.platform.artifacts.storage import canonical_hash, read_json, sha256_file
 from auto_alpha.platform.governance.network.signing import PersistentReceiptSigner
@@ -26,6 +28,7 @@ from .free_provider_backfill import (
     _baostock_logical_rows_with_reconciliation,
     _from_baostock_code,
     _public_key_hash,
+    _read_and_validate_journal,
     baostock_wire_protocol_root,
     build_baostock_state_plan,
     replay_normalized_artifacts,
@@ -71,6 +74,62 @@ BAOSTOCK_SOURCE_PROFILE_ID = "dap_d785714ef1b912a20c0f19ca"
 BAOSTOCK_AUTHORIZATION_POLICY = (
     "human_authorized_free_domestic_baostock_reconciliation_v1"
 )
+BAOSTOCK_V1_ACQUISITION_POLICY_ID = "baostock_reconciliation_v1"
+BAOSTOCK_HS300_RETRY_V2_POLICY_ID = (
+    "baostock_hs300_snapshots_connection_retry_v2"
+)
+BAOSTOCK_HS300_RETRY_V2_PERMISSION_CONTEXT = (
+    "human_authorization_20260817_baostock_hs300_retry_v2"
+)
+BAOSTOCK_HS300_RETRY_V2_AUTHORIZATION_POLICY = (
+    "human_authorized_baostock_hs300_full_replay_retry_v2"
+)
+BAOSTOCK_HS300_RETRY_V2_APPROVED_PAUSE_CONTENT_HASH = (
+    "f796ca9b671f0b273f8247a2d82b45906108d449057b441da45cb42c38d0c1e2"
+)
+BAOSTOCK_HS300_RETRY_V2_PAUSED_ACTIVITY_ID = (
+    "464eed3903aea195a796fb8c0f93e8d333db52f89a1f2d5db82d684b081eec3b"
+)
+BAOSTOCK_HS300_RETRY_V2_PAUSED_CONTRACT_ID = (
+    "1c91b2d42125eb0cf69fa61d5beed2b899cff0aefe5c177a75d07b84d396a068"
+)
+BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_PLAN_HASH = (
+    "f448161d8538bccdaad47ada56487d8278b2a594f9f053b877be75b5618c26bc"
+)
+BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_COUNT = 1_946
+BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_ID = "baostock_hs300_20131209"
+BAOSTOCK_HS300_RETRY_V2_CONNECTION_COOLDOWNS = (
+    5.0,
+    15.0,
+    30.0,
+    60.0,
+    120.0,
+)
+BAOSTOCK_HISTORICAL_REPLAY_ALLOWLIST = frozenset(
+    {
+        (
+            "security-basic",
+            "2fb2ef3e6f204cedb23978fb6ee390f0964a64965dee8a33779ed19022863e96",
+            "11f9a981c0e753ae432cfb0f3d4d37e6a526ed7584ebe70350461e78c16eeeee",
+            "14eae9c872cd8e6a2ed0145904e2d9d636dd5deccb5d2d0e41c0e48e50955e1a",
+            "b5b9947e4c18dc55c4948507de3981e677ee91bbfe283fc67c5eabecc89c04be",
+        ),
+        (
+            "security-snapshots",
+            "8b4404745328259e4ad0ba31cbfe3323d169816aefc0f7f7c44722f5773d99e6",
+            "70693e869a2735fe805516cf2cfdb9ce9b6f9fcd7bdc9f3d73666f8700f5678b",
+            "a63998510e1652b0f9ba345bf9c3f738ef26fc15f6c35770646105dbfc1cf783",
+            "b5b9947e4c18dc55c4948507de3981e677ee91bbfe283fc67c5eabecc89c04be",
+        ),
+        (
+            "index-daily",
+            "37352de761cd6dbc4ec5ad235606d50bc1b7e774ec903cd1acb2dec70bc9eb56",
+            "178133eaa771dfe3f3191a3926b6222d58141859fdd75d16cc5b344f3011ac7a",
+            "b53ce4c3f70b4e17eb99912c12e2c3d1872e329849267d953d4e679d3e861421",
+            "b5b9947e4c18dc55c4948507de3981e677ee91bbfe283fc67c5eabecc89c04be",
+        ),
+    }
+)
 BAOSTOCK_SECURITIES_SOURCE_SHA256 = (
     "4d2cac55283a4382169ea96decad333995cf51be081b6896be2142626a512f42"
 )
@@ -100,39 +159,426 @@ BAOSTOCK_TRANSIENT_TRANSPORT_ERROR_MAP = {
         "baostock_transport:ConnectionError"
     ),
 }
+BAOSTOCK_CONNECTION_FAILURE_ERRORS = frozenset(
+    {
+        "baostock_transport:ConnectionError",
+        "baostock_transport:OSError",
+        "baostock_transport:SessionExpired:10001001",
+        "baostock_transport:TimeoutError",
+    }
+)
+
+
+@dataclass(frozen=True)
+class _BaostockAcquisitionPolicy:
+    policy_id: str
+    activity_version: str
+    permission_context_id: str
+    authorization_policy: str
+    output_name: str
+    max_retries: int
+    connection_failure_cooldowns: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class _BaostockRecoveryJournal:
+    journal_path: Path
+    activity_id: str
+    contract_id: str
+    request_plan_hash: str
+    public_key: bytes
+    request_rows: tuple[Mapping[str, Any], ...]
+    max_retries: int
+
+    def connection_state(
+        self, request: ProviderProbeRequest
+    ) -> tuple[int, bool]:
+        """Recover consecutive failures and an interrupted pending cooldown."""
+
+        if not self.journal_path.exists():
+            return 0, False
+        if not self.journal_path.is_file() or self.journal_path.is_symlink():
+            raise ValueError("baostock_recovery_journal_invalid")
+        events = _read_and_validate_journal(
+            self.journal_path,
+            expected_activity_id=self.activity_id,
+            expected_contract_id=self.contract_id,
+            public_key=self.public_key,
+            request_rows=self.request_rows,
+            request_plan_hash=self.request_plan_hash,
+            max_retries=self.max_retries,
+        )
+        consecutive = 0
+        pending = False
+        for event in events:
+            if (
+                event.get("event_type") != "capture_attempt_terminal"
+                or event.get("request_id") != request.request_id
+            ):
+                continue
+            error_code = str(event.get("error_code") or "")
+            interrupted = (
+                event.get("recovered_after_interruption") is True
+                and error_code == "ambiguous_transport"
+            )
+            if error_code in BAOSTOCK_CONNECTION_FAILURE_ERRORS or interrupted:
+                consecutive += 1
+                pending = interrupted
+            else:
+                consecutive = 0
+                pending = False
+        return consecutive, pending
+
+
+def _acquisition_policy(
+    phase: str,
+    policy_id: str = BAOSTOCK_V1_ACQUISITION_POLICY_ID,
+) -> _BaostockAcquisitionPolicy:
+    if policy_id == BAOSTOCK_V1_ACQUISITION_POLICY_ID:
+        return _BaostockAcquisitionPolicy(
+            policy_id=policy_id,
+            activity_version="v1",
+            permission_context_id=PERMISSION_CONTEXT,
+            authorization_policy=BAOSTOCK_AUTHORIZATION_POLICY,
+            output_name=phase.replace("-", "_"),
+            max_retries=2,
+            connection_failure_cooldowns=(),
+        )
+    if (
+        policy_id != BAOSTOCK_HS300_RETRY_V2_POLICY_ID
+        or phase != "hs300-snapshots"
+    ):
+        raise ValueError("baostock_acquisition_policy_phase_invalid")
+    return _BaostockAcquisitionPolicy(
+        policy_id=policy_id,
+        activity_version="v2",
+        permission_context_id=BAOSTOCK_HS300_RETRY_V2_PERMISSION_CONTEXT,
+        authorization_policy=BAOSTOCK_HS300_RETRY_V2_AUTHORIZATION_POLICY,
+        output_name="hs300_snapshots_v2",
+        max_retries=5,
+        connection_failure_cooldowns=(
+            BAOSTOCK_HS300_RETRY_V2_CONNECTION_COOLDOWNS
+        ),
+    )
+
+
+def _verify_hs300_retry_v2_pause_evidence() -> str:
+    activity_root = (
+        SCOPE_ROOT
+        / ".hs300_snapshots.activities"
+        / BAOSTOCK_HS300_RETRY_V2_PAUSED_ACTIVITY_ID
+    )
+    contract_path = activity_root / "activity_contract.json"
+    plan_path = activity_root / "request_plan.json"
+    journal_path = activity_root / "capture_journal.jsonl"
+    pause_path = activity_root / "pauses" / (
+        "pause_"
+        f"{BAOSTOCK_HS300_RETRY_V2_APPROVED_PAUSE_CONTENT_HASH[:24]}.json"
+    )
+    required_paths = (
+        activity_root,
+        contract_path,
+        plan_path,
+        journal_path,
+        pause_path,
+    )
+    if (
+        not activity_root.is_dir()
+        or any(path.is_symlink() for path in required_paths)
+        or any(not path.is_file() for path in required_paths[1:])
+    ):
+        raise ValueError("baostock_hs300_retry_v2_pause_evidence_missing")
+    contract = read_json(contract_path)
+    plan = read_json(plan_path)
+    requests = plan.get("requests")
+    contract_id = canonical_hash(contract)
+    request_plan_hash = (
+        canonical_hash(requests) if isinstance(requests, list) else ""
+    )
+    expected_activity_id = canonical_hash(
+        {
+            "contract_id": contract_id,
+            "request_plan_hash": request_plan_hash,
+        }
+    )
+    if (
+        contract_id != BAOSTOCK_HS300_RETRY_V2_PAUSED_CONTRACT_ID
+        or set(plan) != {"schema_version", "request_plan_hash", "requests"}
+        or plan.get("schema_version")
+        != "free_provider_backfill_request_plan_v1"
+        or request_plan_hash
+        != BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_PLAN_HASH
+        or plan.get("request_plan_hash") != request_plan_hash
+        or len(requests or ())
+        != BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_COUNT
+        or expected_activity_id != BAOSTOCK_HS300_RETRY_V2_PAUSED_ACTIVITY_ID
+        or activity_root.name != expected_activity_id
+        or contract.get("activity_name")
+        != "free_domestic_baostock_hs300-snapshots_2012_2019_v1"
+        or contract.get("provider") != "baostock"
+        or contract.get("permission_context_id") != PERMISSION_CONTEXT
+        or contract.get("population_root")
+        != SECURITY_SNAPSHOT_APPROVED_POPULATION_ROOT
+        or contract.get("capture_public_key_sha256")
+        != BAOSTOCK_APPROVED_CAPTURE_KEY_SHA256
+        or contract.get("source_profile_id") != BAOSTOCK_SOURCE_PROFILE_ID
+        or contract.get("budget")
+        != {
+            "max_requests": (
+                BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_COUNT * 3
+            ),
+            "max_response_bytes": 64 * 1024 * 1024,
+            "max_retries": 2,
+            "max_total_response_bytes": 16 * 1024 * 1024 * 1024,
+            "max_wire_exchanges": (
+                BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_COUNT * 6
+            ),
+            "minimum_delay_seconds": 1.0,
+            "timeout_seconds": 30.0,
+        }
+    ):
+        raise ValueError("baostock_hs300_retry_v2_pause_parent_invalid")
+    try:
+        public_key = base64.b64decode(
+            str(contract.get("capture_public_key_pem_b64") or ""),
+            validate=True,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "baostock_hs300_retry_v2_pause_parent_invalid"
+        ) from exc
+    events = _read_and_validate_journal(
+        journal_path,
+        expected_activity_id=expected_activity_id,
+        expected_contract_id=contract_id,
+        public_key=public_key,
+        request_rows=requests,
+        request_plan_hash=request_plan_hash,
+        max_retries=2,
+    )
+    terminal_events = [
+        event
+        for event in events
+        if event.get("event_type") == "capture_attempt_terminal"
+    ]
+    raw_paths: set[Path] = set()
+    response_bytes = 0
+    activity_resolved = activity_root.resolve()
+    for event in terminal_events:
+        raw_path = (
+            activity_root / str(event.get("raw_envelope_relative_path") or "")
+        ).resolve()
+        try:
+            raw_path.relative_to(activity_resolved)
+        except ValueError as exc:
+            raise ValueError(
+                "baostock_hs300_retry_v2_pause_parent_invalid"
+            ) from exc
+        if (
+            raw_path in raw_paths
+            or not raw_path.is_file()
+            or raw_path.is_symlink()
+            or sha256_file(raw_path) != event.get("raw_envelope_sha256")
+        ):
+            raise ValueError("baostock_hs300_retry_v2_pause_parent_invalid")
+        raw_paths.add(raw_path)
+        response_bytes += raw_path.stat().st_size
+    derived_usage = {
+        "attempt_count": len(terminal_events),
+        "response_bytes": response_bytes,
+        "wire_exchange_count": sum(
+            int(event.get("transport_exchange_count") or 0)
+            for event in terminal_events
+        ),
+    }
+    payload = read_json(pause_path)
+    observed_hash = str(payload.get("content_hash") or "")
+    semantic = {
+        key: value for key, value in payload.items() if key != "content_hash"
+    }
+    last_terminal = terminal_events[-1] if terminal_events else {}
+    if (
+        not events
+        or events[-1] != last_terminal
+        or payload.get("usage") != derived_usage
+        or payload.get("request_id") != last_terminal.get("request_id")
+        or payload.get("attempt_id") != last_terminal.get("attempt_id")
+        or payload.get("terminal_state")
+        != last_terminal.get("terminal_state")
+        or payload.get("error_code") != last_terminal.get("error_code")
+        or payload.get("status_code") != last_terminal.get("status_code")
+    ):
+        raise ValueError("baostock_hs300_retry_v2_pause_parent_invalid")
+    if (
+        set(payload)
+        != {
+            "schema_version",
+            "reason",
+            "request_id",
+            "attempt_id",
+            "terminal_state",
+            "error_code",
+            "status_code",
+            "usage",
+            "paused_at",
+            "automatic_resume_authorized",
+            "content_hash",
+        }
+        or payload.get("schema_version") != "free_provider_backfill_pause_v1"
+        or payload.get("reason")
+        != "provider_terminal_error_or_circuit_breaker"
+        or payload.get("request_id")
+        != BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_ID
+        or payload.get("attempt_id")
+        != f"{BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_ID}:2"
+        or payload.get("terminal_state") != "error"
+        or payload.get("error_code") != "baostock_transport:OSError"
+        or payload.get("status_code") is not None
+        or payload.get("automatic_resume_authorized") is not False
+        or canonical_hash(semantic) != observed_hash
+        or observed_hash
+        != BAOSTOCK_HS300_RETRY_V2_APPROVED_PAUSE_CONTENT_HASH
+    ):
+        raise ValueError("baostock_hs300_retry_v2_pause_evidence_invalid")
+    return observed_hash
 
 
 class BoundedBaostockReconciliationTransport(RecoveringBaostockTransport):
     """Normalize only reviewed transient socket subclasses before retry."""
 
+    def __init__(
+        self,
+        *,
+        connection_failure_cooldowns: Sequence[float] = (),
+        recovery_state_loader: (
+            Callable[[ProviderProbeRequest], tuple[int, bool]] | None
+        ) = None,
+        sleeper: Callable[[float], None] = time.sleep,
+    ) -> None:
+        super().__init__()
+        if any(
+            type(value) not in {int, float} or not 0 <= float(value) <= 300
+            for value in connection_failure_cooldowns
+        ):
+            raise ValueError("baostock_connection_cooldown_invalid")
+        self._connection_failure_cooldowns = tuple(
+            float(value) for value in connection_failure_cooldowns
+        )
+        self._recovery_state_loader = recovery_state_loader
+        self._recovery_state_loaded = False
+        self._sleeper = sleeper
+        self._consecutive_connection_failures = 0
+
     def __call__(
         self, request: ProviderProbeRequest, timeout_seconds: float
     ) -> ProviderProbeObservation:
+        recovery_diagnostic: dict[str, Any] = {}
+        if (
+            not self._recovery_state_loaded
+            and self._recovery_state_loader is not None
+        ):
+            consecutive, pending = self._recovery_state_loader(request)
+            if (
+                isinstance(consecutive, bool)
+                or not isinstance(consecutive, int)
+                or consecutive < 0
+                or not isinstance(pending, bool)
+            ):
+                raise ValueError("baostock_recovery_connection_state_invalid")
+            self._consecutive_connection_failures = consecutive
+            self._recovery_state_loaded = True
+            if (
+                pending
+                and consecutive
+                and self._connection_failure_cooldowns
+            ):
+                cooldown = self._connection_failure_cooldowns[
+                    min(
+                        consecutive,
+                        len(self._connection_failure_cooldowns),
+                    )
+                    - 1
+                ]
+                if cooldown > 0:
+                    self._sleeper(cooldown)
+                    recovery_diagnostic = {
+                        "recovered_connection_failure_cooldown": {
+                            "consecutive_failure_ordinal": consecutive,
+                            "seconds": cooldown,
+                        }
+                    }
         observation = super().__call__(request, timeout_seconds)
         original_error = str(observation.error_code or "")
         normalized_error = BAOSTOCK_TRANSIENT_TRANSPORT_ERROR_MAP.get(
             original_error
         )
-        if normalized_error is None:
-            return observation
-        self._replace()
+        normalized = observation
+        if normalized_error is not None:
+            self._replace()
+            normalized = ProviderProbeObservation(
+                terminal_state=observation.terminal_state,
+                raw_payload=observation.raw_payload,
+                row_count=observation.row_count,
+                status_code=observation.status_code,
+                error_code=normalized_error,
+                diagnostics={
+                    **dict(observation.diagnostics),
+                    "transient_error_normalization": {
+                        "adapter": type(self).__name__,
+                        "original_error_code": original_error,
+                        "normalized_error_code": normalized_error,
+                        "transport_replaced": True,
+                    },
+                },
+                checks=observation.checks,
+                transport_exchange_count=observation.transport_exchange_count,
+            )
+        if recovery_diagnostic:
+            normalized = ProviderProbeObservation(
+                terminal_state=normalized.terminal_state,
+                raw_payload=normalized.raw_payload,
+                row_count=normalized.row_count,
+                status_code=normalized.status_code,
+                error_code=normalized.error_code,
+                diagnostics={
+                    **dict(normalized.diagnostics),
+                    **recovery_diagnostic,
+                },
+                checks=normalized.checks,
+                transport_exchange_count=normalized.transport_exchange_count,
+            )
+        if normalized.error_code not in BAOSTOCK_CONNECTION_FAILURE_ERRORS:
+            self._consecutive_connection_failures = 0
+            return normalized
+        self._consecutive_connection_failures += 1
+        cooldown = (
+            self._connection_failure_cooldowns[
+                self._consecutive_connection_failures - 1
+            ]
+            if self._consecutive_connection_failures
+            <= len(self._connection_failure_cooldowns)
+            else 0.0
+        )
+        if cooldown <= 0:
+            return normalized
+        self._sleeper(cooldown)
         return ProviderProbeObservation(
-            terminal_state=observation.terminal_state,
-            raw_payload=observation.raw_payload,
-            row_count=observation.row_count,
-            status_code=observation.status_code,
-            error_code=normalized_error,
+            terminal_state=normalized.terminal_state,
+            raw_payload=normalized.raw_payload,
+            row_count=normalized.row_count,
+            status_code=normalized.status_code,
+            error_code=normalized.error_code,
             diagnostics={
-                **dict(observation.diagnostics),
-                "transient_error_normalization": {
-                    "adapter": type(self).__name__,
-                    "original_error_code": original_error,
-                    "normalized_error_code": normalized_error,
-                    "transport_replaced": True,
+                **dict(normalized.diagnostics),
+                "connection_failure_cooldown": {
+                    "consecutive_failure_ordinal": (
+                        self._consecutive_connection_failures
+                    ),
+                    "seconds": cooldown,
                 },
             },
-            checks=observation.checks,
-            transport_exchange_count=observation.transport_exchange_count,
+            checks=normalized.checks,
+            transport_exchange_count=normalized.transport_exchange_count,
         )
 
 _BAOSTOCK_PHASE_BASELINES: dict[str, dict[str, Any]] = {
@@ -1155,10 +1601,12 @@ def _adapter_identity(
     *,
     implementation_root: str | None = None,
     wire_protocol_root: str | None = None,
+    acquisition_policy_id: str = BAOSTOCK_V1_ACQUISITION_POLICY_ID,
 ) -> dict[str, str]:
-    return {
+    policy = _acquisition_policy(phase, acquisition_policy_id)
+    identity = {
         "adapter": f"baostock_{phase}_reconciliation_capture_v2",
-        "authorization_policy": BAOSTOCK_AUTHORIZATION_POLICY,
+        "authorization_policy": policy.authorization_policy,
         "baostock_distribution": "0.9.3",
         "baostock_client": "00.9.30",
         "calendar_source_sha256": BAOSTOCK_CALENDAR_SOURCE_SHA256,
@@ -1170,6 +1618,54 @@ def _adapter_identity(
         "securities_source_sha256": BAOSTOCK_SECURITIES_SOURCE_SHA256,
         "wire_protocol_root": wire_protocol_root or baostock_wire_protocol_root(),
     }
+    if policy.policy_id == BAOSTOCK_HS300_RETRY_V2_POLICY_ID:
+        cooldowns = ",".join(
+            str(int(value))
+            for value in policy.connection_failure_cooldowns
+        )
+        identity.update(
+            {
+                "acquisition_policy_id": policy.policy_id,
+                "approved_pause_content_hash": (
+                    BAOSTOCK_HS300_RETRY_V2_APPROVED_PAUSE_CONTENT_HASH
+                ),
+                "approved_paused_activity_id": (
+                    BAOSTOCK_HS300_RETRY_V2_PAUSED_ACTIVITY_ID
+                ),
+                "approved_paused_contract_id": (
+                    BAOSTOCK_HS300_RETRY_V2_PAUSED_CONTRACT_ID
+                ),
+                "approved_paused_request_plan_hash": (
+                    BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_PLAN_HASH
+                ),
+                "authorization_basis": (
+                    "signed_pause_parent_contract_plan_journal_raw_v1"
+                ),
+                "approved_population_count": str(
+                    int(_BAOSTOCK_PHASE_BASELINES[phase]["population_count"])
+                ),
+                "approved_population_root": str(
+                    _BAOSTOCK_PHASE_BASELINES[phase]["population_root"]
+                ),
+                "approved_request_count": str(
+                    int(_BAOSTOCK_PHASE_BASELINES[phase]["request_count"])
+                ),
+                "approved_request_plan_hash": str(
+                    _BAOSTOCK_PHASE_BASELINES[phase]["request_plan_hash"]
+                ),
+                "connection_failure_cooldowns_seconds": cooldowns,
+                "full_plan_replay_required": "true",
+                "max_attempts_per_request": str(policy.max_retries + 1),
+                "max_requests": str(
+                    int(
+                        _BAOSTOCK_PHASE_BASELINES[phase]["request_count"]
+                    )
+                    * (policy.max_retries + 1)
+                ),
+                "partial_activity_reuse": "forbidden",
+            }
+        )
+    return identity
 
 
 def _contract(
@@ -1185,7 +1681,10 @@ def _contract(
     permission_context_id: str,
     securities_path: str | Path = SECURITIES_PATH,
     calendar_path: str | Path = CALENDAR_PATH,
+    acquisition_policy_id: str = BAOSTOCK_V1_ACQUISITION_POLICY_ID,
+    request_plan_hash: str | None = None,
 ) -> FreeProviderBackfillContract:
+    policy = _acquisition_policy(phase, acquisition_policy_id)
     _approved_source_file_hashes(
         securities_path=securities_path,
         calendar_path=calendar_path,
@@ -1195,6 +1694,24 @@ def _contract(
         or population_root != SECURITY_SNAPSHOT_APPROVED_POPULATION_ROOT
     ):
         raise ValueError("baostock_security_snapshot_contract_closure_invalid")
+    if policy.policy_id == BAOSTOCK_HS300_RETRY_V2_POLICY_ID:
+        baseline = _BAOSTOCK_PHASE_BASELINES["hs300-snapshots"]
+        if (
+            _verify_hs300_retry_v2_pause_evidence()
+            != BAOSTOCK_HS300_RETRY_V2_APPROVED_PAUSE_CONTENT_HASH
+            or request_count != int(baseline["request_count"])
+            or population_root != baseline["population_root"]
+            or request_plan_hash != baseline["request_plan_hash"]
+            or Path(output_root).resolve()
+            != (SCOPE_ROOT / policy.output_name).resolve()
+            or delay != 1.0
+            or timeout != 30.0
+            or retries != policy.max_retries
+            or permission_context_id != policy.permission_context_id
+        ):
+            raise ValueError(
+                "baostock_hs300_retry_v2_contract_closure_invalid"
+            )
     request_start = (
         "20110101"
         if phase
@@ -1207,7 +1724,10 @@ def _contract(
         else "20120101"
     )
     return FreeProviderBackfillContract(
-        activity_name=f"free_domestic_baostock_{phase}_2012_2019_v1",
+        activity_name=(
+            f"free_domestic_baostock_{phase}_2012_2019_"
+            f"{policy.activity_version}"
+        ),
         provider="baostock",
         output_root=output_root,
         permission_context_id=permission_context_id,
@@ -1228,7 +1748,10 @@ def _contract(
             minimum_delay_seconds=delay,
             max_retries=retries,
         ),
-        adapter_identity=_adapter_identity(phase),
+        adapter_identity=_adapter_identity(
+            phase,
+            acquisition_policy_id=policy.policy_id,
+        ),
         source_profile_id=BAOSTOCK_SOURCE_PROFILE_ID,
     )
 
@@ -1353,6 +1876,28 @@ def _phase_definition(phase: str) -> dict[str, Any]:
     return definition
 
 
+def _capture_acquisition_policy(
+    *,
+    phase: str,
+    activity_name: object,
+) -> _BaostockAcquisitionPolicy:
+    for policy_id in (
+        BAOSTOCK_V1_ACQUISITION_POLICY_ID,
+        BAOSTOCK_HS300_RETRY_V2_POLICY_ID,
+    ):
+        try:
+            policy = _acquisition_policy(phase, policy_id)
+        except ValueError:
+            continue
+        expected = (
+            f"free_domestic_baostock_{phase}_2012_2019_"
+            f"{policy.activity_version}"
+        )
+        if activity_name == expected:
+            return policy
+    raise ValueError("baostock_reconciliation_phase_mismatch")
+
+
 def validate_baostock_reconciliation_capture(
     path: str | Path,
     *,
@@ -1375,11 +1920,12 @@ def validate_baostock_reconciliation_capture(
     root = Path(str(capture["manifest_path"])).parent
     contract = read_json(root / "activity_contract.json")
     plan = read_json(root / "request_plan.json")
-    expected_activity_name = (
-        f"free_domestic_baostock_{expected_phase}_2012_2019_v1"
+    policy = _capture_acquisition_policy(
+        phase=expected_phase,
+        activity_name=contract.get("activity_name"),
     )
-    if contract.get("activity_name") != expected_activity_name:
-        raise ValueError("baostock_reconciliation_phase_mismatch")
+    if policy.policy_id == BAOSTOCK_HS300_RETRY_V2_POLICY_ID:
+        _verify_hs300_retry_v2_pause_evidence()
     if (
         contract.get("capture_public_key_sha256")
         != BAOSTOCK_APPROVED_CAPTURE_KEY_SHA256
@@ -1389,8 +1935,25 @@ def validate_baostock_reconciliation_capture(
     if not isinstance(adapter, Mapping):
         raise ValueError("baostock_reconciliation_adapter_identity_invalid")
     current_root = _implementation_root()
-    current_replay_compatible = (
+    implementation_identity_current = (
         adapter.get("implementation_root") == current_root
+    )
+    historical_implementation_allowlisted = (
+        policy.policy_id == BAOSTOCK_V1_ACQUISITION_POLICY_ID
+        and (
+            expected_phase,
+            str(capture.get("content_hash") or ""),
+            str(capture.get("contract_id") or ""),
+            str(capture.get("request_plan_hash") or ""),
+            str(adapter.get("implementation_root") or ""),
+        )
+        in BAOSTOCK_HISTORICAL_REPLAY_ALLOWLIST
+    )
+    current_replay_compatible = (
+        (
+            implementation_identity_current
+            or historical_implementation_allowlisted
+        )
         and adapter.get("wire_protocol_root") == baostock_wire_protocol_root()
     )
     expected_contract_keys = {
@@ -1414,13 +1977,13 @@ def validate_baostock_reconciliation_capture(
     }
     request_count = int(definition["request_count"])
     expected_budget = {
-        "max_requests": request_count * 3,
-        "max_wire_exchanges": request_count * 6,
+        "max_requests": request_count * (policy.max_retries + 1),
+        "max_wire_exchanges": request_count * 2 * (policy.max_retries + 1),
         "max_response_bytes": 64 * 1024 * 1024,
         "max_total_response_bytes": 16 * 1024 * 1024 * 1024,
         "timeout_seconds": 30.0,
         "minimum_delay_seconds": 1.0,
-        "max_retries": 2,
+        "max_retries": policy.max_retries,
     }
     expected_scope = {
         "date_start": "20120101",
@@ -1429,7 +1992,7 @@ def validate_baostock_reconciliation_capture(
         "request_end": "20191231",
     }
     expected_output_namespace = canonical_hash(
-        str((SCOPE_ROOT / expected_phase.replace("-", "_")).resolve())
+        str((SCOPE_ROOT / policy.output_name).resolve())
     )
     observed_implementation_root = str(adapter.get("implementation_root") or "")
     observed_wire_protocol_root = str(adapter.get("wire_protocol_root") or "")
@@ -1441,6 +2004,7 @@ def validate_baostock_reconciliation_capture(
         expected_phase,
         implementation_root=observed_implementation_root,
         wire_protocol_root=observed_wire_protocol_root,
+        acquisition_policy_id=policy.policy_id,
     )
     safety = contract.get("safety")
     if (
@@ -1449,7 +2013,8 @@ def validate_baostock_reconciliation_capture(
         != "free_provider_backfill_contract_v2"
         or contract.get("provider") != "baostock"
         or contract.get("output_namespace_id") != expected_output_namespace
-        or contract.get("permission_context_id") != PERMISSION_CONTEXT
+        or contract.get("permission_context_id")
+        != policy.permission_context_id
         or contract.get("population_root") != definition["population_root"]
         or contract.get("scope") != expected_scope
         or contract.get("allowed_hosts") != ["public-api.baostock.com"]
@@ -1525,6 +2090,7 @@ def validate_baostock_reconciliation_capture(
     base_result = {
         "schema_version": "baostock_reconciliation_validation_v1",
         "phase": expected_phase,
+        "acquisition_policy_id": policy.policy_id,
         "content_hash": capture["content_hash"],
         "signed_integrity_verified": True,
         "publication_signature_verified": True,
@@ -1535,6 +2101,10 @@ def validate_baostock_reconciliation_capture(
         "provider_trailer_integrity_for_compressed_responses": "unverified",
         "zlib_stream_checksum_verified_for_compressed_responses": True,
         "current_replay_compatible": current_replay_compatible,
+        "implementation_identity_current": implementation_identity_current,
+        "historical_implementation_allowlisted": (
+            historical_implementation_allowlisted
+        ),
         "data_admission_eligible": False,
         "downstream_ineligible": True,
     }
@@ -1628,8 +2198,54 @@ def _implementation_root() -> str:
                 "transient_transport_error_map": (
                     BAOSTOCK_TRANSIENT_TRANSPORT_ERROR_MAP
                 ),
+                "connection_failure_errors": sorted(
+                    BAOSTOCK_CONNECTION_FAILURE_ERRORS
+                ),
+                "hs300_retry_v2": {
+                    "policy_id": BAOSTOCK_HS300_RETRY_V2_POLICY_ID,
+                    "permission_context": (
+                        BAOSTOCK_HS300_RETRY_V2_PERMISSION_CONTEXT
+                    ),
+                    "authorization_policy": (
+                        BAOSTOCK_HS300_RETRY_V2_AUTHORIZATION_POLICY
+                    ),
+                    "approved_pause_content_hash": (
+                        BAOSTOCK_HS300_RETRY_V2_APPROVED_PAUSE_CONTENT_HASH
+                    ),
+                    "approved_paused_activity_id": (
+                        BAOSTOCK_HS300_RETRY_V2_PAUSED_ACTIVITY_ID
+                    ),
+                    "approved_paused_contract_id": (
+                        BAOSTOCK_HS300_RETRY_V2_PAUSED_CONTRACT_ID
+                    ),
+                    "approved_paused_request_plan_hash": (
+                        BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_PLAN_HASH
+                    ),
+                    "approved_paused_request_count": (
+                        BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_COUNT
+                    ),
+                    "approved_paused_request_id": (
+                        BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_ID
+                    ),
+                    "connection_failure_cooldowns": (
+                        BAOSTOCK_HS300_RETRY_V2_CONNECTION_COOLDOWNS
+                    ),
+                    "max_retries": 5,
+                    "max_requests": 11_676,
+                    "full_plan_replay_required": True,
+                    "partial_activity_reuse": "forbidden",
+                },
+                "historical_replay_allowlist": sorted(
+                    BAOSTOCK_HISTORICAL_REPLAY_ALLOWLIST
+                ),
                 "phase_baselines": _BAOSTOCK_PHASE_BASELINES,
             },
+            "acquisition_policy_interface": inspect.getsource(
+                _acquisition_policy
+            ),
+            "hs300_retry_v2_pause_verifier": inspect.getsource(
+                _verify_hs300_retry_v2_pause_evidence
+            ),
             "adjustment_plan": inspect.getsource(build_adjustment_plan),
             "security_basic_plan": inspect.getsource(build_security_basic_plan),
             "security_snapshot_plan": inspect.getsource(
@@ -1703,13 +2319,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--securities-path", default=str(SECURITIES_PATH))
     parser.add_argument("--calendar-path", default=str(CALENDAR_PATH))
     parser.add_argument("--security-code", action="append")
-    parser.add_argument("--permission-context-id", default=PERMISSION_CONTEXT)
+    parser.add_argument("--permission-context-id")
     parser.add_argument("--allow-network", action="store_true")
     parser.add_argument("--plan-only", action="store_true")
     parser.add_argument("--validate")
     parser.add_argument("--minimum-delay-seconds", type=float, default=1.0)
     parser.add_argument("--timeout-seconds", type=float, default=30.0)
-    parser.add_argument("--max-retries", type=int, default=2)
+    parser.add_argument("--max-retries", type=int)
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -1772,11 +2388,58 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 2
+    try:
+        acquisition_policy = _acquisition_policy(
+            args.phase,
+            (
+                BAOSTOCK_HS300_RETRY_V2_POLICY_ID
+                if args.phase == "hs300-snapshots"
+                else BAOSTOCK_V1_ACQUISITION_POLICY_ID
+            ),
+        )
+    except ValueError as exc:
+        print(
+            _render(
+                {
+                    "schema_version": (
+                        "baostock_reconciliation_policy_block_v1"
+                    ),
+                    "phase": args.phase,
+                    "status": "blocked",
+                    "reason": str(exc),
+                    "data_admission_eligible": False,
+                    "downstream_ineligible": True,
+                },
+                pretty=args.pretty,
+            )
+        )
+        return 2
+    if acquisition_policy.policy_id == BAOSTOCK_HS300_RETRY_V2_POLICY_ID:
+        try:
+            _verify_hs300_retry_v2_pause_evidence()
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print(
+                _render(
+                    {
+                        "schema_version": (
+                            "baostock_reconciliation_policy_block_v1"
+                        ),
+                        "phase": args.phase,
+                        "status": "blocked",
+                        "reason": str(exc),
+                        "data_admission_eligible": False,
+                        "downstream_ineligible": True,
+                    },
+                    pretty=args.pretty,
+                )
+            )
+            return 2
     if (
-        args.permission_context_id != PERMISSION_CONTEXT
+        args.permission_context_id
+        not in {None, acquisition_policy.permission_context_id}
         or args.minimum_delay_seconds != 1.0
         or args.timeout_seconds != 30.0
-        or args.max_retries != 2
+        or args.max_retries not in {None, acquisition_policy.max_retries}
     ):
         print(
             _render(
@@ -1845,6 +2508,18 @@ def main(argv: list[str] | None = None) -> int:
         "population_root": population_root,
         "request_count": len(requests),
         "request_plan_hash": canonical_hash([request.semantic() for request in requests]),
+        "acquisition_policy_id": acquisition_policy.policy_id,
+        "effective_max_retries": acquisition_policy.max_retries,
+        "max_requests": len(requests)
+        * (acquisition_policy.max_retries + 1),
+        "connection_failure_cooldowns_seconds": list(
+            acquisition_policy.connection_failure_cooldowns
+        ),
+        "full_plan_replay_required": (
+            acquisition_policy.policy_id
+            == BAOSTOCK_HS300_RETRY_V2_POLICY_ID
+        ),
+        "partial_activity_reuse": "forbidden",
         "network_called": False,
     }
     definition = _phase_definition(args.phase)
@@ -1899,7 +2574,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 2
-    output = SCOPE_ROOT / args.phase.replace("-", "_")
+    output = SCOPE_ROOT / acquisition_policy.output_name
     contract = _contract(
         phase=args.phase,
         output_root=output,
@@ -1908,10 +2583,12 @@ def main(argv: list[str] | None = None) -> int:
         request_count=len(requests),
         delay=args.minimum_delay_seconds,
         timeout=args.timeout_seconds,
-        retries=args.max_retries,
-        permission_context_id=args.permission_context_id,
+        retries=acquisition_policy.max_retries,
+        permission_context_id=acquisition_policy.permission_context_id,
         securities_path=args.securities_path,
         calendar_path=args.calendar_path,
+        acquisition_policy_id=acquisition_policy.policy_id,
+        request_plan_hash=str(preview["request_plan_hash"]),
     )
     if args.plan_only:
         print(
@@ -1925,7 +2602,43 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0
-    transport = BoundedBaostockReconciliationTransport()
+    contract_id = canonical_hash(contract.semantic())
+    request_plan_hash = str(preview["request_plan_hash"])
+    activity_id = canonical_hash(
+        {
+            "contract_id": contract_id,
+            "request_plan_hash": request_plan_hash,
+        }
+    )
+    recovery_journal = (
+        _BaostockRecoveryJournal(
+            journal_path=(
+                output.parent
+                / f".{output.name}.activities"
+                / activity_id
+                / "capture_journal.jsonl"
+            ),
+            activity_id=activity_id,
+            contract_id=contract_id,
+            request_plan_hash=request_plan_hash,
+            public_key=signer.public_key_pem,
+            request_rows=tuple(request.semantic() for request in requests),
+            max_retries=acquisition_policy.max_retries,
+        )
+        if acquisition_policy.policy_id
+        == BAOSTOCK_HS300_RETRY_V2_POLICY_ID
+        else None
+    )
+    transport = BoundedBaostockReconciliationTransport(
+        connection_failure_cooldowns=(
+            acquisition_policy.connection_failure_cooldowns
+        ),
+        recovery_state_loader=(
+            recovery_journal.connection_state
+            if recovery_journal is not None
+            else None
+        ),
+    )
     try:
         result = run_free_provider_backfill(
             contract,

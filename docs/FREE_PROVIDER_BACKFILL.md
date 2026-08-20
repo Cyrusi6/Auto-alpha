@@ -113,12 +113,21 @@ protocol header、operation/参数、压缩 frame 和 `record`；SDK `parsed` �
 
 当前实现身份下的 reconciliation 不是单一“Baostock 已完成”开关，而是六个独立
 phase：`index-daily`、`security-basic`、`hs300-snapshots`、`adjustments`、
-`turnover` 和 `dividends`。它们正在按单连接、稳定计划和有界重试串行采集/排队；
+`turnover` 和 `dividends`。每个 phase 都只能按单连接、稳定计划和有界重试运行；
 每个 phase 只有在不可变发布并通过当前 validator 的协议、wire、计划和 normalizer
 重放后才可写成 capture success。旧 v1 generation、单证券 canary、暂停 journal 与
 不同合同的 raw 仅可对账，不能拼成 current generation 或 exact cover。即使六段全部
 物理成功，adjustment/dividend 也仍只是公司行为与复权 vintage 的 reconciliation，
 不能自行取得 PIT 准入资格。
+
+`hs300-snapshots` 的 v1 活动 `464eed...` 在完成 465 个日期后，于
+`baostock_hs300_20131209:2` 因连接错误暂停。2026-08-17 的人工批准只授权 v2 从
+完整的 1,946 日期计划重新开始，不授权恢复或拼接 v1。v2 固定写入
+`hs300_snapshots_v2/`，每个请求最多为初始请求加五次重试，总上限 11,676；连续连接
+失败依次冷却 5、15、30、60、120 秒。合同创建和验证都会重放旧 pause 的父合同、
+完整 request plan、签名 journal、raw hash 与 derived usage，任何缺失或改变均在联网
+前阻断。崩溃恢复还会从签名 journal 恢复连续失败序号，未完成的冷却不会退回 5 秒。
+截至 2026-08-20，真实 plan-only 已通过且未联网；v2 physical capture 尚未启动。
 
 Baostock 还存在一种精确的成功空终态：最后一页可能把 `record` 表示为空字符串 slot，
 而不是 JSON `{"record":[]}`。raw-wire replay 只在该页同时具备成功返回码和 terminal
@@ -417,10 +426,12 @@ MIME、文件结构和 WAF，shared HTTP module hash 也进入实现身份。
 - CNINFO document closure：31 项通过；
 - CSI signed range seam：24 项通过，既有 CSI 回归 47 项通过；
 - Baostock wire/terminal seam：20 项通过，相关回归组 27 项和 2 项通过。
+- Baostock `hs300-snapshots` v2：专项合同、父证据、冷却恢复和 exact allowlist
+  9 项通过；完整 official-backfill 文件 144 项通过。
 
 这些数字证明当前实现的局部合同和负向路径，不单独构成采集完成或 Data Admission
 verdict。上述两个 CSI generation 的完成另由其不可变 publication 与独立 replay
-证明；CNINFO 和 Baostock 当前活动仍在采集中。
+证明；CNINFO 和未发布的 Baostock 活动仍不能写成成功。
 
 ### 已完成的全市场结果
 

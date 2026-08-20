@@ -3848,6 +3848,600 @@ def test_baostock_reconciliation_adapter_scopes_connection_reset_retry(
     assert instances[0].closed is True
 
 
+def test_baostock_hs300_retry_v2_applies_bounded_connection_cooldown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _population, requests = build_index_daily_plan()
+    sleeps: list[float] = []
+    observations = [
+        ProviderProbeObservation(
+            terminal_state="error",
+            raw_payload=b"connection-reset",
+            row_count=None,
+            error_code="baostock_transport:ConnectionResetError",
+            diagnostics={},
+            checks={"transport_completed": False},
+            transport_exchange_count=1,
+        ),
+        ProviderProbeObservation(
+            terminal_state="error",
+            raw_payload=b"socket-os-error",
+            row_count=None,
+            error_code="baostock_transport:OSError",
+            diagnostics={},
+            checks={"transport_completed": False},
+            transport_exchange_count=1,
+        ),
+        ProviderProbeObservation(
+            terminal_state="positive",
+            raw_payload=b"success",
+            row_count=1,
+            diagnostics={},
+            checks={"transport_completed": True},
+            transport_exchange_count=1,
+        ),
+        ProviderProbeObservation(
+            terminal_state="error",
+            raw_payload=b"connection-reset-after-success",
+            row_count=None,
+            error_code="baostock_transport:ConnectionResetError",
+            diagnostics={},
+            checks={"transport_completed": False},
+            transport_exchange_count=1,
+        ),
+    ]
+
+    class SequenceTransport:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def __call__(
+            self,
+            _request: ProviderProbeRequest,
+            _timeout_seconds: float,
+        ) -> ProviderProbeObservation:
+            return observations.pop(0)
+
+        def close(self) -> None:
+            self.closed = True
+
+        def restore(
+            self,
+            _request: ProviderProbeRequest,
+            _record: object,
+        ) -> None:
+            return None
+
+    monkeypatch.setattr(
+        capture_backfill,
+        "BaostockProbeTransport",
+        SequenceTransport,
+    )
+    transport = baostock_reconciliation.BoundedBaostockReconciliationTransport(
+        connection_failure_cooldowns=(5.0, 15.0, 30.0, 60.0, 120.0),
+        sleeper=sleeps.append,
+    )
+
+    first = transport(requests[0], 3.0)
+    second = transport(requests[0], 3.0)
+    third = transport(requests[0], 3.0)
+    fourth = transport(requests[0], 3.0)
+
+    assert first.error_code == "baostock_transport:ConnectionError"
+    assert first.diagnostics["connection_failure_cooldown"] == {
+        "consecutive_failure_ordinal": 1,
+        "seconds": 5.0,
+    }
+    assert second.diagnostics["connection_failure_cooldown"] == {
+        "consecutive_failure_ordinal": 2,
+        "seconds": 15.0,
+    }
+    assert third.terminal_state == "positive"
+    assert fourth.diagnostics["connection_failure_cooldown"] == {
+        "consecutive_failure_ordinal": 1,
+        "seconds": 5.0,
+    }
+    assert sleeps == [5.0, 15.0, 5.0]
+
+
+def test_baostock_hs300_retry_v2_contract_is_full_plan_and_phase_scoped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    signer = EphemeralReceiptSigner.generate()
+    monkeypatch.setattr(
+        baostock_reconciliation,
+        "_approved_source_file_hashes",
+        lambda **_kwargs: {"securities": "a" * 64, "calendar": "b" * 64},
+    )
+    monkeypatch.setattr(
+        baostock_reconciliation,
+        "_verify_hs300_retry_v2_pause_evidence",
+        lambda: (
+            baostock_reconciliation.BAOSTOCK_HS300_RETRY_V2_APPROVED_PAUSE_CONTENT_HASH
+        ),
+    )
+    monkeypatch.setattr(baostock_reconciliation, "SCOPE_ROOT", tmp_path)
+    baseline = baostock_reconciliation._BAOSTOCK_PHASE_BASELINES[
+        "hs300-snapshots"
+    ]
+
+    contract = baostock_reconciliation._contract(
+        phase="hs300-snapshots",
+        output_root=tmp_path / "hs300_snapshots_v2",
+        signer=signer,
+        population_root=str(baseline["population_root"]),
+        request_count=int(baseline["request_count"]),
+        delay=1.0,
+        timeout=30.0,
+        retries=5,
+        permission_context_id=(
+            baostock_reconciliation.BAOSTOCK_HS300_RETRY_V2_PERMISSION_CONTEXT
+        ),
+        acquisition_policy_id=(
+            baostock_reconciliation.BAOSTOCK_HS300_RETRY_V2_POLICY_ID
+        ),
+        request_plan_hash=str(baseline["request_plan_hash"]),
+    )
+
+    assert contract.activity_name.endswith("_v2")
+    assert contract.budget.max_retries == 5
+    assert contract.budget.max_requests == 11_676
+    assert contract.budget.max_wire_exchanges == 23_352
+    assert contract.adapter_identity["full_plan_replay_required"] == "true"
+    assert contract.adapter_identity["partial_activity_reuse"] == "forbidden"
+    assert contract.adapter_identity["approved_pause_content_hash"] == (
+        baostock_reconciliation.BAOSTOCK_HS300_RETRY_V2_APPROVED_PAUSE_CONTENT_HASH
+    )
+    assert contract.adapter_identity["approved_paused_activity_id"] == (
+        baostock_reconciliation.BAOSTOCK_HS300_RETRY_V2_PAUSED_ACTIVITY_ID
+    )
+    assert contract.adapter_identity["approved_request_plan_hash"] == str(
+        baseline["request_plan_hash"]
+    )
+    assert contract.adapter_identity["connection_failure_cooldowns_seconds"] == (
+        "5,15,30,60,120"
+    )
+    with pytest.raises(
+        ValueError,
+        match="baostock_hs300_retry_v2_contract_closure_invalid",
+    ):
+        baostock_reconciliation._contract(
+            phase="hs300-snapshots",
+            output_root=tmp_path / "hs300_snapshots_v2",
+            signer=signer,
+            population_root=str(baseline["population_root"]),
+            request_count=int(baseline["request_count"]) - 1,
+            delay=1.0,
+            timeout=30.0,
+            retries=5,
+            permission_context_id=(
+                baostock_reconciliation.BAOSTOCK_HS300_RETRY_V2_PERMISSION_CONTEXT
+            ),
+            acquisition_policy_id=(
+                baostock_reconciliation.BAOSTOCK_HS300_RETRY_V2_POLICY_ID
+            ),
+            request_plan_hash=str(baseline["request_plan_hash"]),
+        )
+    with pytest.raises(
+        ValueError,
+        match="baostock_acquisition_policy_phase_invalid",
+    ):
+        baostock_reconciliation._contract(
+            phase="turnover",
+            output_root=tmp_path / "hs300_snapshots_v2",
+            signer=signer,
+            population_root="c" * 64,
+            request_count=1,
+            delay=1.0,
+            timeout=30.0,
+            retries=5,
+            permission_context_id=(
+                baostock_reconciliation.BAOSTOCK_HS300_RETRY_V2_PERMISSION_CONTEXT
+            ),
+            acquisition_policy_id=(
+                baostock_reconciliation.BAOSTOCK_HS300_RETRY_V2_POLICY_ID
+            ),
+            request_plan_hash=str(baseline["request_plan_hash"]),
+        )
+
+
+def test_baostock_hs300_retry_v2_sixth_failure_has_no_seventh_cooldown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _population, requests = build_index_daily_plan()
+    sleeps: list[float] = []
+
+    class FailingTransport:
+        def __call__(
+            self,
+            _request: ProviderProbeRequest,
+            _timeout_seconds: float,
+        ) -> ProviderProbeObservation:
+            return ProviderProbeObservation(
+                terminal_state="error",
+                raw_payload=b"connection-error",
+                row_count=None,
+                error_code="baostock_transport:OSError",
+                diagnostics={},
+                checks={"transport_completed": False},
+                transport_exchange_count=1,
+            )
+
+        def close(self) -> None:
+            return None
+
+        def restore(
+            self,
+            _request: ProviderProbeRequest,
+            _record: object,
+        ) -> None:
+            return None
+
+    monkeypatch.setattr(
+        capture_backfill,
+        "BaostockProbeTransport",
+        FailingTransport,
+    )
+    transport = baostock_reconciliation.BoundedBaostockReconciliationTransport(
+        connection_failure_cooldowns=(5.0, 15.0, 30.0, 60.0, 120.0),
+        sleeper=sleeps.append,
+    )
+
+    observations = [transport(requests[0], 3.0) for _ in range(6)]
+
+    assert sleeps == [5.0, 15.0, 30.0, 60.0, 120.0]
+    assert all(
+        "connection_failure_cooldown" in row.diagnostics
+        for row in observations[:5]
+    )
+    assert "connection_failure_cooldown" not in observations[5].diagnostics
+
+
+def test_baostock_non_connection_error_does_not_trigger_v2_cooldown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _population, requests = build_index_daily_plan()
+    sleeps: list[float] = []
+
+    class BusinessErrorTransport:
+        def __call__(
+            self,
+            _request: ProviderProbeRequest,
+            _timeout_seconds: float,
+        ) -> ProviderProbeObservation:
+            return ProviderProbeObservation(
+                terminal_state="error",
+                raw_payload=b"business-error",
+                row_count=None,
+                error_code="baostock:10002007",
+                diagnostics={},
+                checks={"provider_success": False},
+                transport_exchange_count=1,
+            )
+
+        def close(self) -> None:
+            return None
+
+        def restore(
+            self,
+            _request: ProviderProbeRequest,
+            _record: object,
+        ) -> None:
+            return None
+
+    monkeypatch.setattr(
+        capture_backfill,
+        "BaostockProbeTransport",
+        BusinessErrorTransport,
+    )
+    transport = baostock_reconciliation.BoundedBaostockReconciliationTransport(
+        connection_failure_cooldowns=(5.0, 15.0, 30.0, 60.0, 120.0),
+        sleeper=sleeps.append,
+    )
+
+    observation = transport(requests[0], 3.0)
+
+    assert observation.error_code == "baostock:10002007"
+    assert sleeps == []
+    assert "connection_failure_cooldown" not in observation.diagnostics
+
+
+def test_baostock_hs300_retry_v2_restores_connection_failure_ordinal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _population, requests = build_index_daily_plan()
+    sleeps: list[float] = []
+
+    class FailingTransport:
+        def __call__(
+            self,
+            _request: ProviderProbeRequest,
+            _timeout_seconds: float,
+        ) -> ProviderProbeObservation:
+            return ProviderProbeObservation(
+                terminal_state="error",
+                raw_payload=b"third-consecutive-failure",
+                row_count=None,
+                error_code="baostock_transport:OSError",
+                checks={"transport_completed": False},
+                transport_exchange_count=1,
+            )
+
+        def close(self) -> None:
+            return None
+
+        def restore(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(
+        capture_backfill,
+        "BaostockProbeTransport",
+        FailingTransport,
+    )
+    transport = baostock_reconciliation.BoundedBaostockReconciliationTransport(
+        connection_failure_cooldowns=(5.0, 15.0, 30.0, 60.0, 120.0),
+        recovery_state_loader=lambda _request: (2, False),
+        sleeper=sleeps.append,
+    )
+
+    observation = transport(requests[0], 3.0)
+
+    assert sleeps == [30.0]
+    assert observation.diagnostics["connection_failure_cooldown"] == {
+        "consecutive_failure_ordinal": 3,
+        "seconds": 30.0,
+    }
+
+
+def test_baostock_hs300_retry_v2_replays_interrupted_pending_cooldown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _population, requests = build_index_daily_plan()
+    sleeps: list[float] = []
+
+    class SuccessfulTransport:
+        def __call__(
+            self,
+            _request: ProviderProbeRequest,
+            _timeout_seconds: float,
+        ) -> ProviderProbeObservation:
+            return ProviderProbeObservation(
+                terminal_state="positive",
+                raw_payload=b"success-after-restart",
+                row_count=1,
+                checks={"transport_completed": True},
+                transport_exchange_count=1,
+            )
+
+        def close(self) -> None:
+            return None
+
+        def restore(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(
+        capture_backfill,
+        "BaostockProbeTransport",
+        SuccessfulTransport,
+    )
+    transport = baostock_reconciliation.BoundedBaostockReconciliationTransport(
+        connection_failure_cooldowns=(5.0, 15.0, 30.0, 60.0, 120.0),
+        recovery_state_loader=lambda _request: (3, True),
+        sleeper=sleeps.append,
+    )
+
+    observation = transport(requests[0], 3.0)
+
+    assert sleeps == [30.0]
+    assert observation.diagnostics[
+        "recovered_connection_failure_cooldown"
+    ] == {
+        "consecutive_failure_ordinal": 3,
+        "seconds": 30.0,
+    }
+
+
+def test_baostock_historical_replay_allowlist_rejects_near_match() -> None:
+    approved = next(
+        row
+        for row in baostock_reconciliation.BAOSTOCK_HISTORICAL_REPLAY_ALLOWLIST
+        if row[0] == "index-daily"
+    )
+    near_match = (
+        approved[0],
+        "0" * 64,
+        approved[2],
+        approved[3],
+        approved[4],
+    )
+
+    assert approved in (
+        baostock_reconciliation.BAOSTOCK_HISTORICAL_REPLAY_ALLOWLIST
+    )
+    assert near_match not in (
+        baostock_reconciliation.BAOSTOCK_HISTORICAL_REPLAY_ALLOWLIST
+    )
+
+
+def test_baostock_hs300_retry_v2_pause_evidence_is_exact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    signer = EphemeralReceiptSigner.generate()
+    request_id = "baostock_hs300_fixture"
+    request = ProviderProbeRequest(
+        request_id=request_id,
+        provider="baostock",
+        method="BAOSTOCK",
+        url="baostock://public-api.baostock.com/query_hs300_stocks?date=2012-01-04",
+        endpoint="query_hs300_stocks",
+        metadata={"case": "hs300", "query_date": "20120104"},
+    )
+    request_rows = [request.semantic()]
+    request_plan_hash = canonical_hash(request_rows)
+    approved_key = capture_backfill._public_key_hash(signer.public_key_pem)
+    contract = {
+        "activity_name": (
+            "free_domestic_baostock_hs300-snapshots_2012_2019_v1"
+        ),
+        "provider": "baostock",
+        "permission_context_id": baostock_reconciliation.PERMISSION_CONTEXT,
+        "population_root": (
+            baostock_reconciliation.SECURITY_SNAPSHOT_APPROVED_POPULATION_ROOT
+        ),
+        "capture_public_key_sha256": approved_key,
+        "capture_public_key_pem_b64": base64.b64encode(
+            signer.public_key_pem
+        ).decode(),
+        "source_profile_id": baostock_reconciliation.BAOSTOCK_SOURCE_PROFILE_ID,
+        "budget": {
+            "max_requests": 3,
+            "max_response_bytes": 64 * 1024 * 1024,
+            "max_retries": 2,
+            "max_total_response_bytes": 16 * 1024 * 1024 * 1024,
+            "max_wire_exchanges": 6,
+            "minimum_delay_seconds": 1.0,
+            "timeout_seconds": 30.0,
+        },
+    }
+    contract_id = canonical_hash(contract)
+    activity_id = canonical_hash(
+        {
+            "contract_id": contract_id,
+            "request_plan_hash": request_plan_hash,
+        }
+    )
+    raw = b"signed-parent-raw-fixture"
+    raw_hash = hashlib.sha256(raw).hexdigest()
+    terminal = {
+        "event_type": "capture_attempt_terminal",
+        "request_id": request_id,
+        "attempt_id": f"{request_id}:2",
+        "terminal_state": "error",
+        "error_code": "baostock_transport:OSError",
+        "status_code": None,
+        "transport_exchange_count": 3,
+        "raw_envelope_relative_path": "raw_envelopes/terminal.json",
+        "raw_envelope_sha256": raw_hash,
+    }
+    semantic = {
+        "schema_version": "free_provider_backfill_pause_v1",
+        "reason": "provider_terminal_error_or_circuit_breaker",
+        "request_id": request_id,
+        "attempt_id": f"{request_id}:2",
+        "terminal_state": "error",
+        "error_code": "baostock_transport:OSError",
+        "status_code": None,
+        "usage": {
+            "attempt_count": 1,
+            "response_bytes": len(raw),
+            "wire_exchange_count": 3,
+        },
+        "paused_at": "2026-08-17T09:27:56Z",
+        "automatic_resume_authorized": False,
+    }
+    pause_hash = canonical_hash(semantic)
+    pause = semantic | {"content_hash": pause_hash}
+    monkeypatch.setattr(baostock_reconciliation, "SCOPE_ROOT", tmp_path)
+    monkeypatch.setattr(
+        baostock_reconciliation,
+        "BAOSTOCK_APPROVED_CAPTURE_KEY_SHA256",
+        approved_key,
+    )
+    monkeypatch.setattr(
+        baostock_reconciliation,
+        "BAOSTOCK_HS300_RETRY_V2_PAUSED_ACTIVITY_ID",
+        activity_id,
+    )
+    monkeypatch.setattr(
+        baostock_reconciliation,
+        "BAOSTOCK_HS300_RETRY_V2_PAUSED_CONTRACT_ID",
+        contract_id,
+    )
+    monkeypatch.setattr(
+        baostock_reconciliation,
+        "BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_PLAN_HASH",
+        request_plan_hash,
+    )
+    monkeypatch.setattr(
+        baostock_reconciliation,
+        "BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_COUNT",
+        1,
+    )
+    monkeypatch.setattr(
+        baostock_reconciliation,
+        "BAOSTOCK_HS300_RETRY_V2_PAUSED_REQUEST_ID",
+        request_id,
+    )
+    monkeypatch.setattr(
+        baostock_reconciliation,
+        "BAOSTOCK_HS300_RETRY_V2_APPROVED_PAUSE_CONTENT_HASH",
+        pause_hash,
+    )
+    path = (
+        tmp_path
+        / ".hs300_snapshots.activities"
+        / activity_id
+        / "pauses"
+        / f"pause_{pause_hash[:24]}.json"
+    )
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(pause), encoding="utf-8")
+    activity_root = path.parents[1]
+    (activity_root / "raw_envelopes").mkdir()
+    (activity_root / "raw_envelopes" / "terminal.json").write_bytes(raw)
+    (activity_root / "activity_contract.json").write_text(
+        json.dumps(contract), encoding="utf-8"
+    )
+    (activity_root / "request_plan.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "free_provider_backfill_request_plan_v1",
+                "request_plan_hash": request_plan_hash,
+                "requests": request_rows,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (activity_root / "capture_journal.jsonl").write_text(
+        "signed-journal-fixture\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        baostock_reconciliation,
+        "_read_and_validate_journal",
+        lambda *_args, **_kwargs: [terminal],
+    )
+
+    assert baostock_reconciliation._verify_hs300_retry_v2_pause_evidence() == (
+        pause_hash
+    )
+    pause["automatic_resume_authorized"] = True
+    path.write_text(json.dumps(pause), encoding="utf-8")
+    with pytest.raises(
+        ValueError,
+        match="baostock_hs300_retry_v2_pause_evidence_invalid",
+    ):
+        baostock_reconciliation._verify_hs300_retry_v2_pause_evidence()
+
+
+def test_baostock_hs300_retry_v2_cli_rejects_runtime_budget_drift(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = baostock_reconciliation.main(
+        [
+            "--phase",
+            "hs300-snapshots",
+            "--plan-only",
+            "--max-retries",
+            "2",
+        ]
+    )
+
+    assert result == 2
+    assert "governed_phase_runtime_policy_drift" in capsys.readouterr().out
+
+
 def test_baostock_wire_validator_binds_actual_protocol_request_bytes() -> None:
     _population, requests = build_index_daily_plan()
     request = requests[0]

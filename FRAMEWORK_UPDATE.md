@@ -2,6 +2,18 @@
 
 This file records only the current A-share architecture and recent governed milestones. Detailed historical implementation is available through Git history rather than duplicated task-by-task prose.
 
+## 2026-08-20 — Bounded Baostock CSI300 snapshot replay v2
+
+### Outcome
+
+- Bound the 2026-08-17 human approval to one Baostock `hs300-snapshots` v2 acquisition policy: the complete 1,946-date plan must restart from `2011-12-30`, each request permits one initial attempt plus at most five retries, the total request ceiling is 11,676, and connection failures use the locked `5/15/30/60/120` second cooldown schedule.
+- Kept the paused v1 activity `464eed...` immutable. The v2 contract uses the separate `hs300_snapshots_v2` namespace and a new activity identity, declares partial reuse forbidden, and cannot consume the 465 successful v1 dates or its journal.
+- Made the approval basis executable rather than declarative. Before a v2 contract can be created or validated, the adapter replays the exact v1 contract, complete request plan, content-addressed activity identity, approved capture key, signed journal, raw-envelope hashes, derived resource use and terminal pause fields. Missing or altered ancestry blocks before network access.
+- Persisted cooldown semantics across crashes. The v2 transport recovers consecutive connection-failure ordinals from the signed activity journal; an interrupted attempt is materialized by the capture engine and its pending cooldown is replayed before the next provider call.
+- Preserved only three exact pre-change Baostock publications through a tuple allowlist over phase, content hash, contract ID, request-plan hash and implementation root. Sharing an old implementation root alone cannot authorize a nearby generation.
+- Real plan-only verification passed without network: 1,946 requests, population root `f171e595...`, request-plan hash `f448161d...`, request cap 11,676, contract `baf665e2...`, and projected activity `eb771fad...`; the v2 physical capture has not started. The focused v2/legacy-allowlist tests are 9/9 and the complete official-backfill test file is 144/144.
+- Data Admission and all research, holdout, candidate, shadow, paper and live permissions remain false. This policy authorizes only the approved missing-data acquisition.
+
 ## 2026-08-17 — CNINFO document closure and current evidence acquisition
 
 ### Outcome
