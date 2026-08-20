@@ -127,7 +127,11 @@ phase：`index-daily`、`security-basic`、`hs300-snapshots`、`adjustments`、
 失败依次冷却 5、15、30、60、120 秒。合同创建和验证都会重放旧 pause 的父合同、
 完整 request plan、签名 journal、raw hash 与 derived usage，任何缺失或改变均在联网
 前阻断。崩溃恢复还会从签名 journal 恢复连续失败序号，未完成的冷却不会退回 5 秒。
-截至 2026-08-20，真实 plan-only 已通过且未联网；v2 physical capture 尚未启动。
+截至 2026-08-20，v2 已以锁定 runtime activity `a8e90319...` 真实运行。前 1,621 个
+日期均为 positive；`2018-08-30` 连续六次连接失败，严格执行 5/15/30/60/120 秒
+冷却后生成 pause `f46b57ae...`，没有第七次请求，也没有 publication generation。
+暂停后的独立匿名登录成功，说明供应商连接已恢复，但原合同预算已经耗尽；任何 v3
+完整重跑或增加重试都必须取得新的人工批准。
 
 Baostock 还存在一种精确的成功空终态：最后一页可能把 `record` 表示为空字符串 slot，
 而不是 JSON `{"record":[]}`。raw-wire replay 只在该页同时具备成功返回码和 terminal

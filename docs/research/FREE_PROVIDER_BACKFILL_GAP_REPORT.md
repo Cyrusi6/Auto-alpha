@@ -97,7 +97,7 @@ raw 日状态数与 coverage-use 数不同，是因为前者统计 provider 返�
 
 | 当前重跑链 | 状态 | 完成条件与约束 |
 | --- | --- | --- |
-| Baostock `hs300-snapshots` v2 | **合同已验证、physical capture 未启动**：plan-only 为 1,946 日期、最多 11,676 次请求，新 activity `eb771fad...` | 旧 v1 `464eed...` 保持暂停且不可拼接；v2 使用独立 `hs300_snapshots_v2/`，父 pause/合同/计划/签名 journal/raw usage 任一缺失即在联网前阻断；仅授权数据补采 |
+| Baostock `hs300-snapshots` v2 | **已暂停、未发布**：runtime contract `d6e8a7a9...`、activity `a8e90319...`；1,621 positive 日期；`2018-08-30` 六次连接失败；1,627 attempts、1,628 exchanges、41,458,942 bytes；pause `f46b57ae...` | 5/15/30/60/120 秒冷却全部执行，第六次后没有第七次；旧 v1 `464eed...` 与 v2 均不可拼接或冒充完成。后续登录已恢复，但 v3/扩大预算须重新人工批准 |
 | CNINFO strong base chain | **采集中/须按 current identity 重跑**：`base discovery → inventory → documents` | closure 会递归找到实际 discovery parents 并从 signed raw 重建 discovery→inventory 计划；不能用实现变化前的 base 与新 supplemental 拼接。2011 也须沿 strong inventory 重抓 |
 | CNINFO strong supplemental chain | **已中断、可按相同 activity 恢复**：inventory 为 8,139/9,662 terminal，8,050 positive、89 empty、0 error；尚无 publication | 官网 page 101 会回卷 page 1；2015-11/12 `secondary_offerings` 各拆成两个无缝半月叶。旧 `212e...` generation 与 `7f9d...` 中间 activity 保留不用；不能把 8,139 个中间回执写成完成 |
 | CNINFO document closure | **closure seam 已实现，真实 residual capture 尚未形成终态证据** | base/supplemental 逻辑 demand 与唯一物理文档分离；递归重放 discovery/inventory/document 父证据，只下载 residual；每个文档恰有一个 disposition。人工 resume 参数在 trusted authority 未实现时固定 fail closed；旧 2011 derived disposition 仍 weak/quarantined |
