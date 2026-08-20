@@ -2,6 +2,17 @@
 
 This file records only the current A-share architecture and recent governed milestones. Detailed historical implementation is available through Git history rather than duplicated task-by-task prose.
 
+## 2026-08-20 — Remaining free-provider acquisition queue
+
+### Outcome
+
+- Reconciled the physical inventory instead of treating the completed CSI300 replay as the whole data layer. Current signed generations already cover full-market daily snapshots, security basic, daily state, CSI300 index bars and CSI300 snapshots; the remaining Baostock physical phases are full-market adjustments, turnover and dividends.
+- Completed the current-root CNINFO supplemental chain. Discovery generation `700af743...` closed 759 logical requests with 669 positive and 90 empty terminals. Inventory generation `03a82909...` closed all 9,662 logical requests with 9,572 positive, 90 empty and no final errors; 9,667 bounded attempts captured 379,073,639 response bytes. Offline validation completed without changing the publication.
+- Started bounded current Baostock adjustment activity `9dd1deb3...` under the locked `baostock==0.9.3` / `00.9.30` identity. A dependency-incomplete attempt `e6295d7e...` correctly paused before any wire exchange and remains immutable evidence instead of being deleted or joined to the governed activity.
+- Installed transient user service `auto-alpha-baostock-reconciliation-20260820.service` to serialize exact current-identity replay/recovery of adjustments followed by the 3,798-request turnover and 34,182-request dividend plans. Their request ceilings remain 11,394, 11,394 and 102,546 respectively; stages do not run concurrently and do not expand their retry budgets.
+- Started current-root CNINFO base discovery activity `9832b899...` and transient user service `auto-alpha-cninfo-base-chain-20260820.service`. It serializes idempotent base discovery and base inventory, binds inventory to the newly published discovery manifest, and does not reuse the older implementation-root chain.
+- Kept physical acquisition separate from admission. CNINFO document closure, PIT identity/lifecycle, CSI300 semantic event reconstruction, corporate-action causality, adjustment vintages, field validity, provider-neutral coverage receipts and the canonical matrix remain incomplete. Data Admission stays `0/11`; search, holdout, candidate, shadow, paper and live permissions remain false.
+
 ## 2026-08-20 — Bounded Baostock CSI300 snapshot replay v3
 
 ### Outcome
