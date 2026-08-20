@@ -1506,7 +1506,7 @@ def _validate_contract_and_plan(
         or budget.max_total_response_bytes < budget.max_response_bytes
         or not 0 < budget.timeout_seconds <= 120
         or not 0 <= budget.minimum_delay_seconds <= 60
-        or not 0 <= budget.max_retries <= 5
+        or not 0 <= budget.max_retries <= 6
     ):
         raise ValueError("free_provider_backfill_budget_invalid")
     if semantic.get("safety") != {name: False for name in SAFETY_FLAGS}:

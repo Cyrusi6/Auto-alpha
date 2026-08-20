@@ -137,8 +137,9 @@ phase：`index-daily`、`security-basic`、`hs300-snapshots`、`adjustments`、
 每个请求最多为初始请求加六次重试，总上限 13,622，wire exchange 上限 27,244，
 冷却固定为 5、15、30、60、120、300 秒。v3 写入独立
 `hs300_snapshots_v3/`，并在联网前逐字节验证 v2 pause `f46b57ae...` 的父合同、计划、
-签名 journal 和 raw usage。锁定 runtime plan 的 contract 为 `d093449d...`，预计 activity
-为 `0b56f72e...`；它仍只授权数据补采。
+签名 journal 和 raw usage。通用引擎只把 retry 上限从 5 精确扩到 6，7 仍然阻断。
+锁定 runtime plan 的 contract 为 `632e961c...`，预计 activity 为 `0ad187d7...`；它仍
+只授权数据补采。
 
 Baostock 还存在一种精确的成功空终态：最后一页可能把 `record` 表示为空字符串 slot，
 而不是 JSON `{"record":[]}`。raw-wire replay 只在该页同时具备成功返回码和 terminal

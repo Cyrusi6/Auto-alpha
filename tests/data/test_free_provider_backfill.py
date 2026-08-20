@@ -438,6 +438,7 @@ def _contract(
     signer: EphemeralReceiptSigner,
     *,
     max_requests: int = 4,
+    max_retries: int = 1,
     provider: str = "cninfo",
 ) -> FreeProviderBackfillContract:
     return FreeProviderBackfillContract(
@@ -464,13 +465,49 @@ def _contract(
             max_total_response_bytes=4 * 1024 * 1024,
             timeout_seconds=3.0,
             minimum_delay_seconds=0,
-            max_retries=1,
+            max_retries=max_retries,
         ),
         adapter_identity={
             "adapter": "fixture_backfill_v1",
             "implementation_root": FIXTURE_IMPLEMENTATION_ROOT,
         },
     )
+
+
+def test_backfill_budget_accepts_six_retries_and_rejects_seven(
+    tmp_path: Path,
+) -> None:
+    signer = EphemeralReceiptSigner.generate()
+    request = _request("one")
+    transport = FakeTransport({"one": _observation("one")})
+
+    published = run_free_provider_backfill(
+        _contract(
+            tmp_path / "six_retries",
+            signer,
+            max_requests=7,
+            max_retries=6,
+        ),
+        [request],
+        transport=transport,
+        signer=signer,
+        runtime_implementation_root=FIXTURE_IMPLEMENTATION_ROOT,
+    )
+
+    assert published["status"] == "succeeded"
+    with pytest.raises(ValueError, match="free_provider_backfill_budget_invalid"):
+        run_free_provider_backfill(
+            _contract(
+                tmp_path / "seven_retries",
+                signer,
+                max_requests=8,
+                max_retries=7,
+            ),
+            [request],
+            transport=transport,
+            signer=signer,
+            runtime_implementation_root=FIXTURE_IMPLEMENTATION_ROOT,
+        )
 
 
 def test_signed_backfill_publishes_valid_raw_closure_and_is_idempotent(
