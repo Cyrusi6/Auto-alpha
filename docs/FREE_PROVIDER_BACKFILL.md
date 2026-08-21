@@ -284,20 +284,50 @@ auto-alpha data free-cninfo-document-closure \
 ```
 
 只有核对 `physical_document_count`、`missing_physical_document_count` 和预算后才能显式
-执行网络补采：
+执行网络补采。联网模式必须一次只选一个自然年：
 
 ```bash
 auto-alpha data free-cninfo-document-closure \
   --inventory /absolute/base/inventory/free_provider_backfill_manifest.json \
   --inventory /absolute/supplemental/inventory/free_provider_backfill_manifest.json \
-  --allow-network --pretty
+  --year 2013 --allow-network --pretty
 ```
 
-命令最多接受 130,000 份 residual 文档，固定 256 GiB 总响应预算、单请求最多两次重试，
-并把物理 capture 写入独立 `document_closure_missing/` namespace。旧 2011 文档若作为
+2011–2019 被锁定为 9 个互不拼接的年度活动，每个活动最多 60,000 份 residual 文档；
+实际预算取 `max(132 MiB, 2 × Σ max(64 KiB, inventory 声明大小))`，九年合计不得超过
+512 GiB，单请求最多两次重试。物理 capture 写入独立
+`document_closure_missing/` namespace。全部年度 generation 发布后，可把它们作为
+`--reusable-document` 输入，在无网络权限下对九年并集执行最终 exact-disposition
+闭包。旧 2011 文档若作为
 `--reusable-document` 传入，其 weak ancestry 会原样传播；构建强闭包时不得用它减少
 下载量。命令的成功只证明 inventory→document exact disposition closure，不授权数据
 准入、搜索、留出集或交易。
+
+2026-08-21 从 current base `a8d27d60...` 与 supplemental `03a82909...` 重放得到
+343,262 条逻辑 demand、342,516 份唯一物理文档。旧的 130,000 上限在任何 GET 前正确
+阻断。九年授权计划根固定为 `00483b73...`，合计预算固定为 509,623,150,592 bytes；
+父 inventory、计划根、数量或合计预算任一改变都必须取得新授权。新年度分片中每年为
+21,086–53,302 份；真实 2013 计划为 21,086 份、锁定预算 10,355,589,120 bytes。用户服务
+`auto-alpha-cninfo-document-year-shards-20260821.service` 已按年度串行启动；任一分片
+触发 WAF、不可重试错误、pause 或预算不足都会停止后续年份，不会以跳过方式制造闭包。
+
+Baostock 分红的 34,182 个逻辑请求已采集完毕，得到 19,537 条对账记录。旧采集器曾在
+`socket.getpeername()` 失败前提前增加 wire 计数，使唯一失败 attempt 的声明计数为 1、
+实际交换数组为空，publication 因此被严格 validator 阻断。新传输实现只在 peer 获取
+成功后记账；历史回执仅在精确的 `OSError ENOTCONN`、空响应、空解析、空 exchange
+组合下允许作为保守资源记账重放，它本身不能满足请求，仍必须由后续成功 attempt 闭合。
+prepared generation 已在不重新发起 34,182 个请求的情况下完成两次离线全量重验并发布
+为 `free_provider_backfill_adcab60f1a085b2c45614a1a`：18,939 positive、15,243 empty、
+0 final error，publication signature 和 raw/parser replay 均通过。其状态仍为 `blocked`，
+因为 `dividend_event_version_history_unavailable` 没有被物理下载成功洗掉。
+
+复权 factor 的免费聚合结果继续只作 reconciliation。新的
+`derive-adjustment-vintage` 路径要求每个公司行为具有稳定 `event_id`、不可变
+`event_version_id`、公告文档 SHA-256、严格早于生效日的 `known_at` 与
+`pit_evidence_eligible=true`；同一事件只选择生效时点已知的最后版本，事后更正不能
+改写历史 factor。输入根、输出根、经济公式和 blocker 一起发布为不可变派生候选，且
+始终保留 `data_admission_eligible=false`，直到公司行为文档 exact cover 与独立
+Admission Verdict 完成。
 
 ## 仍然 fail closed 的部分
 

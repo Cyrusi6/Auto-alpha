@@ -3602,6 +3602,29 @@ def test_cninfo_identity_binds_capture_replay_helpers_and_page_limits(
         assert cninfo_implementation_root() != baseline
 
 
+def test_cninfo_identity_excludes_unrelated_baostock_transport_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline = cninfo_implementation_root()
+    original_module = Path(str(cninfo_backfill.run_provider_probe_module.__file__))
+    changed_module = tmp_path / "run_provider_probe_baostock_only_change.py"
+    changed_module.write_bytes(
+        original_module.read_bytes()
+        + b"\n# unrelated Baostock-only transport change\n"
+    )
+    monkeypatch.setattr(
+        cninfo_backfill.run_provider_probe_module,
+        "__file__",
+        str(changed_module),
+    )
+
+    assert cninfo_implementation_root() == baseline
+    assert cninfo_backfill._implementation_root_compatible(
+        "35c27d2670d231ee07a6026a8e8d1d451b321f0837b047db26f3dcd87ae3c49e"
+    ) is True
+
+
 def test_csindex_attachment_transport_marks_html_block_as_waf() -> None:
     body = "\ufeff<html>访问被阻断</html>".encode()
     population = [
@@ -3785,6 +3808,54 @@ def test_baostock_custom_history_checks_bind_rows_to_requested_code(
 
     assert correct["provider_code_matches_request"] is True
     assert wrong["provider_code_matches_request"] is False
+
+
+def test_baostock_pre_send_peer_failure_does_not_invent_wire_exchange() -> None:
+    request = ProviderProbeRequest(
+        request_id="baostock_dividend_300795_SZ_2018",
+        provider="baostock",
+        endpoint="dividend_reconciliation",
+        method="BAOSTOCK",
+        url=(
+            "baostock://public-api.baostock.com/dividend"
+            "?code=sz.300795&year=2018"
+        ),
+        disposition="provider_cannot_prove",
+        evidence_semantics="raw_custom_socket_response_plus_locked_parser",
+        expected_terminal_states=("positive", "empty"),
+        required_checks=("raw_wire_captured",),
+        metadata={"case": "dividend"},
+    )
+
+    class DisconnectedSocket:
+        def getpeername(self) -> object:
+            raise OSError(107, "Transport endpoint is not connected")
+
+    class Context:
+        default_socket = DisconnectedSocket()
+
+    transport = BaostockProbeTransport()
+    transport._context = Context()
+    transport._constants = object()
+    transport._ensure_session = lambda _timeout: None  # type: ignore[method-assign]
+
+    class FakeBaostock:
+        def query_dividend_data(
+            self, *, code: str, year: str, yearType: str
+        ) -> object:
+            assert (code, year, yearType) == ("sz.300795", "2018", "report")
+            transport._safe_send("dividend-request")
+            raise AssertionError("unreachable")
+
+    transport._bs = FakeBaostock()
+
+    observation = transport(request, 3)
+    raw = json.loads(observation.raw_payload)
+
+    assert observation.terminal_state == "error"
+    assert observation.error_code == "baostock_transport:OSError"
+    assert observation.transport_exchange_count == 0
+    assert raw["wire_exchanges"] == []
 
 
 def test_baostock_reconciliation_adapter_scopes_connection_reset_retry(

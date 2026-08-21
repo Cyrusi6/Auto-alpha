@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
+from auto_alpha.platform.artifacts.storage import publish_generation
+
 from .normalizer import normalize_corporate_action_records
 from .report import read_jsonl, write_corporate_action_report
-from .reconciliation import reconcile_adjustment_factors_with_actions
+from .reconciliation import (
+    derive_causal_adjustment_factor_vintages,
+    reconcile_adjustment_factors_with_actions,
+)
 from .schedule import build_action_schedule
 from .total_return import build_total_return_series
 
@@ -16,6 +22,11 @@ from .total_return import build_total_return_series
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Normalize, report, and apply local A-share corporate actions.")
     sub = parser.add_subparsers(dest="command", required=True)
+    vintage = sub.add_parser("derive-adjustment-vintage")
+    vintage.add_argument("--daily-bars", required=True)
+    vintage.add_argument("--event-versions", required=True)
+    vintage.add_argument("--output-dir", required=True)
+    vintage.add_argument("--pretty", action="store_true")
     for name in ("normalize", "validate", "build-schedule", "build-total-return", "reconcile-adjustment", "report", "apply-account"):
         cmd = sub.add_parser(name)
         cmd.add_argument("--data-dir", required=True)
@@ -48,6 +59,54 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     indent = 2 if args.pretty else None
+    if args.command == "derive-adjustment-vintage":
+        try:
+            bars = read_jsonl(args.daily_bars)
+            events = read_jsonl(args.event_versions)
+            derived = derive_causal_adjustment_factor_vintages(
+                bars,
+                events,
+            )
+            rows_payload = b"".join(
+                json.dumps(
+                    row,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+                + b"\n"
+                for row in derived["rows"]
+            )
+            semantic = {
+                key: value
+                for key, value in derived.items()
+                if key not in {"rows", "content_hash"}
+            } | {
+                "derivation_content_hash": derived["content_hash"],
+                "rows_file_sha256": hashlib.sha256(
+                    rows_payload
+                ).hexdigest(),
+                "safety": {
+                    "data_admission_eligible": False,
+                    "alpha_search_authorized": False,
+                    "holdout_activation_authorized": False,
+                    "shadow_trading_authorized": False,
+                    "paper_trading_authorized": False,
+                    "live_trading_authorized": False,
+                },
+            }
+            published = publish_generation(
+                args.output_dir,
+                prefix="causal_adjustment_vintage",
+                manifest_name="causal_adjustment_vintage_manifest.json",
+                semantic=semantic,
+                extra_files={"causal_adjustment_factors.jsonl": rows_payload},
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print(json.dumps({"status": "blocked", "reason": str(exc)}, ensure_ascii=False, indent=indent))
+            return 2
+        print(json.dumps(published, ensure_ascii=False, indent=indent, sort_keys=True))
+        return 0 if derived["derivation_complete"] is True else 2
     try:
         events = _load_events(args.data_dir, args.output_dir, args.cash_field, args.apply_statuses)
         output = Path(args.output_dir)

@@ -2689,13 +2689,45 @@ def _validate_baostock_wire_envelope(
         raw_payload, allow_partial_response=terminal_state == "error"
     )
     exchanges = envelope.get("wire_exchanges")
+    conservative_pre_send_overcount = bool(
+        terminal_state == "error"
+        and expected_exchange_count == 1
+        and exchanges == []
+        and envelope.get("socket_peer") == []
+        and fields == []
+        and rows == []
+        and package_rows == []
+        and wire_pages == []
+        and business_requests == []
+        and wire_provider_results == []
+        and partial_response_observed is True
+        and envelope.get("parsed")
+        == {
+            "canonical_logical_payload_sha256": canonical_hash(
+                {"fields": [], "rows": []}
+            ),
+            "fields": [],
+            "first_rows": [],
+            "last_rows": [],
+            "pages": [],
+            "row_count": 0,
+        }
+        and envelope.get("provider_error")
+        == {
+            "message": "[Errno 107] Transport endpoint is not connected",
+            "type": "OSError",
+        }
+    )
     if (
         envelope.get("schema_version") != "baostock_wire_probe_envelope_v1"
         or envelope.get("package_distribution_version") != "0.9.3"
         or envelope.get("client_protocol_version") != "00.9.30"
         or envelope.get("request_id") != request.get("request_id")
         or not isinstance(exchanges, list)
-        or len(exchanges) != expected_exchange_count
+        or (
+            len(exchanges) != expected_exchange_count
+            and not conservative_pre_send_overcount
+        )
     ):
         raise ValueError("free_provider_backfill_baostock_wire_closure_invalid")
 

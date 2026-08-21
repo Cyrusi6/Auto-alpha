@@ -2,6 +2,17 @@
 
 This file records only the current A-share architecture and recent governed milestones. Detailed historical implementation is available through Git history rather than duplicated task-by-task prose.
 
+## 2026-08-21 — Year-sharded CNINFO closure and causal adjustment vintages
+
+### Outcome
+
+- Replayed the current base `a8d27d60...` and supplemental `03a82909...` inventories into 343,262 logical demands and 342,516 unique physical documents. The old 130,000 ceiling correctly stopped before any document GET. Replaced the monolithic activity with nine immutable natural-year shards, each capped at 60,000 documents. Every shard binds the same full-range root `00483b73...`, exact 509,623,150,592-byte aggregate budget and 512 GiB ceiling; a real 2013 replay closed at 21,086 documents and 10,355,589,120 budgeted bytes.
+- Bound the 2026-08-21 human authorization to a new CNINFO permission context and storage-policy identity. Network mode requires exactly one year and the locked 2-second delay, 30-second timeout and two-retry ceiling; full-range finalization is offline-only after all shard generations are supplied as reusable evidence. The serial user service `auto-alpha-cninfo-document-year-shards-20260821.service` has started and stops on the first pause or failed shard.
+- Removed unrelated Baostock transport bytes from the CNINFO implementation identity and replaced them with the exact shared HTTP helper sources CNINFO consumes. The already published `35c27d...` parent identity is explicitly allowlisted and independently marked as historical-compatible; arbitrary old roots remain rejected.
+- Corrected Baostock wire accounting so `getpeername()` failure cannot invent an exchange. Added a narrow replay rule for the one historical ENOTCONN dividend attempt: only its exact empty-wire/error envelope may retain the conservative resource overcount, it cannot satisfy the request, and a later successful terminal is still required. Published `free_provider_backfill_adcab60f1a085b2c45614a1a` offline without another provider call: 34,182 requests, 34,184 attempts, 18,939 positive, 15,243 empty, zero final errors and 19,537 rows passed publication-signature and raw/parser replay. Its event-version-history blocker remains intact.
+- Added immutable causal adjustment-factor vintage derivation from PIT-eligible corporate-action versions. Stable event/version IDs, official document hashes, pre-effective known-at, economic terms, input roots and the formula are bound into evidence; later revisions cannot rewrite an already effective factor. Output remains `data_admission_eligible=false` and `downstream_eligible=false` until CNINFO document closure, semantic event parsing and an independent Admission Verdict succeed.
+- Kept formal admission and all downstream permissions closed. Adjustment capture `479b720e...` and turnover `7cc80948...` are retained as reconciliation evidence; neither the new derived vintage seam nor an in-flight document download authorizes research, holdout, candidate promotion, shadow, paper or live activity.
+
 ## 2026-08-20 — Remaining free-provider acquisition queue
 
 ### Outcome

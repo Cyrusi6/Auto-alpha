@@ -64,9 +64,21 @@ _MISSING_DOCUMENT_ADAPTER = (
 _MISSING_NORMALIZATION_SCHEMA = (
     "cninfo_document_closure_missing_normalization_v1"
 )
-_MISSING_MAX_TOTAL_RESPONSE_BYTES = 256 * 1024 * 1024 * 1024
+_MISSING_AGGREGATE_MAX_TOTAL_RESPONSE_BYTES = 512 * 1024 * 1024 * 1024
+_MISSING_MAX_DOCUMENTS_PER_ACTIVITY = 60_000
+_MISSING_SINGLE_RESPONSE_BYTES = 132 * 1024 * 1024
+_MISSING_AUTHORIZED_YEARS = tuple(range(2011, 2020))
+_MISSING_AUTHORIZED_AGGREGATE_PLAN_ROOT = (
+    "00483b73c0f86b9201162c27610a950b2f85a3cd3ee6c0d34a667e70c43f2a7a"
+)
+_MISSING_AUTHORIZED_AGGREGATE_DEMAND_COUNT = 343_262
+_MISSING_AUTHORIZED_AGGREGATE_DOCUMENT_COUNT = 342_516
+_MISSING_AUTHORIZED_AGGREGATE_RESPONSE_BUDGET = 509_623_150_592
 _MISSING_STORAGE_POLICY_ID = (
-    "cninfo_document_closure_missing_fixed_256gib_v1"
+    "cninfo_document_closure_year_sharded_aggregate_bound_512gib_v3"
+)
+CNINFO_DOCUMENT_CLOSURE_SHARD_PERMISSION_CONTEXT = (
+    "human_authorization_20260821_cninfo_342516_year_shards_aggregate_bound_v3"
 )
 _RAW_ENVELOPE_KEYS = frozenset(
     {
@@ -482,10 +494,13 @@ def prepare_document_closure(
 def capture_missing_documents(
     sealed_plan: SealedDocumentClosurePlan,
     *,
+    aggregate_plan: SealedDocumentClosurePlan,
     output_root: str | Path,
     signer: CaptureSigner,
     transport: BackfillTransport,
-    permission_context_id: str = http_module.DEFAULT_PERMISSION_CONTEXT,
+    permission_context_id: str = (
+        CNINFO_DOCUMENT_CLOSURE_SHARD_PERMISSION_CONTEXT
+    ),
     minimum_delay_seconds: float = 2.0,
     timeout_seconds: float = 30.0,
     max_retries: int = 2,
@@ -494,19 +509,30 @@ def capture_missing_documents(
     """Capture exactly the residual physical documents in a sealed plan."""
 
     replayed = _replay_sealed_plan(sealed_plan)
+    aggregate = _replay_aggregate_plan_for_shard(replayed, aggregate_plan)
     if not replayed.missing:
         raise ValueError("cninfo_document_closure_nothing_missing")
-    if permission_context_id != http_module.DEFAULT_PERMISSION_CONTEXT:
+    if (
+        len(replayed.years) != 1
+        or len(replayed.missing) > _MISSING_MAX_DOCUMENTS_PER_ACTIVITY
+    ):
+        raise ValueError(
+            "cninfo_document_closure_single_year_shard_required"
+        )
+    if (
+        permission_context_id
+        != CNINFO_DOCUMENT_CLOSURE_SHARD_PERMISSION_CONTEXT
+    ):
         raise ValueError(
             "cninfo_document_closure_permission_context_invalid"
         )
     if (
         type(minimum_delay_seconds) not in {int, float}
-        or not 0 <= float(minimum_delay_seconds) <= 60
+        or float(minimum_delay_seconds) != 2.0
         or type(timeout_seconds) not in {int, float}
-        or not 0 < float(timeout_seconds) <= 120
+        or float(timeout_seconds) != 30.0
         or type(max_retries) is not int
-        or not 0 <= max_retries <= 5
+        or max_retries != 2
     ):
         raise ValueError("cninfo_document_closure_capture_controls_invalid")
     requests = _missing_document_requests(replayed)
@@ -524,20 +550,21 @@ def capture_missing_documents(
         raise ValueError(
             "cninfo_document_closure_capture_key_invalid"
         ) from exc
-    response_budget = 132 * 1024 * 1024
+    response_budget = _MISSING_SINGLE_RESPONSE_BYTES
     request_attempts = len(requests) * (max_retries + 1)
-    estimated_upper_bound = sum(
-        max(64 * 1024, row.adjunct_size_kb * 1024 * 8) * 2
-        for row in replayed.missing
-    )
-    if estimated_upper_bound > _MISSING_MAX_TOTAL_RESPONSE_BYTES:
+    total_response_budget = _missing_total_response_budget(replayed)
+    aggregate_response_budget = _missing_total_response_budget(aggregate)
+    if (
+        aggregate_response_budget
+        > _MISSING_AGGREGATE_MAX_TOTAL_RESPONSE_BYTES
+    ):
         raise ValueError(
             "cninfo_document_closure_declared_storage_budget_exceeded"
         )
     contract = FreeProviderBackfillContract(
         activity_name=(
             "free_domestic_cninfo_document_closure_missing_"
-            f"{replayed.plan_root[:24]}_v1"
+            f"{replayed.plan_root[:24]}_v3"
         ),
         provider="cninfo",
         output_root=output_root,
@@ -562,7 +589,7 @@ def capture_missing_documents(
             max_requests=request_attempts,
             max_wire_exchanges=request_attempts,
             max_response_bytes=response_budget,
-            max_total_response_bytes=_MISSING_MAX_TOTAL_RESPONSE_BYTES,
+            max_total_response_bytes=total_response_budget,
             timeout_seconds=float(timeout_seconds),
             minimum_delay_seconds=float(minimum_delay_seconds),
             max_retries=max_retries,
@@ -576,11 +603,24 @@ def capture_missing_documents(
             "evidence_parents_root": parents_root,
             "request_plan_hash": request_plan_hash,
             "storage_policy_id": _MISSING_STORAGE_POLICY_ID,
+            "aggregate_sealed_plan_root": aggregate.plan_root,
+            "aggregate_missing_documents_root": _missing_documents_root(
+                aggregate
+            ),
+            "aggregate_total_response_budget": str(
+                aggregate_response_budget
+            ),
+            "aggregate_total_response_budget_ceiling": str(
+                _MISSING_AGGREGATE_MAX_TOTAL_RESPONSE_BYTES
+            ),
+            "response_budget_formula": (
+                "max_132mib_twice_sum_max_64kib_declared_bytes_v1"
+            ),
             "max_total_response_bytes": str(
-                _MISSING_MAX_TOTAL_RESPONSE_BYTES
+                total_response_budget
             ),
             "authorization_policy": (
-                "human_authorized_cninfo_document_closure_missing_v1"
+                "human_authorized_cninfo_document_closure_year_shards_v3"
             ),
         },
     )
@@ -874,6 +914,57 @@ def _missing_documents_root(plan: SealedDocumentClosurePlan) -> str:
     )
 
 
+def _missing_total_response_budget(
+    plan: SealedDocumentClosurePlan,
+) -> int:
+    declared = sum(
+        max(64 * 1024, row.adjunct_size_kb * 1024) * 2
+        for row in plan.missing
+    )
+    return max(_MISSING_SINGLE_RESPONSE_BYTES, declared)
+
+
+def _replay_aggregate_plan_for_shard(
+    shard: SealedDocumentClosurePlan,
+    aggregate_plan: SealedDocumentClosurePlan,
+) -> SealedDocumentClosurePlan:
+    return _validate_aggregate_plan_for_shard(
+        shard,
+        _replay_sealed_plan(aggregate_plan),
+    )
+
+
+def _validate_aggregate_plan_for_shard(
+    shard: SealedDocumentClosurePlan,
+    aggregate: SealedDocumentClosurePlan,
+) -> SealedDocumentClosurePlan:
+    aggregate_physical = [
+        row.semantic()
+        for row in aggregate.physical_documents
+        if _physical_year(row) in shard.years
+    ]
+    if (
+        aggregate.years != _MISSING_AUTHORIZED_YEARS
+        or aggregate.reusable_parents
+        or aggregate.reused
+        or [row.semantic() for row in aggregate.inventory_parents]
+        != [row.semantic() for row in shard.inventory_parents]
+        or aggregate_physical
+        != [row.semantic() for row in shard.physical_documents]
+    ):
+        raise ValueError(
+            "cninfo_document_closure_aggregate_plan_invalid"
+        )
+    if (
+        _missing_total_response_budget(aggregate)
+        > _MISSING_AGGREGATE_MAX_TOTAL_RESPONSE_BYTES
+    ):
+        raise ValueError(
+            "cninfo_document_closure_aggregate_storage_budget_exceeded"
+        )
+    return aggregate
+
+
 def _evidence_parents_root(plan: SealedDocumentClosurePlan) -> str:
     return canonical_hash(
         {
@@ -929,10 +1020,37 @@ def _missing_capture_implementation_root() -> str:
             "closure_module_sha256": sha256_file(Path(__file__)),
             "storage_policy": {
                 "policy_id": _MISSING_STORAGE_POLICY_ID,
-                "max_total_response_bytes": (
-                    _MISSING_MAX_TOTAL_RESPONSE_BYTES
+                "aggregate_max_total_response_bytes": (
+                    _MISSING_AGGREGATE_MAX_TOTAL_RESPONSE_BYTES
                 ),
-                "max_single_response_bytes": 132 * 1024 * 1024,
+                "max_documents_per_activity": (
+                    _MISSING_MAX_DOCUMENTS_PER_ACTIVITY
+                ),
+                "max_single_response_bytes": (
+                    _MISSING_SINGLE_RESPONSE_BYTES
+                ),
+                "authorized_years": _MISSING_AUTHORIZED_YEARS,
+                "authorized_aggregate_plan_root": (
+                    _MISSING_AUTHORIZED_AGGREGATE_PLAN_ROOT
+                ),
+                "authorized_aggregate_demand_count": (
+                    _MISSING_AUTHORIZED_AGGREGATE_DEMAND_COUNT
+                ),
+                "authorized_aggregate_document_count": (
+                    _MISSING_AUTHORIZED_AGGREGATE_DOCUMENT_COUNT
+                ),
+                "authorized_aggregate_response_budget": (
+                    _MISSING_AUTHORIZED_AGGREGATE_RESPONSE_BUDGET
+                ),
+                "response_budget": inspect.getsource(
+                    _missing_total_response_budget
+                ),
+                "aggregate_plan_replay": inspect.getsource(
+                    _replay_aggregate_plan_for_shard
+                ),
+                "aggregate_plan_validation": inspect.getsource(
+                    _validate_aggregate_plan_for_shard
+                ),
             },
         }
     )
@@ -942,6 +1060,14 @@ def _replay_missing_capture(
     plan: SealedDocumentClosurePlan,
     manifest_path: Path,
 ) -> tuple[_DocumentParent, list[_ReusableDocument]]:
+    aggregate = _validate_aggregate_plan_for_shard(
+        plan,
+        prepare_document_closure(
+            tuple(row.manifest_path for row in plan.inventory_parents),
+            (),
+            _MISSING_AUTHORIZED_YEARS,
+        ),
+    )
     validated = validate_free_provider_backfill(manifest_path)
     root = Path(str(validated.get("manifest_path") or "")).parent
     contract = read_json(root / "activity_contract.json")
@@ -956,7 +1082,7 @@ def _replay_missing_capture(
     retries = budget.get("max_retries")
     expected_attempts = (
         len(requests) * (int(retries) + 1)
-        if type(retries) is int and 0 <= retries <= 5
+        if retries == 2
         else -1
     )
     try:
@@ -973,10 +1099,10 @@ def _replay_missing_capture(
         or contract.get("activity_name")
         != (
             "free_domestic_cninfo_document_closure_missing_"
-            f"{plan.plan_root[:24]}_v1"
+            f"{plan.plan_root[:24]}_v3"
         )
         or contract.get("permission_context_id")
-        != http_module.DEFAULT_PERMISSION_CONTEXT
+        != CNINFO_DOCUMENT_CLOSURE_SHARD_PERMISSION_CONTEXT
         or contract.get("population_root")
         != canonical_hash(
             {
@@ -997,13 +1123,12 @@ def _replay_missing_capture(
         or type(budget) is not dict
         or budget.get("max_requests") != expected_attempts
         or budget.get("max_wire_exchanges") != expected_attempts
-        or budget.get("max_response_bytes") != 132 * 1024 * 1024
+        or budget.get("max_response_bytes")
+        != _MISSING_SINGLE_RESPONSE_BYTES
         or budget.get("max_total_response_bytes")
-        != _MISSING_MAX_TOTAL_RESPONSE_BYTES
-        or type(budget.get("timeout_seconds")) not in {int, float}
-        or not 0 < float(budget["timeout_seconds"]) <= 120
-        or type(budget.get("minimum_delay_seconds")) not in {int, float}
-        or not 0 <= float(budget["minimum_delay_seconds"]) <= 60
+        != _missing_total_response_budget(plan)
+        or budget.get("timeout_seconds") != 30.0
+        or budget.get("minimum_delay_seconds") != 2.0
         or adapter
         != {
             "adapter": _MISSING_DOCUMENT_ADAPTER,
@@ -1014,11 +1139,24 @@ def _replay_missing_capture(
             "evidence_parents_root": parents_root,
             "request_plan_hash": request_plan_hash,
             "storage_policy_id": _MISSING_STORAGE_POLICY_ID,
+            "aggregate_sealed_plan_root": aggregate.plan_root,
+            "aggregate_missing_documents_root": _missing_documents_root(
+                aggregate
+            ),
+            "aggregate_total_response_budget": str(
+                _missing_total_response_budget(aggregate)
+            ),
+            "aggregate_total_response_budget_ceiling": str(
+                _MISSING_AGGREGATE_MAX_TOTAL_RESPONSE_BYTES
+            ),
+            "response_budget_formula": (
+                "max_132mib_twice_sum_max_64kib_declared_bytes_v1"
+            ),
             "max_total_response_bytes": str(
-                _MISSING_MAX_TOTAL_RESPONSE_BYTES
+                _missing_total_response_budget(plan)
             ),
             "authorization_policy": (
-                "human_authorized_cninfo_document_closure_missing_v1"
+                "human_authorized_cninfo_document_closure_year_shards_v3"
             ),
         }
         or request_plan.get("requests") != request_rows
@@ -1525,8 +1663,9 @@ def _replay_discovery_parents(
             )
             if (
                 dict(declared) != actual_direct
-                or actual_direct["source_implementation_root"]
-                != http_module._implementation_root()
+                or not http_module._implementation_root_compatible(
+                    actual_direct["source_implementation_root"]
+                )
             ):
                 raise ValueError("discovery_parent_identity_mismatch")
             parent_root = Path(
@@ -2577,7 +2716,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--minimum-delay-seconds", type=float, default=2.0)
     parser.add_argument("--timeout-seconds", type=float, default=30.0)
     parser.add_argument("--max-retries", type=int, default=2)
-    parser.add_argument("--max-documents", type=int, default=130_000)
+    parser.add_argument(
+        "--max-documents",
+        type=int,
+        default=_MISSING_MAX_DOCUMENTS_PER_ACTIVITY,
+    )
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -2587,6 +2730,23 @@ def _closure_summary(
     *,
     network_called: bool,
 ) -> dict[str, Any]:
+    by_year: dict[int, list[_PhysicalDocument]] = defaultdict(list)
+    for row in plan.missing:
+        by_year[_physical_year(row)].append(row)
+    year_shards = [
+        {
+            "year": year,
+            "missing_physical_document_count": len(rows),
+            "max_total_response_bytes": max(
+                _MISSING_SINGLE_RESPONSE_BYTES,
+                sum(
+                    max(64 * 1024, row.adjunct_size_kb * 1024) * 2
+                    for row in rows
+                ),
+            ),
+        }
+        for year, rows in sorted(by_year.items())
+    ]
     return {
         "schema_version": "cninfo_document_closure_plan_preview_v1",
         "sealed_plan_root": plan.plan_root,
@@ -2603,7 +2763,16 @@ def _closure_summary(
         "weak_source_ancestry": plan.weak_source_ancestry,
         "blockers": list(plan.blockers),
         "downstream_eligible": plan.downstream_eligible,
-        "max_total_response_bytes": _MISSING_MAX_TOTAL_RESPONSE_BYTES,
+        "selected_max_total_response_bytes": (
+            _missing_total_response_budget(plan) if plan.missing else 0
+        ),
+        "aggregate_max_total_response_bytes": (
+            _MISSING_AGGREGATE_MAX_TOTAL_RESPONSE_BYTES
+        ),
+        "max_documents_per_activity": (
+            _MISSING_MAX_DOCUMENTS_PER_ACTIVITY
+        ),
+        "year_shards": year_shards,
         "network_called": network_called,
         "safety": {
             "profile_activation_authorized": False,
@@ -2667,7 +2836,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.plan_only:
         print(_render(preview, pretty=args.pretty))
         return 0
-    if not args.allow_network:
+    if plan.missing and not args.allow_network:
         print(
             _render(
                 preview
@@ -2681,9 +2850,24 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 2
-    if (
+    if plan.missing and len(plan.years) != 1:
+        print(
+            _render(
+                preview
+                | {
+                    "status": "blocked",
+                    "reason": (
+                        "cninfo_document_closure_single_year_shard_required"
+                    ),
+                },
+                pretty=args.pretty,
+            )
+        )
+        return 2
+    if plan.missing and (
         type(args.max_documents) is not int
         or args.max_documents < 0
+        or args.max_documents > _MISSING_MAX_DOCUMENTS_PER_ACTIVITY
         or plan.missing_physical_document_count > args.max_documents
     ):
         print(
@@ -2699,14 +2883,57 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 2
+    if plan.missing and (
+        args.minimum_delay_seconds != 2.0
+        or args.timeout_seconds != 30.0
+        or args.max_retries != 2
+    ):
+        print(
+            _render(
+                preview
+                | {
+                    "status": "blocked",
+                    "reason": (
+                        "cninfo_document_closure_capture_controls_invalid"
+                    ),
+                },
+                pretty=args.pretty,
+            )
+        )
+        return 2
     try:
         capture: dict[str, Any] | None = None
         if plan.missing:
+            aggregate_plan = prepare_document_closure(
+                args.inventory,
+                (),
+                _MISSING_AUTHORIZED_YEARS,
+            )
+            if (
+                aggregate_plan.plan_root
+                != _MISSING_AUTHORIZED_AGGREGATE_PLAN_ROOT
+                or aggregate_plan.demand_count
+                != _MISSING_AUTHORIZED_AGGREGATE_DEMAND_COUNT
+                or aggregate_plan.physical_document_count
+                != _MISSING_AUTHORIZED_AGGREGATE_DOCUMENT_COUNT
+                or _missing_total_response_budget(aggregate_plan)
+                != _MISSING_AUTHORIZED_AGGREGATE_RESPONSE_BUDGET
+            ):
+                raise ValueError(
+                    "cninfo_document_closure_authorized_aggregate_mismatch"
+                )
+            preview |= {
+                "aggregate_sealed_plan_root": aggregate_plan.plan_root,
+                "aggregate_total_response_budget": (
+                    _missing_total_response_budget(aggregate_plan)
+                ),
+            }
             signer = PersistentReceiptSigner.load(
                 http_module.DEFAULT_CAPTURE_KEY
             )
             capture = capture_missing_documents(
                 plan,
+                aggregate_plan=aggregate_plan,
                 output_root=(
                     http_module.SCOPE_ROOT
                     / "cninfo"
@@ -2716,7 +2943,9 @@ def main(argv: list[str] | None = None) -> int:
                 transport=http_module.CNINFODocumentTransport(
                     minimum_delay_seconds=args.minimum_delay_seconds
                 ),
-                permission_context_id=http_module.DEFAULT_PERMISSION_CONTEXT,
+                permission_context_id=(
+                    CNINFO_DOCUMENT_CLOSURE_SHARD_PERMISSION_CONTEXT
+                ),
                 minimum_delay_seconds=args.minimum_delay_seconds,
                 timeout_seconds=args.timeout_seconds,
                 max_retries=args.max_retries,

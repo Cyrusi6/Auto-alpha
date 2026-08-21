@@ -92,6 +92,7 @@ content hash 为准。
 | CNINFO current supplemental discovery | `free_provider_backfill_700af7435eb7092f87e8c1e5` / `700af743...` | 759 个请求；669 positive、90 empty、0 error；绑定 758-leaf 修正版 profile 和 current `35c27d...` implementation root | signed capture 完成；只作为同身份 supplemental inventory 的强上游 |
 | CNINFO current supplemental inventory | `free_provider_backfill_03a82909b1691d06525d3e3a` / `03a82909...` | 9,662 个请求；9,572 positive、90 empty、0 error；9,667 个有界 attempts；379,073,639 响应字节 | publication 和离线 validator 通过；必须与 current-root base inventory 一起进入 document closure，不能单独授权公司行为 |
 | CNINFO current base discovery | `free_provider_backfill_cca3f9cd1ce4a136633d0148` / `cca3f9cd...` | 433/433 个请求；432 positive、1 empty、0 error；13,113,875 响应字节 | publication 与离线 replay 通过；current-root base inventory 已严格绑定该 generation 开始新活动 |
+| CNINFO current base inventory | `free_provider_backfill_a8d27d60f2351c47efd98ae3` / `a8d27d60...` | 2,459/2,459 个请求完成并通过 current validator | 与 current supplemental `03a82909...` 共同形成 343,262 条逻辑 demand、342,516 份唯一物理文档；不单独授权公司行为 |
 | CNINFO 2011 legacy 文档 | `free_provider_backfill_04dc9d99bcb15c3c9c2afb4a` / `04dc9d99...` | 8,129/8,129 positive，1,669,823,067 响应字节；独立重放根 `b9135164...e96f` | 字节与 publication signature 完整，但 `quarantined=true`、`weak_source_ancestry=true`、`governed_evidence_eligible=false` |
 
 raw 日状态数与 coverage-use 数不同，是因为前者统计 provider 返回的全部行，后者只
@@ -103,10 +104,12 @@ raw 日状态数与 coverage-use 数不同，是因为前者统计 provider 返�
 | --- | --- | --- |
 | Baostock `hs300-snapshots` v2 | **已暂停、未发布**：runtime contract `d6e8a7a9...`、activity `a8e90319...`；1,621 positive 日期；`2018-08-30` 六次连接失败；1,627 attempts、1,628 exchanges、41,458,942 bytes；pause `f46b57ae...` | 5/15/30/60/120 秒冷却全部执行，第六次后没有第七次；旧 v1 `464eed...` 与 v2 均不可拼接或冒充完成。后续登录已恢复，但 v3/扩大预算须重新人工批准 |
 | Baostock `hs300-snapshots` v3 | **已完成并独立验证**：generation `free_provider_backfill_dcd7ba6e1337f498683a6650`；1,946/1,946 positive、0 final error；1,947 attempts、1,949 exchanges、49,770,410 bytes；583,800 normalized rows、0 conflict；replay root `58ae0278...` | publication/current implementation/raw/plan/normalizer replay 全部通过；仍为 `quarantined_reconciliation_only`，缺 publication time、历史权重、provider-origin 和 runtime-isolation，不能单独准入 |
-| Baostock current reconciliation queue | **有界串行采集中**：locked `baostock==0.9.3`；`adjustments` activity `9dd1deb3...` 已启动，随后为 3,798-request `turnover` 和 34,182-request `dividends` | 用户服务 `auto-alpha-baostock-reconciliation-20260820.service` 只允许三阶段串行；请求上限分别为 11,394、11,394、102,546。未锁客户端的 activity `e6295d7e...` 以 0 wire exchange 暂停并永久留档，不能拼接 |
-| CNINFO strong base chain | **base discovery 已发布，base inventory 正在新身份启动**：discovery generation `cca3f9cd...` 为 433/433 terminal、0 error；inventory 绑定该 manifest，current activity `b5ab130e...` 不复用旧 `cb84a4b1...` partial journal | 用户服务 `auto-alpha-cninfo-base-chain-20260820.service` 只执行 `base discovery → base inventory`；父 generation content hash 改变必然改变 activity identity。closure 会递归重放实际 discovery parent，不能用实现变化前的 base 与新 supplemental 拼接 |
+| Baostock adjustments | **已发布、语义阻断**：`free_provider_backfill_479b720e306747e94c69a5bb`；3,798/3,798 请求，3,648 positive、150 empty、0 error；20,134 条对账记录 | 物理与 parser replay 完成，但 provider 不给历史 revision known-at；保留 `historical_adjustment_revision_timestamp_unavailable`，不得直接准入 |
+| Baostock turnover | **已完成并发布**：`free_provider_backfill_7cc80948db9d22ea9839f5a7`；3,798/3,798 positive；3,799 attempts；5,760,634 条规范化记录 | 仍须 PIT alias 投影、exact-cover receipt 与 Profile 字段裁决；不能由 capture success 自动准入 |
+| Baostock dividends | **已发布并通过离线全量重验**：`free_provider_backfill_adcab60f1a085b2c45614a1a`；34,182 个请求、34,184 attempts、18,939 positive、15,243 empty、0 final error；19,537 条记录 | 唯一 ENOTCONN attempt 的旧 producer 提前记了 wire count，严格 publication 正确阻断。窄修复未重新下载并要求后续成功 terminal；publication signature/raw/parser replay 均通过，但事件版本历史 blocker 仍保留 |
+| CNINFO strong base chain | **已完成 discovery → inventory**：`cca3f9cd... → a8d27d60...`；base inventory 2,459/2,459 请求完成 | closure 递归重放实际 discovery parent；旧 `cb84a4b1...` partial journal 与旧 root 不参与新闭包 |
 | CNINFO strong supplemental chain | **已完成 discovery → inventory 物理采集**：`700af743... → 03a82909...`；inventory 9,662/9,662 terminal、0 final error | 官网 page 101 回卷已由 758-leaf profile 修复；旧 `212e...` generation 与 `7f9d...` 中间 activity 保留不用。此链仍须与 current base 合并并完成 document closure |
-| CNINFO document closure | **closure seam 与受控 CLI 已实现，真实 residual capture 尚未形成终态证据** | `free-cninfo-document-closure` 要求 base/supplemental 两份 immutable inventory，默认固定 2011–2019，最多 130,000 份 residual 和 256 GiB 总响应预算；递归重放 discovery/inventory/document 父证据，只下载 residual，每个文档恰有一个 disposition。人工 resume 参数在 trusted authority 未实现时固定 fail closed；旧 2011 derived disposition 仍 weak/quarantined |
+| CNINFO document closure | **年度分片补采已启动，尚无完整九年 closure**：full plan 根 `00483b73...`，343,262 条 demand、342,516 份物理文档、合计预算 509,623,150,592 bytes；旧 130,000 cap 在 0 GET 时正确阻断；2013 分片为 21,086 份 | 2011–2019 各自形成最多 60,000 份的不可变活动，单请求最多 2 次重试、全链硬上限 512 GiB；每个分片合同绑定同一个完整计划根与实际合计预算。服务 `auto-alpha-cninfo-document-year-shards-20260821.service` 串行执行，任一 pause 即停止。九年完成后必须离线重放所有分片并证明每份文档唯一 disposition |
 
 进度改变时只更新本节和最终 verdict 引用，不应改写以前 generation 的内容。历史失败、
 暂停和弱血缘活动继续原样留档；跨活动拼接、改名或重签都不能把它们升级成成功。
@@ -159,7 +162,7 @@ activity/contract、pause 原因、新预算或 breaker 处置、批准主体和
 | `daily_bars` | 本地 OHLCV 值丰富；Baostock raw 状态请求也包含可对账行情字段 | 旧值缺逐请求回执；新 raw 尚未作为独立 daily-bar artifact 按 PIT 轴、有效性和 consumer closure 重放 | blocked |
 | `daily_basic` | 本地 5,361,311 行；turnover 有单证券 v2 canary | turnover 未完成全市场闭包；`volume_ratio`/`total_mv` 没有受治理的权威回执；字段有效性和 known mask 未冻结 | blocked |
 | `daily_limits` | 本地有价格限制值 | 缺 provider receipt；未把板块、ST、IPO、规则生效日和前收盘价绑定到版本化计算或权威原值 | blocked |
-| `adjustment_factors` | 本地 5,876,096 行；Baostock 可提供当前因子序列 | 免费源没有历史 revision/vintage；跳变未逐一绑定当时可见的公司行为版本；不能证明无未来修订 | blocked |
+| `adjustment_factors` | 本地 5,876,096 行；Baostock 20,134 条当前因子对账记录；已实现 causal vintage 派生 seam | 免费源没有历史 revision/vintage；派生链尚未取得完整 PIT 公司行为事件版本和独立 Admission Verdict | blocked |
 | `index_members` | CSI 1,098 条详情、current full-range 439 个附件和 exact legacy-cons 2 个附件均有签名物理证据；本地有 2015 年后部分 delta | current 附件仍未证明 historical known-at/vintage，semantic parser 未运行；没有 2011 年末权威 300 只 seed、完整调样事件状态、每日恰好 300 只和每日权重 | blocked |
 | `corporate_actions` | CNINFO 66,881 条旧 inventory；2011 的 8,129 份文档已补采但因无上游 ancestry 被 quarantine；Baostock dividend 可作对账 | base/supplemental 强血缘 inventory→document 尚未完成；PDF 未解析 proposal→approval→implementation→correction；没有经济效果与复权跳变因果链 | blocked |
 | `index_daily_bars` | v2 generation 覆盖 1,945 个研究日 | capture 成功，但缺独立 coverage receipt、validity、consumer closure 和最终 Source Freeze 绑定 | blocked |
@@ -180,7 +183,7 @@ activity/contract、pause 原因、新预算或 breaker 处置、批准主体和
 | volume ratio | 没有找到能直接满足当前权威回执语义的长期免费源 | 旧字段定义、逐日原值回执、64,378 个空值裁决 | 选择其一：购买/恢复有历史回执的数据源；或人工批准新 Profile，把字段改为由过去 N 日成交量确定性计算的自研指标。后者是新字段身份，不能冒充旧 vendor `volume_ratio` |
 | total market value | 免费聚合接口可给值，但没有当前合同所需的 PIT 权威链 | PIT 总股本、公司行为版本、价格时点、逐日有效性 | 优先从 PIT share-capital 事件 × 未复权收盘价确定性派生；若事件链无法 exact cover，则购买带 PIT 股本/市值的数据。派生公式变化必须产生新 Profile |
 | daily limits | 可从免费行情和公开交易规则重建，也可用免费值交叉核对 | 板块/ST/IPO 特例、规则历史版本和生效日；一字板/停牌成交资格 | 实现版本化 A-share price-limit rule engine，输入只来自 admitted lifecycle/ST/pre-close；或购买可审计历史涨跌停价。两条路线都要逐日重放和冲突门禁 |
-| adjustment factors | 免费源只能补当前计算结果 | 历史 revision/vintage、当时已知版本和跳变因果 | 以巨潮/交易所公告事件版本为权威，自行重建 PIT factor vintage；Baostock/旧 Tushare 仅交叉校验。若 Profile 不接受派生权威，需人工批准新 Profile 或购买带 vintage 的商业数据 |
+| adjustment factors | 免费源只能补当前计算结果；causal vintage 生成器已实现 | CNINFO 文档 exact cover、公告经济条款解析、稳定 event/version 身份、known-at/effective-at 和独立准入裁决 | 以巨潮/交易所公告事件版本为权威；同一事件只使用生效前已知的最后版本，事后修订不得回写历史。Baostock/旧 Tushare 仅交叉校验；派生结果在 verdict 前固定 `data_admission_eligible=false` |
 | PIT CSI300 membership | 中证官网 current full-range 与 legacy-cons 物理附件已完整签名采集并独立验证 | 2011 年末 seed、全部定期/临时调整语义、发布/生效双时间、每日恰好 300 只、每日权重；当前下载不证明 historical known-at/vintage | 以已完成的 `11c07e34...` 与 `06fd455b...` 运行锁定 semantic parser，构建事件并逐开市日展开；对 known-at/vintage 做官方发布证据裁决。权重若免费档案不能补齐，则购买日权重，或人工批准只要求 PIT membership 的新 Profile |
 | corporate actions | 可以抓公告和原文 | 文档 exact cover、结构化经济条款、阶段版本、补充更正、跨公告实体匹配 | 完成 CNINFO base + supplemental 强血缘链，定点补代码变更/终止上市公告；解析并构建 proposal→approval→implementation→correction 状态机，交易所公告做独立抽查/冲突裁决 |
 | index daily bars | 已免费抓到 1,945 日 | admission receipt、validity 和 bundle closure | 独立重放 `51ab9f...` raw，绑定 date-axis root 与 benchmark consumer；若实现身份变化则新 generation，不改旧证据 |

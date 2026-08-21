@@ -71,6 +71,11 @@ CNINFO_SOURCE_BINDING_SCHEMA = "cninfo_source_binding_v1"
 CNINFO_GOVERNANCE_QUALIFICATION_SCHEMA = (
     "cninfo_governance_qualification_v1"
 )
+CNINFO_HISTORICAL_IMPLEMENTATION_ROOTS = frozenset(
+    {
+        "35c27d2670d231ee07a6026a8e8d1d451b321f0837b047db26f3dcd87ae3c49e",
+    }
+)
 CNINFO_SCOPE = {
     "date_start": "20120101",
     "date_end": "20191231",
@@ -2305,9 +2310,13 @@ def _implementation_root() -> str:
                 _validate_inventory_announcement_dates
             ),
             "official_http_transport": inspect.getsource(OfficialHttpProbeTransport),
-            "official_http_transport_module_sha256": sha256_file(
-                Path(run_provider_probe_module.__file__)
-            ),
+            "official_http_transport_dependencies": inspect.getsource(
+                run_provider_probe_module._NoRedirectHandler
+            )
+            + inspect.getsource(
+                run_provider_probe_module._safe_response_headers
+            )
+            + inspect.getsource(run_provider_probe_module._json_observation),
             "cninfo_leaf_profiles": {
                 name: [list(row) for row in rows]
                 for name, rows in sorted(CNINFO_LEAF_PROFILES.items())
@@ -2336,6 +2345,14 @@ def _implementation_root() -> str:
     )
 
 
+def _implementation_root_compatible(value: object) -> bool:
+    observed = str(value or "")
+    return bool(
+        observed == _implementation_root()
+        or observed in CNINFO_HISTORICAL_IMPLEMENTATION_ROOTS
+    )
+
+
 def _cninfo_governance_qualification(
     *,
     context: Mapping[str, Any],
@@ -2344,6 +2361,15 @@ def _cninfo_governance_qualification(
     publication_signature_verified: bool,
 ) -> dict[str, Any]:
     adapter_identity = context["adapter_identity"]
+    implementation_root = str(
+        adapter_identity.get("implementation_root") or ""
+    )
+    implementation_compatible = _implementation_root_compatible(
+        implementation_root
+    )
+    historical_implementation_allowlisted = bool(
+        implementation_root in CNINFO_HISTORICAL_IMPLEMENTATION_ROOTS
+    )
     exact_legacy = (
         context["activity_id"] == CNINFO_LEGACY_2011_DOCUMENT_ACTIVITY_ID
         and context["contract_id"] == CNINFO_LEGACY_2011_DOCUMENT_CONTRACT_ID
@@ -2410,10 +2436,13 @@ def _cninfo_governance_qualification(
             weak_source_ancestry = True
     if weak_source_ancestry:
         blockers.append("weak_source_acquisition_ancestry")
+    if not implementation_compatible:
+        blockers.append("cninfo_implementation_identity_incompatible")
     governed_evidence_eligible = bool(
         publication_signature_verified
         and source_lineage_complete
         and not weak_source_ancestry
+        and implementation_compatible
     )
     if not governed_evidence_eligible:
         blockers.append("cninfo_governed_evidence_ineligible")
@@ -2423,6 +2452,10 @@ def _cninfo_governance_qualification(
         "contract_id": context["contract_id"],
         "request_plan_hash": context["request_plan_hash"],
         "phase": phase,
+        "implementation_compatible": implementation_compatible,
+        "historical_implementation_allowlisted": (
+            historical_implementation_allowlisted
+        ),
         "source_lineage_complete": source_lineage_complete,
         "weak_source_ancestry": weak_source_ancestry,
         "quarantined": not governed_evidence_eligible,

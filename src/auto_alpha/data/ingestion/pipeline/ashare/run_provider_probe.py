@@ -983,11 +983,11 @@ class BaostockProbeTransport:
         if sock is None:
             raise ConnectionError("baostock_socket_missing")
         request_bytes = (message + "\n").encode("utf-8")
-        self._wire_exchange_count += 1
         capture: dict[str, Any] | None = None
         if self._capture_enabled:
             peer = sock.getpeername()
             observed_peer = list(peer) if isinstance(peer, tuple) else [str(peer)]
+            self._wire_exchange_count += 1
             capture = {
                 "wire_request_base64": base64.b64encode(request_bytes).decode("ascii"),
                 "request_sha256": hashlib.sha256(request_bytes).hexdigest(),
@@ -999,6 +999,8 @@ class BaostockProbeTransport:
                 "terminal_marker_present": False,
             }
             self._captures.append(capture)
+        else:
+            self._wire_exchange_count += 1
         sock.sendall(request_bytes)
         received = bytearray()
         marker = b"<![CDATA[]]>\n"

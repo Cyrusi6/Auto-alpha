@@ -394,6 +394,62 @@ def _baostock_login_only_transport_error_observation(
     )
 
 
+def test_baostock_pre_send_exchange_overcount_is_conservative_error_evidence() -> None:
+    request = ProviderProbeRequest(
+        request_id="baostock_dividend_300795_SZ_2018",
+        provider="baostock",
+        endpoint="dividend_reconciliation",
+        method="BAOSTOCK",
+        url=(
+            "baostock://public-api.baostock.com/dividend"
+            "?code=sz.300795&year=2018"
+        ),
+        disposition="provider_cannot_prove",
+        evidence_semantics="raw_custom_socket_response_plus_locked_parser",
+        expected_terminal_states=("positive", "empty"),
+        required_checks=("raw_wire_captured",),
+        metadata={"case": "dividend"},
+    )
+    envelope = {
+        "schema_version": "baostock_wire_probe_envelope_v1",
+        "package_distribution_version": "0.9.3",
+        "client_protocol_version": "00.9.30",
+        "request_id": request.request_id,
+        "socket_peer": [],
+        "wire_exchanges": [],
+        "parsed": {
+            "fields": [],
+            "row_count": 0,
+            "pages": [],
+            "first_rows": [],
+            "last_rows": [],
+            "canonical_logical_payload_sha256": canonical_hash(
+                {"fields": [], "rows": []}
+            ),
+        },
+        "provider_error": {
+            "type": "OSError",
+            "message": "[Errno 107] Transport endpoint is not connected",
+        },
+    }
+
+    free_provider_backfill._validate_baostock_wire_envelope(
+        json.dumps(envelope, sort_keys=True).encode(),
+        expected_exchange_count=1,
+        request=request.semantic(),
+        terminal_state="error",
+    )
+
+    envelope["provider_error"]["message"] = "different error"
+    with pytest.raises(ValueError, match="wire_closure_invalid"):
+        free_provider_backfill._validate_baostock_wire_envelope(
+            json.dumps(envelope, sort_keys=True).encode(),
+            expected_exchange_count=1,
+            request=request.semantic(),
+            terminal_state="error",
+        )
+
+
 def test_baostock_login_response_user_must_bind_business_session() -> None:
     request = _baostock_request("forged-login-user")
     observation = _baostock_login_only_transport_error_observation(request)

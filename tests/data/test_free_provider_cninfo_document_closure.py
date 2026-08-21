@@ -89,6 +89,14 @@ _HTML_ANNOUNCEMENT = {
 }
 
 
+def _full_aggregate_plan(plan):
+    return prepare_document_closure(
+        tuple(row.manifest_path for row in plan.inventory_parents),
+        (),
+        range(2011, 2020),
+    )
+
+
 def _official_observation(
     request: ProviderProbeRequest,
     body: dict[str, object] | bytes,
@@ -1198,6 +1206,32 @@ def test_document_closure_cli_blocks_network_without_authority(
     )
 
 
+def test_document_closure_cli_finalizes_complete_reused_union_offline(
+    strong_inventory_manifests: tuple[str, str],
+    strong_document_manifest: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = document_closure_module.main(
+        [
+            "--inventory",
+            strong_inventory_manifests[0],
+            "--inventory",
+            strong_inventory_manifests[1],
+            "--reusable-document",
+            strong_document_manifest,
+            "--year",
+            "2011",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert result == 0
+    assert payload["network_called"] is False
+    assert payload["status"] == "succeeded"
+    assert payload["missing_physical_document_count"] == 0
+    assert payload["evidence"]["complete"] is True
+
+
 def test_document_closure_cli_blocks_oversized_plan_before_network(
     strong_inventory_manifests: tuple[str, str],
     capsys: pytest.CaptureFixture[str],
@@ -1425,13 +1459,16 @@ def test_capture_and_finalize_exact_missing_document_closure(
     with patch.object(capture_module.os, "fsync", return_value=None):
         captured = capture_missing_documents(
             plan,
+            aggregate_plan=_full_aggregate_plan(plan),
             output_root=tmp_path / "missing-documents",
             signer=signer,
             transport=transport,
-            permission_context_id=cninfo_module.DEFAULT_PERMISSION_CONTEXT,
-            minimum_delay_seconds=0,
-            timeout_seconds=3,
-            max_retries=0,
+            permission_context_id=(
+                document_closure_module.CNINFO_DOCUMENT_CLOSURE_SHARD_PERMISSION_CONTEXT
+            ),
+            minimum_delay_seconds=2,
+            timeout_seconds=30,
+            max_retries=2,
         )
 
     evidence = finalize_document_closure(plan, captured["manifest_path"])
@@ -1446,10 +1483,16 @@ def test_capture_and_finalize_exact_missing_document_closure(
     assert evidence.downloaded_physical_document_count == 1
     assert evidence.physical_document_count == 1
     assert evidence.downstream_eligible is True
-    assert contract["budget"]["max_total_response_bytes"] == 256 * 1024**3
+    assert contract["budget"]["max_total_response_bytes"] == 132 * 1024**2
     assert contract["adapter_identity"]["storage_policy_id"] == (
-        "cninfo_document_closure_missing_fixed_256gib_v1"
+        "cninfo_document_closure_year_sharded_aggregate_bound_512gib_v3"
     )
+    assert contract["adapter_identity"][
+        "aggregate_total_response_budget_ceiling"
+    ] == str(512 * 1024**3)
+    assert contract["adapter_identity"][
+        "aggregate_sealed_plan_root"
+    ] == _full_aggregate_plan(plan).plan_root
     assert request_plan["requests"][0]["metadata"]["demand_identities"] == sorted(
         request_plan["requests"][0]["metadata"]["demand_identities"]
     )
@@ -1519,13 +1562,16 @@ def test_missing_capture_rejects_pdf_with_invalid_structure(
     ):
         capture_missing_documents(
             plan,
+            aggregate_plan=_full_aggregate_plan(plan),
             output_root=tmp_path / "malformed-pdf",
             signer=signer,
             transport=transport,
-            permission_context_id=cninfo_module.DEFAULT_PERMISSION_CONTEXT,
-            minimum_delay_seconds=0,
-            timeout_seconds=3,
-            max_retries=0,
+            permission_context_id=(
+                document_closure_module.CNINFO_DOCUMENT_CLOSURE_SHARD_PERMISSION_CONTEXT
+            ),
+            minimum_delay_seconds=2,
+            timeout_seconds=30,
+            max_retries=2,
         )
 
 
@@ -1562,13 +1608,16 @@ def test_missing_capture_rejects_structurally_valid_html_waf_page(
     ):
         capture_missing_documents(
             plan,
+            aggregate_plan=_full_aggregate_plan(plan),
             output_root=tmp_path / "html-waf",
             signer=signer,
             transport=transport,
-            permission_context_id=cninfo_module.DEFAULT_PERMISSION_CONTEXT,
-            minimum_delay_seconds=0,
-            timeout_seconds=3,
-            max_retries=0,
+            permission_context_id=(
+                document_closure_module.CNINFO_DOCUMENT_CLOSURE_SHARD_PERMISSION_CONTEXT
+            ),
+            minimum_delay_seconds=2,
+            timeout_seconds=30,
+            max_retries=2,
         )
 
 
@@ -1594,13 +1643,16 @@ def test_missing_capture_identity_changes_with_engine_and_storage_policy(
         with patch.object(capture_module.os, "fsync", return_value=None):
             return capture_missing_documents(
                 plan,
+                aggregate_plan=_full_aggregate_plan(plan),
                 output_root=tmp_path / output_name,
                 signer=signer,
                 transport=transport,
-                permission_context_id=cninfo_module.DEFAULT_PERMISSION_CONTEXT,
-                minimum_delay_seconds=0,
-                timeout_seconds=3,
-                max_retries=0,
+                permission_context_id=(
+                    document_closure_module.CNINFO_DOCUMENT_CLOSURE_SHARD_PERMISSION_CONTEXT
+                ),
+                minimum_delay_seconds=2,
+                timeout_seconds=30,
+                max_retries=2,
             )
 
     original = capture("original")
@@ -1639,7 +1691,7 @@ def test_missing_capture_identity_changes_with_engine_and_storage_policy(
     monkeypatch.setattr(
         document_closure_module,
         "_MISSING_STORAGE_POLICY_ID",
-        "cninfo_document_closure_missing_fixed_256gib_test_change",
+        "cninfo_document_closure_year_sharded_aggregate_test_change",
     )
     changed_policy = capture("changed-policy")
     changed_policy_contract = read_json(
@@ -1691,13 +1743,16 @@ def test_missing_capture_pause_never_silently_resumes(
     with pytest.raises(ProviderBackfillPaused):
         capture_missing_documents(
             plan,
+            aggregate_plan=_full_aggregate_plan(plan),
             output_root=output,
             signer=signer,
             transport=terminal_error,
-            permission_context_id=cninfo_module.DEFAULT_PERMISSION_CONTEXT,
-            minimum_delay_seconds=0,
-            timeout_seconds=3,
-            max_retries=1,
+            permission_context_id=(
+                document_closure_module.CNINFO_DOCUMENT_CLOSURE_SHARD_PERMISSION_CONTEXT
+            ),
+            minimum_delay_seconds=2,
+            timeout_seconds=30,
+            max_retries=2,
         )
 
     transport_called = False
@@ -1713,13 +1768,16 @@ def test_missing_capture_pause_never_silently_resumes(
     with pytest.raises(ProviderBackfillPaused):
         capture_missing_documents(
             plan,
+            aggregate_plan=_full_aggregate_plan(plan),
             output_root=output,
             signer=signer,
             transport=success,
-            permission_context_id=cninfo_module.DEFAULT_PERMISSION_CONTEXT,
-            minimum_delay_seconds=0,
-            timeout_seconds=3,
-            max_retries=1,
+            permission_context_id=(
+                document_closure_module.CNINFO_DOCUMENT_CLOSURE_SHARD_PERMISSION_CONTEXT
+            ),
+            minimum_delay_seconds=2,
+            timeout_seconds=30,
+            max_retries=2,
         )
     assert transport_called is False
 
@@ -1739,13 +1797,16 @@ def test_missing_capture_pause_never_silently_resumes(
     ):
         capture_missing_documents(
             plan,
+            aggregate_plan=_full_aggregate_plan(plan),
             output_root=output,
             signer=signer,
             transport=success,
-            permission_context_id=cninfo_module.DEFAULT_PERMISSION_CONTEXT,
-            minimum_delay_seconds=0,
-            timeout_seconds=3,
-            max_retries=1,
+            permission_context_id=(
+                document_closure_module.CNINFO_DOCUMENT_CLOSURE_SHARD_PERMISSION_CONTEXT
+            ),
+            minimum_delay_seconds=2,
+            timeout_seconds=30,
+            max_retries=2,
             resume_authorization=authorization,
         )
 
