@@ -2056,11 +2056,18 @@ def _document_structure_valid(
         if not stripped.startswith(b"%PDF-") or len(stripped) <= 32:
             return False
         trailer = stripped[-64 * 1024 :]
-        match = re.search(rb"startxref\s+(\d+)\s+%%EOF\s*$", trailer)
-        if match is None:
-            return False
-        xref_offset = int(match.group(1))
-        return 0 <= xref_offset < len(stripped)
+        matches = tuple(
+            re.finditer(
+                rb"startxref[ \t\r\n]+(\d+)[ \t\r\n]+%%EOF",
+                trailer,
+            )
+        )
+        match = matches[-1] if matches else None
+        return bool(
+            match is not None
+            and int(match.group(1)) < len(stripped)
+            and _pdf_trailing_comments_valid(trailer[match.end() :])
+        )
     if document_format == "html":
         prefix = stripped[: 2 * 1024 * 1024].lower()
         tail = stripped[-64 * 1024 :].lower()
@@ -2083,6 +2090,27 @@ def _document_structure_valid(
             and f'"webTxtID":"{announcement_id}"' in text
         )
     return False
+
+
+def _pdf_trailing_comments_valid(payload: bytes) -> bool:
+    if not payload:
+        return True
+    if (
+        len(payload) > 4 * 1024
+        or payload[:1] not in b" \t\r\n"
+        or b"\x00" in payload
+    ):
+        return False
+    lines = re.split(rb"\r\n|\r|\n", payload)
+    if len(lines) > 32:
+        return False
+    for line in lines:
+        if len(line) > 1024:
+            return False
+        content = line.lstrip(b" \t")
+        if content and not content.startswith(b"%"):
+            return False
+    return True
 
 
 def _announcement_date(value: Any) -> str | None:
@@ -2305,6 +2333,9 @@ def _implementation_root() -> str:
             "document_content_type": inspect.getsource(_content_type_compatible),
             "document_size": inspect.getsource(_adjunct_size_reasonable),
             "document_structure": inspect.getsource(_document_structure_valid),
+            "pdf_trailing_comments": inspect.getsource(
+                _pdf_trailing_comments_valid
+            ),
             "announcement_date": inspect.getsource(_announcement_date),
             "inventory_date_validator": inspect.getsource(
                 _validate_inventory_announcement_dates

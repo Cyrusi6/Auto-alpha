@@ -311,6 +311,14 @@ auto-alpha data free-cninfo-document-closure \
 `auto-alpha-cninfo-document-year-shards-20260821.service` 已按年度串行启动；任一分片
 触发 WAF、不可重试错误、pause 或预算不足都会停止后续年份，不会以跳过方式制造闭包。
 
+该 v3 服务实际完成 597 份 2011 正文后，在第 598 份 `58896367.PDF` 暂停；已签名
+响应为 200、长度/哈希/MIME/URL 全部正确，但 PaperPort 11.0 在最终 `%%EOF` 后追加
+`%PaperPortPDFversion` 注释，旧结构正则错误地要求 EOF 后只能为空白。标准 `pdfinfo`
+能完整解析其 16 页。v4 只允许最多 4 KiB、32 行、单行 1,024 bytes、无 NUL 且每个
+非空行以 `%` 开头的尾随 PDF 注释；任意正文或超限注释仍阻断。2026-08-22 的新授权
+绑定 v4 permission/storage/activity identity；旧 v3 的 597 份只保留审计，不跨活动拼接，
+v4 从完整 2011 分片重跑。
+
 Baostock 分红的 34,182 个逻辑请求已采集完毕，得到 19,537 条对账记录。旧采集器曾在
 `socket.getpeername()` 失败前提前增加 wire 计数，使唯一失败 attempt 的声明计数为 1、
 实际交换数组为空，publication 因此被严格 validator 阻断。新传输实现只在 peer 获取
@@ -328,6 +336,16 @@ prepared generation 已在不重新发起 34,182 个请求的情况下完成两�
 改写历史 factor。输入根、输出根、经济公式和 blocker 一起发布为不可变派生候选，且
 始终保留 `data_admission_eligible=false`，直到公司行为文档 exact cover 与独立
 Admission Verdict 完成。
+
+这里的“历史版本”来自官方公告序列，而不是 Baostock 聚合分红接口：权益分派、实施、
+补充和更正公告按 `announcementTime` 形成不可变事件版本，正文提供经济条款与生效日。
+current inventory 已保留 56,488 条 `corporate_actions` leaf 记录和 24,979 条
+`corrections` leaf 记录；仅按标题筛选“权益分派/利润分配/分红/派息/股息/现金红利/
+除权除息/送转”就有 26,543 个唯一公告候选。标题筛选只用于说明原料存在，不能替代
+正文解析或 exact cover。
+因此 CNINFO 正文闭包可以解决版本原料缺失；但正文下载完成后还必须运行锁定 parser、
+跨公告 event linkage、known-at/effective-at 门禁和 exact-cover verifier，不能直接把
+`dividend_event_version_history_unavailable` 改成 passed。
 
 ## 仍然 fail closed 的部分
 

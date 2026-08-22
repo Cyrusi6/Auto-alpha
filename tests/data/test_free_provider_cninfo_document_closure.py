@@ -269,6 +269,50 @@ def _valid_pdf() -> bytes:
     )
 
 
+def test_pdf_structure_allows_only_bounded_comments_after_eof() -> None:
+    paperport = _valid_pdf().rstrip() + b"\r%PaperPortPDFversion"
+    for module in (cninfo_module, document_closure_module):
+        assert module._document_structure_valid(
+            paperport,
+            document_format="pdf",
+            announcement_id="58896367",
+            announcement_time=1294871400000,
+        ) is True
+        assert module._document_structure_valid(
+            paperport + b"\rnot-a-pdf-comment",
+            document_format="pdf",
+            announcement_id="58896367",
+            announcement_time=1294871400000,
+        ) is False
+        assert module._document_structure_valid(
+            paperport + b"\r%" + b"x" * (4 * 1024),
+            document_format="pdf",
+            announcement_id="58896367",
+            announcement_time=1294871400000,
+        ) is False
+
+
+def test_missing_capture_identity_binds_http_pdf_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline = document_closure_module._missing_capture_implementation_root()
+
+    def reject_all_trailing_bytes(_payload: bytes) -> bool:
+        return False
+
+    monkeypatch.setattr(
+        cninfo_module,
+        "_pdf_trailing_comments_valid",
+        reject_all_trailing_bytes,
+        raising=False,
+    )
+
+    assert (
+        document_closure_module._missing_capture_implementation_root()
+        != baseline
+    )
+
+
 @pytest.fixture(scope="module")
 def strong_inventory_manifests(
     tmp_path_factory: pytest.TempPathFactory,
@@ -1485,7 +1529,7 @@ def test_capture_and_finalize_exact_missing_document_closure(
     assert evidence.downstream_eligible is True
     assert contract["budget"]["max_total_response_bytes"] == 132 * 1024**2
     assert contract["adapter_identity"]["storage_policy_id"] == (
-        "cninfo_document_closure_year_sharded_aggregate_bound_512gib_v3"
+        "cninfo_document_closure_year_sharded_aggregate_bound_512gib_v4"
     )
     assert contract["adapter_identity"][
         "aggregate_total_response_budget_ceiling"

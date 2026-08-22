@@ -109,7 +109,7 @@ raw 日状态数与 coverage-use 数不同，是因为前者统计 provider 返�
 | Baostock dividends | **已发布并通过离线全量重验**：`free_provider_backfill_adcab60f1a085b2c45614a1a`；34,182 个请求、34,184 attempts、18,939 positive、15,243 empty、0 final error；19,537 条记录 | 唯一 ENOTCONN attempt 的旧 producer 提前记了 wire count，严格 publication 正确阻断。窄修复未重新下载并要求后续成功 terminal；publication signature/raw/parser replay 均通过，但事件版本历史 blocker 仍保留 |
 | CNINFO strong base chain | **已完成 discovery → inventory**：`cca3f9cd... → a8d27d60...`；base inventory 2,459/2,459 请求完成 | closure 递归重放实际 discovery parent；旧 `cb84a4b1...` partial journal 与旧 root 不参与新闭包 |
 | CNINFO strong supplemental chain | **已完成 discovery → inventory 物理采集**：`700af743... → 03a82909...`；inventory 9,662/9,662 terminal、0 final error | 官网 page 101 回卷已由 758-leaf profile 修复；旧 `212e...` generation 与 `7f9d...` 中间 activity 保留不用。此链仍须与 current base 合并并完成 document closure |
-| CNINFO document closure | **年度分片补采已启动，尚无完整九年 closure**：full plan 根 `00483b73...`，343,262 条 demand、342,516 份物理文档、合计预算 509,623,150,592 bytes；旧 130,000 cap 在 0 GET 时正确阻断；2013 分片为 21,086 份 | 2011–2019 各自形成最多 60,000 份的不可变活动，单请求最多 2 次重试、全链硬上限 512 GiB；每个分片合同绑定同一个完整计划根与实际合计预算。服务 `auto-alpha-cninfo-document-year-shards-20260821.service` 串行执行，任一 pause 即停止。九年完成后必须离线重放所有分片并证明每份文档唯一 disposition |
+| CNINFO document closure | **v3 在第 598 个 2011 请求正确暂停，v4 准备完整重跑**：v3 已有 597 positive、1,294,584,578 response bytes；`58896367.PDF` 是可读的 16 页 PaperPort PDF，旧 EOF 正则误判。full plan 根仍为 `00483b73...`，343,262 条 demand、342,516 份物理文档、合计预算 509,623,150,592 bytes | v4 只新增严格受限的 post-EOF PDF comment 语义，并绑定 2026-08-22 新授权；不拼接 v3 partial。2011–2019 每片最多 60,000 份、单请求最多 2 次重试、全链硬上限 512 GiB；任一新 pause 仍停止。九年完成后必须离线重放所有分片并证明每份文档唯一 disposition |
 
 进度改变时只更新本节和最终 verdict 引用，不应改写以前 generation 的内容。历史失败、
 暂停和弱血缘活动继续原样留档；跨活动拼接、改名或重签都不能把它们升级成成功。

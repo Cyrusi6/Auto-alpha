@@ -2,6 +2,16 @@
 
 This file records only the current A-share architecture and recent governed milestones. Detailed historical implementation is available through Git history rather than duplicated task-by-task prose.
 
+## 2026-08-22 — CNINFO PaperPort PDF recovery
+
+### Outcome
+
+- Diagnosed the first v3 CNINFO shard pause from signed production evidence rather than treating it as a provider outage. The 2011 activity completed 597 documents and paused on request 598 (`announcement_id=58896367`) after 1,294,584,578 captured response bytes; HTTP status, URL, MIME, Content-Length, SHA-256 and PDF magic were all valid, while the structural gate alone rejected the body.
+- Replayed the exact 629,310-byte official body in a 1.3-second offline loop and confirmed that PaperPort 11.0 writes a bounded `%PaperPortPDFversion` comment after the final `%%EOF`. `pdfinfo` parsed all 16 pages without error. The old end-anchored regex therefore rejected a readable official PDF rather than detecting WAF, truncation or corruption.
+- Changed the PDF gate to select the last incremental `startxref`/`%%EOF`, retain the in-bounds xref check, and allow only a bounded post-EOF region: at most 4 KiB, at most 32 lines, at most 1,024 bytes per line, no NUL, and every nonblank line must be a PDF `%` comment. Arbitrary suffixes and oversized comments remain rejected.
+- Bound the new behavior and the explicit 2026-08-22 download authorization to the independent v4 storage policy, permission context and activity identity. The paused v3 activity remains immutable and is not spliced into v4; v4 restarts the complete 2011 shard and preserves the same nine-year aggregate plan, 342,516-document population, two-retry ceiling and 512 GiB cap.
+- Kept the semantic boundary explicit: the official announcement sequence can supply historical corporate-action versions, but download completion alone does not admit dividends or adjustment factors. Document parsing, event/version linkage, known-at/effective-at validation, exact coverage and an independent Admission Verdict are still required before the existing blocker can be removed.
+
 ## 2026-08-21 — Year-sharded CNINFO closure and causal adjustment vintages
 
 ### Outcome

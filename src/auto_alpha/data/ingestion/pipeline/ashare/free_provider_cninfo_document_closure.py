@@ -75,10 +75,10 @@ _MISSING_AUTHORIZED_AGGREGATE_DEMAND_COUNT = 343_262
 _MISSING_AUTHORIZED_AGGREGATE_DOCUMENT_COUNT = 342_516
 _MISSING_AUTHORIZED_AGGREGATE_RESPONSE_BUDGET = 509_623_150_592
 _MISSING_STORAGE_POLICY_ID = (
-    "cninfo_document_closure_year_sharded_aggregate_bound_512gib_v3"
+    "cninfo_document_closure_year_sharded_aggregate_bound_512gib_v4"
 )
 CNINFO_DOCUMENT_CLOSURE_SHARD_PERMISSION_CONTEXT = (
-    "human_authorization_20260821_cninfo_342516_year_shards_aggregate_bound_v3"
+    "human_authorization_20260822_cninfo_342516_paperport_comments_v4"
 )
 _RAW_ENVELOPE_KEYS = frozenset(
     {
@@ -564,7 +564,7 @@ def capture_missing_documents(
     contract = FreeProviderBackfillContract(
         activity_name=(
             "free_domestic_cninfo_document_closure_missing_"
-            f"{replayed.plan_root[:24]}_v3"
+            f"{replayed.plan_root[:24]}_v4"
         ),
         provider="cninfo",
         output_root=output_root,
@@ -620,7 +620,7 @@ def capture_missing_documents(
                 total_response_budget
             ),
             "authorization_policy": (
-                "human_authorized_cninfo_document_closure_year_shards_v3"
+                "human_authorized_cninfo_document_closure_year_shards_v4"
             ),
         },
     )
@@ -1014,6 +1014,33 @@ def _missing_capture_implementation_root() -> str:
             "capture_validator": inspect.getsource(
                 validate_free_provider_backfill
             ),
+            "official_http_transport": inspect.getsource(
+                http_module.OfficialHttpProbeTransport
+            ),
+            "cninfo_document_transport": inspect.getsource(
+                http_module.CNINFODocumentTransport
+            ),
+            "http_document_format": inspect.getsource(
+                http_module._document_format
+            ),
+            "http_document_block_reason": inspect.getsource(
+                http_module._document_block_reason
+            ),
+            "http_content_length": inspect.getsource(
+                http_module._content_length_matches
+            ),
+            "http_content_type": inspect.getsource(
+                http_module._content_type_compatible
+            ),
+            "http_document_structure": inspect.getsource(
+                http_module._document_structure_valid
+            ),
+            "http_pdf_trailing_comments": inspect.getsource(
+                http_module._pdf_trailing_comments_valid
+            ),
+            "http_declared_size": inspect.getsource(
+                http_module._adjunct_size_reasonable
+            ),
             "capture_engine_module_sha256": sha256_file(
                 Path(str(capture_module.__file__))
             ),
@@ -1099,7 +1126,7 @@ def _replay_missing_capture(
         or contract.get("activity_name")
         != (
             "free_domestic_cninfo_document_closure_missing_"
-            f"{plan.plan_root[:24]}_v3"
+            f"{plan.plan_root[:24]}_v4"
         )
         or contract.get("permission_context_id")
         != CNINFO_DOCUMENT_CLOSURE_SHARD_PERMISSION_CONTEXT
@@ -1156,7 +1183,7 @@ def _replay_missing_capture(
                 _missing_total_response_budget(plan)
             ),
             "authorization_policy": (
-                "human_authorized_cninfo_document_closure_year_shards_v3"
+                "human_authorized_cninfo_document_closure_year_shards_v4"
             ),
         }
         or request_plan.get("requests") != request_rows
@@ -2315,12 +2342,18 @@ def _document_structure_valid(
     if document_format == "pdf":
         if not stripped.startswith(b"%PDF-") or len(stripped) <= 32:
             return False
-        match = re.search(
-            rb"startxref\s+(\d+)\s+%%EOF\s*$",
-            stripped[-64 * 1024 :],
+        tail = stripped[-64 * 1024 :]
+        matches = tuple(
+            re.finditer(
+                rb"startxref[ \t\r\n]+(\d+)[ \t\r\n]+%%EOF",
+                tail,
+            )
         )
+        match = matches[-1] if matches else None
         return bool(
-            match is not None and int(match.group(1)) < len(stripped)
+            match is not None
+            and int(match.group(1)) < len(stripped)
+            and _pdf_trailing_comments_valid(tail[match.end() :])
         )
     if document_format == "html":
         prefix = stripped[: 2 * 1024 * 1024].lower()
@@ -2349,6 +2382,27 @@ def _document_structure_valid(
             and f'"webTxtID":"{announcement_id}"' in text
         )
     return False
+
+
+def _pdf_trailing_comments_valid(payload: bytes) -> bool:
+    if not payload:
+        return True
+    if (
+        len(payload) > 4 * 1024
+        or payload[:1] not in b" \t\r\n"
+        or b"\x00" in payload
+    ):
+        return False
+    lines = re.split(rb"\r\n|\r|\n", payload)
+    if len(lines) > 32:
+        return False
+    for line in lines:
+        if len(line) > 1024:
+            return False
+        content = line.lstrip(b" \t")
+        if content and not content.startswith(b"%"):
+            return False
+    return True
 
 
 def _content_length_matches(value: str | None, actual: int) -> bool:
