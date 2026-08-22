@@ -317,7 +317,9 @@ auto-alpha data free-cninfo-document-closure \
 能完整解析其 16 页。v4 只允许最多 4 KiB、32 行、单行 1,024 bytes、无 NUL 且每个
 非空行以 `%` 开头的尾随 PDF 注释；任意正文或超限注释仍阻断。2026-08-22 的新授权
 绑定 v4 permission/storage/activity identity；旧 v3 的 597 份只保留审计，不跨活动拼接，
-v4 从完整 2011 分片重跑。
+v4 从完整 2011 分片重跑。服务
+`auto-alpha-cninfo-document-year-shards-v4-20260822.service` 已于 2026-08-22 17:50:21
+启动；当前签名父链 preflight 不计作正文下载，任一新 pause 仍会停止后续年度。
 
 Baostock 分红的 34,182 个逻辑请求已采集完毕，得到 19,537 条对账记录。旧采集器曾在
 `socket.getpeername()` 失败前提前增加 wire 计数，使唯一失败 attempt 的声明计数为 1、
