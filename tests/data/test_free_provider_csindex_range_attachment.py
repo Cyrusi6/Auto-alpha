@@ -301,6 +301,11 @@ def test_full_get_capture_is_signed_replayed_and_keeps_safety_closed(
     replayed, replay_root = range_capture.replay_csindex_range_attachment_capture(
         published["manifest_path"]
     )
+    bodies, body_replay_root = (
+        range_capture.replay_csindex_range_attachment_bodies(
+            published["manifest_path"]
+        )
+    )
 
     index = json.loads(replayed["csindex_range_attachment_index"].decode())
     assert validated["status"] == "succeeded"
@@ -311,6 +316,10 @@ def test_full_get_capture_is_signed_replayed_and_keeps_safety_closed(
     assert index["attachment_sha256"] == hashlib.sha256(body).hexdigest()
     assert index["retrieval_method"] == "full_get"
     assert len(replay_root) == 64
+    assert len(bodies) == 1
+    assert bodies[0].body == body
+    assert bodies[0].attachment_sha256 == hashlib.sha256(body).hexdigest()
+    assert len(body_replay_root) == 64
     assert client.calls[0]["headers"].get("Range") is None
     contract = json.loads(
         (

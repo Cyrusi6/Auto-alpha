@@ -321,6 +321,29 @@ v4 从完整 2011 分片重跑。服务
 `auto-alpha-cninfo-document-year-shards-v4-20260822.service` 已于 2026-08-22 17:50:21
 启动；当前签名父链 preflight 不计作正文下载，任一新 pause 仍会停止后续年度。
 
+v4 后续在 2011 activity `12198c1c...` 保留 3,659 个 positive terminal 后，于
+`59086622.PDF` 正确暂停。该响应的 HTTP 200、URL、Content-Length、MIME 和 SHA-256
+均闭合，最终 xref 也指向真实 `xref` 表；唯一差异是 `%%EOF` 后存在固定 20-byte
+legacy binary record。`pdfinfo` 和 `pdftotext` 均可解析正文，去掉该 record 后旧结构门禁
+通过。拟议修复只接受 `CRLF + NUL + 15 non-NUL/non-EOL bytes + NUL NUL`，并额外要求
+`startxref` 精确指向传统 xref token；多一字节、改变 framing 或任意注释外正文仍拒绝。
+真实失败 envelope 的离线 red/green loop 已通过，8,129 份 quarantined 2011 文档也作为
+非授权格式语料完成预扫（6,936 PDF、1,193 HTML、0 新异常）。但该规则改变 capture
+implementation root，因此属于新的 v5 Provider Acquisition Contract；在取得新人工授权
+前不得启动，也不得复用 v4 permission context 或拼接 v4 partial journal。
+
+正文下载等待新授权期间，三个不依赖新 CNINFO bytes 的切片已可独立运行：
+
+- `index_daily_bars` provider-neutral evidence 已对真实 CSI300 日线完成 1,945/1,945
+  exact cover、独立 validity 和 `benchmark_control` consumer closure；正式准入仍等待
+  trade-calendar verdict、provider origin/runtime isolation 和 Source Freeze binding。
+- CSI signed attachment semantic replay 已对 439 个对象逐一分类，XLSX 只产出不带
+  known-at/effective-at 的变更候选；legacy XLS、图片、2011 seed、事件链和历史权重保持
+  显式 blocked。
+- PIT control-state seam 已实现受证据约束的 pre-span seed、known/effective 双时点、
+  保守盘中规则与冲突传播；真实 Baostock current snapshot 不能充当历史 seed，故最小
+  重放正确输出 unknown，而不是把当前状态倒灌到 2012。
+
 Baostock 分红的 34,182 个逻辑请求已采集完毕，得到 19,537 条对账记录。旧采集器曾在
 `socket.getpeername()` 失败前提前增加 wire 计数，使唯一失败 attempt 的声明计数为 1、
 实际交换数组为空，publication 因此被严格 validator 阻断。新传输实现只在 peer 获取

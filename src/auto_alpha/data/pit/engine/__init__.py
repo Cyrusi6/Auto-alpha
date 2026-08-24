@@ -2,6 +2,7 @@
 
 from .asof import asof_join, compute_feature_cutoff_date
 from .contracts import PIT_DATASET_CONTRACTS, contracts_for_datasets
+from .control_state import derive_control_state_timeline
 from .models import (
     ActiveSecurityMask,
     DataAvailabilityRecord,
@@ -32,5 +33,6 @@ __all__ = [
     "build_security_lifecycle",
     "compute_feature_cutoff_date",
     "contracts_for_datasets",
+    "derive_control_state_timeline",
     "validate_point_in_time_data",
 ]

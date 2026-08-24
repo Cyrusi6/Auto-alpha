@@ -1,6 +1,6 @@
 # 免费数据补采后的准入差距报告
 
-状态：**采集进行中；Data Admission 仍为 blocked；0/11 个 base-required 数据集已准入**
+状态：**CNINFO 正文采集已暂停、离线证据并行推进；Data Admission 仍为 blocked；0/11 个 base-required 数据集已准入**
 
 本报告回答两个不同问题：
 
@@ -56,7 +56,7 @@
 
 ## 3. 可更新的采集快照
 
-以下是 **2026-08-20 的持续采集快照**。generation、活动进度和 `current.json`
+以下是 **2026-08-24 的持续采集快照**。generation、活动进度和 `current.json`
 指针会随新的不可变发布而变化；它们是审计定位信息，不是稳定的产品常量，也不构成
 准入声明。为避免把中间 journal 数量误写成成功，本节不把尚未发布并通过独立验证的
 动态 generation 或请求数列为完成结果。长期判断应以独立 verdict 引用的精确
@@ -80,6 +80,7 @@ content hash 为准。
 | Baostock security basic | `free_provider_backfill_2fb2ef3e6f204cedb23978fb` / `2fb2ef3e...` | 3,798/3,798 请求为 positive | current signed capture；只给当前聚合身份/生命周期对账，历史简称和代码不能当 PIT 事实 |
 | Baostock 全市场日行情快照 | `free_provider_backfill_8b4404745328259e4ad0ba31` / `8b440474...` | 1,946/1,946 日期为 positive；6,752,512 个规范化证券日 | signed capture 完成；仍须按 PIT identity/lifecycle 轴生成 provider-neutral `daily_bars` coverage receipt |
 | CSI300 指数日线 | `free_provider_backfill_37352de761cd6dbc4ec5ad23` / `37352de7...` | 1,945 个研究期开市日 | current signed raw 可重放；仍须绑定 profile-scoped coverage 和最终 bundle |
+| CSI300 指数日线 provider-neutral evidence | `free_provider_market_data_evidence_1bdf100c4f66d8334454057a` / `1bdf100c...` | 1,945/1,945 exact cover；0 missing/extra/duplicate；1,945/1,945 行必需字段有效；重复运行身份一致 | technical evidence `verified`；仍因交易日历准入、供应商授权/来源/运行时隔离和 Source Freeze consumer binding 保持 `formal_data_admission_ready=false` |
 | turnover canary | `free_provider_backfill_416ab1d145ba2cfa43fbd63e` / `416ab1d1...` | 仅 `600000.SH`，1,967 行 | 证明接口几何，不证明全市场 `daily_basic` 覆盖 |
 | CSI 公告 discovery | `free_provider_backfill_9f820307c20cb31b7c9c6200` / `9f820307...` | 109 个请求 | 已签名物理证据；治理 seam 更新后须用同一新身份重跑完整链 |
 | CSI 公告 inventory | `free_provider_backfill_3e28a56ff1fd0091d6d72c4d` / `3e28a56f...` | 109 个请求，月叶列表 | 同上；不能跨实现身份拼接成强血缘 |
@@ -87,6 +88,7 @@ content hash 为准。
 | CSI 旧附件片 | `free_provider_backfill_88c03e4dcce007aef3b092af` / `88c03e4d...` | 439 个附件下载；163 个 blocked reference | 上游为弱 acquisition ancestry；`pit_membership_authorized=false` |
 | CSI current full-range attachments | `free_provider_backfill_11c07e34fabb5c599bb2dcd1` / `11c07e34...` | 608 parent refs；439/439 positive、0 error；36,989,662 bytes；439 exchanges；blocked 为 153 无路径日期 + 14 拒绝 + 2 研究期外 | immutable publication 与独立 replay 均通过；仍缺 historical known-at/vintage 与 semantic parser；`pit_membership_authorized=false` |
 | CSI current legacy-cons exact slice | `free_provider_backfill_06fd455b09738b70a465a5b6` / `06fd455b...` | 同一 608 parent refs；2/2 positive、0 error；4,889,936 bytes；2 exchanges；606 non-slice blocked refs | immutable publication 与独立 replay 均通过；blocker 与 full slice 相同；`pit_membership_authorized=false` |
+| CSI 附件 semantic replay | replay root `547ae71b...1944`；legacy root `3448693d...516c` | 439 个附件全部分类；7 XLSX 提取 350 条非授权变更候选；259 无 CSI300 引用；80 XLS、93 图片显式 blocked | parser 已运行但 known-at/effective-at、公告语义边、完整事件链、2011 seed 和历史权重未证明；`pit_membership_authorized=false` |
 | CNINFO 旧 base inventory | `free_provider_backfill_06cad6faacb5cc6033f703b4` / `06cad6fa...` | 2,459 个计划请求、66,881 个唯一公告、432 个完整月叶、0 冲突 | v1 publication；value-only，不能作为新强文档链的来源 |
 | CNINFO 旧 supplemental discovery | `free_provider_backfill_212e27653d183d18eee5eccc` / `212e2765...` | 旧 756-leaf 几何形成 757 个含 org-map 请求的 published capture | 后续实测官网 page 101 回卷到 page 1；不能证明两个超限月 exact cover，保留审计但不供 current inventory/closure 使用 |
 | CNINFO current supplemental discovery | `free_provider_backfill_700af7435eb7092f87e8c1e5` / `700af743...` | 759 个请求；669 positive、90 empty、0 error；绑定 758-leaf 修正版 profile 和 current `35c27d...` implementation root | signed capture 完成；只作为同身份 supplemental inventory 的强上游 |
@@ -109,7 +111,7 @@ raw 日状态数与 coverage-use 数不同，是因为前者统计 provider 返�
 | Baostock dividends | **已发布并通过离线全量重验**：`free_provider_backfill_adcab60f1a085b2c45614a1a`；34,182 个请求、34,184 attempts、18,939 positive、15,243 empty、0 final error；19,537 条记录 | 唯一 ENOTCONN attempt 的旧 producer 提前记了 wire count，严格 publication 正确阻断。窄修复未重新下载并要求后续成功 terminal；publication signature/raw/parser replay 均通过，但事件版本历史 blocker 仍保留 |
 | CNINFO strong base chain | **已完成 discovery → inventory**：`cca3f9cd... → a8d27d60...`；base inventory 2,459/2,459 请求完成 | closure 递归重放实际 discovery parent；旧 `cb84a4b1...` partial journal 与旧 root 不参与新闭包 |
 | CNINFO strong supplemental chain | **已完成 discovery → inventory 物理采集**：`700af743... → 03a82909...`；inventory 9,662/9,662 terminal、0 final error | 官网 page 101 回卷已由 758-leaf profile 修复；旧 `212e...` generation 与 `7f9d...` 中间 activity 保留不用。此链仍须与 current base 合并并完成 document closure |
-| CNINFO document closure | **v3 在第 598 个 2011 请求正确暂停；v4 已于 2026-08-22 17:50:21 启动完整重跑**：v3 已有 597 positive、1,294,584,578 response bytes；`58896367.PDF` 是可读的 16 页 PaperPort PDF，旧 EOF 正则误判。v4 当前处于签名父链 preflight；full plan 根仍为 `00483b73...`，343,262 条 demand、342,516 份物理文档、合计预算 509,623,150,592 bytes | v4 只新增严格受限的 post-EOF PDF comment 语义，并绑定 2026-08-22 新授权；不拼接 v3 partial。服务 `auto-alpha-cninfo-document-year-shards-v4-20260822.service` 串行执行；2011–2019 每片最多 60,000 份、单请求最多 2 次重试、全链硬上限 512 GiB，任一新 pause 仍停止。九年完成后必须离线重放所有分片并证明每份文档唯一 disposition |
+| CNINFO document closure | **v4 已暂停、未发布**：2011 activity `12198c1c...` 已保留 3,659 positive，随后请求 `59086622` 在 HTTP/长度/MIME/hash 均通过时因 20-byte legacy binary post-EOF record 触发结构门禁；服务于 2026-08-22 21:48:56 停止。full plan 仍为 343,262 demand、342,516 份物理文档、509,623,150,592-byte 总预算 | 精确 raw 重放和标准 parser 证明 PDF 主体可读；拟议的有界 binary-trailer 规则已通过真实样本与 8,129 份旧语料预扫，但改变 implementation root，必须建立新 v5 授权/活动身份，不能复用 v4 授权或拼接 partial。九年完成后仍须离线证明唯一 disposition |
 
 进度改变时只更新本节和最终 verdict 引用，不应改写以前 generation 的内容。历史失败、
 暂停和弱血缘活动继续原样留档；跨活动拼接、改名或重签都不能把它们升级成成功。
@@ -163,11 +165,11 @@ activity/contract、pause 原因、新预算或 breaker 处置、批准主体和
 | `daily_basic` | 本地 5,361,311 行；turnover 有单证券 v2 canary | turnover 未完成全市场闭包；`volume_ratio`/`total_mv` 没有受治理的权威回执；字段有效性和 known mask 未冻结 | blocked |
 | `daily_limits` | 本地有价格限制值 | 缺 provider receipt；未把板块、ST、IPO、规则生效日和前收盘价绑定到版本化计算或权威原值 | blocked |
 | `adjustment_factors` | 本地 5,876,096 行；Baostock 20,134 条当前因子对账记录；已实现 causal vintage 派生 seam | 免费源没有历史 revision/vintage；派生链尚未取得完整 PIT 公司行为事件版本和独立 Admission Verdict | blocked |
-| `index_members` | CSI 1,098 条详情、current full-range 439 个附件和 exact legacy-cons 2 个附件均有签名物理证据；本地有 2015 年后部分 delta | current 附件仍未证明 historical known-at/vintage，semantic parser 未运行；没有 2011 年末权威 300 只 seed、完整调样事件状态、每日恰好 300 只和每日权重 | blocked |
+| `index_members` | CSI 1,098 条详情、current full-range 439 个附件和 exact legacy-cons 2 个附件均有签名物理证据；439 个附件已全部 semantic 分类并提取 350 条非授权变更候选 | 80 个 legacy XLS 与 93 个图片仍需受限 parser/OCR；historical known-at/effective-at、公告语义边、2011 seed、完整调样事件、每日恰好 300 只和历史权重未证明 | blocked |
 | `corporate_actions` | CNINFO 66,881 条旧 inventory；2011 的 8,129 份文档已补采但因无上游 ancestry 被 quarantine；Baostock dividend 可作对账 | base/supplemental 强血缘 inventory→document 尚未完成；PDF 未解析 proposal→approval→implementation→correction；没有经济效果与复权跳变因果链 | blocked |
-| `index_daily_bars` | v2 generation 覆盖 1,945 个研究日 | capture 成功，但缺独立 coverage receipt、validity、consumer closure 和最终 Source Freeze 绑定 | blocked |
-| `suspensions` | Baostock `tradestatus` 有正/负日状态；CNINFO 有停复牌公告类别 | 证券代码轴错误；没有盘中 timing 时须保守化；公告状态机、前置 seed、冲突裁决和逐义务负证明未完成 | blocked |
-| `st_status_daily` | Baostock `isST` 日状态；CNINFO 特别处理/退市公告 | 证券代码轴错误；Baostock 不能区分 ST/*ST/退市风险；公告状态机与全生命周期 exact cover 未完成 | blocked |
+| `index_daily_bars` | provider-neutral evidence generation `1bdf100c...` 已证明 1,945/1,945 exact cover、全部行 validity 和 `benchmark_control` consumer closure | trade calendar 尚未 admitted；Provider Acquisition Contract、provider origin、runtime isolation 和最终 Source Freeze binding 未闭合 | blocked |
+| `suspensions` | Baostock `tradestatus` 有正/负日状态；CNINFO 有停复牌公告类别；provider-neutral control-state seam 已实现双时点、保守 timing、seed 和冲突 fail-closed | 证券代码轴错误；缺受治理 pre-span seed、公告 known-at/effective-at、盘中 timing、跨源裁决和逐义务负证明 | blocked |
+| `st_status_daily` | Baostock `isST` 日状态；CNINFO 特别处理/退市公告；同一 control-state seam 可承载不可变 ST 事件版本 | 证券代码轴错误；Baostock 不能区分 ST/*ST/退市风险；缺受治理 seed、公告时点、子类型解析和全生命周期 exact cover | blocked |
 
 这里没有“基本通过”一档。base-required 的 blocker 不能降级成 warning，也不能用另一个
 数据集的高覆盖率抵消。

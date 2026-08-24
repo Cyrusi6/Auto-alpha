@@ -141,6 +141,19 @@ class _HttpExchangeResult:
     redirect_followed: bool = False
 
 
+@dataclass(frozen=True)
+class ReplayedRangeAttachment:
+    """One attachment reconstructed from its verified signed wire exchange."""
+
+    source_request_id: str
+    attachment_url: str
+    attachment_extension: str
+    attachment_sha256: str
+    source_logical_payload_sha256: str
+    source_announcements: tuple[Mapping[str, Any], ...]
+    body: bytes
+
+
 class _ExchangeClient(Protocol):
     def exchange(
         self,
@@ -1583,6 +1596,126 @@ def replay_csindex_range_legacy_cons_capture(
     return replay_csindex_range_attachment_capture(path)
 
 
+def replay_csindex_range_attachment_bodies(
+    path: str | Path,
+) -> tuple[tuple[ReplayedRangeAttachment, ...], str]:
+    """Reconstruct attachment bytes after validating their complete capture.
+
+    The returned root binds source request identity and attachment hashes.  It
+    deliberately does not assign announcement semantics, historical known-at,
+    effective dates, membership, or weights; those belong to a separate,
+    fail-closed semantic replay.
+    """
+
+    generic = validate_free_provider_backfill(path)
+    manifest_path = Path(str(generic["manifest_path"]))
+    root = manifest_path.parent
+    contract = read_json(root / capture_module.CONTRACT_NAME)
+    profile = str((contract.get("adapter_identity") or {}).get("capture_profile"))
+    if profile not in {CAPTURE_PROFILE, LEGACY_CAPTURE_PROFILE}:
+        raise ValueError("csindex_range_attachment_capture_profile_invalid")
+    _validate_authorized_contract(
+        contract,
+        request_count=int(generic.get("request_count") or -1),
+        expected_profile=profile,
+        expected_implementation_root=str(
+            (contract.get("adapter_identity") or {}).get("implementation_root")
+            or ""
+        ),
+    )
+    plan = read_json(root / capture_module.PLAN_NAME)
+    requests = tuple(
+        _request_from_semantic(row) for row in plan.get("requests") or ()
+    )
+    terminal = {
+        str(row["request_id"]): row
+        for row in (
+            _exact_json_object(line)
+            for line in (root / capture_module.JOURNAL_NAME).read_bytes().splitlines()
+            if line.strip()
+        )
+        if row.get("event_type") == "capture_attempt_terminal"
+    }
+    if set(terminal) != {request.request_id for request in requests}:
+        raise ValueError("csindex_range_attachment_terminal_count_invalid")
+    public_key = _capture_public_key_from_terminal(terminal)
+    normalized, _normalized_root = replay_csindex_range_attachment_capture(
+        manifest_path
+    )
+    index_rows = {
+        str(row.get("source_request_id") or ""): row
+        for row in (
+            _exact_json_object(line)
+            for line in normalized["csindex_range_attachment_index"].splitlines()
+            if line.strip()
+        )
+    }
+    if set(index_rows) != set(terminal):
+        raise ValueError("csindex_range_attachment_index_identity_invalid")
+
+    attachments: list[ReplayedRangeAttachment] = []
+    replay_rows: list[dict[str, Any]] = []
+    for request in requests:
+        receipt = terminal[request.request_id]
+        wrapper = _read_exact_json(
+            root / str(receipt.get("raw_envelope_relative_path") or "")
+        )
+        raw = _raw_logical_payload(wrapper, request=request, terminal=receipt)
+        body, _exchanges, _retrieval_method, _etag = (
+            _validate_and_assemble_logical(
+                raw,
+                request=request,
+                public_key=public_key,
+                expected_attempt_id=str(receipt.get("attempt_id") or ""),
+                expected_retry_ordinal=int(receipt.get("retry_ordinal", -1)),
+            )
+        )
+        index_row = index_rows[request.request_id]
+        body_hash = hashlib.sha256(body).hexdigest()
+        raw_hash = hashlib.sha256(raw).hexdigest()
+        announcements = index_row.get("source_announcements")
+        if (
+            index_row.get("attachment_url") != request.url
+            or index_row.get("attachment_sha256") != body_hash
+            or index_row.get("attachment_size_bytes") != len(body)
+            or index_row.get("source_logical_payload_sha256") != raw_hash
+            or not isinstance(announcements, list)
+            or any(not isinstance(row, Mapping) for row in announcements)
+        ):
+            raise ValueError("csindex_range_attachment_body_replay_mismatch")
+        replay_row = {
+            "source_request_id": request.request_id,
+            "attachment_url": request.url,
+            "attachment_extension": str(
+                index_row.get("attachment_extension") or ""
+            ),
+            "attachment_sha256": body_hash,
+            "source_logical_payload_sha256": raw_hash,
+            "source_announcements": announcements,
+            "attachment_size_bytes": len(body),
+        }
+        replay_rows.append(replay_row)
+        attachments.append(
+            ReplayedRangeAttachment(
+                source_request_id=request.request_id,
+                attachment_url=request.url,
+                attachment_extension=replay_row["attachment_extension"],
+                attachment_sha256=body_hash,
+                source_logical_payload_sha256=raw_hash,
+                source_announcements=tuple(dict(row) for row in announcements),
+                body=body,
+            )
+        )
+    replay_root = canonical_hash(
+        {
+            "schema_version": "csindex_range_attachment_body_replay_v1",
+            "capture_content_hash": generic["content_hash"],
+            "attachments": replay_rows,
+        }
+    )
+    return tuple(attachments), replay_root
+
+
 def validate_csindex_range_attachment_capture(path: str | Path) -> dict[str, Any]:
     """Validate contract, signatures, ranges, replay bytes and real ancestry."""
 
@@ -2913,6 +3046,7 @@ def _validate_authorized_contract(
     *,
     request_count: int,
     expected_profile: str,
+    expected_implementation_root: str | None = None,
 ) -> None:
     legacy = expected_profile == LEGACY_CAPTURE_PROFILE
     if expected_profile not in {CAPTURE_PROFILE, LEGACY_CAPTURE_PROFILE}:
@@ -2998,7 +3132,8 @@ def _validate_authorized_contract(
         or set(adapter) != expected_adapter_keys
         or adapter.get("adapter")
         != (LEGACY_ADAPTER_IDENTITY if legacy else ADAPTER_IDENTITY)
-        or adapter.get("implementation_root") != _implementation_root()
+        or adapter.get("implementation_root")
+        != (expected_implementation_root or _implementation_root())
         or adapter.get("http") != HTTP_IDENTITY
         or adapter.get("capture_profile") != expected_profile
         or adapter.get("profile_complete") != "true"
