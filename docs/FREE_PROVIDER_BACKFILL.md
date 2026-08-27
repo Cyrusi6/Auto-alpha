@@ -329,8 +329,13 @@ legacy binary record。`pdfinfo` 和 `pdftotext` 均可解析正文，去掉该 
 `startxref` 精确指向传统 xref token；多一字节、改变 framing 或任意注释外正文仍拒绝。
 真实失败 envelope 的离线 red/green loop 已通过，8,129 份 quarantined 2011 文档也作为
 非授权格式语料完成预扫（6,936 PDF、1,193 HTML、0 新异常）。但该规则改变 capture
-implementation root，因此属于新的 v5 Provider Acquisition Contract；在取得新人工授权
-前不得启动，也不得复用 v4 permission context 或拼接 v4 partial journal。
+implementation root，因此属于新的 v5 Provider Acquisition Contract。操作员于
+2026-08-27 以“恢复下载”确认此前列明的完整 v5 条款；v5 使用独立 permission、storage
+和 activity identity，仍不得复用 v4 permission context 或拼接 v4 partial journal。
+真实 plan-only 重放得到 23,485 条 2011 逻辑 demand、23,440 份唯一文档、0 reuse、
+41,919,184,896-byte 分片预算和 0 blocker。v4 contract/activity `77bf5039.../12198c1c...`
+与 v5 `7f1a44dc.../c7425780...` 不同，request-plan `cb943e5d...` 保持不变，因为请求
+集合与资源边界没有改变。
 
 正文下载等待新授权期间，三个不依赖新 CNINFO bytes 的切片已可独立运行：
 

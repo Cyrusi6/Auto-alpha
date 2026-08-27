@@ -75,10 +75,10 @@ _MISSING_AUTHORIZED_AGGREGATE_DEMAND_COUNT = 343_262
 _MISSING_AUTHORIZED_AGGREGATE_DOCUMENT_COUNT = 342_516
 _MISSING_AUTHORIZED_AGGREGATE_RESPONSE_BUDGET = 509_623_150_592
 _MISSING_STORAGE_POLICY_ID = (
-    "cninfo_document_closure_year_sharded_aggregate_bound_512gib_v4"
+    "cninfo_document_closure_year_sharded_aggregate_bound_512gib_v5"
 )
 CNINFO_DOCUMENT_CLOSURE_SHARD_PERMISSION_CONTEXT = (
-    "human_authorization_20260822_cninfo_342516_paperport_comments_v4"
+    "human_authorization_20260827_cninfo_342516_bounded_binary_trailer_v5"
 )
 _RAW_ENVELOPE_KEYS = frozenset(
     {
@@ -564,7 +564,7 @@ def capture_missing_documents(
     contract = FreeProviderBackfillContract(
         activity_name=(
             "free_domestic_cninfo_document_closure_missing_"
-            f"{replayed.plan_root[:24]}_v4"
+            f"{replayed.plan_root[:24]}_v5"
         ),
         provider="cninfo",
         output_root=output_root,
@@ -620,7 +620,7 @@ def capture_missing_documents(
                 total_response_budget
             ),
             "authorization_policy": (
-                "human_authorized_cninfo_document_closure_year_shards_v4"
+                "human_authorized_cninfo_document_closure_year_shards_v5"
             ),
         },
     )
@@ -1126,7 +1126,7 @@ def _replay_missing_capture(
         or contract.get("activity_name")
         != (
             "free_domestic_cninfo_document_closure_missing_"
-            f"{plan.plan_root[:24]}_v4"
+            f"{plan.plan_root[:24]}_v5"
         )
         or contract.get("permission_context_id")
         != CNINFO_DOCUMENT_CLOSURE_SHARD_PERMISSION_CONTEXT
@@ -1183,7 +1183,7 @@ def _replay_missing_capture(
                 _missing_total_response_budget(plan)
             ),
             "authorization_policy": (
-                "human_authorized_cninfo_document_closure_year_shards_v4"
+                "human_authorized_cninfo_document_closure_year_shards_v5"
             ),
         }
         or request_plan.get("requests") != request_rows
@@ -2350,10 +2350,19 @@ def _document_structure_valid(
             )
         )
         match = matches[-1] if matches else None
+        startxref = int(match.group(1)) if match is not None else -1
+        trailing = tail[match.end() :] if match is not None else b""
         return bool(
             match is not None
-            and int(match.group(1)) < len(stripped)
-            and _pdf_trailing_comments_valid(tail[match.end() :])
+            and startxref < len(stripped)
+            and (
+                _pdf_trailing_comments_valid(trailing)
+                or _pdf_bounded_legacy_binary_trailer_valid(
+                    trailing,
+                    body=stripped,
+                    startxref=startxref,
+                )
+            )
         )
     if document_format == "html":
         prefix = stripped[: 2 * 1024 * 1024].lower()
@@ -2403,6 +2412,21 @@ def _pdf_trailing_comments_valid(payload: bytes) -> bool:
         if content and not content.startswith(b"%"):
             return False
     return True
+
+
+def _pdf_bounded_legacy_binary_trailer_valid(
+    payload: bytes,
+    *,
+    body: bytes,
+    startxref: int,
+) -> bool:
+    """Accept the observed fixed-width legacy record after a valid xref."""
+
+    return bool(
+        re.fullmatch(rb"\r\n\x00[^\x00\r\n]{15}\x00\x00", payload)
+        and 0 <= startxref < len(body)
+        and re.match(rb"xref(?:[ \t]|\r\n|\r|\n)", body[startxref:])
+    )
 
 
 def _content_length_matches(value: str | None, actual: int) -> bool:

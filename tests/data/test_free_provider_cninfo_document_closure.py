@@ -292,6 +292,39 @@ def test_pdf_structure_allows_only_bounded_comments_after_eof() -> None:
         ) is False
 
 
+def test_pdf_structure_allows_only_bounded_legacy_binary_post_eof_record(
+) -> None:
+    pdf_with_exact_xref = (
+        b"%PDF-1.4\n"
+        b"xref\n0 1\n0000000000 65535 f\n"
+        b"trailer\n<< /Size 1 >>\n"
+        b"startxref\n9\n%%EOF"
+    )
+    trailer = b"\r\n\x00" + bytes.fromhex(
+        "d7b1b4f6abb74d34d34d7ad350810c"
+    ) + b"\x00\x00"
+    legacy_pdf = pdf_with_exact_xref + trailer
+    for module in (cninfo_module, document_closure_module):
+        assert module._document_structure_valid(
+            legacy_pdf,
+            document_format="pdf",
+            announcement_id="59086622",
+            announcement_time=1299450630000,
+        ) is True
+        assert module._document_structure_valid(
+            legacy_pdf + b"\x00",
+            document_format="pdf",
+            announcement_id="59086622",
+            announcement_time=1299450630000,
+        ) is False
+        assert module._document_structure_valid(
+            legacy_pdf.replace(b"\r\n\x00", b"\r\nX", 1),
+            document_format="pdf",
+            announcement_id="59086622",
+            announcement_time=1299450630000,
+        ) is False
+
+
 def test_missing_capture_identity_binds_http_pdf_gate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1529,7 +1562,7 @@ def test_capture_and_finalize_exact_missing_document_closure(
     assert evidence.downstream_eligible is True
     assert contract["budget"]["max_total_response_bytes"] == 132 * 1024**2
     assert contract["adapter_identity"]["storage_policy_id"] == (
-        "cninfo_document_closure_year_sharded_aggregate_bound_512gib_v4"
+        "cninfo_document_closure_year_sharded_aggregate_bound_512gib_v5"
     )
     assert contract["adapter_identity"][
         "aggregate_total_response_budget_ceiling"

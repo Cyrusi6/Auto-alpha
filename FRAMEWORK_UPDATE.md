@@ -2,6 +2,15 @@
 
 This file records only the current A-share architecture and recent governed milestones. Detailed historical implementation is available through Git history rather than duplicated task-by-task prose.
 
+## 2026-08-27 — CNINFO bounded legacy-binary PDF recovery v5
+
+### Outcome
+
+- Bound the operator's explicit `恢复下载` authorization to the previously stated v5 acquisition contract: full 2011 restart without v3/v4 partial reuse, then serial 2012–2019 execution; one initial request plus at most two retries, 2-second minimum delay, 30-second timeout, 342,516-document aggregate population and 512 GiB aggregate ceiling. The authority remains data-acquisition-only and every downstream safety flag stays false.
+- Replayed the exact signed `59086622.PDF` failure and added only the observed fixed-width legacy trailer form: `CRLF + NUL + 15 non-NUL/non-EOL bytes + NUL NUL`, with `startxref` required to resolve to a traditional xref token. Existing bounded PDF-comment support remains; one extra byte, changed framing, embedded NUL/EOL in the payload or an invalid xref remains rejected.
+- Created independent v5 permission, storage-policy, implementation and activity identities. Direct recomputation against the sealed v4 request plan changes contract `77bf5039...` to `7f1a44dc...` and activity `12198c1c...` to `c7425780...`; request-plan hash `cb943e5d...` is unchanged because provider requests and budgets did not change. The old activity remains immutable and is not a cache/reuse parent.
+- Real 2011 plan-only replay passed without network: 23,485 logical demands, 23,440 unique physical documents, zero reusable documents, no blocker, shard budget 41,919,184,896 bytes and aggregate plan root `00483b73...`. Four focused PDF/capture tests passed; the fifth identity fixture was stopped after 25 minutes of CPU-only work and replaced by the direct real-contract identity recomputation above.
+
 ## 2026-08-24 — Parallel data-evidence lanes while document capture is blocked
 
 ### Outcome

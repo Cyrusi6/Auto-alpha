@@ -2063,10 +2063,19 @@ def _document_structure_valid(
             )
         )
         match = matches[-1] if matches else None
+        startxref = int(match.group(1)) if match is not None else -1
+        trailing = trailer[match.end() :] if match is not None else b""
         return bool(
             match is not None
-            and int(match.group(1)) < len(stripped)
-            and _pdf_trailing_comments_valid(trailer[match.end() :])
+            and startxref < len(stripped)
+            and (
+                _pdf_trailing_comments_valid(trailing)
+                or _pdf_bounded_legacy_binary_trailer_valid(
+                    trailing,
+                    body=stripped,
+                    startxref=startxref,
+                )
+            )
         )
     if document_format == "html":
         prefix = stripped[: 2 * 1024 * 1024].lower()
@@ -2111,6 +2120,21 @@ def _pdf_trailing_comments_valid(payload: bytes) -> bool:
         if content and not content.startswith(b"%"):
             return False
     return True
+
+
+def _pdf_bounded_legacy_binary_trailer_valid(
+    payload: bytes,
+    *,
+    body: bytes,
+    startxref: int,
+) -> bool:
+    """Accept the observed fixed-width legacy record after a valid xref."""
+
+    return bool(
+        re.fullmatch(rb"\r\n\x00[^\x00\r\n]{15}\x00\x00", payload)
+        and 0 <= startxref < len(body)
+        and re.match(rb"xref(?:[ \t]|\r\n|\r|\n)", body[startxref:])
+    )
 
 
 def _announcement_date(value: Any) -> str | None:
