@@ -337,6 +337,14 @@ implementation root，因此属于新的 v5 Provider Acquisition Contract。操�
 与 v5 `7f1a44dc.../c7425780...` 不同，request-plan `cb943e5d...` 保持不变，因为请求
 集合与资源边界没有改变。
 
+提交 `278f630` 后，串行服务
+`auto-alpha-cninfo-document-year-shards-v5-20260827.service` 于 2026-08-27 15:48:58
+Asia/Shanghai 启动。selected/full-aggregate 签名预检耗时 47 分 51 秒，期间网络调用为
+零；随后新 activity `c7425780...` 创建并开始 2011 capture。首批 19/19 terminal 均为
+HTTP-200 positive、0 retry、0 error，稳定路径约 2.42 秒/文档。按该早期速率估计，2011
+分片约在 2026-08-28 上午完成，九年全链约在 2026-09-06 至 2026-09-07 完成；新的
+provider pause、重试或大分片 normalization 会延后该估计。
+
 正文下载等待新授权期间，三个不依赖新 CNINFO bytes 的切片已可独立运行：
 
 - `index_daily_bars` provider-neutral evidence 已对真实 CSI300 日线完成 1,945/1,945
