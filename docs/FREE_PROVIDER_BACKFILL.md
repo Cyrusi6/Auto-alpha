@@ -26,8 +26,10 @@ obligation；逐日合同会因此退化为数千万次网络调用。
 2. **coverage-use projection**：从一条完整 provider 响应投影到多个逐日逻辑义务；
 3. **normalized generation**：只从已归档字节确定性重放，不能使用未落盘的内存结果。
 
-本次先完成第 1 层和可重放的规范化 staging。正式 Admission 仍须实现并独立
-验证第 2 层，且由人工批准 Profile/capture key/acquisition contract。
+现有实现已完成第 1 层，并为 `index_daily_bars`、`trade_calendar` 和 `daily_bars`
+建立了第 2 层的受控 projection/validator seam。它们还没有在 11 个 base-required
+数据集的真实精确 scope 上形成完整独立 verdict；Profile、capture key 和 acquisition
+contract 也仍须人工批准。实现存在不能替代真实 coverage、来源和 consumer closure。
 
 ## 持久 capture key
 
@@ -210,13 +212,16 @@ discovery→inventory，再由专用 document closure seam 处理二者的并集
 早期 2011 legacy 文档允许作为审计复用输入，但其 disposition 会继承
 `weak_source_ancestry`、`legacy_2011_document_source_ancestry_incomplete` 和
 `cninfo_governed_evidence_ineligible`；它及任何 derived closure 都保持 quarantine，
-不能因为 residual 已补齐或下游重新签名而洗白。当前 base/supplemental 强链、2011
-重抓和真实 residual capture 均仍在采集中，尚未发布的动态 generation/数量不记为成功。
+不能因为 residual 已补齐或下游重新签名而洗白。当前 base/supplemental 的
+discovery→inventory 强链已经分别发布并通过离线重放；尚未完成的是 342,516 份唯一
+文档的 strong closure。v5 在 2011 分片保留 879 个 positive terminal 后 fail-closed，
+未发布且不可拼接；v6 尚未取得授权，因此没有后台文档采集在运行。
 旧 supplemental generation `free_provider_backfill_212e27653d183d18eee5eccc`
 和中间 activity `7f9d41ea...` 保持不可变审计记录，但不进入 current closure。最终重跑
-绑定 `implementation_root=35c27d2670d231ee07a6026a8e8d1d451b321f0837b047db26f3dcd87ae3c49e`
-与 758-leaf profile；同一次实现变化也要求 base discovery/inventory 重新采集，禁止用
-旧 base 与新 supplemental 拼接父代。
+只接受 current base `cca3f9cd... → a8d27d60...` 与 supplemental
+`700af743... → 03a82909...` 两条已发布、可递归重放的精确父链。v6 会因文档传输分类
+变化取得新的 implementation/contract/activity identity，但不会重下这两条已完成的
+discovery/inventory；旧 base、新 supplemental 或任意跨代父链仍禁止拼接。
 
 document closure 接受的人工 resume 参数不是授权旁路。底层 generic capture seam 当前
 对任何这类参数固定返回 `trusted_resume_authority_not_implemented`；遇到治理性 pause
@@ -241,10 +246,13 @@ chain。validator 同时核对请求页与 provider `currentPage`，防止越界
 同时核对人工授权、批准 key、scope、profile、source binding 和原始 HTTP 封闭。
 两条旧命名 `201511302cons.xls` / `201605302cons.xls` 只能通过精确 repair profile
 采集；修复附件的存在性不能自动证明公布时间或 PIT 可见性。
-当前强 discovery→inventory→details→attachments 链及其 legacy-cons repair 仍在
-采集/排队；只有同一 current ancestry 的 details、附件和 repair 都分别发布并通过递归
-重放后，才能进入事件解析。任何中间详情数、下载数或旧弱 ancestry 附件都不能写成
-PIT CSI300 closure success。
+current full-range attachments 与 legacy-cons repair 已分别发布并通过独立重放，
+物理附件不需要再次下载。隔离的 XLS/XLSX semantic seam 也已对真实 439-object slice
+运行并只保留 2 条非授权候选；production semantic generation 已以 exact signed
+historical source identity binding 和当前 semantic owner 完成 source/body 深度重放，
+没有把历史 planner root 冒充为当前重建结果。图片、mixed-schema/error-cell 输入、历史
+known-at/effective-at、2011 seed、事件链和权重均未闭合，因此任何物理或语义中间结果
+都不能写成 PIT CSI300 closure success。
 
 ## CLI
 
@@ -345,17 +353,68 @@ HTTP-200 positive、0 retry、0 error，稳定路径约 2.42 秒/文档。按该
 分片约在 2026-08-28 上午完成，九年全链约在 2026-09-06 至 2026-09-07 完成；新的
 provider pause、重试或大分片 normalization 会延后该估计。
 
-正文下载等待新授权期间，三个不依赖新 CNINFO bytes 的切片已可独立运行：
+该服务实际于 2026-08-27 17:28:12 fail-closed，而不是继续后台运行。v5 activity
+`c7425780...` 保留 879 个 positive terminal；共 881 attempts、880 wire exchanges 和
+2,219,205,329 response bytes。停止请求 `58911612` 的 HTTP status、MIME、URL 和非 WAF
+判断成立，但响应头声明 `Content-Length=8,665,372`，实际只收到 2,621,440 bytes，PDF
+结构也因此不完整。sealed/current implementation root 均为 `30d502...`，所以不是代码
+漂移。旧 v5 将该组合保守归入不可重试格式错误，且人工 resume authority 没有实现；
+不得通过改 journal、忽略长度或拼接 879 份来继续。只把“HTTP 200 且声明长度大于实收
+长度”的提前断流改为有界可重试，也会改变 implementation root，因此必须取得新的 v6
+完整重跑授权后才能发起网络调用。
 
-- `index_daily_bars` provider-neutral evidence 已对真实 CSI300 日线完成 1,945/1,945
-  exact cover、独立 validity 和 `benchmark_control` consumer closure；正式准入仍等待
-  trade-calendar verdict、provider origin/runtime isolation 和 Source Freeze binding。
-- CSI signed attachment semantic replay 已对 439 个对象逐一分类，XLSX 只产出不带
-  known-at/effective-at 的变更候选；legacy XLS、图片、2011 seed、事件链和历史权重保持
-  显式 blocked。
+正文下载等待新授权期间，六个不依赖新 CNINFO bytes 的处理切片已完成实现，可在各自
+受控输入上独立运行；这不表示真实独立准入证据已经闭合：
+
+- identity/lifecycle owner 已能从 byte/text-verified CNINFO 公告生成代码、名称、上市和
+  退市 event candidates，再以受治理 seed 构造 interval-only artifact；受控 fixture 中的
+  parser candidate 固定 `pit_evidence_eligible=false`，没有独立 verifier verdict 时不能被调用方翻转为正式
+  PIT 事实；候选、时间轴和 interval publisher 都绑定完整实现根。完整官方事件 population、
+  pre-span seeds 和全市场 event verdict 仍未形成。
+- market-data owners 中，历史 `index_daily_bars` v1 已对真实 CSI300 日线完成
+  1,945/1,945 exact cover、validity 和 `benchmark_control` consumer closure；当前
+  index v2、trade-calendar v2 与 daily-bars v3 只接受 exact manifest/tree schema，
+  trade-calendar/daily-bars
+  只接受 validated interval artifact，不再读取 current security master。disk daily-bars
+  使用 `daily_bars_sqlite_resume_v3`，以 work identity 加锁，
+  检查 consumed-prefix、projected rows、static axis 和 joined coverage 的 checkpoint；发布物
+  冻结 provider rows、calendar、normalizer conflicts、identity intervals 和 identity
+  binding 五个 source roles，由 validator 重建 archived normalized replay root 并重新投影
+  canonical/validity/gaps。但完整 signed raw capture reference、public key 和
+  terminal envelopes 尚未进入独立 source closure，因此固定保留
+  `daily_bars_independent_source_reference_resolution_pending`；index/calendar 也强制保留对应
+  source-resolution technical blocker。当前只有受控 fixture/攻击回归，没有
+  当前 schema 的真实全湖 generation；旧 v1 只作历史证据。
+- CSI signed attachment semantic replay 已对 439 个对象逐一分类，并以
+  `csindex_attachment_semantics_4c9baed8dd2e2bc08c65ecce` 完成 signed source
+  reference 与 body 深度重放：439 个附件、80 个 XLS、25 个 CSI-bearing
+  sheets，`deep_source_replay_verified=true`。
+  该 verifier 不依赖 `.git`、Git archive 或历史源码执行；旧 acquisition planner root
+  只在完整签名 source identity 精确命中时以
+  `signed_historical_exact_source_identity_verified` 留档，随后由当前 semantic owner
+  重放 contract/plan semantics、details ancestry、request population、raw/wire/durable、
+  normalized bytes 和 attachment bodies。无 source capture 的 standalone archive 仍会
+  返回 `blocked_source_resolution_required`，不能仅凭内嵌 reference 自授深度验证。
+  真实数据有 8 个附件同时包含 supported/unsupported CSI300 sheet，因此 388 个原 provisional
+  row shapes 被整附件阻断，最终只保留 2 条非授权候选；93 个图片、8 个 mixed-schema
+  附件和 4 个 XLS error-cell 输入显式 blocked。该 generation 仍是非授权
+  semantic evidence；2011 seed、事件链、historical known-at/effective-at 和历史权重
+  仍未证明，`data_admission_eligible=false` 与 `pit_membership_authorized=false`
+  均不变。
+- CNINFO 后处理已独立于 v5 capture 实现：sealed plan/closure 重放后写入 SQLite metadata
+  index 和至多 60,000 文档的稳定 reference shards，正文按消费逐份重放；checkpoint resume、
+  exact file closure、独占锁、symlink 拒绝和目录 fsync 均已实现。它只能消费完整强 closure，
+  因而当前 v5 partial 不会被误当成 parser 输入。
 - PIT control-state seam 已实现受证据约束的 pre-span seed、known/effective 双时点、
   保守盘中规则与冲突传播；真实 Baostock current snapshot 不能充当历史 seed，故最小
   重放正确输出 unknown，而不是把当前状态倒灌到 2012。
+- corporate-action owner 已在受控文档上实现 bounded PDF/HTML text extraction，并把
+  CPython、stdlib HTML parser、Poppler/dynamic libraries、固定 locale/env 绑定进
+  extractor contract；正文
+  size/hash、父 generation/signature、scope、`record < effective <= pay/list` 和严格阶段链
+  都会重放。关键字段或链条不完整即保留 blocker，identity projection 直接消费 intervals，
+  `semantic_candidate_eligible` 始终为 false；完整 strong closure 上的语义分片、跨公告裁决
+  和独立 coverage verdict 尚未运行。
 
 Baostock 分红的 34,182 个逻辑请求已采集完毕，得到 19,537 条对账记录。旧采集器曾在
 `socket.getpeername()` 失败前提前增加 wire 计数，使唯一失败 attempt 的声明计数为 1、
@@ -381,23 +440,27 @@ current inventory 已保留 56,488 条 `corporate_actions` leaf 记录和 24,979
 `corrections` leaf 记录；仅按标题筛选“权益分派/利润分配/分红/派息/股息/现金红利/
 除权除息/送转”就有 26,543 个唯一公告候选。标题筛选只用于说明原料存在，不能替代
 正文解析或 exact cover。
-因此 CNINFO 正文闭包可以解决版本原料缺失；但正文下载完成后还必须运行锁定 parser、
-跨公告 event linkage、known-at/effective-at 门禁和 exact-cover verifier，不能直接把
+因此 CNINFO 正文闭包可以解决版本原料缺失；但正文下载完成后还必须把已实现的锁定
+parser 运行在完整 strong closure 上，并完成跨公告 event linkage、known-at/effective-at
+门禁和 exact-cover verifier，不能直接把
 `dividend_event_version_history_unavailable` 改成 passed。
 
 ## 仍然 fail closed 的部分
 
 即使上述网络任务全部完成，以下内容也不能凭下载数量自动宣布完成：
 
-- 一次物理 capture 到多个逐日 obligation 的独立 coverage-use verifier；
+- 尚未覆盖全部 11 个 base-required dataset 的真实 scope coverage-use、来源引用和
+  consumer-closure verdict；已有 calendar/market/index seam 不能代替其余数据集；
 - 可信人工 Profile、Provider Acquisition Contract 和 capture-key 激活根；
 - 供应商来源证明与隔离采集运行时证明；本地 capture signature 不能自证
   `provider_origin_attested=true` 或 `capture_runtime_isolation_verified=true`；
 - ST 子类型与公告状态机；
 - 停复牌盘中 timing 与冲突裁决；
-- CSI300 2011 年末权威种子、所有临时调整的事件解析和每日历史权重；
-- 巨潮 PDF 的公司行为字段解析、proposal/approval/implementation/correction 链；
-- 从 PIT 公司行为重建 adjustment-factor vintage；
+- CSI300 2011 年末权威种子、93 个图片及 mixed-schema/error-cell 裁决、完整调样事件和
+  每日历史权重；parser seam 已实现不等于这些真实证据闭合；
+- 在完整 CNINFO strong closure 上执行公司行为字段解析，并完成跨公告
+  proposal/approval/implementation/correction 裁决和 exact cover；
+- 从 independently admitted PIT 公司行为版本重建 adjustment-factor vintage；
 - 免费三源无法直接补齐的 `daily_basic.volume_ratio/total_mv` 权威回执；
 - canonical matrix、target/validity、完整 lineage 和确定性 Source Freeze replay。
 
@@ -511,8 +574,9 @@ population 精确选择 2 个请求，2/2 positive、0 error、4,889,936 respons
 exchange，其余 606 个引用全部以 non-slice blocked disposition 留档。两份 generation
 都继续携带
 `current_attachment_retrieval_does_not_prove_historical_known_at_or_vintage` 和
-`csi300_attachment_semantic_parser_not_run`；物理采集完成不证明公告历史可见时点，
-也未解析调样语义，因此 `pit_membership_authorized=false` 不变。
+`csi300_attachment_semantic_parser_not_run`；这是不可变 physical generation 自身的历史
+blocker，后来的独立 semantic generation 不会回写它。物理采集完成不证明公告历史
+可见时点，因此 `pit_membership_authorized=false` 不变。
 
 附件命名审计还发现一类官方旧格式 `YYYYMMDD<index-codes>2cons.xls[x]`。其中 146
 个 URL 的前八位是合法研究期日期，但旧通用 token 规则因日期后紧接数字而保守阻断，
@@ -543,8 +607,9 @@ MIME、文件结构和 WAF，shared HTTP module hash 也进入实现身份。
 
 官网 page 101 回卷到 page 1 的行为已纳入 profile 几何和负向测试；不得通过提高客户端
 页码上限或接受重复页绕过。旧 `212e...` generation 与 `7f9d...` activity 不删除、不
-改写，但 current base/supplemental 都必须由 `35c27d...` implementation identity 完整
-重跑后才能成为 document closure 的父代。
+改写，也不进入 current closure。要求的 `35c27d...` current base/supplemental
+discovery→inventory 已分别完成并发布为 `cca3f9cd... → a8d27d60...` 与
+`700af743... → 03a82909...`，可以作为 document closure 的精确只读父代，无需再次采集。
 
 ### 长连接过期
 
@@ -555,7 +620,7 @@ MIME、文件结构和 WAF，shared HTTP module hash 也进入实现身份。
 同样，成功空 terminal record slot 的精确 wire 语义修复也改变实现身份；当前活动须
 完整重跑，不能将旧 activity 的已抓部分与新 parser 结果拼接。
 
-### 本轮聚焦验证
+### 早期采集 seam 聚焦验证（历史快照）
 
 - CNINFO document closure：31 项通过；
 - CSI signed range seam：24 项通过，既有 CSI 回归 47 项通过；
@@ -563,9 +628,10 @@ MIME、文件结构和 WAF，shared HTTP module hash 也进入实现身份。
 - Baostock `hs300-snapshots` v2：专项合同、父证据、冷却恢复和 exact allowlist
   9 项通过；完整 official-backfill 文件 144 项通过。
 
-这些数字证明当前实现的局部合同和负向路径，不单独构成采集完成或 Data Admission
-verdict。上述两个 CSI generation 的完成另由其不可变 publication 与独立 replay
-证明；CNINFO 和未发布的 Baostock 活动仍不能写成成功。
+这些数字记录对应采集 seam 当时的局部合同和负向路径，不单独构成当前实现测试总数、
+采集完成或 Data Admission verdict。后续 identity、market、CSI semantic、CNINFO
+postprocess 和 corporate-action seam 由各自最终测试结果证明；真实证据状态以本页
+2026-08-27 的 generation/activity 记录为准。
 
 ### 已完成的全市场结果
 
@@ -580,11 +646,17 @@ verdict。上述两个 CSI generation 的完成另由其不可变 publication �
 | CSI current full-range attachments | `free_provider_backfill_11c07e34fabb5c599bb2dcd1` | 608 parent refs；439/439 positive、0 error；36,989,662 bytes；439 exchanges；169 个分类 blocked refs；独立验证通过，PIT false |
 | CSI current legacy-cons exact slice | `free_provider_backfill_06fd455b09738b70a465a5b6` | 608 parent refs；2/2 positive、0 error；4,889,936 bytes；2 exchanges；606 non-slice blocked refs；独立验证通过，PIT false |
 
-以上是已发布的历史证据定位，不表示 current 全链已经完成。当前 Baostock 六个
-reconciliation phase、CNINFO `35c27d...` base/supplemental 强链与 2011 重抓、CNINFO
-document residual closure 仍标记为**采集中**。CSI current signed-range full/legacy
-物理 slice 已完成并通过独立验证；后续未完成项是附件语义解析、historical known-at/
-vintage 裁决、PIT 日状态和准入，而不是继续下载这 441 个对象。
+以上是已发布的历史证据定位，不表示 current 全链已经完成。Baostock 六个
+reconciliation phase 的当前 generation 均已完成相应物理采集/离线验证边界：
+`index-daily`、`security-basic`、`hs300-snapshots` 提供行情或身份对账，`adjustments`
+与 `dividends` 保持历史版本语义 blocker，`turnover` 仍须 PIT alias、exact-cover 和
+Profile 裁决；它们都不需要为了当前任务重复下载。CNINFO current base/supplemental
+discovery→inventory 已完成，document strong closure 则因 v5 fail-closed 而未发布，
+且 v6 尚未授权。CSI current signed-range full/legacy 物理 slice 已完成，semantic
+generation `4c9baed8...` 也已以 exact signed source identity binding 和当前语义重放完成
+独立深度验证并保守
+分类出 2 条非授权候选。后续未完成项是历史时点、事件/图片/异常附件裁决、PIT 日状态
+和准入，而不是继续下载已完成的 Baostock phases 或 CSI 附件。
 
 39 只退市证券原先表现为“多一天”，根因是内部把供应商 `delist_date` 错当成首个
 无效日；实际合同现统一为包含最后上市日。Admission、PIT、universe 和 matrix 的

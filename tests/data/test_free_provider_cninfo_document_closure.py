@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+from types import SimpleNamespace
 from typing import Callable, Sequence
 import urllib.parse
 from unittest.mock import patch
@@ -15,6 +16,7 @@ import pytest
 from auto_alpha.data.ingestion.pipeline.ashare import (
     free_provider_backfill as capture_module,
     free_provider_cninfo_document_closure as document_closure_module,
+    free_provider_cninfo_document_postprocess as document_postprocess_module,
     free_provider_cninfo_security_lifecycle as lifecycle_module,
     free_provider_http_backfill as cninfo_module,
 )
@@ -28,6 +30,11 @@ from auto_alpha.data.ingestion.pipeline.ashare.free_provider_cninfo_document_clo
     capture_missing_documents,
     finalize_document_closure,
     prepare_document_closure,
+)
+from auto_alpha.data.ingestion.pipeline.ashare.free_provider_cninfo_document_postprocess import (
+    build_cninfo_document_postprocess,
+    iter_cninfo_postprocessed_documents,
+    validate_cninfo_document_postprocess,
 )
 from auto_alpha.data.ingestion.pipeline.ashare.provider_probe import (
     ProviderProbeObservation,
@@ -2021,3 +2028,541 @@ def test_inventory_replay_rejects_v1_discovery_ancestry_washed_as_strong(
             (),
             (2011,),
         )
+
+
+@pytest.fixture(scope="module")
+def postprocess_lifecycle_closure(
+    strong_inventory_manifests: tuple[str, str],
+    lifecycle_document_capture: tuple[str, str],
+) -> tuple[object, object, object, str]:
+    manifest, approved_hash = lifecycle_document_capture
+    with patch.object(
+        lifecycle_module,
+        "APPROVED_CAPTURE_KEY_SHA256",
+        approved_hash,
+    ):
+        plan = prepare_document_closure(
+            strong_inventory_manifests,
+            (manifest,),
+            (2018, 2019),
+        )
+        evidence = finalize_document_closure(plan, None)
+        metadata = document_postprocess_module._inventory_metadata(plan)
+    return plan, evidence, metadata, approved_hash
+
+
+@pytest.fixture(scope="module")
+def postprocess_strong_closure(
+    strong_inventory_manifests: tuple[str, str],
+    strong_document_manifest: str,
+) -> tuple[object, object, object]:
+    plan = prepare_document_closure(
+        strong_inventory_manifests,
+        (strong_document_manifest,),
+        (2011,),
+    )
+    evidence = finalize_document_closure(plan, None)
+    metadata = document_postprocess_module._inventory_metadata(plan)
+    return plan, evidence, metadata
+
+
+def _cache_postprocess_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+    plan: object,
+    evidence: object,
+    metadata: object,
+) -> None:
+    monkeypatch.setattr(
+        document_postprocess_module,
+        "_replay_inputs",
+        lambda _plan, _evidence: (plan, evidence),
+    )
+    monkeypatch.setattr(
+        document_postprocess_module,
+        "_inventory_metadata",
+        lambda _plan: metadata,
+    )
+
+
+def test_document_postprocess_resumes_deterministically_and_streams_bodies(
+    tmp_path: Path,
+    postprocess_lifecycle_closure: tuple[object, object, object, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan, evidence, metadata, approved_hash = postprocess_lifecycle_closure
+    monkeypatch.setattr(
+        lifecycle_module,
+        "APPROVED_CAPTURE_KEY_SHA256",
+        approved_hash,
+    )
+    _cache_postprocess_inputs(monkeypatch, plan, evidence, metadata)
+    output = tmp_path / "postprocess-resume"
+
+    paused = build_cninfo_document_postprocess(
+        plan,
+        evidence,
+        output,
+        max_documents_per_shard=2,
+        shard_budget=1,
+    )
+    assert paused == {
+        "status": "paused",
+        "contract_id": paused["contract_id"],
+        "closure_root": evidence.closure_root,
+        "completed_shard_count": 1,
+        "shard_count": 3,
+        "remaining_shard_count": 2,
+        "data_admission_eligible": False,
+    }
+
+    completed = build_cninfo_document_postprocess(
+        plan,
+        evidence,
+        output,
+        max_documents_per_shard=2,
+    )
+    assert completed["status"] == "succeeded"
+    assert completed["document_count"] == 5
+    assert completed["shard_count"] == 3
+    assert [row["ordinal"] for row in completed["shards"]] == [0, 1, 2]
+    assert completed["exact_cover_verified"] is True
+    assert completed["data_admission_eligible"] is False
+    assert completed["pit_evidence_eligible"] is False
+    assert set(completed["blockers"]) == set(evidence.blockers)
+
+    documents = list(
+        iter_cninfo_postprocessed_documents(output, plan, evidence)
+    )
+    assert len(documents) == 5
+    assert [row["ordinal"] for row in documents] == list(range(5))
+    assert len({row["announcement_id"] for row in documents}) == 5
+    assert all(row["document_body_replay_verified"] for row in documents)
+    assert all(row["body"].startswith(b"%PDF-") for row in documents)
+    assert all(
+        hashlib.sha256(row["body"]).hexdigest()
+        == row["document_sha256"]
+        for row in documents
+    )
+    assert all(row["source_document_closure_root"] == evidence.closure_root for row in documents)
+    assert all(row["data_admission_eligible"] is False for row in documents)
+    assert all(row["pit_evidence_eligible"] is False for row in documents)
+    assert all(row["matched_leaves"] for row in documents)
+    assert all(
+        row["source_scope_roles"] == ["corrections", "st_delist"]
+        for row in documents
+    )
+    assert all(row["announcement_type"] == "x" for row in documents)
+    assert all(row["column_id"] == "y" for row in documents)
+    assert all(len(row["source_inventory_scope_root"]) == 64 for row in documents)
+
+    middle = list(
+        iter_cninfo_postprocessed_documents(
+            output,
+            plan,
+            evidence,
+            shard_ordinal=1,
+        )
+    )
+    assert [row["ordinal"] for row in middle] == [2, 3]
+    with pytest.raises(
+        ValueError,
+        match="cninfo_document_postprocess_shard_ordinal_invalid",
+    ):
+        list(
+            iter_cninfo_postprocessed_documents(
+                output,
+                plan,
+                evidence,
+                shard_ordinal=3,
+            )
+        )
+
+    second = tmp_path / "postprocess-deterministic"
+    repeated = build_cninfo_document_postprocess(
+        plan,
+        evidence,
+        second,
+        max_documents_per_shard=2,
+    )
+    assert repeated["content_hash"] == completed["content_hash"]
+    assert read_json(second / "postprocess_manifest.json") == read_json(
+        output / "postprocess_manifest.json"
+    )
+    assert sorted(path.name for path in (second / "shards").iterdir()) == sorted(
+        path.name for path in (output / "shards").iterdir()
+    )
+
+
+@pytest.mark.parametrize("tamper", ("changed", "duplicate", "missing"))
+def test_document_postprocess_resume_rejects_completed_shard_tampering(
+    tamper: str,
+    tmp_path: Path,
+    postprocess_lifecycle_closure: tuple[object, object, object, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan, evidence, metadata, approved_hash = postprocess_lifecycle_closure
+    monkeypatch.setattr(
+        lifecycle_module,
+        "APPROVED_CAPTURE_KEY_SHA256",
+        approved_hash,
+    )
+    _cache_postprocess_inputs(monkeypatch, plan, evidence, metadata)
+    output = tmp_path / f"postprocess-{tamper}"
+    paused = build_cninfo_document_postprocess(
+        plan,
+        evidence,
+        output,
+        max_documents_per_shard=2,
+        shard_budget=1,
+    )
+    assert paused["status"] == "paused"
+    first = next((output / "shards").glob("*/records.jsonl"))
+    if tamper == "changed":
+        payload = first.read_bytes()
+        first.write_bytes(payload.replace(b'"ordinal":0', b'"ordinal":9', 1))
+    elif tamper == "duplicate":
+        first.write_bytes(first.read_bytes() + first.read_bytes().splitlines(True)[0])
+    else:
+        first.unlink()
+
+    with pytest.raises(
+        ValueError,
+        match="cninfo_document_postprocess_(record|records|shard)",
+    ):
+        build_cninfo_document_postprocess(
+            plan,
+            evidence,
+            output,
+            max_documents_per_shard=2,
+        )
+
+
+def test_document_postprocess_resume_rejects_implementation_change(
+    tmp_path: Path,
+    postprocess_strong_closure: tuple[object, object, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan, evidence, metadata = postprocess_strong_closure
+    _cache_postprocess_inputs(monkeypatch, plan, evidence, metadata)
+    output = tmp_path / "postprocess-implementation"
+    completed = build_cninfo_document_postprocess(plan, evidence, output)
+    assert completed["status"] == "succeeded"
+
+    source = Path(str(document_postprocess_module.__file__))
+    changed = tmp_path / "postprocess_changed.py"
+    changed.write_bytes(source.read_bytes() + b"\n# implementation drift\n")
+    monkeypatch.setattr(document_postprocess_module, "__file__", str(changed))
+    with pytest.raises(
+        ValueError,
+        match="cninfo_document_postprocess_input_or_implementation_changed",
+    ):
+        build_cninfo_document_postprocess(plan, evidence, output)
+
+
+def test_document_postprocess_validation_replays_all_bodies(
+    tmp_path: Path,
+    postprocess_strong_closure: tuple[object, object, object],
+) -> None:
+    plan, evidence, metadata = postprocess_strong_closure
+    output = tmp_path / "postprocess-validation"
+    with (
+        patch.object(
+            document_postprocess_module,
+            "_replay_inputs",
+            return_value=(plan, evidence),
+        ),
+        patch.object(
+            document_postprocess_module,
+            "_inventory_metadata",
+            return_value=metadata,
+        ),
+    ):
+        build_cninfo_document_postprocess(plan, evidence, output)
+
+    validated = validate_cninfo_document_postprocess(
+        output,
+        plan,
+        evidence,
+        verify_bodies=True,
+    )
+    assert validated["exact_cover_verified"] is True
+    assert validated["body_replay_verified"] is True
+    assert validated["body_replay_root"] == read_json(
+        output / "postprocess_contract.json"
+    )["body_reference_root"]
+    assert validated["document_count"] == 1
+    assert validated["data_admission_eligible"] is False
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    ("extra_root_file", "extra_shard_file", "missing_file", "symlink_file"),
+)
+def test_document_postprocess_validation_requires_exact_file_closure(
+    tamper: str,
+    tmp_path: Path,
+    postprocess_strong_closure: tuple[object, object, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan, evidence, metadata = postprocess_strong_closure
+    _cache_postprocess_inputs(monkeypatch, plan, evidence, metadata)
+    output = tmp_path / f"postprocess-file-closure-{tamper}"
+    build_cninfo_document_postprocess(plan, evidence, output)
+    shard = next((output / "shards").iterdir())
+    if tamper == "extra_root_file":
+        (output / "unexpected.bin").write_bytes(b"unexpected")
+    elif tamper == "extra_shard_file":
+        (shard / "unexpected.bin").write_bytes(b"unexpected")
+    elif tamper == "missing_file":
+        (shard / "records.jsonl").unlink()
+    else:
+        records = shard / "records.jsonl"
+        target = tmp_path / "records-copy.jsonl"
+        target.write_bytes(records.read_bytes())
+        records.unlink()
+        records.symlink_to(target)
+
+    with pytest.raises(
+        ValueError,
+        match="cninfo_document_postprocess_",
+    ):
+        validate_cninfo_document_postprocess(
+            output,
+            plan,
+            evidence,
+            verify_bodies=False,
+        )
+
+
+def test_document_postprocess_rejects_concurrent_output_execution(
+    tmp_path: Path,
+    postprocess_strong_closure: tuple[object, object, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan, evidence, metadata = postprocess_strong_closure
+    _cache_postprocess_inputs(monkeypatch, plan, evidence, metadata)
+    output = tmp_path / "postprocess-concurrent"
+    claim_root = document_postprocess_module._lock_claim_root(
+        plan,
+        evidence,
+        max_documents_per_shard=60_000,
+    )
+
+    with document_postprocess_module._output_lock(
+        output,
+        claim_root=claim_root,
+    ):
+        with pytest.raises(
+            ValueError,
+            match="cninfo_document_postprocess_output_locked",
+        ):
+            build_cninfo_document_postprocess(plan, evidence, output)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("symlink_role", ("output_root", "shards_root"))
+def test_document_postprocess_lstat_rejects_directory_symlink(
+    symlink_role: str,
+    tmp_path: Path,
+    postprocess_strong_closure: tuple[object, object, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan, evidence, metadata = postprocess_strong_closure
+    _cache_postprocess_inputs(monkeypatch, plan, evidence, metadata)
+    output = tmp_path / f"postprocess-symlink-{symlink_role}"
+    target = tmp_path / f"postprocess-target-{symlink_role}"
+    target.mkdir()
+    if symlink_role == "output_root":
+        output.symlink_to(target, target_is_directory=True)
+    else:
+        output.mkdir()
+        (output / "shards").symlink_to(target, target_is_directory=True)
+
+    with pytest.raises(
+        ValueError,
+        match="cninfo_document_postprocess_output_root_invalid",
+    ):
+        build_cninfo_document_postprocess(plan, evidence, output)
+
+
+def test_document_postprocess_atomic_json_fsyncs_parent_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_directory_fsyncs: list[Path] = []
+    real = document_postprocess_module._fsync_directory
+
+    def observe(path: Path) -> None:
+        observed_directory_fsyncs.append(path)
+        real(path)
+
+    monkeypatch.setattr(
+        document_postprocess_module,
+        "_fsync_directory",
+        observe,
+    )
+    target = tmp_path / "checkpoint.json"
+    document_postprocess_module._atomic_json(target, {"ordinal": 1})
+
+    assert observed_directory_fsyncs == [tmp_path]
+    assert target.read_bytes() == b'{"ordinal":1}\n'
+
+
+def test_document_postprocess_json_artifacts_require_canonical_bytes(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "checkpoint.json"
+    target.write_bytes(b'{ "ordinal" : 1 }\n')
+
+    with pytest.raises(
+        ValueError,
+        match="cninfo_document_postprocess_json_noncanonical",
+    ):
+        document_postprocess_module._exact_json_file(target)
+
+
+def test_document_postprocess_rejects_lexical_ancestor_symlink(
+    tmp_path: Path,
+) -> None:
+    real = tmp_path / "real"
+    nested = real / "nested"
+    nested.mkdir(parents=True)
+    alias = tmp_path / "alias"
+    alias.symlink_to(real, target_is_directory=True)
+
+    with pytest.raises(
+        ValueError,
+        match="cninfo_document_postprocess_output_root_invalid",
+    ):
+        document_postprocess_module._ensure_directory(
+            alias / "nested",
+            create=False,
+        )
+
+
+def test_document_postprocess_source_resolver_indexes_each_parent_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parents = [
+        SimpleNamespace(
+            generation_id=f"generation-{ordinal}",
+            content_hash=str(ordinal) * 64,
+            manifest_path=str(tmp_path / f"parent-{ordinal}" / "manifest.json"),
+        )
+        for ordinal in (1, 2)
+    ]
+    plans = {
+        str(tmp_path / f"parent-{ordinal}"): {
+            "requests": [
+                {"request_id": f"request-{ordinal}", "ordinal": ordinal}
+            ]
+        }
+        for ordinal in (1, 2)
+    }
+    loads: list[tuple[str, str]] = []
+
+    def manifest_root(path: Path) -> Path:
+        return path.parent
+
+    def load_plan(path: Path) -> dict[str, object]:
+        loads.append(("plan", str(path.parent)))
+        return plans[str(path.parent)]
+
+    def terminals(path: Path) -> dict[str, dict[str, object]]:
+        loads.append(("journal", str(path.parent)))
+        ordinal = int(path.parent.name.rsplit("-", 1)[1])
+        return {
+            f"request-{ordinal}": {
+                "request_id": f"request-{ordinal}",
+                "terminal_state": "positive",
+            }
+        }
+
+    monkeypatch.setattr(
+        document_postprocess_module.closure_module,
+        "_manifest_root",
+        manifest_root,
+    )
+    monkeypatch.setattr(document_postprocess_module, "read_json", load_plan)
+    monkeypatch.setattr(
+        document_postprocess_module.closure_module,
+        "_terminal_events",
+        terminals,
+    )
+    resolver = document_postprocess_module._SourceResolver(
+        SimpleNamespace(reusable_parents=parents),
+        SimpleNamespace(downloaded_parent=None),
+    )
+    try:
+        for ordinal in (1, 2, 1, 2):
+            context = resolver.context(
+                SimpleNamespace(
+                    parent_generation_id=f"generation-{ordinal}",
+                    parent_content_hash=str(ordinal) * 64,
+                    parent_request_id=f"request-{ordinal}",
+                )
+            )
+            assert list(context.request_by_id) == [f"request-{ordinal}"]
+            assert list(context.terminal_by_id) == [f"request-{ordinal}"]
+    finally:
+        resolver.close()
+
+    assert loads == [
+        ("plan", str(tmp_path / "parent-1")),
+        ("journal", str(tmp_path / "parent-1")),
+        ("plan", str(tmp_path / "parent-2")),
+        ("journal", str(tmp_path / "parent-2")),
+    ]
+
+
+def test_document_postprocess_command_is_registered_and_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from importlib import import_module
+
+    from auto_alpha.cli import COMMANDS
+
+    module_name = COMMANDS[
+        ("data", "free-cninfo-document-postprocess")
+    ].module
+    assert module_name == document_postprocess_module.__name__
+    assert callable(import_module(module_name).main)
+
+    monkeypatch.setattr(
+        document_postprocess_module.closure_module,
+        "prepare_document_closure",
+        lambda *_args: SimpleNamespace(plan_id="plan"),
+    )
+    monkeypatch.setattr(
+        document_postprocess_module.closure_module,
+        "finalize_document_closure",
+        lambda *_args: SimpleNamespace(status="complete"),
+    )
+    monkeypatch.setattr(
+        document_postprocess_module,
+        "build_cninfo_document_postprocess",
+        lambda *_args, **_kwargs: {
+            "status": "succeeded",
+            "network_called": False,
+            "data_admission_eligible": False,
+            "pit_evidence_eligible": False,
+        },
+    )
+
+    exit_code = document_postprocess_module.main(
+        [
+            "--inventory-manifest",
+            "inventory.json",
+            "--year",
+            "2011",
+            "--output-root",
+            "evidence",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["network_called"] is False
+    assert payload["data_admission_eligible"] is False
+    assert payload["pit_evidence_eligible"] is False

@@ -14,7 +14,14 @@ from .models import (
     SecurityLifecycleRecord,
     SurvivorshipBiasReport,
 )
-from .security_master import build_active_security_mask, build_security_lifecycle
+from .security_master import (
+    build_active_security_mask,
+    build_security_lifecycle,
+    derive_security_identity_lifecycle_event_candidates,
+    derive_security_identity_lifecycle_timeline,
+    publish_security_identity_lifecycle_intervals,
+    validate_security_identity_lifecycle_intervals,
+)
 from .validator import validate_point_in_time_data
 
 __all__ = [
@@ -34,5 +41,9 @@ __all__ = [
     "compute_feature_cutoff_date",
     "contracts_for_datasets",
     "derive_control_state_timeline",
+    "derive_security_identity_lifecycle_event_candidates",
+    "derive_security_identity_lifecycle_timeline",
+    "publish_security_identity_lifecycle_intervals",
+    "validate_security_identity_lifecycle_intervals",
     "validate_point_in_time_data",
 ]

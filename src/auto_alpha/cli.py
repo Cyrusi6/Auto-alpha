@@ -34,9 +34,21 @@ COMMANDS = {
         "auto_alpha.data.ingestion.pipeline.ashare.free_provider_cninfo_document_closure",
         "Close signed CNINFO inventory demand over exact document bytes",
     ),
+    ("data", "free-cninfo-document-postprocess"): CommandSpec(
+        "auto_alpha.data.ingestion.pipeline.ashare.free_provider_cninfo_document_postprocess",
+        "Build resumable exact-cover CNINFO parser-input shards",
+    ),
     ("data", "free-csindex-backfill"): CommandSpec(
         "auto_alpha.data.ingestion.pipeline.ashare.free_provider_csindex_backfill",
         "Capture CSI rebalance announcement inventories and details",
+    ),
+    ("data", "free-csindex-semantics"): CommandSpec(
+        "auto_alpha.data.ingestion.pipeline.ashare.free_provider_csindex_attachment_semantics",
+        "Build immutable fail-closed CSI attachment semantics",
+    ),
+    ("data", "free-market-evidence"): CommandSpec(
+        "auto_alpha.data.lake.store.free_provider_market_data_evidence",
+        "Build governed trade-calendar and market-data evidence",
     ),
     ("data", "free-baostock-reconcile"): CommandSpec(
         "auto_alpha.data.ingestion.pipeline.ashare.free_provider_baostock_reconciliation",
