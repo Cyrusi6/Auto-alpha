@@ -88,6 +88,10 @@ _Avoid_: tradability alpha, missingness signal
 Retained source data or audit material whose file integrity is known but whose request, pagination, or valid-absence completeness cannot be replayed. It may support repair and reconciliation but cannot satisfy a Data Admission Verdict.
 _Avoid_: grandfathered coverage, trusted old cache
 
+**Deferred Full Document Closure**:
+A broad provider-document acquisition that has been deliberately made inactive before producing a complete closure. Its immutable inventory and any partial activity remain auditable but cannot satisfy coverage or be resumed in place; reactivation requires a new scope, contract, and authorization.
+_Avoid_: deleted history, silently reusable partial download
+
 **Local Development Replay Bundle**:
 An immutable, content-addressed, self-contained reconstruction of selected values, validity, retrospective universe proxies, and observed targets from one validated Source Freeze research view. It exists only to diagnose and develop the vertical data path when provider evidence is unavailable; it always carries `data_admission_eligible=false`, `alpha_search_authorized=false`, and `lifecycle_publication_allowed=false`.
 _Avoid_: local Canonical Data Freeze, admitted offline data, promotable research matrix

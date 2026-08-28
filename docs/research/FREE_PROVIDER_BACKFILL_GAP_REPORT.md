@@ -1,6 +1,6 @@
 # 免费数据补采后的准入差距报告
 
-状态：**CNINFO v5 服务已 fail-closed、没有后台采集在运行且 v6 未授权；离线 seam 已就绪并通过真实 CSI 重放；Data Admission 仍为 blocked；0/11 个 base-required 数据集已准入**
+状态：**CNINFO v5 服务已 fail-closed、全量 v6 已按操作员决定停止且没有后台采集在运行；离线 seam 已就绪并通过真实 CSI 重放；Data Admission 仍为 blocked；0/11 个 base-required 数据集已准入**
 
 本报告回答两个不同问题：
 
@@ -113,7 +113,7 @@ raw 日状态数与 coverage-use 数不同，是因为前者统计 provider 返�
 | Baostock dividends | **已发布并通过离线全量重验**：`free_provider_backfill_adcab60f1a085b2c45614a1a`；34,182 个请求、34,184 attempts、18,939 positive、15,243 empty、0 final error；19,537 条记录 | 唯一 ENOTCONN attempt 的旧 producer 提前记了 wire count，严格 publication 正确阻断。窄修复未重新下载并要求后续成功 terminal；publication signature/raw/parser replay 均通过，但事件版本历史 blocker 仍保留 |
 | CNINFO strong base chain | **已完成 discovery → inventory**：`cca3f9cd... → a8d27d60...`；base inventory 2,459/2,459 请求完成 | closure 递归重放实际 discovery parent；旧 `cb84a4b1...` partial journal 与旧 root 不参与新闭包 |
 | CNINFO strong supplemental chain | **已完成 discovery → inventory 物理采集**：`700af743... → 03a82909...`；inventory 9,662/9,662 terminal、0 final error | 官网 page 101 回卷已由 758-leaf profile 修复；旧 `212e...` generation 与 `7f9d...` 中间 activity 保留不用。此链仍须与 current base 合并并完成 document closure |
-| CNINFO document closure | **v4 已暂停；v5 服务 fail-closed，二者均未发布**：v4 activity `12198c1c...` 保留 3,659 positive；v5 activity `c7425780...` 保留 879 positive、881 attempts、2,219,205,329 response bytes，2026-08-27 17:28:12 停在 `58911612`。该 HTTP 200 声明 8,665,372 bytes 但只交付 2,621,440 bytes；WAF=false，v5 sealed/current implementation root 一致，当前没有后台采集进程 | v5 正确拒绝截断 PDF，且旧合同没有把这一错误分类为可自动重试。修复分类会生成新 implementation/contract/activity identity；未经完整 v6 重新授权不得联网，也不得拼接 v5 partial。全链仍须 342,516 份唯一 disposition 后才能进入语义处理 |
+| CNINFO document closure | **v4 已暂停；v5 服务 fail-closed，二者均未发布；全量 v6 已停止**：v4 activity `12198c1c...` 保留 3,659 positive；v5 activity `c7425780...` 保留 879 positive、881 attempts、2,219,205,329 response bytes，2026-08-27 17:28:12 停在 `58911612`。该 HTTP 200 声明 8,665,372 bytes 但只交付 2,621,440 bytes；WAF=false，v5 sealed/current implementation root 一致，当前没有后台采集进程 | v5 正确拒绝截断 PDF；操作员已明确不再启动 342,516 份全量正文下载。已有 inventory/partial 保留为不可复用审计证据；若以后需要公司行为证据，必须建立较小的事件范围 profile/contract、精确 coverage 和独立 verdict，不得拼接 v5 partial |
 
 进度改变时只更新本节和最终 verdict 引用，不应改写以前 generation 的内容。历史失败、
 暂停和弱血缘活动继续原样留档；跨活动拼接、改名或重签都不能把它们升级成成功。
@@ -171,7 +171,7 @@ activity/contract、pause 原因、新预算或 breaker 处置、批准主体和
 | `daily_limits` | 本地有价格限制值 | 缺 provider receipt；未把板块、ST、IPO、规则生效日和前收盘价绑定到版本化计算或权威原值 | blocked |
 | `adjustment_factors` | 本地 5,876,096 行；Baostock 20,134 条当前因子对账记录；已实现 causal vintage 派生 seam | 免费源没有历史 revision/vintage；派生链尚未取得完整 PIT 公司行为事件版本和独立 Admission Verdict | blocked |
 | `index_members` | CSI 1,098 条详情、current full-range 439 个附件和 exact legacy-cons 2 个附件均有签名物理证据；严格 sheet exact-cover 后只保留 2 条非授权候选 | 93 个图片仍需受限 OCR；8 个 mixed-schema 附件及 4 个 XLS error-cell 输入原子阻断；historical known-at/effective-at、公告语义边、2011 seed、完整调样事件、每日恰好 300 只和历史权重未证明 | blocked |
-| `corporate_actions` | CNINFO 66,881 条旧 inventory；2011 的 8,129 份弱血缘文档仅作 parser fixture；现有 parser 已实现受限 PDF/HTML 文本、经济条款、阶段版本链、known/effective timing、EventLedger 完整性与 identity interval 投影 | base/supplemental 强血缘 document closure 尚未完成；弱血缘 fixture 永久不能授权；需要全量 exact-cover 语义分片、跨公告实体/版本裁决和独立 Admission Verdict | blocked |
+| `corporate_actions` | CNINFO 66,881 条旧 inventory；2011 的 8,129 份弱血缘文档仅作 parser fixture；现有 parser 已实现受限 PDF/HTML 文本、经济条款、阶段版本链、known/effective timing、EventLedger 完整性与 identity interval 投影 | 全量 strong closure 已按操作员决定停止；弱血缘 fixture 永久不能授权；未来若启用事件范围更窄的新合同，仍需完整 exact-cover 语义分片、跨公告实体/版本裁决和独立 Admission Verdict | blocked |
 | `index_daily_bars` | 历史 v1 generation `1bdf100c...` 保留 1,945/1,945 exact cover、行 validity 和 `benchmark_control` consumer closure；当前 v2 已实现 source archive 深度重投影 | 尚未以当前 v2 发布真实 generation；signed raw source reference、trade calendar、Provider Acquisition Contract、provider origin/runtime isolation 和最终 Source Freeze binding 未闭合 | blocked |
 | `suspensions` | Baostock `tradestatus` 有正/负日状态；CNINFO 有停复牌公告类别；provider-neutral control-state seam 已实现双时点、保守 timing、seed 和冲突 fail-closed | 证券代码轴错误；缺受治理 pre-span seed、公告 known-at/effective-at、盘中 timing、跨源裁决和逐义务负证明 | blocked |
 | `st_status_daily` | Baostock `isST` 日状态；CNINFO 特别处理/退市公告；同一 control-state seam 可承载不可变 ST 事件版本 | 证券代码轴错误；Baostock 不能区分 ST/*ST/退市风险；缺受治理 seed、公告时点、子类型解析和全生命周期 exact cover | blocked |
@@ -192,7 +192,7 @@ activity/contract、pause 原因、新预算或 breaker 处置、批准主体和
 | daily limits | 可从免费行情和公开交易规则重建，也可用免费值交叉核对 | 板块/ST/IPO 特例、规则历史版本和生效日；一字板/停牌成交资格 | 实现版本化 A-share price-limit rule engine，输入只来自 admitted lifecycle/ST/pre-close；或购买可审计历史涨跌停价。两条路线都要逐日重放和冲突门禁 |
 | adjustment factors | 免费源只能补当前计算结果；causal vintage 生成器已实现 | CNINFO 文档 exact cover、公告经济条款解析、稳定 event/version 身份、known-at/effective-at 和独立准入裁决 | 以巨潮/交易所公告事件版本为权威；同一事件只使用生效前已知的最后版本，事后修订不得回写历史。Baostock/旧 Tushare 仅交叉校验；派生结果在 verdict 前固定 `data_admission_eligible=false` |
 | PIT CSI300 membership | current full-range 与 legacy-cons 物理附件已完整签名采集；`4c9baed8...` 已完成 exact signed historical source identity binding、当前 semantic replay 和 source/body 深度重放，并真实分类 439 个对象、只保留 2 条非授权候选 | 93 个图片、8 个 mixed-schema 与 4 个 error-cell blockers，2011 seed、发布/生效双时间、完整调样事件、每日恰好 300 只和历史权重 | 不重下附件或重做已完成的 source binding；对异常输入执行受限 OCR/人工裁决，再构建并逐开市日验证事件。权重若免费档案不能补齐，则购买日权重，或人工批准只要求 PIT membership 的新 Profile |
-| corporate actions | base/supplemental inventories 已完成；bounded PDF/HTML parser、阶段链和 identity projection seam 已实现 | 342,516-document strong closure、全量结构化经济条款、补充更正和跨公告实体/版本裁决 | v6 获人工批准后只重跑尚未完成的 document closure；完成后运行已有 bounded postprocess/parser/state-machine seam，并由交易所公告做独立抽查/冲突裁决 |
+| corporate actions | base/supplemental inventories 已完成；bounded PDF/HTML parser、阶段链和 identity projection seam 已实现 | 全量 342,516-document strong closure 已按操作员决定停止；全量结构化经济条款、补充更正和跨公告实体/版本裁决仍未形成 | 若未来要补公司行为证据，先建立较小事件范围的 profile/contract，完成其 document closure 后运行已有 bounded postprocess/parser/state-machine seam，并由交易所公告做独立抽查/冲突裁决 |
 | index daily bars | 已免费抓到 1,945 日 | admission receipt、validity 和 bundle closure | 独立重放 `51ab9f...` raw，绑定 date-axis root 与 benchmark consumer；若实现身份变化则新 generation，不改旧证据 |
 | ST daily | Baostock 能补每日布尔状态；公告可补类型/变更 | ST 子类型、公告可见时点、全生命周期负证明 | 以公告状态机给出类型和 known-at，以 Baostock 日布尔值做逐日对账；冲突日保守 invalid，不用证券简称推断 |
 | suspension daily | Baostock 能补整日交易状态；公告可补原因 | 盘中 timing、开始/恢复状态机、前置 seed | 公告优先；timing 不明则事件日整日不可交易，恢复次日生效；Baostock `tradestatus` 只作逐日状态/负覆盖对账 |
@@ -256,10 +256,10 @@ matrix axis hash；旧 `0a36...` 的差异数只保留为历史诊断。
    publication/replay 边界；从现有签名证据补完整 source reference，按新的 identity axis
    生成 trade calendar、daily bars、index bars、turnover exact cover 和字段 validity。
    adjustment/dividend 只作事件版本对账，不能自授 PIT。
-4. **取得 v6 授权后完成 CNINFO document closure。** base/supplemental
-   discovery→inventory 已完成，不再重跑；v6 必须按新合同完整重跑 342,516 份唯一文档，
-   不拼接 v4/v5 partial。closure 发布并独立重放后，再运行现成的 bounded postprocess；
-   legacy 2011 文档继续 quarantine。
+4. **不要启动已停止的全量 CNINFO document closure。** base/supplemental
+   discovery→inventory 已完成并保留；若未来要补公司行为证据，应先定义新的、较小的
+   事件范围 profile/contract，重新计算 exact coverage 和预算，再由人工批准后运行现成的
+   bounded postprocess；legacy 2011 文档继续 quarantine，不能拼接 v4/v5 partial。
 5. **裁决 CSI semantic blockers。** 439-object parser 与隔离 XLS/XLSX exact-cover 已完成；
    对 93 个图片执行受限 OCR/人工证据流程，修复或人工裁决 8 个 mixed-schema 和 4 个
    error-cell 附件，再证明 historical known-at/vintage、2011 seed、全部调样事件、每日

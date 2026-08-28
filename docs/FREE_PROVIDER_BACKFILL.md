@@ -215,13 +215,15 @@ discovery→inventory，再由专用 document closure seam 处理二者的并集
 不能因为 residual 已补齐或下游重新签名而洗白。当前 base/supplemental 的
 discovery→inventory 强链已经分别发布并通过离线重放；尚未完成的是 342,516 份唯一
 文档的 strong closure。v5 在 2011 分片保留 879 个 positive terminal 后 fail-closed，
-未发布且不可拼接；v6 尚未取得授权，因此没有后台文档采集在运行。
+未发布且不可拼接。2026-08-28 操作员明确停止未来的全量正文下载，三个历史 transient
+unit 已停止，因此没有后台文档采集在运行；这项全量闭包现在是 `Deferred Full Document
+Closure`，不再等待或暗示 v6 会自动启动。
 旧 supplemental generation `free_provider_backfill_212e27653d183d18eee5eccc`
-和中间 activity `7f9d41ea...` 保持不可变审计记录，但不进入 current closure。最终重跑
-只接受 current base `cca3f9cd... → a8d27d60...` 与 supplemental
-`700af743... → 03a82909...` 两条已发布、可递归重放的精确父链。v6 会因文档传输分类
-变化取得新的 implementation/contract/activity identity，但不会重下这两条已完成的
-discovery/inventory；旧 base、新 supplemental 或任意跨代父链仍禁止拼接。
+和中间 activity `7f9d41ea...` 保持不可变审计记录，但不进入 current closure。若将来
+重新启动，只接受 current base `cca3f9cd... → a8d27d60...` 与 supplemental
+`700af743... → 03a82909...` 两条已发布、可递归重放的精确父链，并且必须为新的、较小
+的事件范围建立 profile/implementation/contract/activity identity；旧 base、新
+supplemental 或任意跨代父链仍禁止拼接。当前不创建新的全量网络活动。
 
 document closure 接受的人工 resume 参数不是授权旁路。底层 generic capture seam 当前
 对任何这类参数固定返回 `trusted_resume_authority_not_implemented`；遇到治理性 pause
@@ -360,10 +362,10 @@ provider pause、重试或大分片 normalization 会延后该估计。
 结构也因此不完整。sealed/current implementation root 均为 `30d502...`，所以不是代码
 漂移。旧 v5 将该组合保守归入不可重试格式错误，且人工 resume authority 没有实现；
 不得通过改 journal、忽略长度或拼接 879 份来继续。只把“HTTP 200 且声明长度大于实收
-长度”的提前断流改为有界可重试，也会改变 implementation root，因此必须取得新的 v6
-完整重跑授权后才能发起网络调用。
+长度”的提前断流改为有界可重试，也会改变 implementation root，因此当时必须取得新的 v6
+完整重跑授权后才能发起网络调用；该全量重跑随后已由操作员明确停止。
 
-正文下载等待新授权期间，六个不依赖新 CNINFO bytes 的处理切片已完成实现，可在各自
+在全量下载停止后，六个不依赖新 CNINFO bytes 的处理切片已完成实现，可在各自
 受控输入上独立运行；这不表示真实独立准入证据已经闭合：
 
 - identity/lifecycle owner 已能从 byte/text-verified CNINFO 公告生成代码、名称、上市和
@@ -440,10 +442,10 @@ current inventory 已保留 56,488 条 `corporate_actions` leaf 记录和 24,979
 `corrections` leaf 记录；仅按标题筛选“权益分派/利润分配/分红/派息/股息/现金红利/
 除权除息/送转”就有 26,543 个唯一公告候选。标题筛选只用于说明原料存在，不能替代
 正文解析或 exact cover。
-因此 CNINFO 正文闭包可以解决版本原料缺失；但正文下载完成后还必须把已实现的锁定
-parser 运行在完整 strong closure 上，并完成跨公告 event linkage、known-at/effective-at
-门禁和 exact-cover verifier，不能直接把
-`dividend_event_version_history_unavailable` 改成 passed。
+因此 CNINFO 正文闭包可以解决版本原料缺失；但本轮不再追求全量闭包。若以后采用事件
+范围更窄的新合同，下载完成后仍必须把已实现的锁定 parser 运行在该合同的完整 closure
+上，并完成跨公告 event linkage、known-at/effective-at 门禁和 exact-cover verifier，
+不能直接把 `dividend_event_version_history_unavailable` 改成 passed。
 
 ## 仍然 fail closed 的部分
 
@@ -458,8 +460,8 @@ parser 运行在完整 strong closure 上，并完成跨公告 event linkage、k
 - 停复牌盘中 timing 与冲突裁决；
 - CSI300 2011 年末权威种子、93 个图片及 mixed-schema/error-cell 裁决、完整调样事件和
   每日历史权重；parser seam 已实现不等于这些真实证据闭合；
-- 在完整 CNINFO strong closure 上执行公司行为字段解析，并完成跨公告
-  proposal/approval/implementation/correction 裁决和 exact cover；
+- 对未来明确批准的 CNINFO 事件范围执行公司行为字段解析，并完成跨公告
+  proposal/approval/implementation/correction 裁决和 exact cover；当前全量 closure 不在活动队列；
 - 从 independently admitted PIT 公司行为版本重建 adjustment-factor vintage；
 - 免费三源无法直接补齐的 `daily_basic.volume_ratio/total_mv` 权威回执；
 - canonical matrix、target/validity、完整 lineage 和确定性 Source Freeze replay。
@@ -652,7 +654,7 @@ reconciliation phase 的当前 generation 均已完成相应物理采集/离线�
 与 `dividends` 保持历史版本语义 blocker，`turnover` 仍须 PIT alias、exact-cover 和
 Profile 裁决；它们都不需要为了当前任务重复下载。CNINFO current base/supplemental
 discovery→inventory 已完成，document strong closure 则因 v5 fail-closed 而未发布，
-且 v6 尚未授权。CSI current signed-range full/legacy 物理 slice 已完成，semantic
+且全量 v6 已按操作员决定停止。CSI current signed-range full/legacy 物理 slice 已完成，semantic
 generation `4c9baed8...` 也已以 exact signed source identity binding 和当前语义重放完成
 独立深度验证并保守
 分类出 2 条非授权候选。后续未完成项是历史时点、事件/图片/异常附件裁决、PIT 日状态
